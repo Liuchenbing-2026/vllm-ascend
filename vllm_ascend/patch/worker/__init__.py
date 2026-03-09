@@ -35,4 +35,4 @@ import vllm_ascend.patch.worker.patch_qwen3_next  # noqa
 import vllm_ascend.patch.worker.patch_qwen3_next_mtp  # noqa
 import vllm_ascend.patch.worker.patch_rejection_sampler  # noqa
 import vllm_ascend.patch.worker.patch_v2_egale  # noqa
-import vllm_ascend.patch.worker.patch_qwen3_quarot  # noqa
+import vllm_ascend.patch.worker.patch_draft_quarot  # noqa

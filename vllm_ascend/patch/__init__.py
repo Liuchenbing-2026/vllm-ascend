@@ -385,7 +385,7 @@
 #    Future Plan:
 #       Remove this patch when upstream adds a backend dispatch path for q/k norm.
 #
-# ** 19. File: worker/patch_qwen3_quarot.py**
+# ** 19. File: worker/patch_draft_quarot.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.model_executor.models.llama_eagle3.Eagle3LlamaForCausalLM.load_weights`
 #    Why:
@@ -394,5 +394,7 @@
 #    How：
 #       Dynamically replace the `load_weights` function at runtime,
 #       and fix `target_config` into the new implementation with a closure.
+#    Related PR (if no, explain why):
+#       https://github.com/vllm-project/vllm/pull/36225
 #    Future Plan:
 #       Remove this patch when vLLM merges the PR.
