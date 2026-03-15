@@ -63,3 +63,8 @@ class GraphFusionPassManager:
             from .passes.allreduce_rmsnorm_fusion_pass import MatmulAllReduceAddRMSNormPass
 
             self.passes.append(MatmulAllReduceAddRMSNormPass(config))
+
+        if self.ascend_compilation_config.get("fuse_minimax_qknorm_rope", True):
+            from .passes.minimax_qknorm_rope_pass import MiniMaxQKNormRopeFusionPass
+
+            self.passes.append(MiniMaxQKNormRopeFusionPass(config))
