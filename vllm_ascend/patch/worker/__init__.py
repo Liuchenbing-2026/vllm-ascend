@@ -26,6 +26,8 @@ import vllm_ascend.patch.worker.patch_unquantized_gemm  # noqa
 import vllm_ascend.patch.worker.patch_bert  # noqa
 import vllm_ascend.patch.worker.patch_distributed  # noqa
 import vllm_ascend.patch.worker.patch_deepseek  # noqa
+import vllm_ascend.patch.worker.patch_minimax_m2  # noqa
+import vllm_ascend.patch.worker.patch_minimax_m2_linear_attn  # noqa
 import vllm_ascend.patch.worker.patch_multimodal_merge  # noqa
 import vllm_ascend.patch.worker.patch_minicpm  # noqa
 import vllm_ascend.patch.worker.patch_rope  # noqa
