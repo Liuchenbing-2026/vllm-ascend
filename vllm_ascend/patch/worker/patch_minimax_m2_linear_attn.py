@@ -31,6 +31,7 @@ from vllm.model_executor.layers.mamba.linear_attn import (
     MiniMaxText01RMSNormTP,
 )
 from vllm.platforms import current_platform
+from vllm.triton_utils import HAS_TRITON
 
 _ORIG_QK_METHOD_NAME: str | None = None
 _original_qk_method = None
@@ -143,3 +144,60 @@ MiniMaxText01RMSNormTP.weight_loader = staticmethod(_patched_weight_loader)
 if _ORIG_QK_METHOD_NAME is not None:
     # Force staticmethod style, as requested.
     setattr(MiniMaxText01RMSNormTP, _ORIG_QK_METHOD_NAME, staticmethod(_patched_qk))
+
+
+# ---------------------------------------------------------------------------
+# Fused Attention Forward: directly call Triton kernel in forward,
+# bypassing FX graph pattern matching (CustomOp makes npu_rms_norm
+# opaque to the FX tracer, so the fusion pass pattern cannot match).
+# ---------------------------------------------------------------------------
+if HAS_TRITON:
+    from vllm.model_executor.models.minimax_m2 import MiniMaxM2Attention
+
+    _original_attn_forward = MiniMaxM2Attention.forward
+
+    def _fused_attn_forward(
+        self: "MiniMaxM2Attention",
+        positions: torch.Tensor,
+        hidden_states: torch.Tensor,
+    ) -> torch.Tensor:
+        qkv, _ = self.qkv_proj(hidden_states)
+
+        q, k, v, q_var, k_var = \
+            torch.ops.vllm.minimax_qkv_crosshead_norm_rope(
+                qkv=qkv,
+                cos_sin_cache=self.rotary_emb.cos_sin_cache,
+                positions=positions,
+                q_weight=self.q_norm.weight,
+                k_weight=self.k_norm.weight,
+                q_hidden_size=self.q_size,
+                kv_hidden_size=self.kv_size,
+                head_dim=self.head_dim,
+                eps=self.q_norm.variance_epsilon,
+                rotary_dim=self.rotary_emb.rotary_dim,
+            )
+
+        # TP correction: fused kernel computes local variance;
+        # need all_reduce across TP ranks for global variance.
+        if self.q_norm.tp_world > 1:
+            eps = self.q_norm.variance_epsilon
+            qk_var = torch.cat([q_var, k_var], dim=-1)
+            qk_var = tensor_model_parallel_all_reduce(qk_var) \
+                / self.q_norm.tp_world
+            q_global_var, k_global_var = qk_var.chunk(2, dim=-1)
+            q_correction = (
+                torch.rsqrt(q_global_var + eps)
+                / torch.rsqrt(q_var + eps)
+            ).to(q.dtype)
+            k_correction = (
+                torch.rsqrt(k_global_var + eps)
+                / torch.rsqrt(k_var + eps)
+            ).to(k.dtype)
+            q = q * q_correction
+            k = k * k_correction
+
+        attn_output = self.attn(q, k, v)
+        output, _ = self.o_proj(attn_output)
+        return output
+
+    MiniMaxM2Attention.forward = _fused_attn_forward
