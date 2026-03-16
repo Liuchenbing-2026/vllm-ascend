@@ -233,6 +233,30 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
         "moe_quantize",
         getattr(vllm_config.model_config.hf_text_config, "quantize", None),
     )
+    # Fallback: infer MoE quant type when config.json lacks
+    # moe_quantize/quantize fields.
+    if quant_type is None:
+        # 1) ModelSlim: read from quant_model_description.json
+        if vllm_config.quant_config is not None:
+            quant_desc = getattr(vllm_config.quant_config,
+                                 "quant_description", {})
+            for key, val in quant_desc.items():
+                if "experts" in key and isinstance(val, str) \
+                        and val != "FLOAT":
+                    quant_type = val.lower()
+                    break
+        # 2) HF quantization_config: infer from bits + act_quant_method
+        if quant_type is None:
+            hf_quant_cfg = getattr(
+                vllm_config.model_config.hf_text_config,
+                "quantization_config", None)
+            if isinstance(hf_quant_cfg, dict):
+                bits = hf_quant_cfg.get("bits", None)
+                act_method = hf_quant_cfg.get("act_quant_method", "")
+                if bits == 8 and act_method == "per_token":
+                    quant_type = "w8a8_dynamic"
+                elif bits == 8:
+                    quant_type = "w8a8_dynamic"
 
     if not vllm_config.parallel_config.enable_expert_parallel or get_ep_group().world_size == 1:
         moe_comm_type = MoECommType.ALLGATHER
