@@ -217,18 +217,13 @@ def _rope_forward_oot(
                 query, key, cos, sin)
         elif self.rotary_dim < self.head_size:
             if  HAS_TRITON:
-       
-                cos = cos.view(-1, self.rotary_dim)
-                sin = sin.view(-1, self.rotary_dim)
-                q = query.contiguous().view(query.shape[0], -1,
-                                                    self.head_size)
-                k = key.contiguous().view(key.shape[0], -1, self.head_size)
-                query, key = torch.ops.vllm.rope_forward_triton(q,
-                                            k,
-                                            cos,
-                                            sin,
-                                            rope_dim=self.rotary_dim,
-                                            is_neox_style=True)
+                # Use cos_sin_cache + positions directly (graph-friendly,
+                # no dependency on external cos/sin globals).
+                query = query.contiguous()
+                key = key.contiguous()
+                query, key = torch.ops.vllm.npu_rotary_embedding(
+                    positions, query, key, self.cos_sin_cache,
+                    self.head_size, self.rotary_dim, True)
                 return query.view(query_shape), key.view(key_shape)
             else:
                 num_tokens = query.shape[0]

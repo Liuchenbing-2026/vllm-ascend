@@ -383,3 +383,68 @@ direct_register_custom_op(op_name="rope_forward_triton",
                           fake_impl=_rope_forward_triton_fake,
                           mutates_args=[],
                           dispatch_key="PrivateUse1")
+
+
+def _npu_rotary_embedding_impl(
+    positions: torch.Tensor,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    cos_sin_cache: torch.Tensor,
+    head_dim: int,
+    rotary_dim: int,
+    is_neox_style: bool,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Partial RoPE using cos_sin_cache directly.
+
+    cos_sin_cache layout: [max_position, rotary_dim] where first half is cos,
+    second half is sin.  This wrapper is graph-friendly (no external globals)
+    and serves as the pattern-match target for MiniMax QKNorm+RoPE fusion.
+    """
+    query_shape, key_shape = query.shape, key.shape
+    num_tokens = query.shape[0]
+    half_rotary_dim = rotary_dim // 2
+
+    # Index into cache
+    cos_sin = cos_sin_cache[positions]  # [num_tokens, rotary_dim]
+    cos = cos_sin[:, :half_rotary_dim].unsqueeze(1)  # [T, 1, half]
+    sin = cos_sin[:, half_rotary_dim:].unsqueeze(1)  # [T, 1, half]
+
+    # Reshape to per-head
+    q = query.view(num_tokens, -1, head_dim)
+    k = key.view(num_tokens, -1, head_dim)
+
+    # Split rotary / passthrough dims
+    q_rot, q_pass = q[..., :rotary_dim], q[..., rotary_dim:]
+    k_rot, k_pass = k[..., :rotary_dim], k[..., rotary_dim:]
+
+    # Neox-style RoPE
+    q_x1, q_x2 = q_rot[..., :half_rotary_dim], q_rot[..., half_rotary_dim:]
+    k_x1, k_x2 = k_rot[..., :half_rotary_dim], k_rot[..., half_rotary_dim:]
+
+    q_rot_out = torch.cat(
+        [q_x1 * cos - q_x2 * sin, q_x2 * cos + q_x1 * sin], dim=-1)
+    k_rot_out = torch.cat(
+        [k_x1 * cos - k_x2 * sin, k_x2 * cos + k_x1 * sin], dim=-1)
+
+    q_out = torch.cat([q_rot_out, q_pass], dim=-1).view(query_shape)
+    k_out = torch.cat([k_rot_out, k_pass], dim=-1).view(key_shape)
+    return q_out, k_out
+
+
+def _npu_rotary_embedding_fake(
+    positions: torch.Tensor,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    cos_sin_cache: torch.Tensor,
+    head_dim: int,
+    rotary_dim: int,
+    is_neox_style: bool,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    return torch.empty_like(query), torch.empty_like(key)
+
+
+direct_register_custom_op(op_name="npu_rotary_embedding",
+                          op_func=_npu_rotary_embedding_impl,
+                          fake_impl=_npu_rotary_embedding_fake,
+                          mutates_args=[],
+                          dispatch_key="PrivateUse1")
