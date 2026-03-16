@@ -200,22 +200,20 @@ if _HAS_NPU_TRITON:
 
         # TP correction: fused kernel computes local variance;
         # need all_reduce across TP ranks for global variance.
+        # Only cat + all_reduce remain as PyTorch ops (communication);
+        # the 8 small math ops (RealDiv, Add, Rsqrt, Cast, Mul, etc.)
+        # are fused into a single Triton kernel.
         if self.q_norm.tp_world > 1:
-            eps = self.q_norm.variance_epsilon
             qk_var = torch.cat([q_var, k_var], dim=-1)
-            qk_var = tensor_model_parallel_all_reduce(qk_var) \
-                / self.q_norm.tp_world
-            q_global_var, k_global_var = qk_var.chunk(2, dim=-1)
-            q_correction = (
-                torch.rsqrt(q_global_var + eps)
-                / torch.rsqrt(q_var + eps)
-            ).to(q.dtype)
-            k_correction = (
-                torch.rsqrt(k_global_var + eps)
-                / torch.rsqrt(k_var + eps)
-            ).to(k.dtype)
-            q = q * q_correction
-            k = k * k_correction
+            qk_reduced = tensor_model_parallel_all_reduce(qk_var)
+            q, k = torch.ops.vllm.minimax_tp_correction(
+                q=q, k=k, q_var=q_var, k_var=k_var,
+                qk_reduced=qk_reduced,
+                tp_world=self.q_norm.tp_world,
+                eps=self.q_norm.variance_epsilon,
+                q_hidden_size=self.q_size,
+                kv_hidden_size=self.kv_size,
+            )
 
         attn_output = self.attn(q, k, v)
         output, _ = self.o_proj(attn_output)

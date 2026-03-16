@@ -313,3 +313,128 @@ direct_register_custom_op(
     mutates_args=[],
     dispatch_key="PrivateUse1",
 )
+
+
+@triton.jit
+def minimax_tp_correction_kernel(
+    q_in_ptr, k_in_ptr,
+    q_out_ptr, k_out_ptr,
+    q_var_ptr, k_var_ptr,
+    qk_reduced_ptr,
+    batch_size,
+    tp_world,
+    q_hidden_size: tl.constexpr,
+    kv_hidden_size: tl.constexpr,
+    eps: tl.constexpr,
+    Q_BLOCK_SIZE: tl.constexpr,
+    KV_BLOCK_SIZE: tl.constexpr,
+):
+    """
+    Fused TP correction for MiniMax cross-head QKNorm.
+
+    Replaces 8 small PyTorch ops (RealDiv, Add, Rsqrt, Add, Rsqrt, Cast,
+    Mul, Mul) with a single kernel launch.
+
+    Per row:
+      global_var = all_reduced_var / tp_world
+      correction = sqrt(local_var + eps) / sqrt(global_var + eps)
+      q_out = q_in * q_correction
+      k_out = k_in * k_correction
+    """
+    row_pid = tl.program_id(0)
+    row_step = tl.num_programs(0)
+
+    inv_tp = 1.0 / tp_world
+
+    for row_idx in tl.range(row_pid, batch_size, row_step):
+        # Load local variances (scalar per row)
+        q_local_var = tl.load(q_var_ptr + row_idx)
+        k_local_var = tl.load(k_var_ptr + row_idx)
+
+        # Load all-reduced sum, divide by tp_world for global mean variance
+        q_global_var = tl.load(qk_reduced_ptr + row_idx * 2) * inv_tp
+        k_global_var = tl.load(qk_reduced_ptr + row_idx * 2 + 1) * inv_tp
+
+        # correction = rsqrt(global+eps) / rsqrt(local+eps)
+        #            = sqrt(local+eps) / sqrt(global+eps)
+        q_corr = tl.sqrt(q_local_var + eps) / tl.sqrt(q_global_var + eps)
+        k_corr = tl.sqrt(k_local_var + eps) / tl.sqrt(k_global_var + eps)
+
+        # Apply correction to q
+        q_col = tl.arange(0, Q_BLOCK_SIZE)
+        q_mask = q_col < q_hidden_size
+        q_offset = row_idx * q_hidden_size
+        q_vals = tl.load(q_in_ptr + q_offset + q_col,
+                         mask=q_mask, other=0.0).to(tl.float32)
+        tl.store(q_out_ptr + q_offset + q_col,
+                 (q_vals * q_corr).to(q_out_ptr.dtype.element_ty),
+                 mask=q_mask)
+
+        # Apply correction to k
+        k_col = tl.arange(0, KV_BLOCK_SIZE)
+        k_mask = k_col < kv_hidden_size
+        k_offset = row_idx * kv_hidden_size
+        k_vals = tl.load(k_in_ptr + k_offset + k_col,
+                         mask=k_mask, other=0.0).to(tl.float32)
+        tl.store(k_out_ptr + k_offset + k_col,
+                 (k_vals * k_corr).to(k_out_ptr.dtype.element_ty),
+                 mask=k_mask)
+
+
+def minimax_tp_correction_impl(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    q_var: torch.Tensor,
+    k_var: torch.Tensor,
+    qk_reduced: torch.Tensor,
+    tp_world: int,
+    eps: float,
+    q_hidden_size: int,
+    kv_hidden_size: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    batch_size = q.shape[0]
+
+    Q_BLOCK_SIZE = triton.next_power_of_2(q_hidden_size)
+    KV_BLOCK_SIZE = triton.next_power_of_2(kv_hidden_size)
+
+    q_output = torch.empty_like(q)
+    k_output = torch.empty_like(k)
+
+    num_vectorcore = get_vectorcore_num()
+    n_rows = min(batch_size, num_vectorcore)
+
+    minimax_tp_correction_kernel[(n_rows,)](
+        q, k,
+        q_output, k_output,
+        q_var, k_var,
+        qk_reduced,
+        batch_size,
+        tp_world,
+        q_hidden_size, kv_hidden_size,
+        eps,
+        Q_BLOCK_SIZE, KV_BLOCK_SIZE,
+    )
+    return q_output, k_output
+
+
+def minimax_tp_correction_impl_fake(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    q_var: torch.Tensor,
+    k_var: torch.Tensor,
+    qk_reduced: torch.Tensor,
+    tp_world: int,
+    eps: float,
+    q_hidden_size: int,
+    kv_hidden_size: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    return torch.empty_like(q), torch.empty_like(k)
+
+
+direct_register_custom_op(
+    op_name="minimax_tp_correction",
+    op_func=minimax_tp_correction_impl,
+    fake_impl=minimax_tp_correction_impl_fake,
+    mutates_args=[],
+    dispatch_key="PrivateUse1",
+)
