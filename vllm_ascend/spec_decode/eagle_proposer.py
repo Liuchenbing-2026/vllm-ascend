@@ -480,10 +480,11 @@ class EagleProposer(VllmEagleProposer):
         ) = self.runner._sync_metadata_across_dp(num_input_tokens,
                                                  is_draft_model=True)
 
-        has_lora = len(self.runner.input_batch.lora_id_to_lora_request) > 0
+        num_active_loras = len(self.runner.input_batch.lora_id_to_lora_request)
+        has_lora = num_active_loras > 0
         if self.use_cuda_graph:
             aclgraph_runtime_mode, batch_descriptor = \
-                self.runner.cudagraph_dispatcher.dispatch(num_tokens=num_input_tokens, uniform_decode=True, has_lora=has_lora)
+                self.runner.cudagraph_dispatcher.dispatch(num_tokens=num_input_tokens, uniform_decode=True, has_lora=has_lora, num_active_loras=num_active_loras)
         else:
             aclgraph_runtime_mode = CUDAGraphMode.NONE
             batch_descriptor = None

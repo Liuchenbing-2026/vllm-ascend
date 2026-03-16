@@ -296,9 +296,10 @@ class MtpProposer(EagleProposer):
                                 (self.num_speculative_tokens + 1))
         else:
             uniform_decode = False
-        has_lora = len(self.runner.input_batch.lora_id_to_lora_request) > 0
+        num_active_loras = len(self.runner.input_batch.lora_id_to_lora_request)
+        has_lora = num_active_loras > 0
         aclgraph_runtime_mode, batch_descriptor = \
-            self.runner.cudagraph_dispatcher.dispatch(num_tokens=num_input_tokens, uniform_decode=uniform_decode, has_lora=has_lora)
+            self.runner.cudagraph_dispatcher.dispatch(num_tokens=num_input_tokens, uniform_decode=uniform_decode, has_lora=has_lora, num_active_loras=num_active_loras)
         if not self.use_cuda_graph:
             # there is synchronization between mtp steps when enabling aclgraph,
             # disable aclgraph when use async scheduling to avoid the
