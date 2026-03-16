@@ -17,12 +17,12 @@
 
 import torch
 from torch._inductor.pattern_matcher import PatternMatcherPass, PatternPrettyPrinter
-from vllm.compilation.passes.vllm_inductor_pass import VllmInductorPass
+from vllm.compilation.vllm_inductor_pass import VllmInductorPass
 from vllm.config import VllmConfig, get_layers_from_vllm_config
 from vllm.config.compilation import Range
 from vllm.distributed import tensor_model_parallel_all_reduce
 from vllm.logger import logger
-from vllm.model_executor.layers.attention import Attention
+from vllm.attention.layer import Attention
 
 from vllm_ascend.compilation.passes.base_pattern import BasePattern
 
