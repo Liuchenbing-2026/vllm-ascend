@@ -152,9 +152,13 @@ if _ORIG_QK_METHOD_NAME is not None:
 # opaque to the FX tracer, so the fusion pass pattern cannot match).
 # ---------------------------------------------------------------------------
 if HAS_TRITON:
+    from vllm.logger import logger as _minimax_logger
     from vllm.model_executor.models.minimax_m2 import MiniMaxM2Attention
 
     _original_attn_forward = MiniMaxM2Attention.forward
+    _minimax_logger.info(
+        "MiniMax fused QKNorm+RoPE Triton kernel enabled "
+        "(monkey-patched MiniMaxM2Attention.forward)")
 
     def _fused_attn_forward(
         self: "MiniMaxM2Attention",
@@ -163,10 +167,20 @@ if HAS_TRITON:
     ) -> torch.Tensor:
         qkv, _ = self.qkv_proj(hidden_states)
 
+        # Ensure cos_sin_cache is on the correct device/dtype
+        # (bypassing _rope_forward_oot which normally handles this)
+        cos_sin_cache = self.rotary_emb.cos_sin_cache
+        if cos_sin_cache.device != qkv.device:
+            cos_sin_cache = cos_sin_cache.to(qkv.device)
+            self.rotary_emb.cos_sin_cache = cos_sin_cache
+        if cos_sin_cache.dtype != qkv.dtype:
+            cos_sin_cache = cos_sin_cache.to(qkv.dtype)
+            self.rotary_emb.cos_sin_cache = cos_sin_cache
+
         q, k, v, q_var, k_var = \
             torch.ops.vllm.minimax_qkv_crosshead_norm_rope(
                 qkv=qkv,
-                cos_sin_cache=self.rotary_emb.cos_sin_cache,
+                cos_sin_cache=cos_sin_cache,
                 positions=positions,
                 q_weight=self.q_norm.weight,
                 k_weight=self.k_norm.weight,
