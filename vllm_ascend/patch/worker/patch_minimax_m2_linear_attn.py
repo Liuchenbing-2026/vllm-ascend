@@ -151,8 +151,15 @@ if _ORIG_QK_METHOD_NAME is not None:
 # bypassing FX graph pattern matching (CustomOp makes npu_rms_norm
 # opaque to the FX tracer, so the fusion pass pattern cannot match).
 # ---------------------------------------------------------------------------
-if HAS_TRITON:
-    from vllm.logger import logger as _minimax_logger
+try:
+    import triton  # noqa: F401
+    _HAS_NPU_TRITON = True
+except ImportError:
+    _HAS_NPU_TRITON = False
+
+if _HAS_NPU_TRITON:
+    from vllm.logger import init_logger
+    _minimax_logger = init_logger(__name__)
     from vllm.model_executor.models.minimax_m2 import MiniMaxM2Attention
 
     _original_attn_forward = MiniMaxM2Attention.forward

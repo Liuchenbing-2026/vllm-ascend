@@ -18,11 +18,17 @@
 import torch
 from vllm.triton_utils import HAS_TRITON
 
+try:
+    import triton  # noqa: F401
+    _HAS_NPU_TRITON = True
+except ImportError:
+    _HAS_NPU_TRITON = False
+
 import vllm_ascend.ops.fused_moe.fused_moe  # noqa
 import vllm_ascend.ops.layernorm  # noqa
 import vllm_ascend.ops.register_custom_ops  # noqa
 
-if HAS_TRITON:
+if HAS_TRITON or _HAS_NPU_TRITON:
     import vllm_ascend.ops.triton.linearnorm.split_qkv_rmsnorm_rope  # noqa
     import vllm_ascend.ops.triton.minimax_qkv_norm_rope  # noqa
 
