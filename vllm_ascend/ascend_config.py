@@ -207,6 +207,7 @@ class AscendCompilationConfig:
         self.fuse_norm_quant = fuse_norm_quant
         self.fuse_qknorm_rope = fuse_qknorm_rope
         self.fuse_allreduce_rms = fuse_allreduce_rms
+        self.fuse_norm_quant_matmul = kwargs.get("fuse_norm_quant_matmul", False)
 
 
 class AscendFusionConfig:
