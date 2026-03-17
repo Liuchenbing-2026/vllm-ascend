@@ -49,3 +49,9 @@ class NpuGraphEXPassManager:
     def configure(self, config: VllmConfig):
         # By default, we enable the graph fusion and quantization fusion pass.
         self.ascend_compilation_config: dict = config.additional_config.get("ascend_compilation_config", {})
+
+        if self.ascend_compilation_config.get("fuse_norm_quant_matmul", False):
+            from .npugraph_ex_passes.graphex_norm_quant_matmul_fusion_pass import (
+                GraphEXAddRMSNormQuantMatmulFusionPass)
+
+            GraphEXAddRMSNormQuantMatmulFusionPass(config)

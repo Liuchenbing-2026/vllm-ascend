@@ -54,6 +54,11 @@ class GraphFusionPassManager:
 
             self.passes.append(AddRMSNormQuantFusionPass(config))
 
+        if self.ascend_compilation_config.get("fuse_norm_quant_matmul", False):
+            from .passes.norm_quant_matmul_fusion_pass import AddRMSNormQuantMatmulFusionPass
+
+            self.passes.append(AddRMSNormQuantMatmulFusionPass(config))
+
         if self.ascend_compilation_config.get("fuse_qknorm_rope", True):
             from .passes.qknorm_rope_fusion_pass import QKNormRopeFusionPass
 
