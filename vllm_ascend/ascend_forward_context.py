@@ -1,4 +1,6 @@
+import json
 import math
+import os
 from contextlib import contextmanager
 from enum import Enum
 from typing import Any
@@ -230,6 +232,19 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
         "moe_quantize",
         getattr(vllm_config.model_config.hf_text_config, "quantize", None),
     )
+    if quant_type is None and vllm_config.quant_config is not None:
+        quant_desc = getattr(vllm_config.quant_config, "quant_description", {})
+        if "quant_method" in quant_desc:
+            model_path = vllm_config.model_config.model
+            desc_path = os.path.join(model_path, "quant_model_description.json")
+            if os.path.isfile(desc_path):
+                with open(desc_path) as f:
+                    quant_desc = json.load(f)
+                vllm_config.quant_config.quant_description = quant_desc
+        for key, val in quant_desc.items():
+            if "experts" in key and isinstance(val, str) and val != "FLOAT":
+                quant_type = val.lower()
+                break
 
     if not vllm_config.parallel_config.enable_expert_parallel or get_ep_group().world_size == 1:
         moe_comm_type = MoECommType.ALLGATHER
