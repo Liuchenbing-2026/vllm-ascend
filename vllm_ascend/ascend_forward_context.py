@@ -250,6 +250,8 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
             if os.path.isfile(desc_path):
                 with open(desc_path) as f:
                     quant_desc = json.load(f)
+                # Cache: write back so subsequent calls skip file I/O
+                vllm_config.quant_config.quant_description = quant_desc
         for key, val in quant_desc.items():
             if "experts" in key and isinstance(val, str) \
                     and val != "FLOAT":
