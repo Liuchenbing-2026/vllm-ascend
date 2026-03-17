@@ -40,7 +40,7 @@ class MiniMaxCrossHeadQKNormRopePattern(BasePattern):
       q, k = npu_rotary_embedding(pos, q_normed, k_normed, cache, ...)
 
     Replacement:
-      q, k, v, q_var, k_var = minimax_qkv_crosshead_norm_rope(...)
+      q, k, v, qk_var = minimax_qkv_crosshead_norm_rope(...)
     """
 
     def __init__(self, vllm_config, head_dim, num_heads, num_kv_heads,
@@ -102,7 +102,7 @@ class MiniMaxCrossHeadQKNormRopePattern(BasePattern):
             cos_sin_cache: torch.Tensor,
             positions: torch.Tensor,
         ):
-            q, k, v, q_var, k_var = \
+            q, k, v, qk_var = \
                 torch.ops.vllm.minimax_qkv_crosshead_norm_rope(
                     qkv=qkv,
                     cos_sin_cache=cos_sin_cache,
@@ -146,13 +146,12 @@ class MiniMaxCrossHeadQKNormRopeTPPattern(BasePattern):
       q, k = npu_rotary_embedding(pos, q, k, cache, ...)
 
     Replacement:
-      q, k, v, q_var, k_var = minimax_qkv_crosshead_norm_rope(...)
-      # Simplified TP correction on output (valid due to RoPE linearity)
-      qk_var = cat([q_var, k_var])
-      qk_var = all_reduce(qk_var) / tp_world
-      q_global_var, k_global_var = qk_var.chunk(2)
-      q = q * (rsqrt(q_global_var + eps) / rsqrt(q_var + eps)).to(dtype)
-      k = k * (rsqrt(k_global_var + eps) / rsqrt(k_var + eps)).to(dtype)
+      q, k, v, qk_var = minimax_qkv_crosshead_norm_rope(...)
+      # qk_var is packed [batch, 2] (col 0 = q_var, col 1 = k_var)
+      # No cat needed — directly all_reduce
+      qk_reduced = all_reduce(qk_var) / tp_world
+      q = q * (rsqrt(qk_reduced[:,0] + eps) / rsqrt(qk_var[:,0] + eps)).to(dtype)
+      k = k * (rsqrt(qk_reduced[:,1] + eps) / rsqrt(qk_var[:,1] + eps)).to(dtype)
     """
 
     def __init__(self, vllm_config, head_dim, num_heads, num_kv_heads,
@@ -245,7 +244,7 @@ class MiniMaxCrossHeadQKNormRopeTPPattern(BasePattern):
             cos_sin_cache: torch.Tensor,
             positions: torch.Tensor,
         ):
-            q, k, v, q_local_var, k_local_var = \
+            q, k, v, qk_var = \
                 torch.ops.vllm.minimax_qkv_crosshead_norm_rope(
                     qkv=qkv,
                     cos_sin_cache=cos_sin_cache,
@@ -261,9 +260,13 @@ class MiniMaxCrossHeadQKNormRopeTPPattern(BasePattern):
 
             # TP correction after fused kernel
             # (valid because RoPE is linear: RoPE(q*s) = s*RoPE(q))
-            qk_var = torch.cat([q_local_var, k_local_var], dim=-1)
-            qk_var = tensor_model_parallel_all_reduce(qk_var) / tp_world
-            q_global_var, k_global_var = qk_var.chunk(2, dim=-1)
+            # qk_var is already packed [batch, 2], no cat needed
+            # all_reduce is in-place: must clone before it overwrites local vars
+            qk_reduced = tensor_model_parallel_all_reduce(qk_var.clone()) / tp_world
+            q_local_var = qk_var[:, :1]
+            k_local_var = qk_var[:, 1:]
+            q_global_var = qk_reduced[:, :1]
+            k_global_var = qk_reduced[:, 1:]
 
             q_correction = (
                 torch.rsqrt(q_global_var + eps)

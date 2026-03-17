@@ -31,8 +31,7 @@ def minimax_qkv_crosshead_norm_rope_kernel(
     q_ptr,
     k_ptr,
     v_ptr,
-    q_var_ptr,
-    k_var_ptr,
+    qk_var_ptr,
     q_weight_ptr,
     k_weight_ptr,
     batch_size,
@@ -145,8 +144,8 @@ def minimax_qkv_crosshead_norm_rope_kernel(
         tl.store(q_ptr + q_output_offset + q_col_indices,
                  q_out.reshape(Q_BLOCK_SIZE).to(q_ptr.dtype.element_ty),
                  mask=q_valid_mask)
-        # Store q local variance
-        tl.store(q_var_ptr + row_idx, q_var)
+        # Store q local variance (packed into qk_var[row, 0])
+        tl.store(qk_var_ptr + row_idx * 2, q_var)
 
         # --- K processing: split + cross-head RMSNorm + RoPE ---
         k_col_indices = tl.arange(0, KV_BLOCK_SIZE)
@@ -205,8 +204,8 @@ def minimax_qkv_crosshead_norm_rope_kernel(
         tl.store(k_ptr + k_output_offset + k_col_indices,
                  k_out.reshape(KV_BLOCK_SIZE).to(k_ptr.dtype.element_ty),
                  mask=k_valid_mask)
-        # Store k local variance
-        tl.store(k_var_ptr + row_idx, k_var)
+        # Store k local variance (packed into qk_var[row, 1])
+        tl.store(qk_var_ptr + row_idx * 2 + 1, k_var)
 
         # --- V processing: just copy ---
         v_col_indices = tl.arange(0, KV_BLOCK_SIZE)
@@ -231,8 +230,7 @@ def minimax_qkv_crosshead_norm_rope_impl(
     head_dim: int,
     eps: float,
     rotary_dim: int,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor,
-           torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     batch_size = qkv.shape[0]
     total_hidden_size = q_hidden_size + kv_hidden_size * 2
 
@@ -245,10 +243,9 @@ def minimax_qkv_crosshead_norm_rope_impl(
                            device=qkv.device, dtype=qkv.dtype)
     v_output = torch.empty(batch_size, kv_hidden_size,
                            device=qkv.device, dtype=qkv.dtype)
-    q_var_output = torch.empty(batch_size, 1,
-                               device=qkv.device, dtype=torch.float32)
-    k_var_output = torch.empty(batch_size, 1,
-                               device=qkv.device, dtype=torch.float32)
+    # Packed [batch, 2]: column 0 = q_var, column 1 = k_var
+    qk_var_output = torch.empty(batch_size, 2,
+                                device=qkv.device, dtype=torch.float32)
 
     num_vectorcore = get_vectorcore_num()
     n_rows = min(batch_size, num_vectorcore)
@@ -261,8 +258,7 @@ def minimax_qkv_crosshead_norm_rope_impl(
         q_output,
         k_output,
         v_output,
-        q_var_output,
-        k_var_output,
+        qk_var_output,
         q_weight,
         k_weight,
         batch_size,
@@ -276,7 +272,7 @@ def minimax_qkv_crosshead_norm_rope_impl(
         Q_BLOCK_SIZE,
         KV_BLOCK_SIZE,
     )
-    return q_output, k_output, v_output, q_var_output, k_var_output
+    return q_output, k_output, v_output, qk_var_output
 
 
 def minimax_qkv_crosshead_norm_rope_impl_fake(
@@ -290,8 +286,7 @@ def minimax_qkv_crosshead_norm_rope_impl_fake(
     head_dim: int,
     eps: float,
     rotary_dim: int,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor,
-           torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     batch_size = qkv.shape[0]
     q_output = torch.empty(batch_size, q_hidden_size,
                            device=qkv.device, dtype=qkv.dtype)
@@ -299,11 +294,9 @@ def minimax_qkv_crosshead_norm_rope_impl_fake(
                            device=qkv.device, dtype=qkv.dtype)
     v_output = torch.empty(batch_size, kv_hidden_size,
                            device=qkv.device, dtype=qkv.dtype)
-    q_var_output = torch.empty(batch_size, 1,
-                               device=qkv.device, dtype=torch.float32)
-    k_var_output = torch.empty(batch_size, 1,
-                               device=qkv.device, dtype=torch.float32)
-    return q_output, k_output, v_output, q_var_output, k_var_output
+    qk_var_output = torch.empty(batch_size, 2,
+                                device=qkv.device, dtype=torch.float32)
+    return q_output, k_output, v_output, qk_var_output
 
 
 direct_register_custom_op(
@@ -319,7 +312,7 @@ direct_register_custom_op(
 def minimax_tp_correction_kernel(
     q_in_ptr, k_in_ptr,
     q_out_ptr, k_out_ptr,
-    q_var_ptr, k_var_ptr,
+    qk_var_ptr,
     qk_reduced_ptr,
     batch_size,
     tp_world,
@@ -335,6 +328,9 @@ def minimax_tp_correction_kernel(
     Replaces 8 small PyTorch ops (RealDiv, Add, Rsqrt, Add, Rsqrt, Cast,
     Mul, Mul) with a single kernel launch.
 
+    qk_var layout: [batch, 2] where col 0 = q_var, col 1 = k_var
+    qk_reduced layout: same as qk_var after all_reduce
+
     Per row:
       global_var = all_reduced_var / tp_world
       correction = sqrt(local_var + eps) / sqrt(global_var + eps)
@@ -347,9 +343,9 @@ def minimax_tp_correction_kernel(
     inv_tp = 1.0 / tp_world
 
     for row_idx in tl.range(row_pid, batch_size, row_step):
-        # Load local variances (scalar per row)
-        q_local_var = tl.load(q_var_ptr + row_idx)
-        k_local_var = tl.load(k_var_ptr + row_idx)
+        # Load local variances from packed [batch, 2]
+        q_local_var = tl.load(qk_var_ptr + row_idx * 2)
+        k_local_var = tl.load(qk_var_ptr + row_idx * 2 + 1)
 
         # Load all-reduced sum, divide by tp_world for global mean variance
         q_global_var = tl.load(qk_reduced_ptr + row_idx * 2) * inv_tp
@@ -384,8 +380,7 @@ def minimax_tp_correction_kernel(
 def minimax_tp_correction_impl(
     q: torch.Tensor,
     k: torch.Tensor,
-    q_var: torch.Tensor,
-    k_var: torch.Tensor,
+    qk_var: torch.Tensor,
     qk_reduced: torch.Tensor,
     tp_world: int,
     eps: float,
@@ -406,7 +401,7 @@ def minimax_tp_correction_impl(
     minimax_tp_correction_kernel[(n_rows,)](
         q, k,
         q_output, k_output,
-        q_var, k_var,
+        qk_var,
         qk_reduced,
         batch_size,
         tp_world,
@@ -420,8 +415,7 @@ def minimax_tp_correction_impl(
 def minimax_tp_correction_impl_fake(
     q: torch.Tensor,
     k: torch.Tensor,
-    q_var: torch.Tensor,
-    k_var: torch.Tensor,
+    qk_var: torch.Tensor,
     qk_reduced: torch.Tensor,
     tp_world: int,
     eps: float,
