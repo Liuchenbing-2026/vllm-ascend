@@ -16,7 +16,7 @@
 # limitations under the License.
 #
 
-from typing import Optional, Tuple
+from typing import Tuple
 
 import torch
 import torch._inductor.pattern_matcher as pm
@@ -31,10 +31,7 @@ from vllm_ascend.utils import enable_custom_op
 
 
 # ---------------------------------------------------------------------------
-# Fused custom op: npu_add_rms_norm_quant_matmul
-# Fallback implementation calls the two underlying ops sequentially.
-# When CANN provides a real fused kernel, replace the impl with
-# EXEC_NPU_CMD(aclnnAddRmsNormQuantBatchMatmul, ...).
+# Fused custom op (no bias variant): npu_add_rms_norm_quant_matmul
 # ---------------------------------------------------------------------------
 
 def _npu_add_rms_norm_quant_matmul_impl(
@@ -46,17 +43,11 @@ def _npu_add_rms_norm_quant_matmul_impl(
     matmul_weight: torch.Tensor,
     deq_scale: torch.Tensor,
     epsilon: float,
-    beta: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Fallback: sequential npu_add_rms_norm_quant + npu_quant_matmul."""
-    if beta is not None:
-        norm_out = torch.ops.npu.npu_add_rms_norm_quant(
-            x, residual, norm_weight, quant_scale, quant_offset,
-            epsilon=epsilon, beta=beta)
-    else:
-        norm_out = torch.ops.npu.npu_add_rms_norm_quant(
-            x, residual, norm_weight, quant_scale, quant_offset,
-            epsilon=epsilon)
+    norm_out = torch.ops.npu.npu_add_rms_norm_quant(
+        x, residual, norm_weight, quant_scale, quant_offset,
+        epsilon=epsilon)
     int8_x = norm_out[0]
     new_residual = norm_out[2]
     mm_out = torch.ops.npu.npu_quant_matmul(
@@ -73,9 +64,8 @@ def _npu_add_rms_norm_quant_matmul_fake(
     matmul_weight: torch.Tensor,
     deq_scale: torch.Tensor,
     epsilon: float,
-    beta: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Shape inference: delegate to underlying ops' meta implementations."""
+    """Shape inference for the fused op (no bias)."""
     norm_out = torch.ops.npu.npu_add_rms_norm_quant(
         x, residual, norm_weight, quant_scale, quant_offset,
         epsilon=epsilon)
@@ -90,6 +80,63 @@ direct_register_custom_op(
     op_name="npu_add_rms_norm_quant_matmul",
     op_func=_npu_add_rms_norm_quant_matmul_impl,
     fake_impl=_npu_add_rms_norm_quant_matmul_fake,
+    mutates_args=[],
+    dispatch_key="PrivateUse1",
+)
+
+
+# ---------------------------------------------------------------------------
+# Fused custom op (with bias variant): npu_add_rms_norm_quant_matmul_bias
+# ---------------------------------------------------------------------------
+
+def _npu_add_rms_norm_quant_matmul_bias_impl(
+    x: torch.Tensor,
+    residual: torch.Tensor,
+    norm_weight: torch.Tensor,
+    quant_scale: torch.Tensor,
+    quant_offset: torch.Tensor,
+    matmul_weight: torch.Tensor,
+    deq_scale: torch.Tensor,
+    epsilon: float,
+    beta: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Fallback: sequential npu_add_rms_norm_quant(beta) + npu_quant_matmul."""
+    norm_out = torch.ops.npu.npu_add_rms_norm_quant(
+        x, residual, norm_weight, quant_scale, quant_offset,
+        epsilon=epsilon, beta=beta)
+    int8_x = norm_out[0]
+    new_residual = norm_out[2]
+    mm_out = torch.ops.npu.npu_quant_matmul(
+        int8_x, matmul_weight, deq_scale, output_dtype=x.dtype)
+    return mm_out, new_residual
+
+
+def _npu_add_rms_norm_quant_matmul_bias_fake(
+    x: torch.Tensor,
+    residual: torch.Tensor,
+    norm_weight: torch.Tensor,
+    quant_scale: torch.Tensor,
+    quant_offset: torch.Tensor,
+    matmul_weight: torch.Tensor,
+    deq_scale: torch.Tensor,
+    epsilon: float,
+    beta: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Shape inference for the fused op (with bias)."""
+    norm_out = torch.ops.npu.npu_add_rms_norm_quant(
+        x, residual, norm_weight, quant_scale, quant_offset,
+        epsilon=epsilon, beta=beta)
+    int8_x = norm_out[0]
+    new_residual = norm_out[2]
+    mm_out = torch.ops.npu.npu_quant_matmul(
+        int8_x, matmul_weight, deq_scale, output_dtype=x.dtype)
+    return mm_out, new_residual
+
+
+direct_register_custom_op(
+    op_name="npu_add_rms_norm_quant_matmul_bias",
+    op_func=_npu_add_rms_norm_quant_matmul_bias_impl,
+    fake_impl=_npu_add_rms_norm_quant_matmul_bias_fake,
     mutates_args=[],
     dispatch_key="PrivateUse1",
 )
@@ -210,7 +257,7 @@ class AddRMSNormQuantMatmulPatternWithBias:
             deq_scale: torch.Tensor,
             bias: torch.Tensor,
         ):
-            result = torch.ops.vllm.npu_add_rms_norm_quant_matmul(
+            result = torch.ops.vllm.npu_add_rms_norm_quant_matmul_bias(
                 rms_norm_input, residual, rms_norm_weight,
                 quant_scale, quant_offset,
                 matmul_weight, deq_scale, self.eps, bias)

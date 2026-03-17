@@ -136,7 +136,7 @@ class GraphEXAddRMSNormQuantMatmulPatternWithBias:
             deq_scale: torch.Tensor,
             bias: torch.Tensor,
         ):
-            result = torch.ops.vllm.npu_add_rms_norm_quant_matmul(
+            result = torch.ops.vllm.npu_add_rms_norm_quant_matmul_bias(
                 rms_norm_input, residual, rms_norm_weight,
                 quant_scale, quant_offset,
                 matmul_weight, deq_scale, self.eps, bias)
