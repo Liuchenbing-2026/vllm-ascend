@@ -205,7 +205,8 @@ def _rope_forward_oot(
             "Batched rotary embedding is currently not supported on NPU.")
     else:
         if is_neox_style and self.head_size == 128 and self.cos_sin_cache.shape[
-                -1] == 128 and cos is not None and sin is not None:
+                -1] == 128 and cos is not None and sin is not None and cos.shape[
+                -1] == self.head_size:
             # If cos and sin are generated outside, use npu_apply_rotary_pos_emb to avoid redundant calculation.
             # This method requires head_size and rotary_dim equal 128 and neox_style is True
             query = query.contiguous().view(1, query.shape[0], -1,
