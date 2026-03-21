@@ -1709,9 +1709,30 @@ class NPUModelRunner(GPUModelRunner):
                     logprobs_tensors=logprobs_tensors,
                 )
         else:
-            valid_sampled_token_ids = []
             invalid_req_indices = discard_sampled_tokens_req_indices.tolist()
             invalid_req_indices_set = set(invalid_req_indices)
+
+            # Suffix/NGram proposers need real token IDs on CPU for suffix
+            # tree / n-gram matching.  Force a sync here; async benefit is
+            # preserved for the scheduler output (placeholders).
+            if (self.speculative_config is not None
+                    and self.speculative_config.method in ("suffix", "ngram")):
+                max_gen_len = sampled_token_ids.shape[-1]
+                if max_gen_len == 1:
+                    valid_sampled_token_ids = self._to_list(
+                        sampled_token_ids)
+                    for i in discard_sampled_tokens_req_indices:
+                        valid_sampled_token_ids[int(i)].clear()
+                else:
+                    valid_sampled_token_ids, cu_num_tokens = \
+                        RejectionSampler.parse_output(
+                            sampled_token_ids,
+                            self.input_batch.vocab_size,
+                            discard_sampled_tokens_req_indices,
+                            logprobs_tensors=logprobs_tensors,
+                        )
+            else:
+                valid_sampled_token_ids = []
 
             if self.num_spec_tokens <= 0:
                 assert sampled_token_ids.shape[-1] == 1
