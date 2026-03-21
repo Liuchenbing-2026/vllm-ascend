@@ -1753,8 +1753,16 @@ class NPUModelRunner(GPUModelRunner):
         # the sampled tokens back, because there's no direct communication
         # between the first-stage worker and the last-stage worker.
         req_ids = self.input_batch.req_ids
+        # When async + suffix/ngram, valid_sampled_token_ids has real tokens
+        # from CPU sync (for the proposer).  Use them for caching too, so
+        # num_tokens_no_spec stays consistent with the accepted count.
+        _suffix_async = (self.use_async_scheduling
+                         and self.speculative_config is not None
+                         and self.speculative_config.method
+                         in ("suffix", "ngram")
+                         and valid_sampled_token_ids)
         for req_idx in range(num_sampled_tokens):
-            if self.use_async_scheduling:
+            if self.use_async_scheduling and not _suffix_async:
                 sampled_ids = [
                     -1
                 ] if req_idx not in invalid_req_indices_set else None
