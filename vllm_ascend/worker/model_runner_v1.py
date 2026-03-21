@@ -1619,20 +1619,6 @@ class NPUModelRunner(GPUModelRunner):
             if has_kv_transfer_group():
                 get_kv_transfer_group().clear_connector_metadata()
 
-        # For suffix/ngram + async scheduling, return empty
-        # sampled_token_ids to the scheduler (matching EAGLE/MTP async
-        # pattern).  Real tokens were already used above by the proposer
-        # and cached in token_ids_cpu.  Returning [] makes the scheduler
-        # over-subtract in update_from_output (num_accepted = -1), which
-        # is compensated by AsyncScheduler._update_after_schedule.
-        # _update_states then performs a single correct adjustment via
-        # _suffix_valid_sampled_count, avoiding double subtraction.
-        if (self.use_async_scheduling
-                and self.speculative_config is not None
-                and self.speculative_config.method in ("suffix", "ngram")
-                and valid_sampled_token_ids):
-            valid_sampled_token_ids = []
-
         model_runner_output = ModelRunnerOutput(
             req_ids=req_ids_output_copy,
             req_id_to_index=req_id_to_index_output_copy,
