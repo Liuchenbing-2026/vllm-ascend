@@ -708,6 +708,36 @@ class NPUModelRunner(GPUModelRunner):
 
         self.seq_lens.gpu[num_reqs:].fill_(0)
 
+        # For suffix/ngram + async scheduling, the async scheduler fills
+        # scheduled_spec_decode_tokens with -1 placeholders.  Unlike
+        # EAGLE/MTP whose GPU-resident draft tokens are scattered in
+        # _prepare_input_ids via prev_sampled_token_ids, suffix/ngram
+        # draft tokens live on CPU (list[list[int]]).  Overwrite the -1
+        # entries in token_ids_cpu with the real draft tokens from the
+        # previous iteration before they are copied to the NPU.
+        if (self.use_async_scheduling
+                and self.speculative_config is not None
+                and self.speculative_config.method in ("suffix", "ngram")
+                and isinstance(getattr(self, '_draft_token_ids', None),
+                               list)
+                and self.input_batch.prev_req_id_to_index is not None):
+            prev_idx_map = self.input_batch.prev_req_id_to_index
+            for req_id, spec_tokens in (
+                    scheduler_output.scheduled_spec_decode_tokens.items()):
+                if not spec_tokens:
+                    continue
+                req_idx = self.input_batch.req_id_to_index.get(req_id)
+                prev_idx = prev_idx_map.get(req_id)
+                if (req_idx is None or prev_idx is None
+                        or prev_idx >= len(self._draft_token_ids)):
+                    continue
+                real_draft = self._draft_token_ids[prev_idx]
+                n = min(len(spec_tokens), len(real_draft))
+                if n > 0:
+                    start = self.input_batch.num_tokens_no_spec[req_idx]
+                    self.input_batch.token_ids_cpu[
+                        req_idx, start:start + n] = real_draft[:n]
+
         # Copy the tensors to the NPU.
         self._prepare_input_ids(scheduler_output, total_num_scheduled_tokens,
                                 cu_num_tokens)
