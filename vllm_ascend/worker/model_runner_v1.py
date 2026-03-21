@@ -1845,7 +1845,16 @@ class NPUModelRunner(GPUModelRunner):
 
             req_id = req_ids[req_idx]
             req_state = self.requests[req_id]
-            req_state.output_token_ids.extend(sampled_ids)
+            if _suffix_async and len(sampled_ids) > 1:
+                # For suffix+async: only add the primary sampled token
+                # to output_token_ids. The remaining accepted draft
+                # tokens will be added by _update_states as [-1]
+                # placeholders (matching EAGLE/MTP async pattern).
+                # This prevents double-counting where both the caching
+                # loop and _update_states extend output_token_ids.
+                req_state.output_token_ids.append(sampled_ids[0])
+            else:
+                req_state.output_token_ids.extend(sampled_ids)
 
         logprobs_lists = (logprobs_tensors.tolists(cu_num_tokens)
                           if not self.use_async_scheduling
