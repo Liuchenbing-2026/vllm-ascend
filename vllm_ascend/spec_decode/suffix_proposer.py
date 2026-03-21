@@ -46,11 +46,12 @@ class SuffixDecodingProposer(VllmSuffixDecodingProposer, Proposer):
         # Pad each proposal to num_speculative_tokens so that all
         # requests have the same draft length.  This makes the decode
         # batch uniform, enabling FULL_DECODE_ONLY graph capture.
-        # Padded tokens (0) will be naturally rejected by the
-        # rejection sampler since they won't match the model output.
+        # Use vocab_size as pad token to guarantee rejection (no valid
+        # token has this ID, so it will never match model output).
+        pad_token = self.runner.input_batch.vocab_size
         k = self.num_speculative_tokens
         for i, ids in enumerate(draft_token_ids):
             if len(ids) < k:
-                draft_token_ids[i] = ids + [0] * (k - len(ids))
+                draft_token_ids[i] = ids + [pad_token] * (k - len(ids))
 
         return draft_token_ids
