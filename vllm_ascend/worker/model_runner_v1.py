@@ -1371,6 +1371,20 @@ class NPUModelRunner(GPUModelRunner):
                                "after execute_model() returns None.")
 
         with ProfileExecuteDuration().capture_async("prepare input"):
+            # For suffix/ngram + async: the scheduler already correctly
+            # adjusted num_computed_tokens in update_from_output (using
+            # real tokens).  Clear prev_num_draft_len to prevent
+            # _update_states from subtracting num_rejected a second time.
+            # prev_num_draft_len will be re-set at the end of
+            # _update_states via update_req_spec_token_ids.
+            if (self.use_async_scheduling
+                    and self.speculative_config is not None
+                    and self.speculative_config.method
+                    in ("suffix", "ngram")):
+                for req_id in scheduler_output.scheduled_cached_reqs.req_ids:
+                    req_state = self.requests.get(req_id)
+                    if req_state is not None:
+                        req_state.prev_num_draft_len = 0
             self._update_states(scheduler_output)
             if has_ec_transfer() and get_ec_transfer().is_producer:
                 with self.maybe_get_ec_connector_output(
@@ -1661,24 +1675,6 @@ class NPUModelRunner(GPUModelRunner):
             vocab_size=self.input_batch.vocab_size,
         )
 
-    def _get_valid_sampled_token_count(self) -> list[int]:
-        # For suffix/ngram + async, accepted counts were stored on CPU
-        # in _bookkeeping_sync as dict[req_id, count].  Convert to
-        # position-indexed list matching prev_req_id_to_index order,
-        # which is what _update_states_from_scheduler expects.
-        suffix_counts = getattr(self, '_suffix_valid_sampled_count', {})
-        if suffix_counts:
-            prev_map = self.input_batch.prev_req_id_to_index
-            if prev_map:
-                n = max(prev_map.values()) + 1
-                result = [0] * n
-                for req_id, idx in prev_map.items():
-                    result[idx] = suffix_counts.get(req_id, 0)
-                self._suffix_valid_sampled_count = {}
-                return result
-            self._suffix_valid_sampled_count = {}
-        return super()._get_valid_sampled_token_count()
-
     # overwrite _sample for lmhead_tp_enable and need_accepted_tokens
     def _sample(self, logits, spec_decode_metadata):
         # Sample the next token and get logprobs if needed.
@@ -1783,24 +1779,6 @@ class NPUModelRunner(GPUModelRunner):
             else:
                 valid_sampled_token_ids = []
 
-            # For suffix/ngram + async, store per-request accepted token
-            # counts so that _get_valid_sampled_token_count can return
-            # them in the next iteration's _update_states_from_scheduler.
-            # EAGLE/MTP get this via GPU-side _copy_valid_sampled_token_count,
-            # but suffix tokens are already on CPU.
-            # Use dict[str, int] keyed by req_id to avoid index mismatch
-            # when request batch order changes between iterations.
-            if (self.speculative_config is not None
-                    and self.speculative_config.method in ("suffix", "ngram")
-                    and valid_sampled_token_ids):
-                req_ids = self.input_batch.req_ids
-                self._suffix_valid_sampled_count = {
-                    req_ids[i]: len(ids)
-                    for i, ids in enumerate(valid_sampled_token_ids)
-                }
-            else:
-                self._suffix_valid_sampled_count = {}
-
             if self.num_spec_tokens <= 0:
                 assert sampled_token_ids.shape[-1] == 1
                 # Cache the sampled tokens on the NPU and avoid CPU sync.
@@ -1856,14 +1834,7 @@ class NPUModelRunner(GPUModelRunner):
 
             req_id = req_ids[req_idx]
             req_state = self.requests[req_id]
-            if _suffix_async and len(sampled_ids) > 1:
-                # For suffix+async: only add the primary sampled token
-                # to output_token_ids. The remaining accepted draft
-                # tokens will be added by _update_states_from_scheduler
-                # as [-1] placeholders (matching EAGLE/MTP async pattern).
-                req_state.output_token_ids.append(sampled_ids[0])
-            else:
-                req_state.output_token_ids.extend(sampled_ids)
+            req_state.output_token_ids.extend(sampled_ids)
 
         logprobs_lists = (logprobs_tensors.tolists(cu_num_tokens)
                           if not self.use_async_scheduling
