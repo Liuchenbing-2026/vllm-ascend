@@ -640,6 +640,37 @@ class NPUModelRunner(GPUModelRunner):
         token_indices = (positions_np +
                          req_indices * self.input_batch.token_ids_cpu.shape[1])
         token_indices_tensor = torch.from_numpy(token_indices)
+
+        # For suffix/ngram + async scheduling, the async scheduler fills
+        # scheduled_spec_decode_tokens with -1 placeholders.  Unlike
+        # EAGLE/MTP whose GPU-resident draft tokens are scattered in
+        # _prepare_input_ids via prev_sampled_token_ids, suffix/ngram
+        # draft tokens live on CPU (list[list[int]]).  Overwrite the -1
+        # entries in token_ids_cpu with the real draft tokens from the
+        # previous iteration BEFORE index_select reads them.
+        if (self.use_async_scheduling
+                and self.speculative_config is not None
+                and self.speculative_config.method in ("suffix", "ngram")
+                and isinstance(getattr(self, '_draft_token_ids', None),
+                               list)
+                and self.input_batch.prev_req_id_to_index is not None):
+            prev_idx_map = self.input_batch.prev_req_id_to_index
+            for req_id, spec_tokens in (
+                    scheduler_output.scheduled_spec_decode_tokens.items()):
+                if not spec_tokens:
+                    continue
+                req_idx = self.input_batch.req_id_to_index.get(req_id)
+                prev_idx = prev_idx_map.get(req_id)
+                if (req_idx is None or prev_idx is None
+                        or prev_idx >= len(self._draft_token_ids)):
+                    continue
+                real_draft = self._draft_token_ids[prev_idx]
+                n = min(len(spec_tokens), len(real_draft))
+                if n > 0:
+                    start = self.input_batch.num_tokens_no_spec[req_idx]
+                    self.input_batch.token_ids_cpu[
+                        req_idx, start:start + n] = real_draft[:n]
+
         # Prepare input_ids.
         # NOTE(woosuk): We use torch.index_select instead of np.take here
         # because torch.index_select is much faster than np.take for large
@@ -707,36 +738,6 @@ class NPUModelRunner(GPUModelRunner):
         self.seq_lens.copy_to_gpu()
 
         self.seq_lens.gpu[num_reqs:].fill_(0)
-
-        # For suffix/ngram + async scheduling, the async scheduler fills
-        # scheduled_spec_decode_tokens with -1 placeholders.  Unlike
-        # EAGLE/MTP whose GPU-resident draft tokens are scattered in
-        # _prepare_input_ids via prev_sampled_token_ids, suffix/ngram
-        # draft tokens live on CPU (list[list[int]]).  Overwrite the -1
-        # entries in token_ids_cpu with the real draft tokens from the
-        # previous iteration before they are copied to the NPU.
-        if (self.use_async_scheduling
-                and self.speculative_config is not None
-                and self.speculative_config.method in ("suffix", "ngram")
-                and isinstance(getattr(self, '_draft_token_ids', None),
-                               list)
-                and self.input_batch.prev_req_id_to_index is not None):
-            prev_idx_map = self.input_batch.prev_req_id_to_index
-            for req_id, spec_tokens in (
-                    scheduler_output.scheduled_spec_decode_tokens.items()):
-                if not spec_tokens:
-                    continue
-                req_idx = self.input_batch.req_id_to_index.get(req_id)
-                prev_idx = prev_idx_map.get(req_id)
-                if (req_idx is None or prev_idx is None
-                        or prev_idx >= len(self._draft_token_ids)):
-                    continue
-                real_draft = self._draft_token_ids[prev_idx]
-                n = min(len(spec_tokens), len(real_draft))
-                if n > 0:
-                    start = self.input_batch.num_tokens_no_spec[req_idx]
-                    self.input_batch.token_ids_cpu[
-                        req_idx, start:start + n] = real_draft[:n]
 
         # Copy the tensors to the NPU.
         self._prepare_input_ids(scheduler_output, total_num_scheduled_tokens,
@@ -1660,6 +1661,17 @@ class NPUModelRunner(GPUModelRunner):
             vocab_size=self.input_batch.vocab_size,
         )
 
+    def _get_valid_sampled_token_count(self) -> list[int]:
+        # For suffix/ngram + async, accepted counts were stored on CPU
+        # in _bookkeeping_sync.  Return them here so that
+        # _update_states_from_scheduler can adjust num_computed_tokens.
+        suffix_counts = getattr(self, '_suffix_valid_sampled_count', [])
+        if suffix_counts:
+            count = suffix_counts
+            self._suffix_valid_sampled_count = []
+            return count
+        return super()._get_valid_sampled_token_count()
+
     # overwrite _sample for lmhead_tp_enable and need_accepted_tokens
     def _sample(self, logits, spec_decode_metadata):
         # Sample the next token and get logprobs if needed.
@@ -1763,6 +1775,20 @@ class NPUModelRunner(GPUModelRunner):
                         )
             else:
                 valid_sampled_token_ids = []
+
+            # For suffix/ngram + async, store per-request accepted token
+            # counts so that _get_valid_sampled_token_count can return
+            # them in the next iteration's _update_states_from_scheduler.
+            # EAGLE/MTP get this via GPU-side _copy_valid_sampled_token_count,
+            # but suffix tokens are already on CPU.
+            if (self.speculative_config is not None
+                    and self.speculative_config.method in ("suffix", "ngram")
+                    and valid_sampled_token_ids):
+                self._suffix_valid_sampled_count = [
+                    len(ids) for ids in valid_sampled_token_ids
+                ]
+            else:
+                self._suffix_valid_sampled_count = []
 
             if self.num_spec_tokens <= 0:
                 assert sampled_token_ids.shape[-1] == 1
