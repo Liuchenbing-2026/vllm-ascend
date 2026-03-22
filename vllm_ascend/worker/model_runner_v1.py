@@ -1372,6 +1372,30 @@ class NPUModelRunner(GPUModelRunner):
 
         with ProfileExecuteDuration().capture_async("prepare input"):
             self._update_states(scheduler_output)
+            # Post-correction: undo double subtraction for suffix/ngram
+            # + async.  The scheduler already correctly adjusted
+            # num_computed_tokens in update_from_output (using real
+            # tokens), but _update_states's adjustment block subtracted
+            # num_rejected a second time.  Restore the scheduler's value
+            # while keeping all other side effects (output_token_ids
+            # extension, update_req_spec_token_ids, etc.) intact.
+            if (self.use_async_scheduling
+                    and self.speculative_config is not None
+                    and self.speculative_config.method
+                    in ("suffix", "ngram")):
+                req_data = scheduler_output.scheduled_cached_reqs
+                for i, req_id in enumerate(req_data.req_ids):
+                    req_state = self.requests.get(req_id)
+                    if req_state is None:
+                        continue
+                    sched_nc = req_data.num_computed_tokens[i]
+                    if req_state.num_computed_tokens != sched_nc:
+                        req_state.num_computed_tokens = sched_nc
+                        req_index = self.input_batch.req_id_to_index.get(
+                            req_id)
+                        if req_index is not None:
+                            self.input_batch.num_computed_tokens_cpu[
+                                req_index] = sched_nc
             if has_ec_transfer() and get_ec_transfer().is_producer:
                 with self.maybe_get_ec_connector_output(
                         scheduler_output,
