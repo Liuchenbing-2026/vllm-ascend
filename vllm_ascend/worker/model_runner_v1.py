@@ -648,6 +648,14 @@ class NPUModelRunner(GPUModelRunner):
         # draft tokens live on CPU (list[list[int]]).  Overwrite the -1
         # entries in token_ids_cpu with the real draft tokens from the
         # previous iteration BEFORE index_select reads them.
+        #
+        # IMPORTANT: The suffix proposer returns a dynamic number of
+        # tokens (0 to num_spec_tokens), but the async scheduler always
+        # creates num_spec_tokens placeholders.  Any unfilled positions
+        # would retain -1, which is an invalid token ID that corrupts
+        # the embedding lookup.  We must pad unfilled positions with a
+        # valid token (0) to keep the forward pass healthy.  The
+        # verification will naturally reject these padded positions.
         if (self.use_async_scheduling
                 and self.speculative_config is not None
                 and self.speculative_config.method in ("suffix", "ngram")
@@ -663,13 +671,25 @@ class NPUModelRunner(GPUModelRunner):
                 prev_idx = prev_idx_map.get(req_id)
                 if (req_idx is None or prev_idx is None
                         or prev_idx >= len(self._draft_token_ids)):
+                    # No real drafts available; zero-fill all placeholder
+                    # positions to avoid -1 in the embedding lookup.
+                    if req_idx is not None:
+                        start = self.input_batch.num_tokens_no_spec[req_idx]
+                        self.input_batch.token_ids_cpu[
+                            req_idx, start:start + len(spec_tokens)] = 0
                     continue
                 real_draft = self._draft_token_ids[prev_idx]
-                n = min(len(spec_tokens), len(real_draft))
+                num_placeholders = len(spec_tokens)
+                n = min(num_placeholders, len(real_draft))
+                start = self.input_batch.num_tokens_no_spec[req_idx]
                 if n > 0:
-                    start = self.input_batch.num_tokens_no_spec[req_idx]
                     self.input_batch.token_ids_cpu[
                         req_idx, start:start + n] = real_draft[:n]
+                # Zero-fill any remaining placeholder positions so that
+                # -1 never reaches the embedding table.
+                if n < num_placeholders:
+                    self.input_batch.token_ids_cpu[
+                        req_idx, start + n:start + num_placeholders] = 0
 
         # Prepare input_ids.
         # NOTE(woosuk): We use torch.index_select instead of np.take here
