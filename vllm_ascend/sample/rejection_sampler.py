@@ -111,7 +111,7 @@ def rejection_sample(
     assert target_logits.shape == (num_tokens, vocab_size)
 
     # When num_speculative_tokens>=3, using block verify.
-    using_block_verify = False
+    using_block_verify = max_spec_len >= 3
 
     # Create output buffer.
     output_token_ids = torch.empty(
