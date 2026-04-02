@@ -1363,7 +1363,16 @@ class NPUModelRunner(GPUModelRunner):
         has_encoder_input = self.model_config.is_encoder_decoder and num_encoder_reqs > 0
 
         # Run forward pass
-        clear_kv_metadata = self.speculative_config is None
+        # Only defer KV connector finalization when the drafter has its own
+        # model (EAGLE/draft_model) that needs to save KV cache after the
+        # target model forward. Suffix/ngram proposers have no draft model,
+        # so they should not defer finalization.
+        has_draft_model = (
+            self.speculative_config is not None
+            and (self.speculative_config.use_eagle()
+                 or self.speculative_config.uses_draft_model())
+        )
+        clear_kv_metadata = not has_draft_model
         with (
             record_function_or_nullcontext("forward"),
             set_ascend_forward_context(
@@ -1576,8 +1585,18 @@ class NPUModelRunner(GPUModelRunner):
                     # tokens on the CPU, so they are run after bookkeeping.
                     propose_draft_token_ids(valid_sampled_token_ids)
 
-            if has_kv_transfer_group():
-                get_kv_transfer_group().clear_connector_metadata()
+            # Finalize KV connector (wait_for_save + clear metadata) after
+            # draft model runs. Only needed when defer_finalize=True, i.e.
+            # EAGLE/draft_model that saves its own KV cache.
+            # For suffix/ngram, defer_finalize=False so the context manager
+            # already handled finalization.
+            if (self.speculative_config is not None
+                    and (self.speculative_config.use_eagle()
+                         or self.speculative_config.uses_draft_model())
+                    and has_kv_transfer_group()):
+                kv_connector = get_kv_transfer_group()
+                kv_connector.wait_for_save()
+                kv_connector.clear_connector_metadata()
 
         if self.model_config.enable_return_routed_experts:
             capturer = RoutedExpertsCapturer.get_instance()
