@@ -569,6 +569,41 @@ at::Tensor npu_lightning_indexer_quant_meta(
     return lightning_indexer_quant_output;
 }
 
+std::tuple<at::Tensor, at::Tensor, at::Tensor>
+npu_update_token_ids_ngram_meta(
+    const at::Tensor &sampled_token_ids,
+    const at::Tensor &token_ids_gpu,
+    const at::Tensor &num_tokens_no_spec,
+    const at::Tensor &discard_mask,
+    int64_t vocab_size)
+{
+    int64_t B = sampled_token_ids.size(0);
+    int64_t max_new = sampled_token_ids.size(1);
+
+    at::Tensor next_token_ids = at::empty({B}, sampled_token_ids.options());
+    at::Tensor valid_count = at::empty({B}, sampled_token_ids.options());
+    at::Tensor valid_sampled_token_ids = at::empty({B, max_new}, sampled_token_ids.options());
+
+    return {next_token_ids, valid_count, valid_sampled_token_ids};
+}
+
+std::tuple<at::Tensor, at::Tensor>
+npu_ngram_match_extract_meta(
+    const at::Tensor &token_ids,
+    const at::Tensor &seq_lengths,
+    const at::Tensor &combined_mask,
+    int64_t min_n,
+    int64_t max_n,
+    int64_t k)
+{
+    int64_t B = token_ids.size(0);
+
+    at::Tensor draft_tokens = at::empty({B, k}, token_ids.options());
+    at::Tensor num_valid_draft_tokens = at::empty({B}, token_ids.options());
+
+    return {draft_tokens, num_valid_draft_tokens};
+}
+
 } // namespace meta
 } // namespace vllm_ascend
 
@@ -618,5 +653,9 @@ TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     ops.impl("moe_grouped_matmul", &vllm_ascend::meta::moe_grouped_matmul_meta);
     // Lightning indexer quant
     ops.impl("npu_lightning_indexer_quant", &vllm_ascend::meta::npu_lightning_indexer_quant_meta);
+    // UpdateTokenIdsNgram
+    ops.impl("npu_update_token_ids_ngram", &vllm_ascend::meta::npu_update_token_ids_ngram_meta);
+    // NgramMatchExtract
+    ops.impl("npu_ngram_match_extract", &vllm_ascend::meta::npu_ngram_match_extract_meta);
 }
 }

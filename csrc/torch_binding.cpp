@@ -697,6 +697,53 @@ std::vector<at::Tensor> moe_grouped_matmul(
     return y;
 }
 
+std::tuple<at::Tensor, at::Tensor, at::Tensor>
+npu_update_token_ids_ngram(
+    const at::Tensor &sampled_token_ids,
+    const at::Tensor &token_ids_gpu,
+    const at::Tensor &num_tokens_no_spec,
+    const at::Tensor &discard_mask,
+    int64_t vocab_size)
+{
+    int64_t B = sampled_token_ids.size(0);
+    int64_t max_new = sampled_token_ids.size(1);
+
+    auto device = sampled_token_ids.device();
+    at::Tensor next_token_ids = at::empty({B}, at::dtype(at::kInt).device(device));
+    at::Tensor valid_count = at::empty({B}, at::dtype(at::kInt).device(device));
+    at::Tensor valid_sampled_token_ids = at::empty({B, max_new}, at::dtype(at::kInt).device(device));
+
+    EXEC_NPU_CMD(aclnnUpdateTokenIdsNgram,
+        sampled_token_ids, token_ids_gpu, num_tokens_no_spec, discard_mask,
+        vocab_size,
+        next_token_ids, valid_count, valid_sampled_token_ids);
+
+    return {next_token_ids, valid_count, valid_sampled_token_ids};
+}
+
+std::tuple<at::Tensor, at::Tensor>
+npu_ngram_match_extract(
+    const at::Tensor &token_ids,
+    const at::Tensor &seq_lengths,
+    const at::Tensor &combined_mask,
+    int64_t min_n,
+    int64_t max_n,
+    int64_t k)
+{
+    int64_t B = token_ids.size(0);
+
+    auto device = token_ids.device();
+    at::Tensor draft_tokens = at::empty({B, k}, at::dtype(at::kInt).device(device));
+    at::Tensor num_valid_draft_tokens = at::empty({B}, at::dtype(at::kInt).device(device));
+
+    EXEC_NPU_CMD(aclnnNgramMatchExtract,
+        token_ids, seq_lengths, combined_mask,
+        min_n, max_n, k,
+        draft_tokens, num_valid_draft_tokens);
+
+    return {draft_tokens, num_valid_draft_tokens};
+}
+
 } // namespace vllm_ascend
 
 TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
@@ -927,4 +974,18 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "                            int sparse_count=2048, int sparse_mode=3) -> Tensor"
     );
     ops.impl("npu_lightning_indexer_quant", torch::kPrivateUse1, &vllm_ascend::npu_lightning_indexer_quant);
+
+    ops.def(
+        "npu_update_token_ids_ngram(Tensor sampled_token_ids, Tensor token_ids_gpu, "
+        "Tensor num_tokens_no_spec, Tensor discard_mask, int vocab_size) -> "
+        "(Tensor next_token_ids, Tensor valid_count, Tensor valid_sampled_token_ids)"
+    );
+    ops.impl("npu_update_token_ids_ngram", torch::kPrivateUse1, &vllm_ascend::npu_update_token_ids_ngram);
+
+    ops.def(
+        "npu_ngram_match_extract(Tensor token_ids, Tensor seq_lengths, "
+        "Tensor combined_mask, int min_n, int max_n, int k) -> "
+        "(Tensor draft_tokens, Tensor num_valid_draft_tokens)"
+    );
+    ops.impl("npu_ngram_match_extract", torch::kPrivateUse1, &vllm_ascend::npu_ngram_match_extract);
 }
