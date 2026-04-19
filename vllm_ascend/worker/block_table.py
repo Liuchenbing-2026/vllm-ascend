@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 from vllm.distributed import get_dcp_group, get_pcp_group
@@ -6,6 +8,8 @@ from vllm.v1.attention.backends.utils import PAD_SLOT_ID
 from vllm.v1.utils import CpuGpuBuffer
 from vllm.v1.worker.block_table import _compute_slot_mapping_kernel
 from vllm.v1.worker.cp_utils import get_total_cp_world_size
+
+_SLOT_MAPPING_IMPL = os.environ.get("VLLM_SLOT_MAPPING_IMPL", "triton")
 
 
 class BlockTable:
@@ -125,6 +129,17 @@ class BlockTable:
         query_start_loc: torch.Tensor,
         positions: torch.Tensor,
     ) -> None:
+        if _SLOT_MAPPING_IMPL == "ascendc":
+            self._compute_slot_mapping_ascendc(num_reqs, query_start_loc, positions)
+        else:
+            self._compute_slot_mapping_triton(num_reqs, query_start_loc, positions)
+
+    def _compute_slot_mapping_triton(
+        self,
+        num_reqs: int,
+        query_start_loc: torch.Tensor,
+        positions: torch.Tensor,
+    ) -> None:
         num_tokens = positions.shape[0]
         total_cp_world_size = self.pcp_world_size * self.dcp_world_size
         total_cp_rank = self.pcp_rank * self.dcp_world_size + self.dcp_rank
@@ -142,6 +157,41 @@ class BlockTable:
             CP_KV_CACHE_INTERLEAVE_SIZE=self.cp_kv_cache_interleave_size,
             PAD_ID=PAD_SLOT_ID,
             BLOCK_SIZE=1024,
+        )
+
+    def _compute_slot_mapping_ascendc(
+        self,
+        num_reqs: int,
+        query_start_loc: torch.Tensor,
+        positions: torch.Tensor,
+    ) -> None:
+        """Compute slot mapping using AscendC kernel."""
+        num_tokens = positions.shape[0]
+        block_table_flat = self.block_table.gpu.view(-1)
+        slot_mapping_out = self.slot_mapping.gpu[:num_tokens]
+        block_table_stride = self.max_num_blocks_per_req * self.blocks_per_phys_block
+        cp_size = self.pcp_world_size * self.dcp_world_size
+        cp_rank = self.pcp_rank * self.dcp_world_size + self.dcp_rank
+
+        # Build req_indices from query_start_loc: expand per-request token
+        # ranges into a flat [num_tokens] tensor of request indices
+        req_indices = torch.zeros(
+            num_tokens, dtype=torch.int32, device=positions.device)
+        for i in range(num_reqs):
+            start = query_start_loc[i].item()
+            end = query_start_loc[i + 1].item()
+            req_indices[start:end] = i
+
+        torch.ops._C_ascend.npu_compute_slot_mapping(
+            req_indices,
+            positions.to(torch.int32),
+            block_table_flat,
+            slot_mapping_out,
+            self.block_size,
+            block_table_stride,
+            cp_size,
+            cp_rank,
+            self.cp_kv_cache_interleave_size,
         )
 
     def commit_block_table(self, num_reqs: int) -> None:

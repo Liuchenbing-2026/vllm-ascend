@@ -569,6 +569,33 @@ at::Tensor npu_lightning_indexer_quant_meta(
     return lightning_indexer_quant_output;
 }
 
+void npu_compute_slot_mapping_meta(
+    const at::Tensor &req_indices,
+    const at::Tensor &positions,
+    const at::Tensor &block_table,
+    at::Tensor &slot_mapping,
+    int64_t block_size,
+    int64_t block_table_stride,
+    int64_t cp_size,
+    int64_t cp_rank,
+    int64_t cp_interleave)
+{
+    // In-place operation: slot_mapping is pre-allocated, nothing to return
+    return;
+}
+
+void npu_update_num_computed_tokens_meta(
+    const at::Tensor &prev_positions,
+    const at::Tensor &valid_sampled_token_count,
+    const at::Tensor &prev_num_draft_tokens,
+    const at::Tensor &cpu_values,
+    at::Tensor &num_computed_tokens,
+    at::Tensor &num_accepted_tokens)
+{
+    // In-place operation: outputs are pre-allocated, nothing to return
+    return;
+}
+
 } // namespace meta
 } // namespace vllm_ascend
 
@@ -618,5 +645,9 @@ TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     ops.impl("moe_grouped_matmul", &vllm_ascend::meta::moe_grouped_matmul_meta);
     // Lightning indexer quant
     ops.impl("npu_lightning_indexer_quant", &vllm_ascend::meta::npu_lightning_indexer_quant_meta);
+    // ComputeSlotMapping
+    ops.impl("npu_compute_slot_mapping", &vllm_ascend::meta::npu_compute_slot_mapping_meta);
+    // UpdateNumComputedTokens
+    ops.impl("npu_update_num_computed_tokens", &vllm_ascend::meta::npu_update_num_computed_tokens_meta);
 }
 }

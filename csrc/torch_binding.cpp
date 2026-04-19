@@ -43,6 +43,8 @@
 #include "moe_init_routing_custom/moe_init_routing_custom_torch_adpt.h"
 #include "sparse_flash_attention/sparse_flash_attention_torch_adpt.h"
 #include "lightning_indexer_quant/lightning_indexer_quant_torch_adpt.h"
+#include "compute_slot_mapping/op_host/compute_slot_mapping_tiling.h"
+#include "update_num_computed_tokens/op_host/update_num_computed_tokens_tiling.h"
 #include <c10/core/Device.h>
 #include <c10/util/Exception.h>
 #include <c10/util/Logging.h>
@@ -697,6 +699,37 @@ std::vector<at::Tensor> moe_grouped_matmul(
     return y;
 }
 
+void npu_compute_slot_mapping(
+    const at::Tensor &req_indices,
+    const at::Tensor &positions,
+    const at::Tensor &block_table,
+    at::Tensor &slot_mapping,
+    int64_t block_size,
+    int64_t block_table_stride,
+    int64_t cp_size,
+    int64_t cp_rank,
+    int64_t cp_interleave)
+{
+    EXEC_NPU_CMD(aclnnComputeSlotMapping,
+        req_indices, positions, block_table,
+        block_size, block_table_stride, cp_size, cp_rank, cp_interleave,
+        slot_mapping);
+}
+
+void npu_update_num_computed_tokens(
+    const at::Tensor &prev_positions,
+    const at::Tensor &valid_sampled_token_count,
+    const at::Tensor &prev_num_draft_tokens,
+    const at::Tensor &cpu_values,
+    at::Tensor &num_computed_tokens,
+    at::Tensor &num_accepted_tokens)
+{
+    EXEC_NPU_CMD(aclnnUpdateNumComputedTokens,
+        prev_positions, valid_sampled_token_count,
+        prev_num_draft_tokens, cpu_values,
+        num_computed_tokens, num_accepted_tokens);
+}
+
 } // namespace vllm_ascend
 
 TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
@@ -927,4 +960,18 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "                            int sparse_count=2048, int sparse_mode=3) -> Tensor"
     );
     ops.impl("npu_lightning_indexer_quant", torch::kPrivateUse1, &vllm_ascend::npu_lightning_indexer_quant);
+
+    ops.def(
+        "npu_compute_slot_mapping(Tensor req_indices, Tensor positions, Tensor block_table, "
+        "Tensor! slot_mapping, int block_size, int block_table_stride, "
+        "int cp_size, int cp_rank, int cp_interleave) -> ()"
+    );
+    ops.impl("npu_compute_slot_mapping", torch::kPrivateUse1, &vllm_ascend::npu_compute_slot_mapping);
+
+    ops.def(
+        "npu_update_num_computed_tokens(Tensor prev_positions, Tensor valid_sampled_token_count, "
+        "Tensor prev_num_draft_tokens, Tensor cpu_values, "
+        "Tensor! num_computed_tokens, Tensor! num_accepted_tokens) -> ()"
+    );
+    ops.impl("npu_update_num_computed_tokens", torch::kPrivateUse1, &vllm_ascend::npu_update_num_computed_tokens);
 }
