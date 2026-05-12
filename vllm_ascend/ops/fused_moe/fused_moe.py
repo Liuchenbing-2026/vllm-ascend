@@ -75,6 +75,7 @@ class FusedMoEResult:
 @dataclass
 class FusedMoEEvents:
     before_routed_experts: torch.npu.Event
+    after_routed_experts: torch.npu.Event | None = field(default=None)
     before_dispatch: torch.npu.Event | None = field(default=None)
     before_gmm2: torch.npu.Event | None = field(default=None)
     before_combine: torch.npu.Event | None = field(default=None)
@@ -735,7 +736,7 @@ class AscendFusedMoE(FusedMoE):
                 quantized_x, pertoken_scale = torch_npu.npu_dynamic_quant(hidden_states)
                 # Execute the gate projection and activation concurrently with the
                 # dispatch communication.
-                maybe_wait_event(fused_moe_evts.before_dispatch)
+                maybe_wait_event(fused_moe_evts.after_routed_experts)
                 hidden_states = torch_npu.npu_quant_matmul(
                     quantized_x,
                     self._shared_experts.gate_up_proj.weight,
@@ -805,6 +806,7 @@ class AscendFusedMoE(FusedMoE):
             set_flash_common3_context(shared_experts=self._shared_experts)
 
         before_routed_experts = torch.npu.current_stream().record_event()
+        after_routed_experts = None
 
         fused_moe_results = self.forward_impl(
             hidden_states=hidden_states,
@@ -824,6 +826,7 @@ class AscendFusedMoE(FusedMoE):
             shared_out = self._forward_shared_experts(
                 hidden_states,
                 FusedMoEEvents(
+                    after_routed_experts=after_routed_experts,
                     before_routed_experts=before_routed_experts,
                     before_dispatch=fused_moe_results.before_dispatch_evt,
                     before_gmm2=fused_moe_results.before_gmm2_evt,
