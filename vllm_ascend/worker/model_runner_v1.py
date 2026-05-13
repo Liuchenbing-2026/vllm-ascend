@@ -581,6 +581,26 @@ class NPUModelRunner(GPUModelRunner):
         num_reqs = self.input_batch.num_reqs
         assert num_reqs > 0
 
+        # Spec decode may contain placeholder draft ids (-1). Trim them here so
+        # query lengths, seq_lens and block-table accesses only reflect valid KV.
+        if scheduler_output.scheduled_spec_decode_tokens:
+            for req_id, draft_token_ids in list(scheduler_output.scheduled_spec_decode_tokens.items()):
+                valid_draft_token_ids = [token_id for token_id in draft_token_ids if token_id >= 0]
+                invalid_count = len(draft_token_ids) - len(valid_draft_token_ids)
+                if invalid_count == 0:
+                    continue
+                req_idx = self.input_batch.req_id_to_index.get(req_id)
+                if req_idx is None:
+                    continue
+                num_scheduled_tokens[req_idx] -= invalid_count
+                scheduler_output.num_scheduled_tokens[req_id] -= invalid_count
+                total_num_scheduled_tokens -= invalid_count
+                scheduler_output.total_num_scheduled_tokens -= invalid_count
+                if valid_draft_token_ids:
+                    scheduler_output.scheduled_spec_decode_tokens[req_id] = valid_draft_token_ids
+                else:
+                    scheduler_output.scheduled_spec_decode_tokens.pop(req_id, None)
+
         # OPTIMIZATION: Start copying the block table first.
         # This way, we can overlap the copy with the following CPU operations.
         self.input_batch.block_table.commit_block_table(num_reqs)
