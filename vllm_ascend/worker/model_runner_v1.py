@@ -1644,7 +1644,6 @@ class NPUModelRunner(GPUModelRunner):
             self.speculative_config is not None
             and self.speculative_config.method == "dflash"
             and sampling_metadata is not None
-            and not sampling_metadata.all_greedy
         ):
             # Stochastic reasoning requests on Qwen3.5 hybrid attention are
             # currently not graph-safe under the DFlash path. Route the whole

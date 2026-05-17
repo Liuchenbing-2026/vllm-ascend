@@ -848,7 +848,6 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             use_eager_draft = (
                 self.method == "dflash"
                 and forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL
-                and not sampling_metadata.all_greedy
             )
             # For stochastic decoding paths (e.g. thinking high with
             # temperature/top-p sampling), DFlash draft graph replay can
