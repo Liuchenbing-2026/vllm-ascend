@@ -758,20 +758,25 @@ class DeepseekV2DecoderLayer(nn.Module):
         self.norm_eps = config.rms_norm_eps
 
         # =================================================================
-        # IndexCache: per-layer skip_topk decision (refer: vllm PR #37735)
-        # - index_topk_freq=N: every N layers re-compute, others reuse cache
-        # - index_topk_pattern='FFSFSSS...': explicit per-layer override
-        #   where 'F' = compute (Full), 'S' = reuse cached (Shared)
-        # First DSA layer (layer_idx=0) always computes (no cache yet).
+        # IndexCache: only c4 DSA layers produce reusable topk indices.  The
+        # pattern is therefore indexed by c4-layer ordinal instead of global
+        # hidden-layer index; otherwise early c4 layers can read an unfilled
+        # cache because c0/c128 layers do not write topk_indices_buffer.
         # =================================================================
         _skip_topk = False
-        if getattr(config, "use_index_cache", False):
+        compress_ratio = get_dsv4_compress_ratio(config, layer_idx)
+        if getattr(config, "use_index_cache", False) and compress_ratio == 4:
             _index_topk_freq = int(getattr(config, "index_topk_freq", 1))
             _index_topk_pattern = getattr(config, "index_topk_pattern", None)
+            compress_ratios = getattr(config, "compress_ratios", None)
+            if compress_ratios is None:
+                c4_layer_idx = layer_idx
+            else:
+                c4_layer_idx = sum(1 for ratio in compress_ratios[: layer_idx + 1] if ratio == 4) - 1
             if _index_topk_pattern is None:
-                _skip_topk = max(layer_idx - 1, 0) % _index_topk_freq != 0
-            elif 0 <= layer_idx < len(_index_topk_pattern):
-                _skip_topk = _index_topk_pattern[layer_idx] == "S"
+                _skip_topk = c4_layer_idx > 0 and c4_layer_idx % _index_topk_freq != 0
+            elif 0 <= c4_layer_idx < len(_index_topk_pattern):
+                _skip_topk = c4_layer_idx > 0 and _index_topk_pattern[c4_layer_idx] == "S"
 
         attn_cls = DeepseekV4Attention
 

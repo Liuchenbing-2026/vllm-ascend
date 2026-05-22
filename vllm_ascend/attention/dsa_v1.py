@@ -1910,14 +1910,24 @@ class AscendDSAImpl(DSAAttentionImpl):
             compress_sin = common_decode_metadata.compress_sin[layer_name]
             compress_topk_idxs = None
             if self.compress_ratio == 4:
-                # IndexCache: if this layer is configured as a "Shared" layer
-                # (skip_topk=True) and a cache buffer is provided, skip the
-                # heavy npu_quant_lightning_indexer call and read the cached
-                # topk_indices written by a previous "Full" layer.
-                # Note: the KV cache updates inside indexer_select_qli cannot
-                # be skipped, so we still need to call it when not skip_topk.
+                # IndexCache: shared layers still refresh indexer KV/scale
+                # cache. Only the lightning-indexer top-k calculation is reused.
                 num_topk_tokens = hidden_states.shape[0]
                 if self.skip_topk and self.topk_indices_buffer is not None:
+                    q_idx, kv_idx, ik, isc, _, isc_meta, wp = self._indexer_qkv_prepare(
+                        x=hidden_states,
+                        qr=qr,
+                        kv_cache=kv_cache,
+                        attn_metadata=attn_metadata,
+                        cos=cos,
+                        sin=sin,
+                        compressed_cos=compress_cos,
+                        compressed_sin=compress_sin,
+                        actual_seq_lengths_query=actual_seq_lengths_query,
+                        with_prefill=False,
+                        qr_pertoken_scale=qr_pertoken_scale,
+                    )
+                    self._indexer_quant_scatter(q_idx, kv_idx, ik, isc, isc_meta, wp)
                     compress_topk_idxs = self._get_indexcache_topk_indices(num_topk_tokens)
                 else:
                     compress_topk_idxs = self.indexer_select_qli(
@@ -2144,28 +2154,32 @@ class AscendDSAImpl(DSAAttentionImpl):
             actual_seq_lengths_query = common_decode_metadata.query_start_loc
             actual_seq_lengths_key = common_decode_metadata.seq_lens
 
-            # QLI
-            decode_topk_idxs, _ = torch.ops._C_ascend.npu_quant_lightning_indexer(
-                query=decode_q_quant,
-                key=ik,
-                weights=decode_weights.to(torch.float16),
-                query_dequant_scale=decode_q_scale,
-                key_dequant_scale=isc.squeeze(-2),
-                actual_seq_lengths_query=indexer_decode_metadata.query_start_loc[1:],
-                actual_seq_lengths_key=indexer_decode_metadata.seq_lens,
-                block_table=indexer_decode_metadata.block_table,
-                metadata=indexer_decode_metadata.qli_metadata,
-                query_quant_mode=0,
-                key_quant_mode=0,
-                layout_query="TND",
-                layout_key="PA_BSND",
-                sparse_count=self.index_topk,
-                sparse_mode=3,
-                pre_tokens=(1 << 63) - 1,
-                next_tokens=(1 << 63) - 1,
-                cmp_ratio=4,
-                return_value=False,
-            )
+            if self.skip_topk and self.topk_indices_buffer is not None:
+                decode_topk_idxs = self._get_indexcache_topk_indices(decode_q.shape[0])
+            else:
+                decode_topk_idxs, _ = torch.ops._C_ascend.npu_quant_lightning_indexer(
+                    query=decode_q_quant,
+                    key=ik,
+                    weights=decode_weights.to(torch.float16),
+                    query_dequant_scale=decode_q_scale,
+                    key_dequant_scale=isc.squeeze(-2),
+                    actual_seq_lengths_query=indexer_decode_metadata.query_start_loc[1:],
+                    actual_seq_lengths_key=indexer_decode_metadata.seq_lens,
+                    block_table=indexer_decode_metadata.block_table,
+                    metadata=indexer_decode_metadata.qli_metadata,
+                    query_quant_mode=0,
+                    key_quant_mode=0,
+                    layout_query="TND",
+                    layout_key="PA_BSND",
+                    sparse_count=self.index_topk,
+                    sparse_mode=3,
+                    pre_tokens=(1 << 63) - 1,
+                    next_tokens=(1 << 63) - 1,
+                    cmp_ratio=4,
+                    return_value=False,
+                )
+                if self.use_index_cache and decode_topk_idxs is not None:
+                    self._update_indexcache_topk_indices(decode_topk_idxs)
 
             # Sparse attention (decode)
             decode_attn_output = torch.ops._C_ascend.npu_sparse_attn_sharedkv(
@@ -2226,6 +2240,8 @@ class AscendDSAImpl(DSAAttentionImpl):
                 cmp_ratio=4,
                 return_value=False,
             )
+            if self.use_index_cache and prefill_topk_idxs is not None:
+                self._update_indexcache_topk_indices(prefill_topk_idxs, start=num_decode_tokens)
 
             # Sparse attention (prefill)
             prefill_attn_output = torch.ops._C_ascend.npu_sparse_attn_sharedkv(
@@ -2624,7 +2640,7 @@ class AscendDSAImpl(DSAAttentionImpl):
             topk_indices = topk_indices.unsqueeze(1)
         return topk_indices
 
-    def _update_indexcache_topk_indices(self, topk_indices: torch.Tensor) -> None:
+    def _update_indexcache_topk_indices(self, topk_indices: torch.Tensor, start: int = 0) -> None:
         """Write freshly-computed topk_indices into the shared buffer for
         subsequent layers (or steps, when frequency-based skip is enabled)
         to reuse via _get_indexcache_topk_indices()."""
@@ -2633,7 +2649,7 @@ class AscendDSAImpl(DSAAttentionImpl):
         num_tokens = topk_indices.shape[0]
         topk_tokens = topk_indices.shape[-1]
         topk_indices_to_cache = topk_indices
-        topk_indices_buffer = self.topk_indices_buffer[:num_tokens, :topk_tokens]
+        topk_indices_buffer = self.topk_indices_buffer[start : start + num_tokens, :topk_tokens]
         if topk_indices_to_cache.dim() == 3 and topk_indices_buffer.dim() == 2:
             assert topk_indices_to_cache.shape[1] == 1
             topk_indices_to_cache = topk_indices_to_cache.squeeze(1)
