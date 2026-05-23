@@ -757,14 +757,25 @@ class DeepseekV2DecoderLayer(nn.Module):
         self.norm_eps = config.rms_norm_eps
 
         # IndexCache per-layer skip_topk (refer: arxiv 2603.12201, vllm PR #37735)
+        # DSv4 has mixed compress_ratio layers; only c4 layers have the
+        # indexer. Index the F/S pattern by the c4 layer ordinal so the first
+        # c4 layer is always Full (primes the buffer); otherwise a Shared
+        # first c4 layer would read uninitialized topk_indices_buffer.
         _skip_topk = False
         if getattr(config, "use_index_cache", False):
-            _index_topk_freq = int(getattr(config, "index_topk_freq", 1))
-            _index_topk_pattern = getattr(config, "index_topk_pattern", None)
-            if _index_topk_pattern is None:
-                _skip_topk = max(layer_idx - 1, 0) % _index_topk_freq != 0
-            elif 0 <= layer_idx < len(_index_topk_pattern):
-                _skip_topk = _index_topk_pattern[layer_idx] == "S"
+            compress_ratios = getattr(config, "compress_ratios", None)
+            if (
+                compress_ratios is not None
+                and layer_idx < len(compress_ratios)
+                and compress_ratios[layer_idx] == 4
+            ):
+                c4_ordinal = sum(1 for r in compress_ratios[:layer_idx] if r == 4)
+                _index_topk_freq = int(getattr(config, "index_topk_freq", 1))
+                _index_topk_pattern = getattr(config, "index_topk_pattern", None)
+                if _index_topk_pattern is None:
+                    _skip_topk = max(c4_ordinal - 1, 0) % _index_topk_freq != 0
+                elif 0 <= c4_ordinal < len(_index_topk_pattern):
+                    _skip_topk = _index_topk_pattern[c4_ordinal] == "S"
 
         attn_cls = DeepseekV4Attention
 
