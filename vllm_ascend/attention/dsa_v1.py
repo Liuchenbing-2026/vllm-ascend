@@ -1910,24 +1910,12 @@ class AscendDSAImpl(DSAAttentionImpl):
             compress_sin = common_decode_metadata.compress_sin[layer_name]
             compress_topk_idxs = None
             if self.compress_ratio == 4:
-                # IndexCache: shared layers still refresh indexer KV/scale
-                # cache. Only the lightning-indexer top-k calculation is reused.
+                # IndexCache experiment: drop KV-cache refresh in the standard
+                # decode skip path. Static shared layers never run the
+                # lightning indexer, so their per-layer indexer KV cache is
+                # never read; refreshing it is redundant work.
                 num_topk_tokens = hidden_states.shape[0]
                 if self.skip_topk and self.topk_indices_buffer is not None:
-                    q_idx, kv_idx, ik, isc, _, isc_meta, wp = self._indexer_qkv_prepare(
-                        x=hidden_states,
-                        qr=qr,
-                        kv_cache=kv_cache,
-                        attn_metadata=attn_metadata,
-                        cos=cos,
-                        sin=sin,
-                        compressed_cos=compress_cos,
-                        compressed_sin=compress_sin,
-                        actual_seq_lengths_query=actual_seq_lengths_query,
-                        with_prefill=False,
-                        qr_pertoken_scale=qr_pertoken_scale,
-                    )
-                    self._indexer_quant_scatter(q_idx, kv_idx, ik, isc, isc_meta, wp)
                     compress_topk_idxs = self._get_indexcache_topk_indices(num_topk_tokens)
                 else:
                     compress_topk_idxs = self.indexer_select_qli(
