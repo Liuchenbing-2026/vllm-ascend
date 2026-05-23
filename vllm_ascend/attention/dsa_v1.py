@@ -1365,6 +1365,15 @@ class AscendDSAImpl(DSAAttentionImpl):
         self.multistream_dsv4_dsa_overlap = ascend_config.multistream_dsv4_dsa_overlap
         self.vllm_config = get_current_vllm_config()
 
+        # IndexCache (refer: arxiv 2603.12201, vllm PR #37735, vllm-ascend PR #8398)
+        self.skip_topk: bool = kwargs.get("skip_topk", False)
+        self.topk_indices_buffer: torch.Tensor | None = kwargs.get("topk_indices_buffer")
+        self.use_index_cache: bool = self.skip_topk or getattr(
+            self.vllm_config.model_config.hf_config,
+            "use_index_cache",
+            False,
+        )
+
         # indexer param
         if self.indexer is not None:
             self.indexer_heads: int = self.indexer.n_heads
@@ -1675,18 +1684,24 @@ class AscendDSAImpl(DSAAttentionImpl):
             compressor_state_prefill_metadata = _require_prefill_metadata(compressor_kv_state_metadata)
             compress_topk_idxs = None
             if self.compress_ratio == 4:
-                compress_topk_idxs = self.indexer_select_qli(
-                    x=hidden_states,
-                    qr=qr,
-                    kv_cache=kv_cache,
-                    attn_metadata=attn_metadata,
-                    cos=cos,
-                    sin=sin,
-                    compressed_cos=compress_cos,
-                    compressed_sin=compress_sin,
-                    actual_seq_lengths_query=actual_seq_lengths_query,
-                    with_prefill=True,
-                )
+                num_topk_tokens = hidden_states.shape[0]
+                if self.skip_topk:
+                    compress_topk_idxs = self._get_indexcache_topk_indices(num_topk_tokens)
+                else:
+                    compress_topk_idxs = self.indexer_select_qli(
+                        x=hidden_states,
+                        qr=qr,
+                        kv_cache=kv_cache,
+                        attn_metadata=attn_metadata,
+                        cos=cos,
+                        sin=sin,
+                        compressed_cos=compress_cos,
+                        compressed_sin=compress_sin,
+                        actual_seq_lengths_query=actual_seq_lengths_query,
+                        with_prefill=True,
+                    )
+                    if self.use_index_cache:
+                        self._update_indexcache_topk_indices(compress_topk_idxs)
 
             coff = 2 if self.compressor_overlap else 1
 
@@ -1895,19 +1910,25 @@ class AscendDSAImpl(DSAAttentionImpl):
             compress_sin = common_decode_metadata.compress_sin[layer_name]
             compress_topk_idxs = None
             if self.compress_ratio == 4:
-                compress_topk_idxs = self.indexer_select_qli(
-                    x=hidden_states,
-                    qr=qr,
-                    kv_cache=kv_cache,
-                    attn_metadata=attn_metadata,
-                    cos=cos,
-                    sin=sin,
-                    compressed_cos=compress_cos,
-                    compressed_sin=compress_sin,
-                    actual_seq_lengths_query=actual_seq_lengths_query,
-                    with_prefill=False,
-                    qr_pertoken_scale=qr_pertoken_scale,
-                )
+                num_topk_tokens = hidden_states.shape[0]
+                if self.skip_topk:
+                    compress_topk_idxs = self._get_indexcache_topk_indices(num_topk_tokens)
+                else:
+                    compress_topk_idxs = self.indexer_select_qli(
+                        x=hidden_states,
+                        qr=qr,
+                        kv_cache=kv_cache,
+                        attn_metadata=attn_metadata,
+                        cos=cos,
+                        sin=sin,
+                        compressed_cos=compress_cos,
+                        compressed_sin=compress_sin,
+                        actual_seq_lengths_query=actual_seq_lengths_query,
+                        with_prefill=False,
+                        qr_pertoken_scale=qr_pertoken_scale,
+                    )
+                    if self.use_index_cache:
+                        self._update_indexcache_topk_indices(compress_topk_idxs)
 
             coff = 2 if self.compressor_overlap else 1
 
@@ -2584,3 +2605,23 @@ class AscendDSAImpl(DSAAttentionImpl):
         weights = self.weights_proj(x) * (self.indexer_softmax_scale * self.indexer_heads**-0.5)
 
         return self._indexer_qli_finish(q, kv, weights, ik, isc, indexer_kv_state_metadata, isc_meta, wp)
+
+    def _get_indexcache_topk_indices(self, num_tokens: int) -> torch.Tensor:
+        if self.topk_indices_buffer is None:
+            raise RuntimeError("IndexCache requires topk_indices_buffer when skip_topk is enabled.")
+        topk_indices = self.topk_indices_buffer[:num_tokens]
+        if topk_indices.dim() == 2:
+            topk_indices = topk_indices.unsqueeze(1)
+        return topk_indices
+
+    def _update_indexcache_topk_indices(self, topk_indices: torch.Tensor) -> None:
+        if self.topk_indices_buffer is None:
+            return
+        num_tokens = topk_indices.shape[0]
+        topk_tokens = topk_indices.shape[-1]
+        topk_indices_to_cache = topk_indices
+        topk_indices_buffer = self.topk_indices_buffer[:num_tokens, :topk_tokens]
+        if topk_indices_to_cache.dim() == 3 and topk_indices_buffer.dim() == 2:
+            assert topk_indices_to_cache.shape[1] == 1
+            topk_indices_to_cache = topk_indices_to_cache.squeeze(1)
+        topk_indices_buffer.copy_(topk_indices_to_cache)
