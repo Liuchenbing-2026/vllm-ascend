@@ -1684,24 +1684,24 @@ class AscendDSAImpl(DSAAttentionImpl):
             compressor_state_prefill_metadata = _require_prefill_metadata(compressor_kv_state_metadata)
             compress_topk_idxs = None
             if self.compress_ratio == 4:
-                num_topk_tokens = hidden_states.shape[0]
-                if self.skip_topk:
-                    compress_topk_idxs = self._get_indexcache_topk_indices(num_topk_tokens)
-                else:
-                    compress_topk_idxs = self.indexer_select_qli(
-                        x=hidden_states,
-                        qr=qr,
-                        kv_cache=kv_cache,
-                        attn_metadata=attn_metadata,
-                        cos=cos,
-                        sin=sin,
-                        compressed_cos=compress_cos,
-                        compressed_sin=compress_sin,
-                        actual_seq_lengths_query=actual_seq_lengths_query,
-                        with_prefill=True,
-                    )
-                    if self.use_index_cache:
-                        self._update_indexcache_topk_indices(compress_topk_idxs)
+                # IndexCache: prefill always recomputes (aligned with PR #9390
+                # and fork commit adbfb0b8). Skip-in-prefill is unsafe on DSv4
+                # because indexer_select_qli also refreshes indexer K/scale
+                # cache needed by npu_sparse_attn_sharedkv for fresh tokens.
+                compress_topk_idxs = self.indexer_select_qli(
+                    x=hidden_states,
+                    qr=qr,
+                    kv_cache=kv_cache,
+                    attn_metadata=attn_metadata,
+                    cos=cos,
+                    sin=sin,
+                    compressed_cos=compress_cos,
+                    compressed_sin=compress_sin,
+                    actual_seq_lengths_query=actual_seq_lengths_query,
+                    with_prefill=True,
+                )
+                if self.use_index_cache:
+                    self._update_indexcache_topk_indices(compress_topk_idxs)
 
             coff = 2 if self.compressor_overlap else 1
 
@@ -1911,7 +1911,10 @@ class AscendDSAImpl(DSAAttentionImpl):
             compress_topk_idxs = None
             if self.compress_ratio == 4:
                 num_topk_tokens = hidden_states.shape[0]
-                if self.skip_topk:
+                # IndexCache: only skip when explicitly configured AND a valid
+                # buffer has been wired through. Missing buffer falls back to
+                # recompute so an unexpected wiring gap can't read stale memory.
+                if self.skip_topk and self.topk_indices_buffer is not None:
                     compress_topk_idxs = self._get_indexcache_topk_indices(num_topk_tokens)
                 else:
                     compress_topk_idxs = self.indexer_select_qli(
