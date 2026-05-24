@@ -73,6 +73,7 @@ from vllm.sequence import IntermediateTensors
 from vllm.transformers_utils.configs.deepseek_v4 import DeepseekV4Config
 
 from vllm_ascend.ascend_config import get_ascend_config
+from vllm_ascend.models._indexcache import compute_skip_topk
 from vllm_ascend.ops.dsa import AscendDeepseekSparseAttention, DSAModules
 from vllm_ascend.ops.rope_dsv4 import ComplexExpRotaryEmbedding
 from vllm_ascend.ops.triton.mul_add import muls_add_triton
@@ -684,6 +685,18 @@ class DeepseekV4Attention(nn.Module):
                     prefix=f"{prefix}.indexer",
                 )
 
+        # IndexCache: per-layer skip_topk decision based on hf_config.
+        # Mirrors vllm/model_executor/models/deepseek_v2.py (PR #8398 hf_overrides):
+        #   --hf-overrides '{"use_index_cache": true, "index_topk_freq": 4}'
+        _skip_topk = compute_skip_topk(
+            layer_idx=layer_idx,
+            has_indexer=self.indexer is not None,
+            use_index_cache=getattr(config, "use_index_cache", False),
+            index_topk_freq=getattr(config, "index_topk_freq", 1),
+            index_topk_pattern=getattr(config, "index_topk_pattern", None),
+        )
+        self.skip_topk = _skip_topk
+
         dsa_modules = DSAModules(
             wq_a=self.wq_a,
             q_norm=self.q_norm,
@@ -718,6 +731,7 @@ class DeepseekV4Attention(nn.Module):
             quant_config=quant_config,
             # prefix=f'{prefix}.attn',
             prefix=f"{prefix}",
+            skip_topk=_skip_topk,
         )
 
     def forward(
