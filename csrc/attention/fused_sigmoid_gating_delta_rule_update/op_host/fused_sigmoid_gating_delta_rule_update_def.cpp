@@ -96,7 +96,16 @@ public:
             .ExtendCfgInfo("softsync.flag", "true");
         this->AICore().AddConfig("ascend910b", aicConfig);
         this->AICore().AddConfig("ascend910_93", aicConfig);
-        this->AICore().AddConfig("ascend950", aicConfig);
+
+        // ascend950 (A3): softsync is 910B-specific; declare aclnn support for the runtime
+        OpAICoreConfig aicConfig950;
+        aicConfig950.DynamicCompileStaticFlag(true)
+            .DynamicFormatFlag(true)
+            .DynamicRankSupportFlag(true)
+            .DynamicShapeSupportFlag(true)
+            .NeedCheckSupportFlag(false)
+            .ExtendCfgInfo("aclnnSupport.value", "support_aclnn");
+        this->AICore().AddConfig("ascend950", aicConfig950);
     }
 };
 
