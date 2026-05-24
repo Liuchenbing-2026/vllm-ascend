@@ -579,8 +579,17 @@ bool FusedSigmoidGatingDeltaRuleUpdateTiling::IsBetterProfile(const BufferProfil
     if (candidate.repeatTime != current.repeatTime) {
         return candidate.repeatTime < current.repeatTime;
     }
-    uint32_t candidateDepth = candidate.stateOutBufferNum + candidate.attnOutBufferNum;
-    uint32_t currentDepth = current.stateOutBufferNum + current.attnOutBufferNum;
+    // The kernel output queues are declared with compile-time depth MAX_OUT_BUFFER_NUM=2,
+    // so tiling counts above 2 give no additional pipeline benefit. Compare effective
+    // depth capped at 2 to prevent (3,3) from incorrectly beating (2,2) on large-UB
+    // platforms (e.g. ascend910_93) where all candidates achieve the same repeatTime.
+    constexpr uint32_t kKernelMaxBuf = 2;
+    auto effectiveDepth = [](uint32_t s, uint32_t a) -> uint32_t {
+        auto cap = [](uint32_t v) { return v >= kKernelMaxBuf ? kKernelMaxBuf : 1u; };
+        return cap(s) + cap(a);
+    };
+    uint32_t candidateDepth = effectiveDepth(candidate.stateOutBufferNum, candidate.attnOutBufferNum);
+    uint32_t currentDepth = effectiveDepth(current.stateOutBufferNum, current.attnOutBufferNum);
     if (candidateDepth != currentDepth) {
         return candidateDepth > currentDepth;
     }
