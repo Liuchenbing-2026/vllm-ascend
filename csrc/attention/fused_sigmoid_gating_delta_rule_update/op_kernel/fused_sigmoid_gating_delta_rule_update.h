@@ -451,9 +451,8 @@ private:
         LocalTensor<float> gamaLocal = gamaInQueue_.AllocTensor<float>();
         Cast(gamaLocal, aLocal, AscendC::RoundMode::CAST_NONE, bBatchSize);
         Cast(betaInUb, bLocal, AscendC::RoundMode::CAST_NONE, bBatchSize);
+        aInQueue_.FreeTensor(aLocal);
         bInQueue_.FreeTensor(bLocal);
-        // vectorized negate: avoids per-element GetValue/SetValue in scalar loop
-        Muls(betaInUb, betaInUb, static_cast<float>(-1.0f), bBatchSize);
 
         for (uint64_t i = 0; i < static_cast<uint64_t>(seqLen) * NV_; ++i) {
             uint64_t headIdx = i % NV_;
@@ -462,6 +461,8 @@ private:
                 x = x * softplusBeta_;
             }
             gamaLocal.SetValue(i, x);
+            float negB = -betaInUb.GetValue(i);
+            betaInUb.SetValue(i, negB);
         }
         Exp(gamaLocal, gamaLocal, seqLen * NV_);
         Exp(betaInUb, betaInUb, seqLen * NV_);
@@ -477,21 +478,14 @@ private:
             if (softplusBeta_ != 1.0f) {
                 softplusValue = softplusValue / softplusBeta_;
             }
-            // read from UB (aLocal) instead of HBM (aGm_) to avoid global memory access
-            float x = ToFloat(aLocal.GetValue(i)) + dtBiasInUb.GetValue(headIdx);
+            float x = ToFloat(aGm_.GetValue(seq0 * NV_ + i)) + dtBiasInUb.GetValue(headIdx);
             if (x > softplusThreshold_) {
                 softplusValue = x;
             }
             float decay = -aLogInUb.GetValue(headIdx) * softplusValue;
             gamaLocal.SetValue(i, decay);
+            betaInUb.SetValue(i, 1.0f / betaInUb.GetValue(i));
         }
-        aInQueue_.FreeTensor(aLocal);
-
-        // vectorized reciprocal: 1.0 / betaInUb, reusing broadTmpInUb as scratch
-        Duplicate(broadTmpInUb, static_cast<float>(1.0f), bBatchSize);
-        AscendC::PipeBarrier<PIPE_V>();
-        Div(betaInUb, broadTmpInUb, betaInUb, bBatchSize);
-
         Exp(gamaLocal, gamaLocal, seqLen * NV_);
         AscendC::PipeBarrier<PIPE_V>();
         gamaInQueue_.EnQue<float>(gamaLocal);
