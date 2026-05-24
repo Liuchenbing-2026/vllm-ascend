@@ -484,13 +484,9 @@ private:
             }
             float decay = -aLogInUb.GetValue(headIdx) * softplusValue;
             gamaLocal.SetValue(i, decay);
+            betaInUb.SetValue(i, 1.0f / betaInUb.GetValue(i));
         }
         aInQueue_.FreeTensor(aLocal);
-
-        // vectorized reciprocal: 1.0 / betaInUb, reusing broadTmpInUb as scratch
-        Duplicate(broadTmpInUb, static_cast<float>(1.0f), bBatchSize);
-        AscendC::PipeBarrier<PIPE_V>();
-        Div(betaInUb, broadTmpInUb, betaInUb, bBatchSize);
 
         Exp(gamaLocal, gamaLocal, seqLen * NV_);
         AscendC::PipeBarrier<PIPE_V>();
