@@ -1701,7 +1701,10 @@ class AscendDSAImpl(DSAAttentionImpl):
                     with_prefill=True,
                 )
                 if self.use_index_cache:
-                    self._update_indexcache_topk_indices(compress_topk_idxs)
+                    self._update_indexcache_topk_indices(
+                        compress_topk_idxs,
+                        start=attn_metadata[0].num_decode_tokens,
+                    )
 
             coff = 2 if self.compressor_overlap else 1
 
@@ -2609,21 +2612,21 @@ class AscendDSAImpl(DSAAttentionImpl):
 
         return self._indexer_qli_finish(q, kv, weights, ik, isc, indexer_kv_state_metadata, isc_meta, wp)
 
-    def _get_indexcache_topk_indices(self, num_tokens: int) -> torch.Tensor:
+    def _get_indexcache_topk_indices(self, num_tokens: int, start: int = 0) -> torch.Tensor:
         if self.topk_indices_buffer is None:
             raise RuntimeError("IndexCache requires topk_indices_buffer when skip_topk is enabled.")
-        topk_indices = self.topk_indices_buffer[:num_tokens]
+        topk_indices = self.topk_indices_buffer[start : start + num_tokens]
         if topk_indices.dim() == 2:
             topk_indices = topk_indices.unsqueeze(1)
         return topk_indices
 
-    def _update_indexcache_topk_indices(self, topk_indices: torch.Tensor) -> None:
+    def _update_indexcache_topk_indices(self, topk_indices: torch.Tensor, start: int = 0) -> None:
         if self.topk_indices_buffer is None:
             return
         num_tokens = topk_indices.shape[0]
         topk_tokens = topk_indices.shape[-1]
         topk_indices_to_cache = topk_indices
-        topk_indices_buffer = self.topk_indices_buffer[:num_tokens, :topk_tokens]
+        topk_indices_buffer = self.topk_indices_buffer[start : start + num_tokens, :topk_tokens]
         if topk_indices_to_cache.dim() == 3 and topk_indices_buffer.dim() == 2:
             assert topk_indices_to_cache.shape[1] == 1
             topk_indices_to_cache = topk_indices_to_cache.squeeze(1)

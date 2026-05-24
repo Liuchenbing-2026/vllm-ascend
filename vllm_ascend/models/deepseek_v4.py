@@ -761,8 +761,10 @@ class DeepseekV2DecoderLayer(nn.Module):
         # indexer. Index the F/S pattern by the c4 layer ordinal so the first
         # c4 layer is always Full (primes the buffer); otherwise a Shared
         # first c4 layer would read uninitialized topk_indices_buffer.
+        # MTP draft layers are single-layer predictors and should compute
+        # their own topk instead of reusing the target model's layer pattern.
         _skip_topk = False
-        if getattr(config, "use_index_cache", False):
+        if not is_draft_layer and getattr(config, "use_index_cache", False):
             compress_ratios = getattr(config, "compress_ratios", None)
             if (
                 compress_ratios is not None
