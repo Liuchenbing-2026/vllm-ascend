@@ -28,6 +28,14 @@ class MoECommType(Enum):
     MC2 = 1
     ALLTOALL = 2
     FUSED_MC2 = 3
+    # The three values below are exclusively used by the A2 (NpuArch 220 / 910B)
+    # adaptation path in `select_moe_comm_method`. A3 / A5 / 310P never return
+    # them. See `vllm_ascend/ops/fused_moe/comm_a2.py` for the impls and
+    # `docs/superpowers/specs/2026-05-25-vllm-ascend-a2-adapt-umbrella-design.md`
+    # for the design.
+    DISPATCH_COMBINE = 4
+    PP_EP_GATHER = 5
+    PP_FUSED_MC2 = 6
 
 
 _MRV2_IN_PROFILE_RUN: ContextVar[bool] = ContextVar("_MRV2_IN_PROFILE_RUN", default=False)

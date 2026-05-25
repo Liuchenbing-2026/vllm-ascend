@@ -114,6 +114,22 @@ env_variables: dict[str, Callable[[], Any]] = {
     "VLLM_ASCEND_ENABLE_BATCH_MEMCPY": lambda: os.getenv("VLLM_ASCEND_ENABLE_BATCH_MEMCPY", None),
     # Whether to use MultiBlockPool for KV cache management
     "VLLM_ASCEND_APPLY_DSV4_PATCH": lambda: bool(int(os.getenv("VLLM_ASCEND_APPLY_DSV4_PATCH", "0"))),
+    # ===== A2 (Ascend 910B series, NpuArch 220) adaptation flags =====
+    # All four flags below take effect only when the runtime device is A2.
+    # On A3 / A5 / 310P these flags are unread.
+    # A2 default: disable all2all in DSA-CP path (force dcp_size = pcp_size = 1).
+    # Set to 0 to keep the upstream behaviour (A2 attempts all2all on DSA-CP).
+    "VLLM_ASCEND_A2_DSA_CP_DISABLE_ALL2ALL": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_A2_DSA_CP_DISABLE_ALL2ALL", "1"))
+    ),
+    # A2 MoE comm method override. Values: auto|alltoall|dispatch_combine|pp_ep_gather|pp_fused|none.
+    # "auto" lets `select_moe_comm_method` pick the optimal A2 path based on tokens / EP / PP.
+    # The other strings force a specific MoECommType.
+    "VLLM_ASCEND_A2_MOE_COMM": lambda: os.getenv("VLLM_ASCEND_A2_MOE_COMM", "auto"),
+    # A2 dispatch_combine token-batch lower bound (exclusive). Below this the path falls back.
+    "VLLM_ASCEND_A2_DISPATCH_COMBINE_BS_MIN": lambda: int(os.getenv("VLLM_ASCEND_A2_DISPATCH_COMBINE_BS_MIN", "1")),
+    # A2 dispatch_combine token-batch upper bound (inclusive). Empty / 0 means use mc2_tokens_capacity at runtime.
+    "VLLM_ASCEND_A2_DISPATCH_COMBINE_BS_MAX": lambda: int(os.getenv("VLLM_ASCEND_A2_DISPATCH_COMBINE_BS_MAX", "0")),
 }
 
 # end-env-vars-definition

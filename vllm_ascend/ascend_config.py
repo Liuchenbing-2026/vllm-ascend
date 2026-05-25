@@ -48,6 +48,9 @@ class AscendConfig:
         eplb_config = additional_config.get("eplb_config", {})
         self.eplb_config = EplbConfig(eplb_config)
 
+        a2_adapt_config = additional_config.get("a2_adapt_config", {})
+        self.a2_adapt_config = A2AdaptConfig(a2_adapt_config)
+
         weight_prefetch_config = additional_config.get("weight_prefetch_config", {})
         self.weight_prefetch_config = WeightPrefetchConfig(weight_prefetch_config)
 
@@ -683,6 +686,76 @@ class EplbConfig:
 
         logger.info("Dynamic EPLB is %s", self.config["dynamic_eplb"])
         logger.info("The number of redundant experts is %s", self.config["num_redundant_experts"])
+
+
+class A2AdaptConfig:
+    """Configuration for A2 (Ascend 910B series, NpuArch 220) adaptation features.
+
+    All fields below only take effect when the runtime device is A2.
+    On A3 / A5 / 310P every field is read-but-ignored — behaviour stays identical to
+    upstream main.
+
+    Priority: ``additional_config.a2_adapt_config.<field>`` > env var > default.
+
+    Fields
+    ------
+    dsa_cp_disable_all2all: bool
+        F01. When True, force ``dcp_size = pcp_size = 1`` on A2 so that the
+        ``dist.all_to_all_single`` calls in
+        ``vllm_ascend/attention/context_parallel/attention_cp.py`` and
+        ``vllm_ascend/attention/sfa_v1.py`` become dead code paths.
+    moe_comm: str
+        F2.1-F2.4. One of ``auto`` / ``alltoall`` / ``dispatch_combine`` /
+        ``pp_ep_gather`` / ``pp_fused`` / ``none``. ``auto`` lets
+        ``select_moe_comm_method`` pick the optimal A2 path based on the
+        number of tokens, EP world size and PP world size.
+    dispatch_combine_bs_min: int
+        F2.2. Exclusive lower bound on ``num_tokens`` for which the auto path
+        will pick ``MoECommType.DISPATCH_COMBINE``.
+    dispatch_combine_bs_max: int | None
+        F2.2. Inclusive upper bound on ``num_tokens`` for which the auto path
+        will pick ``MoECommType.DISPATCH_COMBINE``. ``None`` (the default)
+        defers to ``mc2_tokens_capacity`` at runtime.
+    """
+
+    _valid_moe_comm = {"auto", "alltoall", "dispatch_combine", "pp_ep_gather", "pp_fused", "none"}
+
+    def __init__(self, user_config: dict | None = None):
+        if user_config is None:
+            user_config = {}
+        from vllm_ascend import envs as ascend_envs
+
+        env_bs_max = ascend_envs.VLLM_ASCEND_A2_DISPATCH_COMBINE_BS_MAX
+        # 0 in env means "defer to mc2_tokens_capacity"; normalize to None.
+        default_bs_max = env_bs_max if env_bs_max > 0 else None
+
+        self.dsa_cp_disable_all2all: bool = bool(
+            user_config.get("dsa_cp_disable_all2all", ascend_envs.VLLM_ASCEND_A2_DSA_CP_DISABLE_ALL2ALL)
+        )
+        self.moe_comm: str = str(user_config.get("moe_comm", ascend_envs.VLLM_ASCEND_A2_MOE_COMM))
+        self.dispatch_combine_bs_min: int = int(
+            user_config.get("dispatch_combine_bs_min", ascend_envs.VLLM_ASCEND_A2_DISPATCH_COMBINE_BS_MIN)
+        )
+        bs_max_user = user_config.get("dispatch_combine_bs_max", default_bs_max)
+        self.dispatch_combine_bs_max: int | None = int(bs_max_user) if bs_max_user else None
+
+        self._validate()
+
+    def _validate(self):
+        if self.moe_comm not in self._valid_moe_comm:
+            raise ValueError(
+                f"a2_adapt_config.moe_comm must be one of {sorted(self._valid_moe_comm)}; got {self.moe_comm!r}"
+            )
+        if self.dispatch_combine_bs_min < 0:
+            raise ValueError(
+                "a2_adapt_config.dispatch_combine_bs_min must be non-negative; "
+                f"got {self.dispatch_combine_bs_min}"
+            )
+        if self.dispatch_combine_bs_max is not None and self.dispatch_combine_bs_max <= self.dispatch_combine_bs_min:
+            raise ValueError(
+                "a2_adapt_config.dispatch_combine_bs_max must be greater than "
+                f"dispatch_combine_bs_min ({self.dispatch_combine_bs_min}); got {self.dispatch_combine_bs_max}"
+            )
 
 
 _ASCEND_CONFIG: AscendConfig | None = None
