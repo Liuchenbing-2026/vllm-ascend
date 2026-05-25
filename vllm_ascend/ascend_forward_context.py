@@ -278,12 +278,27 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
     if not vllm_config.parallel_config.enable_expert_parallel or get_ep_group().world_size == 1:
         moe_comm_type = MoECommType.ALLGATHER
     elif soc_version in {AscendDeviceType.A2}:
+        # A2 (NpuArch 220 / 910B) adaptation. Behaviour is driven by
+        # `additional_config.a2_adapt_config.moe_comm`:
+        #   - "alltoall"        → force MoECommType.ALLTOALL (F2.1)
+        #   - "auto"            → pick the best A2 path automatically; large
+        #                          prefill picks ALLTOALL (F2.1), other token
+        #                          regimes fall back to MC2/ALLGATHER.
+        #   - "none"            → fall through to legacy MC2/ALLGATHER.
+        #   - other valid values produced by later F2.x commits fall through
+        #     here until their implementation lands.
+        a2_moe = get_ascend_config().a2_adapt_config.moe_comm
         num_experts = vllm_config.model_config.get_num_experts()
         ep_world_size = (
             vllm_config.parallel_config.world_size_across_dp // vllm_config.parallel_config.pipeline_parallel_size
         )
         num_experts_per_device = num_experts // ep_world_size
-        if num_experts_per_device <= 24 and ep_world_size >= 16 and num_tokens <= mc2_tokens_capacity:
+        if a2_moe == "alltoall":
+            moe_comm_type = MoECommType.ALLTOALL
+        elif a2_moe == "auto" and num_tokens > mc2_tokens_capacity and ep_world_size >= 8:
+            # Large prefill: A2 ALLTOALL beats ALLGATHER once EP is sufficiently sharded.
+            moe_comm_type = MoECommType.ALLTOALL
+        elif num_experts_per_device <= 24 and ep_world_size >= 16 and num_tokens <= mc2_tokens_capacity:
             moe_comm_type = MoECommType.MC2
         else:
             moe_comm_type = MoECommType.ALLGATHER
