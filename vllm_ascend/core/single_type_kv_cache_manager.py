@@ -11,7 +11,13 @@ from vllm.v1.core.single_type_kv_cache_manager import (
     SingleTypeKVCacheManager,
     spec_manager_map,
 )
-from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheSpec, MLAAttentionSpec
+from vllm.v1.kv_cache_interface import (
+    ChunkedLocalAttentionSpec,
+    FullAttentionSpec,
+    KVCacheSpec,
+    MLAAttentionSpec,
+    SlidingWindowSpec,
+)
 from vllm.v1.request import Request
 
 
@@ -204,9 +210,60 @@ class CompressAttentionManager(FullAttentionManager):
         return computed_blocks
 
 
-def get_manager_for_kv_cache_spec(kv_cache_spec: KVCacheSpec, **kwargs) -> SingleTypeKVCacheManager:
+def get_manager_for_kv_cache_spec(
+    kv_cache_spec: KVCacheSpec,
+    max_num_batched_tokens: int | None = None,
+    max_model_len: int | None = None,
+    **kwargs,
+) -> SingleTypeKVCacheManager:
+    """Build the per-spec KV cache manager.
+
+    For DSv4 / DSA path (``MLAAttentionSpec`` with ``compress_ratio>1``), thread
+    the prefill-chunk admission cap that vLLM PR #40946 introduced for
+    ``SlidingWindowSpec`` / ``ChunkedLocalAttentionSpec``. Compressed-MLA does
+    not recycle, so capping at ``max_model_len`` (the static peak) collapses
+    to a no-op and admission still reserves the full per-request budget.
+    With ``scheduler_reserve_full_isl=True`` (the default) and pool budget <
+    ``cc * max_model_len`` the ``full_sequence_must_fit`` branch silently
+    returns ``None`` for the n-th request and long-input requests sit
+    indefinitely in the waiting queue (see vLLM issue #40863, repro'd on DSv4
+    + MTP with cc>=8 and prompt>=32K).
+
+    Cap admission at the prefill chunk size (``max_num_batched_tokens``)
+    instead: a new request only needs ``cdiv(chunk_size / compress_ratio,
+    block_size)`` blocks for its first scheduling step, and subsequent
+    growth goes through ``allocate_new_blocks`` (which fails fast and can
+    preempt). This matches the spirit of #40946 for a non-recycling spec:
+    admit by what the next step actually needs, not by the worst-case
+    full reservation that would never fit at high concurrency.
+    """
     manager_class = spec_manager_map[type(kv_cache_spec)]
     if isinstance(kv_cache_spec, MLAAttentionSpec) and kv_cache_spec.compress_ratio > 1:
         manager_class = CompressAttentionManager
+        if max_num_batched_tokens is not None:
+            # Per-step compressed-block need: cdiv(chunk/compress/block).
+            # "+ compress_ratio" gives a small alignment margin so admission
+            # is never tighter than what allocate_slots will hand out.
+            compress_ratio = kv_cache_spec.compress_ratio
+            block_size = kv_cache_spec.block_size
+            chunk_compressed_tokens = max_num_batched_tokens // compress_ratio
+            kwargs["max_admission_blocks_per_request"] = (
+                cdiv(chunk_compressed_tokens, block_size) + compress_ratio
+            )
+    elif isinstance(kv_cache_spec, (SlidingWindowSpec, ChunkedLocalAttentionSpec)):
+        # Replicate the upstream PR #40946 cap setting for recycling specs.
+        # We override the vLLM factory above, so the upstream block that does
+        # this lives in dead code (never reached); without re-applying it here
+        # SlidingWindowMLASpec / ChunkedLocalAttentionSpec groups have no cap
+        # and ``full_sequence_must_fit`` admission reserves the full
+        # ``max_model_len`` worth of blocks per request, exhausting the pool
+        # at cc>=2 on DSv4 (see vLLM issue #40863).
+        if max_num_batched_tokens is not None and max_model_len is not None:
+            kwargs["max_admission_blocks_per_request"] = (
+                kv_cache_spec.max_admission_blocks_per_request(
+                    max_num_batched_tokens=max_num_batched_tokens,
+                    max_model_len=max_model_len,
+                )
+            )
     manager = manager_class(kv_cache_spec, **kwargs)
     return manager
