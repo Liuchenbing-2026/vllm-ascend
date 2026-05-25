@@ -58,6 +58,13 @@ def setup_moe_comm_method(moe_config):
         _MoECommMethods[MoECommType.ALLGATHER] = AllGatherCommImpl(moe_config)
         _MoECommMethods[MoECommType.MC2] = MC2CommImpl(moe_config)
         _MoECommMethods[MoECommType.FUSED_MC2] = FusedMC2CommImpl(moe_config)
+        # A2 adaptation impls. Register on every device — `select_moe_comm_method`
+        # only emits these enum values from the A2 elif, so on A3 / A5 / 310P
+        # they are dead entries in the dict. Importing here keeps the file
+        # boundary small.
+        from vllm_ascend.ops.fused_moe.comm_a2 import DispatchCombineA2CommImpl
+
+        _MoECommMethods[MoECommType.DISPATCH_COMBINE] = DispatchCombineA2CommImpl(moe_config)
     else:
         _MoECommMethods[MoECommType.ALLGATHER] = AllGatherCommImpl(moe_config)
 

@@ -280,21 +280,41 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
     elif soc_version in {AscendDeviceType.A2}:
         # A2 (NpuArch 220 / 910B) adaptation. Behaviour is driven by
         # `additional_config.a2_adapt_config.moe_comm`:
-        #   - "alltoall"        → force MoECommType.ALLTOALL (F2.1)
-        #   - "auto"            → pick the best A2 path automatically; large
-        #                          prefill picks ALLTOALL (F2.1), other token
-        #                          regimes fall back to MC2/ALLGATHER.
-        #   - "none"            → fall through to legacy MC2/ALLGATHER.
+        #   - "alltoall"          → force MoECommType.ALLTOALL (F2.1)
+        #   - "dispatch_combine"  → force MoECommType.DISPATCH_COMBINE (F2.2)
+        #   - "auto"              → pick the best A2 path automatically;
+        #                            dispatch_combine for mid-size batches
+        #                            (F2.2), ALLTOALL for large prefill (F2.1),
+        #                            otherwise MC2 / ALLGATHER.
+        #   - "none"              → fall through to legacy MC2 / ALLGATHER.
         #   - other valid values produced by later F2.x commits fall through
         #     here until their implementation lands.
-        a2_moe = get_ascend_config().a2_adapt_config.moe_comm
+        a2_cfg = get_ascend_config().a2_adapt_config
+        a2_moe = a2_cfg.moe_comm
         num_experts = vllm_config.model_config.get_num_experts()
         ep_world_size = (
             vllm_config.parallel_config.world_size_across_dp // vllm_config.parallel_config.pipeline_parallel_size
         )
         num_experts_per_device = num_experts // ep_world_size
+        bs_min = a2_cfg.dispatch_combine_bs_min
+        # `None` (the user / env default) means defer to mc2_tokens_capacity.
+        bs_max = a2_cfg.dispatch_combine_bs_max if a2_cfg.dispatch_combine_bs_max else mc2_tokens_capacity
+
         if a2_moe == "alltoall":
             moe_comm_type = MoECommType.ALLTOALL
+        elif a2_moe == "dispatch_combine":
+            moe_comm_type = MoECommType.DISPATCH_COMBINE
+        elif (
+            a2_moe == "auto"
+            and ep_world_size <= 32
+            and bs_min < num_tokens <= bs_max
+            and not is_draft_model
+        ):
+            # Mid-size batch on A2: the dispatch_ffn_combine fused primitive
+            # outperforms ALLGATHER + per-expert slicing once we are inside the
+            # kernel's bs envelope. Cap defaults to mc2_tokens_capacity; users
+            # tune via `a2_adapt_config.dispatch_combine_bs_max`.
+            moe_comm_type = MoECommType.DISPATCH_COMBINE
         elif a2_moe == "auto" and num_tokens > mc2_tokens_capacity and ep_world_size >= 8:
             # Large prefill: A2 ALLTOALL beats ALLGATHER once EP is sufficiently sharded.
             moe_comm_type = MoECommType.ALLTOALL
