@@ -9,6 +9,7 @@ import vllm.envs as envs_vllm
 from vllm.config import CUDAGraphMode, VllmConfig
 from vllm.distributed import get_dp_group, get_ep_group, get_tensor_model_parallel_world_size
 from vllm.forward_context import BatchDescriptor, get_forward_context, set_forward_context
+from vllm.logger import logger
 
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.utils import (
@@ -282,19 +283,22 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
         # `additional_config.a2_adapt_config.moe_comm`:
         #   - "alltoall"          → force MoECommType.ALLTOALL (F2.1)
         #   - "dispatch_combine"  → force MoECommType.DISPATCH_COMBINE (F2.2)
+        #   - "pp_ep_gather"      → force MoECommType.PP_EP_GATHER (F2.3,
+        #                            requires PP > 1; falls back to ALLGATHER
+        #                            with a warning otherwise)
         #   - "auto"              → pick the best A2 path automatically;
-        #                            dispatch_combine for mid-size batches
-        #                            (F2.2), ALLTOALL for large prefill (F2.1),
-        #                            otherwise MC2 / ALLGATHER.
+        #                            PP > 1 with small/mid batch picks PP_EP_GATHER
+        #                            (F2.3); dispatch_combine for mid-size
+        #                            batches (F2.2); ALLTOALL for large prefill
+        #                            (F2.1); otherwise MC2 / ALLGATHER.
         #   - "none"              → fall through to legacy MC2 / ALLGATHER.
         #   - other valid values produced by later F2.x commits fall through
         #     here until their implementation lands.
         a2_cfg = get_ascend_config().a2_adapt_config
         a2_moe = a2_cfg.moe_comm
         num_experts = vllm_config.model_config.get_num_experts()
-        ep_world_size = (
-            vllm_config.parallel_config.world_size_across_dp // vllm_config.parallel_config.pipeline_parallel_size
-        )
+        pp_size = vllm_config.parallel_config.pipeline_parallel_size
+        ep_world_size = vllm_config.parallel_config.world_size_across_dp // pp_size
         num_experts_per_device = num_experts // ep_world_size
         bs_min = a2_cfg.dispatch_combine_bs_min
         # `None` (the user / env default) means defer to mc2_tokens_capacity.
@@ -304,6 +308,25 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
             moe_comm_type = MoECommType.ALLTOALL
         elif a2_moe == "dispatch_combine":
             moe_comm_type = MoECommType.DISPATCH_COMBINE
+        elif a2_moe == "pp_ep_gather":
+            if pp_size <= 1:
+                logger.warning(
+                    "a2_adapt_config.moe_comm='pp_ep_gather' requires "
+                    "pipeline_parallel_size > 1; falling back to ALLGATHER."
+                )
+                moe_comm_type = MoECommType.ALLGATHER
+            else:
+                moe_comm_type = MoECommType.PP_EP_GATHER
+        elif (
+            a2_moe == "auto"
+            and pp_size > 1
+            and num_tokens <= mc2_tokens_capacity
+            and ep_world_size > 1
+        ):
+            # PP > 1 small / mid batch on A2: route through the PP-aware
+            # ep_gather path. F2.3 currently degenerates to AllGather on
+            # vllm builds without deep_gemm_utils.ep_gather.
+            moe_comm_type = MoECommType.PP_EP_GATHER
         elif (
             a2_moe == "auto"
             and ep_world_size <= 32
