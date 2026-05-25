@@ -1379,6 +1379,17 @@ def singleton(cls):
 def enable_dsa_cp() -> bool:
     from vllm.config import get_current_vllm_config
 
+    # Explicit user override has the highest priority. Read from
+    # ascend_config if available (covers both additional_config and the
+    # VLLM_ASCEND_DISABLE_DSA_CP env var via _get_config_value), and fall
+    # back to the env var directly if ascend_config is not initialised yet.
+    try:
+        if get_ascend_config().disable_dsa_cp:
+            return False
+    except RuntimeError:
+        if envs_ascend.VLLM_ASCEND_DISABLE_DSA_CP:
+            return False
+
     vllm_config = get_current_vllm_config()
     is_ds_v32 = hasattr(vllm_config.model_config, "hf_text_config") and hasattr(
         vllm_config.model_config.hf_text_config, "index_topk"

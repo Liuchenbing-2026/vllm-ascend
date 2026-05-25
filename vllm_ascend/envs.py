@@ -102,6 +102,12 @@ env_variables: dict[str, Callable[[], Any]] = {
     # `dispatch_gmm_combine_decode` can be used only for **decode node** moe layer
     # with W8A8. And MTP layer must be W8A8.
     "VLLM_ASCEND_ENABLE_FUSED_MC2": lambda: int(os.getenv("VLLM_ASCEND_ENABLE_FUSED_MC2", "0")),
+    # Forcibly disable DSA-CP (SFA Context Parallel).
+    # When set to 1, `enable_dsa_cp()` always returns False, regardless of
+    # model config or enable_sp state. Useful for models such as GLM5 that
+    # share the `index_topk` config field with ds32 but should NOT take the
+    # SFA-CP path (which introduces an all-to-all on o_proj activations).
+    "VLLM_ASCEND_DISABLE_DSA_CP": lambda: bool(int(os.getenv("VLLM_ASCEND_DISABLE_DSA_CP", "0"))),
     # DEPRECATED: VLLM_ASCEND_BALANCE_SCHEDULING env var will be removed in a future release.
     # Use --additional-config '{"enable_balance_scheduling": true}' instead.
     "VLLM_ASCEND_BALANCE_SCHEDULING": lambda: bool(int(os.getenv("VLLM_ASCEND_BALANCE_SCHEDULING", "0"))),

@@ -154,6 +154,12 @@ class AscendConfig:
             "VLLM_ASCEND_ENABLE_FUSED_MC2",
             ascend_envs.VLLM_ASCEND_ENABLE_FUSED_MC2,
         )
+        self.disable_dsa_cp = self._get_config_value(
+            additional_config,
+            "disable_dsa_cp",
+            "VLLM_ASCEND_DISABLE_DSA_CP",
+            ascend_envs.VLLM_ASCEND_DISABLE_DSA_CP,
+        )
         self.enable_mlapo = self._get_config_value(
             additional_config,
             "enable_mlapo",
