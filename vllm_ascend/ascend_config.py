@@ -50,6 +50,7 @@ class AscendConfig:
 
         a2_adapt_config = additional_config.get("a2_adapt_config", {})
         self.a2_adapt_config = A2AdaptConfig(a2_adapt_config)
+        self._apply_a2_dsa_cp_disable_overrides(vllm_config)
 
         weight_prefetch_config = additional_config.get("weight_prefetch_config", {})
         self.weight_prefetch_config = WeightPrefetchConfig(weight_prefetch_config)
@@ -277,6 +278,59 @@ class AscendConfig:
         self.enable_hamming_sparse = self.hamming_sparse["enabled"]
         self.sparse_json = self.hamming_sparse["sparse_json_location"]
         self._check_enable_hamming_sparse()
+
+    def _apply_a2_dsa_cp_disable_overrides(self, vllm_config: "VllmConfig") -> None:
+        """F01: On A2 force prefill / decode context-parallel sizes to 1.
+
+        When the runtime device is A2 (NpuArch 220) and
+        ``a2_adapt_config.dsa_cp_disable_all2all`` is True (the default),
+        rewrite ``parallel_config.prefill_context_parallel_size`` and
+        ``parallel_config.decode_context_parallel_size`` to 1 in place.
+
+        Downstream code in
+        ``vllm_ascend/attention/context_parallel/{attention_cp,common_cp,mla_cp}.py``
+        already gates every ``dist.all_to_all_single`` / ``all_gather`` CP
+        call on ``pcp_size > 1`` / ``dcp_size > 1``, so the override turns
+        those branches into dead code naturally.
+
+        The SFA TP all2all in ``vllm_ascend/attention/sfa_v1.py`` is *not*
+        a CP comm; it is left untouched (disabling it would break tp_size > 1
+        correctness).
+
+        On A3 / A5 / 310P this method is a no-op even if the flag is set.
+        """
+        if not self.a2_adapt_config.dsa_cp_disable_all2all:
+            return
+        try:
+            from vllm_ascend.utils import AscendDeviceType, get_ascend_device_type
+
+            device_type = get_ascend_device_type()
+        except Exception:
+            # NPU not yet initialised at AscendConfig boot. Fall back silently —
+            # the call sites still check `pcp_size > 1` so behaviour is correct
+            # if vLLM happens to default these to 1 (single-machine smoke).
+            return
+        if device_type != AscendDeviceType.A2:
+            return
+
+        parallel_config = vllm_config.parallel_config
+        original_pcp = getattr(parallel_config, "prefill_context_parallel_size", 1)
+        original_dcp = getattr(parallel_config, "decode_context_parallel_size", 1)
+        if original_pcp > 1 or original_dcp > 1:
+            logger.warning(
+                "A2 device + a2_adapt_config.dsa_cp_disable_all2all=True: "
+                "compressing parallel_config.prefill_context_parallel_size "
+                "(%d -> 1) and parallel_config.decode_context_parallel_size "
+                "(%d -> 1). DSA-CP all2all is disabled on A2; set "
+                "a2_adapt_config.dsa_cp_disable_all2all=False to restore "
+                "the upstream behaviour.",
+                original_pcp,
+                original_dcp,
+            )
+        if hasattr(parallel_config, "prefill_context_parallel_size"):
+            parallel_config.prefill_context_parallel_size = 1
+        if hasattr(parallel_config, "decode_context_parallel_size"):
+            parallel_config.decode_context_parallel_size = 1
 
     @staticmethod
     def _get_config_value(additional_config: dict[str, Any], config_key: str, env_key: str, env_value: Any) -> Any:
