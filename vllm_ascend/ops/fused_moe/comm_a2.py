@@ -39,7 +39,7 @@ from __future__ import annotations
 
 from vllm.logger import logger
 
-from vllm_ascend.ops.fused_moe.moe_comm_method import AllGatherCommImpl, MC2CommImpl
+from vllm_ascend.ops.fused_moe.moe_comm_method import AllGatherCommImpl, FusedMC2CommImpl, MC2CommImpl
 
 
 class DispatchCombineA2CommImpl(MC2CommImpl):
@@ -116,3 +116,34 @@ class PpEpGatherA2CommImpl(AllGatherCommImpl):
                 "'dispatch_combine' to use a different A2 path explicitly."
             )
             return None
+
+
+class PpFusedMC2A2CommImpl(FusedMC2CommImpl):
+    """A2 pipeline-aware fused MC2 path (feature F2.4).
+
+    Combines the dispatch + combine primitive from F2.2 with the
+    PP-aware ep_gather routing from F2.3 — the "MoE fused operator"
+    referenced in the user's plan. Hardware fidelity (cross-supernode
+    A3) requires real multi-host validation; on A2 single host this
+    class still exercises the routing path end-to-end so we can verify
+    the selection logic before promotion.
+
+    Active only when ``pipeline_parallel_size > 1``. Falls back to the
+    F2.3 PP_EP_GATHER path inside `select_moe_comm_method` when the
+    batch size escapes the MC2 capacity envelope.
+
+    Bring-up checklist
+    ------------------
+    1. Verify the A2 build of CANN exposes the fused dispatch + combine
+       primitive used by `FusedMC2CommImpl`; on hardware where the
+       primitive is missing the impl falls back to the standard MC2
+       compute path the parent class already implements.
+    2. When the dedicated A2 fused kernel arrives, override
+       `_get_prepare_finalize` here to wire it in. The selection layer
+       and registration both stay unchanged.
+    """
+
+    # No overrides yet — the parent `FusedMC2CommImpl` already takes the
+    # fused path when its prerequisites (e.g. enable_fused_mc2 == 1) are
+    # satisfied. The subclass exists to give the A2 selection layer a
+    # dedicated enum so users can A/B test PP+fused versus PP+ep_gather.

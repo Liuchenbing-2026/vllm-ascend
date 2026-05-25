@@ -284,16 +284,19 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
         #   - "alltoall"          → force MoECommType.ALLTOALL (F2.1)
         #   - "dispatch_combine"  → force MoECommType.DISPATCH_COMBINE (F2.2)
         #   - "pp_ep_gather"      → force MoECommType.PP_EP_GATHER (F2.3,
-        #                            requires PP > 1; falls back to ALLGATHER
-        #                            with a warning otherwise)
+        #                            requires PP > 1)
+        #   - "pp_fused"          → force MoECommType.PP_FUSED_MC2 (F2.4,
+        #                            requires PP > 1; falls back to
+        #                            PP_EP_GATHER when batch exceeds capacity)
         #   - "auto"              → pick the best A2 path automatically;
-        #                            PP > 1 with small/mid batch picks PP_EP_GATHER
-        #                            (F2.3); dispatch_combine for mid-size
-        #                            batches (F2.2); ALLTOALL for large prefill
-        #                            (F2.1); otherwise MC2 / ALLGATHER.
+        #                            PP > 1 with small/mid batch and ep_size<=32
+        #                            picks PP_FUSED_MC2 (F2.4); PP > 1 larger
+        #                            batch picks PP_EP_GATHER (F2.3);
+        #                            non-PP mid-size batches pick
+        #                            DISPATCH_COMBINE (F2.2); non-PP large
+        #                            prefill picks ALLTOALL (F2.1); otherwise
+        #                            MC2 / ALLGATHER.
         #   - "none"              → fall through to legacy MC2 / ALLGATHER.
-        #   - other valid values produced by later F2.x commits fall through
-        #     here until their implementation lands.
         a2_cfg = get_ascend_config().a2_adapt_config
         a2_moe = a2_cfg.moe_comm
         num_experts = vllm_config.model_config.get_num_experts()
@@ -317,15 +320,45 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
                 moe_comm_type = MoECommType.ALLGATHER
             else:
                 moe_comm_type = MoECommType.PP_EP_GATHER
+        elif a2_moe == "pp_fused":
+            if pp_size > 1 and num_tokens <= mc2_tokens_capacity:
+                moe_comm_type = MoECommType.PP_FUSED_MC2
+            elif pp_size > 1:
+                # Batch escapes the MC2 capacity envelope — fall back to the
+                # less aggressive PP-aware path so the request still completes.
+                logger.warning_once(
+                    "a2_adapt_config.moe_comm='pp_fused' with num_tokens=%d "
+                    "exceeds mc2_tokens_capacity=%d; falling back to "
+                    "PP_EP_GATHER for this batch.",
+                    num_tokens,
+                    mc2_tokens_capacity,
+                )
+                moe_comm_type = MoECommType.PP_EP_GATHER
+            else:
+                logger.warning(
+                    "a2_adapt_config.moe_comm='pp_fused' requires "
+                    "pipeline_parallel_size > 1; falling back to ALLGATHER."
+                )
+                moe_comm_type = MoECommType.ALLGATHER
+        elif (
+            a2_moe == "auto"
+            and pp_size > 1
+            and ep_world_size <= 32
+            and num_tokens <= mc2_tokens_capacity
+        ):
+            # PP > 1 small / mid batch on A2: prefer the fused path. When the
+            # A2 fused primitive is unavailable the subclass degenerates to
+            # FusedMC2CommImpl's standard MC2 compute, which is still a valid
+            # path.
+            moe_comm_type = MoECommType.PP_FUSED_MC2
         elif (
             a2_moe == "auto"
             and pp_size > 1
             and num_tokens <= mc2_tokens_capacity
             and ep_world_size > 1
         ):
-            # PP > 1 small / mid batch on A2: route through the PP-aware
-            # ep_gather path. F2.3 currently degenerates to AllGather on
-            # vllm builds without deep_gemm_utils.ep_gather.
+            # PP > 1 small / mid batch but ep_world_size > 32: route through
+            # PP_EP_GATHER instead of PP_FUSED_MC2.
             moe_comm_type = MoECommType.PP_EP_GATHER
         elif (
             a2_moe == "auto"
@@ -333,10 +366,11 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
             and bs_min < num_tokens <= bs_max
             and not is_draft_model
         ):
-            # Mid-size batch on A2: the dispatch_ffn_combine fused primitive
-            # outperforms ALLGATHER + per-expert slicing once we are inside the
-            # kernel's bs envelope. Cap defaults to mc2_tokens_capacity; users
-            # tune via `a2_adapt_config.dispatch_combine_bs_max`.
+            # Mid-size batch on A2 (no PP): the dispatch_ffn_combine fused
+            # primitive outperforms ALLGATHER + per-expert slicing once we are
+            # inside the kernel's bs envelope. Cap defaults to
+            # mc2_tokens_capacity; users tune via
+            # `a2_adapt_config.dispatch_combine_bs_max`.
             moe_comm_type = MoECommType.DISPATCH_COMBINE
         elif a2_moe == "auto" and num_tokens > mc2_tokens_capacity and ep_world_size >= 8:
             # Large prefill: A2 ALLTOALL beats ALLGATHER once EP is sufficiently sharded.

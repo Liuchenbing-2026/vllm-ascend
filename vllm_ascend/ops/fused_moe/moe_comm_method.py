@@ -62,7 +62,11 @@ def setup_moe_comm_method(moe_config):
         # only emits these enum values from the A2 elif, so on A3 / A5 / 310P
         # they are dead entries in the dict. Importing here keeps the file
         # boundary small.
-        from vllm_ascend.ops.fused_moe.comm_a2 import DispatchCombineA2CommImpl, PpEpGatherA2CommImpl
+        from vllm_ascend.ops.fused_moe.comm_a2 import (
+            DispatchCombineA2CommImpl,
+            PpEpGatherA2CommImpl,
+            PpFusedMC2A2CommImpl,
+        )
 
         _MoECommMethods[MoECommType.DISPATCH_COMBINE] = DispatchCombineA2CommImpl(moe_config)
         # PP-aware A2 paths only make sense when pipeline parallelism is on.
@@ -73,6 +77,7 @@ def setup_moe_comm_method(moe_config):
         pp_size = get_current_vllm_config().parallel_config.pipeline_parallel_size
         if pp_size > 1:
             _MoECommMethods[MoECommType.PP_EP_GATHER] = PpEpGatherA2CommImpl(moe_config)
+            _MoECommMethods[MoECommType.PP_FUSED_MC2] = PpFusedMC2A2CommImpl(moe_config)
     else:
         _MoECommMethods[MoECommType.ALLGATHER] = AllGatherCommImpl(moe_config)
 
