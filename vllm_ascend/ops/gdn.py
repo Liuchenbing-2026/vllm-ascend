@@ -40,9 +40,10 @@ from vllm_ascend.ops.triton.fla.utils import clear_ssm_states
 from vllm_ascend.ops.triton.fused_gdn_gating import fused_gdn_gating_patch
 from vllm_ascend.utils import vllm_version_is, weak_ref_tensors
 
-# Set VLLM_ASCEND_USE_FUSED_GDN_UPDATE=0 to fall back to the two-step path
-# (fused_gdn_gating_patch + npu_recurrent_gated_delta_rule) for decode/spec-decode.
-_USE_FUSED_GDN_UPDATE = os.getenv("VLLM_ASCEND_USE_FUSED_GDN_UPDATE", "1") == "1"
+# Set VLLM_ASCEND_USE_FUSED_GDN_UPDATE=1 to opt-in to the fused AscendC op for
+# decode/spec-decode. Default is off (falls back to the original two-step path:
+# fused_gdn_gating_patch + npu_recurrent_gated_delta_rule).
+_USE_FUSED_GDN_UPDATE = os.getenv("VLLM_ASCEND_USE_FUSED_GDN_UPDATE", "0") == "1"
 
 
 def to_int64_tuple(tensor: torch.Tensor) -> tuple[int, ...]:
