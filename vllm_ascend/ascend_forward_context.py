@@ -277,6 +277,12 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
         num_experts_per_device = num_experts // ep_world_size
         if num_experts_per_device <= 24 and ep_world_size >= 16 and num_tokens <= mc2_tokens_capacity:
             moe_comm_type = MoECommType.MC2
+        elif ep_world_size > 1:
+            # When EP is enabled but MC2 conditions are not met, prefer ALLTOALL
+            # over ALLGATHER on A2 to avoid the (ep_size - 1)/ep_size redundant
+            # bandwidth overhead. The underlying AlltoAllCommImpl is hardware-agnostic
+            # (uses standard HCCL all_to_all_single), so A2 is supported.
+            moe_comm_type = MoECommType.ALLTOALL
         else:
             moe_comm_type = MoECommType.ALLGATHER
 
