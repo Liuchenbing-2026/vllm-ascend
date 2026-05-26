@@ -24,7 +24,7 @@ namespace FusedSigmoidGatingDeltaRuleUpdate {
 using namespace matmul;
 using namespace AscendC;
 constexpr uint64_t BUFFER_NUM = 1;
-constexpr uint32_t MAX_OUT_BUFFER_NUM = 2;
+constexpr uint32_t MAX_OUT_BUFFER_NUM = 3;
 constexpr uint64_t MAX_MTP = 8;
 constexpr uint64_t BF16_NUM_PER_BLOCK = 16;
 constexpr uint64_t FP32_NUM_PER_BLOCK = 8;
@@ -70,8 +70,13 @@ public:
         hasGamaK_ = false;
         useAddFoldReduce_ = (RGDR_ENABLE_ADD_FOLD_REDUCE != 0);
         vStep_ = tilingData->vStep;
-        stateOutBufferNum_ = (tilingData->stateOutBufferNum == MAX_OUT_BUFFER_NUM) ? MAX_OUT_BUFFER_NUM : BUFFER_NUM;
-        attnOutBufferNum_ = (tilingData->attnOutBufferNum == MAX_OUT_BUFFER_NUM) ? MAX_OUT_BUFFER_NUM : BUFFER_NUM;
+        // Clamp tiling-provided buffer counts into [1, MAX_OUT_BUFFER_NUM]. The kernel
+        // output queues are TQue<VECOUT, MAX_OUT_BUFFER_NUM>, so >MAX_OUT_BUFFER_NUM
+        // gives no extra pipeline depth; <=0 falls back to BUFFER_NUM (=1).
+        stateOutBufferNum_ = (tilingData->stateOutBufferNum >= MAX_OUT_BUFFER_NUM) ? MAX_OUT_BUFFER_NUM :
+                             (tilingData->stateOutBufferNum >= 2 ? tilingData->stateOutBufferNum : BUFFER_NUM);
+        attnOutBufferNum_ = (tilingData->attnOutBufferNum >= MAX_OUT_BUFFER_NUM) ? MAX_OUT_BUFFER_NUM :
+                            (tilingData->attnOutBufferNum >= 2 ? tilingData->attnOutBufferNum : BUFFER_NUM);
         restUbSize_ = tilingData->ubRestBytes;
         alignK_ = Ceil(tilingData->dk, BF16_NUM_PER_BLOCK) * BF16_NUM_PER_BLOCK;
         alignV_ = Ceil(tilingData->dv, BF16_NUM_PER_BLOCK) * BF16_NUM_PER_BLOCK;

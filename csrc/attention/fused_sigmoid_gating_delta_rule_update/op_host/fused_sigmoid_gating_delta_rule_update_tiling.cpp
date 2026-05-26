@@ -579,13 +579,19 @@ bool FusedSigmoidGatingDeltaRuleUpdateTiling::IsBetterProfile(const BufferProfil
     if (candidate.repeatTime != current.repeatTime) {
         return candidate.repeatTime < current.repeatTime;
     }
-    // The kernel output queues are declared with compile-time depth MAX_OUT_BUFFER_NUM=2,
-    // so tiling counts above 2 give no additional pipeline benefit. Compare effective
-    // depth capped at 2 to prevent (3,3) from incorrectly beating (2,2) on large-UB
-    // platforms (e.g. ascend910_93) where all candidates achieve the same repeatTime.
-    constexpr uint32_t kKernelMaxBuf = 2;
+    // Kernel output queues are declared with compile-time depth MAX_OUT_BUFFER_NUM
+    // (currently 3). Counts above that give no extra pipeline benefit. Use effective
+    // depth capped at the kernel max to keep comparisons consistent with what the
+    // kernel can actually exploit (larger-UB SoCs like ascend910_93 benefit from
+    // depth=3; smaller-UB SoCs gracefully fall back via EvaluateBufferProfile when
+    // a profile fails the vStep>=8 check).
+    constexpr uint32_t kKernelMaxBuf = 3;
     auto effectiveDepth = [](uint32_t s, uint32_t a) -> uint32_t {
-        auto cap = [](uint32_t v) { return v >= kKernelMaxBuf ? kKernelMaxBuf : 1u; };
+        auto cap = [](uint32_t v) {
+            if (v >= kKernelMaxBuf) return kKernelMaxBuf;
+            if (v >= 2u) return v;
+            return 1u;
+        };
         return cap(s) + cap(a);
     };
     uint32_t candidateDepth = effectiveDepth(candidate.stateOutBufferNum, candidate.attnOutBufferNum);
@@ -601,10 +607,16 @@ ge::graphStatus FusedSigmoidGatingDeltaRuleUpdateTiling::FinalizeVStepFromUb(int
     (void)coeff;
     int64_t aDk = CeilAlign(tilingData_.dk, static_cast<uint32_t>(16)); // 16 * 2 = 32B
     BufferProfile selected;
-    const std::array<BufferProfile, 4> candidates = {{
+    // Ordered from smallest UB footprint to largest. EvaluateBufferProfile auto-skips
+    // candidates whose required vStep falls below 8 (UB insufficient), so smaller-UB
+    // SoCs (e.g. ascend910b) naturally pick (2,2)/(1,2); larger-UB SoCs (e.g.
+    // ascend910_93) can pick (2,3)/(3,2)/(3,3) when UB allows.
+    const std::array<BufferProfile, 6> candidates = {{
         BufferProfile(1u, 1u, 0u, 0u, false),
         BufferProfile(1u, 2u, 0u, 0u, false),
         BufferProfile(2u, 2u, 0u, 0u, false),
+        BufferProfile(2u, 3u, 0u, 0u, false),
+        BufferProfile(3u, 2u, 0u, 0u, false),
         BufferProfile(3u, 3u, 0u, 0u, false)
     }};
     for (const auto &candidate : candidates) {
