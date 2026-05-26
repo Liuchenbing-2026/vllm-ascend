@@ -28,6 +28,7 @@ from vllm.forward_context import ForwardContext, get_forward_context
 from vllm.model_executor.layers.attention import MLAAttention
 from vllm.model_executor.layers.mla import MLAModules, MultiHeadLatentAttentionWrapper
 from vllm.model_executor.layers.quantization import QuantizationConfig
+from vllm.model_executor.models.utils import extract_layer_index
 from vllm.utils.torch_utils import direct_register_custom_op
 from vllm.v1.attention.backend import AttentionMetadata  # type: ignore
 
@@ -80,6 +81,7 @@ class AscendMultiHeadLatentAttention(MultiHeadLatentAttentionWrapper):
         cache_config: CacheConfig | None = None,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
+        skip_topk: bool = False,
     ) -> None:
         nn.Module.__init__(self)
         self.hidden_size = hidden_size
@@ -90,7 +92,20 @@ class AscendMultiHeadLatentAttention(MultiHeadLatentAttentionWrapper):
         self.qk_head_dim = qk_nope_head_dim + qk_rope_head_dim
         self.v_head_dim = v_head_dim
         self.prefix = prefix
+        # IndexCache: when framework (e.g. vllm PR #37735 in deepseek_v2.py)
+        # hasn't decided skip_topk for this layer, derive it from hf_config +
+        # layer prefix here, so the feature works on vllm versions that don't
+        # yet ship the framework-side wiring. Refer to arxiv 2603.12201.
         hf_config = get_current_vllm_config().model_config.hf_text_config
+        if not skip_topk and getattr(hf_config, "use_index_cache", False):
+            freq = getattr(hf_config, "index_topk_freq", 1)
+            pattern = getattr(hf_config, "index_topk_pattern", None)
+            layer_id = extract_layer_index(prefix)
+            if pattern is None:
+                skip_topk = max(layer_id - 1, 0) % freq != 0
+            elif 0 <= layer_id < len(pattern):
+                skip_topk = pattern[layer_id] == "S"
+        self.skip_topk = skip_topk
         self.enable_shared_expert_dp = get_ascend_config().enable_shared_expert_dp
         self.tp_size = get_tensor_model_parallel_world_size()
         self.layers = hf_config.num_hidden_layers
@@ -112,6 +127,8 @@ class AscendMultiHeadLatentAttention(MultiHeadLatentAttentionWrapper):
             prefix=f"{prefix}.attn",
             use_sparse=mla_modules.is_sparse,
             indexer=ascend_indexer,
+            skip_topk=skip_topk,
+            topk_indices_buffer=getattr(mla_modules, "topk_indices_buffer", None),
             # extra args
             rotary_emb=mla_modules.rotary_emb,
             fused_qkv_a_proj=mla_modules.fused_qkv_a_proj,
