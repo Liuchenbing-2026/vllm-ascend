@@ -270,9 +270,8 @@ def npu_fused_sigmoid_gating_delta_rule_update(
         q = l2norm_fwd(q)
         k = l2norm_fwd(k)
 
-    # A_log and dt_bias are nn.Parameter created with float32 in
-    # gdn_linear_attn.py, so .to(float32) and .contiguous() are no-ops.
-    # Skip the redundant calls to shave dispatch overhead on hot decode path.
+    A_log = A_log.to(torch.float32).contiguous()
+    dt_bias = dt_bias.to(torch.float32).contiguous()
     actual_seq_lengths = torch.cat([cu_seqlens[:1], cu_seqlens[1:] - cu_seqlens[:-1]])
     out = torch.ops._C_ascend.npu_fused_sigmoid_gating_delta_rule_update(
         A_log,
