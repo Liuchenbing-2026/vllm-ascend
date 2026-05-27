@@ -445,6 +445,78 @@ void bgmv_shrink(at::Tensor &x, at::Tensor &weight, at::Tensor &indices, at::Ten
     return;
 }
 
+at::Tensor fused_moe_lora(at::Tensor &x, at::Tensor &lora_a, at::Tensor &lora_b,
+                          at::Tensor &indices, at::Tensor &y, int64_t slice_offset,
+                          int64_t slice_size, double scale)
+{
+    // Fused MoE-LoRA: shrink + expand_slice + accumulate.
+    // x:       [batch_size, input_hidden_dim]            bf16/half
+    // lora_a:  [num_loras, lora_rank, input_hidden_dim]  bf16/half
+    // lora_b:  [num_loras, output_hidden_dim, lora_rank] bf16/half (output_hidden_dim == slice_size)
+    // indices: [batch_size]                              int64, -1 == skip row
+    // y:       [batch_size, output_full_dim]             bf16/half, inout
+    at::ScalarType scalar_type = y.scalar_type();
+    TORCH_CHECK(scalar_type == torch::kHalf || scalar_type == torch::kBFloat16,
+                "fused_moe_lora only supports half and bf16");
+    TORCH_CHECK(x.scalar_type() == scalar_type, "x must match y dtype");
+    TORCH_CHECK(lora_a.scalar_type() == scalar_type, "lora_a must match y dtype");
+    TORCH_CHECK(lora_b.scalar_type() == scalar_type, "lora_b must match y dtype");
+    TORCH_CHECK(x.dim() == 2, "x should be [batch_size, input_hidden_dim]");
+    TORCH_CHECK(lora_a.dim() == 3, "lora_a should be [num_loras, lora_rank, input_hidden_dim]");
+    TORCH_CHECK(lora_b.dim() == 3,
+                "lora_b should be [num_loras, output_hidden_dim, lora_rank]");
+    TORCH_CHECK(y.dim() == 2, "y should be [batch_size, output_full_dim]");
+    TORCH_CHECK(indices.dim() == 1, "indices should be [batch_size]");
+    TORCH_CHECK(x.size(0) == y.size(0) && x.size(0) == indices.size(0),
+                "x / y / indices must share batch_size");
+    TORCH_CHECK(lora_a.size(0) == lora_b.size(0),
+                "lora_a and lora_b must share num_loras");
+    TORCH_CHECK(lora_a.size(2) == x.size(1),
+                "lora_a input dim must match x hidden dim");
+    TORCH_CHECK(lora_a.size(1) == lora_b.size(2),
+                "lora_a rank dim must match lora_b rank dim");
+    TORCH_CHECK(lora_b.size(1) == slice_size,
+                "lora_b output dim must equal slice_size");
+    TORCH_CHECK(slice_offset >= 0, "slice_offset must be non-negative");
+    TORCH_CHECK((slice_size + slice_offset) <= y.size(1),
+                "slice_size + slice_offset must not exceed y.shape[1]");
+
+    void *x_ptr = x.data_ptr();
+    void *lora_a_ptr = lora_a.data_ptr();
+    void *lora_b_ptr = lora_b.data_ptr();
+    void *indices_ptr = indices.data_ptr();
+    void *y_ptr = y.data_ptr();
+    int indices_size = indices.size(0);
+    int batch_size = x.size(0);
+    int input_hidden_dim = x.size(1);
+    int lora_rank = lora_a.size(1);
+    int output_hidden_dim = lora_b.size(1);
+    int output_full_dim = y.size(1);
+    float scale_f = static_cast<float>(scale);
+    aclrtStream stream = c10_npu::getCurrentNPUStream().stream();
+    at_npu::native::OpCommand cmd;
+    cmd.Name("fused_moe_lora");
+    cmd.SetCustomHandler([scalar_type, stream, x_ptr, lora_a_ptr, lora_b_ptr, indices_ptr,
+                          indices_size, y_ptr, batch_size, input_hidden_dim, lora_rank,
+                          output_hidden_dim, slice_offset, output_full_dim,
+                          scale_f]() -> int {
+        auto dtype = get_dtype_from_torch(scalar_type);
+        int device_id = 0;
+        int64_t aiv_num = 0;
+        TORCH_CHECK(aclGetDeviceCapability(device_id, ACL_DEVICE_INFO_VECTOR_CORE_NUM, &aiv_num) ==
+                    ACL_SUCCESS);
+        int num_tokens_per_core = (batch_size + aiv_num - 1) / aiv_num;
+        TORCH_CHECK("num_tokens_per_core != 0", "num_tokens_per_core should not be 0");
+        fused_moe_lora_impl(dtype, stream, x_ptr, lora_a_ptr, lora_b_ptr, indices_ptr,
+                            indices_size, y_ptr, batch_size, num_tokens_per_core,
+                            input_hidden_dim, lora_rank, output_hidden_dim, slice_offset,
+                            output_full_dim, scale_f);
+        return 0;
+    });
+    cmd.Run();
+    return y;
+}
+
 at::Tensor bgmv_expand(at::Tensor &x, at::Tensor &weight, at::Tensor &indices, at::Tensor &y,
                        int64_t slice_offset, int64_t slice_size)
 {
@@ -1052,6 +1124,11 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "bgmv_expand(Tensor! x, Tensor! weight, Tensor! indices, Tensor! y,"
         "            int slice_offset, int slice_size) -> Tensor");
     ops.impl("bgmv_expand", torch::kPrivateUse1, &vllm_ascend::bgmv_expand);
+
+    ops.def(
+        "fused_moe_lora(Tensor! x, Tensor! lora_a, Tensor! lora_b, Tensor! indices,"
+        "               Tensor! y, int slice_offset, int slice_size, float scale) -> Tensor");
+    ops.impl("fused_moe_lora", torch::kPrivateUse1, &vllm_ascend::fused_moe_lora);
 
     ops.def("sgmv_shrink(Tensor! x, Tensor! weight, Tensor! lora_indices, Tensor! seq_len, Tensor! y, float scale) -> ()");
     ops.impl("sgmv_shrink", torch::kPrivateUse1, &vllm_ascend::sgmv_shrink);

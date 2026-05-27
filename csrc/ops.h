@@ -102,6 +102,30 @@ namespace vllm_ascend {
         uint32_t slice_offset,
         uint32_t output_full_dim);
 
+    // Fused MoE-LoRA: shrink + expand + accumulate in one kernel.
+    // x:        [batch_size, input_hidden_dim]               bf16/half
+    // loraA:    [num_loras, lora_rank, input_hidden_dim]     bf16/half
+    // loraB:    [num_loras, output_hidden_dim, lora_rank]    bf16/half
+    // indices:  [batch_size]                                 int64, -1 means skip row
+    // y:        [batch_size, output_full_dim]                bf16/half, inout (accumulate)
+    extern void fused_moe_lora_impl(
+        AscendType type,
+        void *stream,
+        void *x,
+        void *loraA,
+        void *loraB,
+        void *indices,
+        uint32_t indicesSize,
+        void *y,
+        uint32_t batch_size,
+        uint32_t num_tokens_per_core,
+        uint32_t input_hidden_dim,
+        uint32_t lora_rank,
+        uint32_t output_hidden_dim,
+        uint32_t slice_offset,
+        uint32_t output_full_dim,
+        float scale);
+
     extern void mla_preprocess_impl(
         void* stream,
         void* hidden_state,

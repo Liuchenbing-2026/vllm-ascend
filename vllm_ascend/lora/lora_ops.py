@@ -120,3 +120,36 @@ def sgmv_expand_slice(
     return torch.ops._C_ascend.sgmv_expand(
         inputs, lora_b_weights, lora_indices_tensor, seq_len_tensor, output_tensor, slice_offset, slice_size
     )
+
+
+def fused_moe_lora(
+    inputs: torch.Tensor,
+    lora_a_combined: torch.Tensor,
+    lora_b_combined: torch.Tensor,
+    indices: torch.Tensor,
+    output_tensor: torch.Tensor,
+    slice_offset: int,
+    slice_size: int,
+    scale: float = 1.0,
+):
+    """Fused MoE-LoRA: shrink + expand_slice + accumulate in one AscendC kernel.
+
+    Semantics (per row i, indices[i] = vid):
+        if vid < 0: skip (no contribution)
+        rank_buf = scale * (x[i] @ lora_a_combined[vid].T)
+        output[i, slice_offset:slice_offset+slice_size] += rank_buf @ lora_b_combined[vid].T
+
+    Args:
+        inputs:           [batch_size, input_hidden_dim] bf16/half.
+        lora_a_combined:  [num_loras_total, lora_rank, input_hidden_dim] bf16/half.
+        lora_b_combined:  [num_loras_total, slice_size, lora_rank] bf16/half.
+        indices:          [batch_size] int64, -1 means skip.
+        output_tensor:    [batch_size, output_full_dim] bf16/half, inout.
+        slice_offset:     where to start writing in output_tensor[:, ...].
+        slice_size:       width of the destination slice.
+        scale:            shrink scaling factor, fused into rank_buf.
+    """
+    return torch.ops._C_ascend.fused_moe_lora(
+        inputs, lora_a_combined, lora_b_combined, indices, output_tensor,
+        slice_offset, slice_size, scale,
+    )

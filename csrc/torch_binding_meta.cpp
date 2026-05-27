@@ -67,6 +67,14 @@ at::Tensor bgmv_expand_meta(at::Tensor &x, at::Tensor &weight, at::Tensor &indic
     return y_out;
 }
 
+at::Tensor fused_moe_lora_meta(at::Tensor &x, at::Tensor &lora_a, at::Tensor &lora_b,
+                               at::Tensor &indices, at::Tensor &y, int64_t slice_offset,
+                               int64_t slice_size, double scale) {
+    (void)x; (void)lora_a; (void)lora_b; (void)indices;
+    (void)slice_offset; (void)slice_size; (void)scale;
+    return at::empty_like(y);
+}
+
 at::Tensor sgmv_expand_meta(at::Tensor &x, at::Tensor &weight, at::Tensor &lora_indices, at::Tensor &seq_len,
                         at::Tensor &y, int64_t slice_offset, int64_t slice_size) {
     at::Tensor y_out = at::empty_like(y);
@@ -696,6 +704,8 @@ TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     ops.impl("bgmv_expand", &vllm_ascend::meta::bgmv_expand_meta);
     // Sgmv expand
     ops.impl("sgmv_expand", &vllm_ascend::meta::sgmv_expand_meta);
+    // Fused MoE-LoRA (v2)
+    ops.impl("fused_moe_lora", &vllm_ascend::meta::fused_moe_lora_meta);
     // MLA preprocess
     ops.impl("mla_preprocess", &vllm_ascend::meta::mla_preprocess);
     // grouped_matmul_swiglu_quant meta implementation

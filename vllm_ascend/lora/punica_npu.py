@@ -487,10 +487,9 @@ class PunicaWrapperNPU(PunicaWrapperBase):
                 expert_ids, adapter_enabled, offset, token_lora_mapping,
             )
         elif kernel == "ascendc":
-            raise NotImplementedError(
-                "VLLM_ASCEND_MOE_LORA_KERNEL='ascendc' is reserved for a future "
-                "fused AscendC MoE-LoRA kernel (v2 roadmap). Use 'bgmv' (default) "
-                "for production or 'torch'/'bgmv_per_expert' for debugging."
+            return self._add_lora_fused_moe_ascendc(
+                y, x, lora_a_stacked, lora_b_stacked,
+                expert_ids, adapter_enabled, offset, token_lora_mapping,
             )
 
     def _add_lora_fused_moe_bgmv(
@@ -710,3 +709,71 @@ class PunicaWrapperNPU(PunicaWrapperBase):
                     buf = x_sub @ A[l, e].t().to(torch.float32)
                     delta = buf @ B[l, e].t().to(torch.float32)
                     y[mask, col_start:col_end] += delta.to(y.dtype)
+
+    def _add_lora_fused_moe_ascendc(
+        self,
+        y: torch.Tensor,
+        x: torch.Tensor,
+        lora_a_stacked: tuple[torch.Tensor, ...],
+        lora_b_stacked: tuple[torch.Tensor, ...],
+        expert_ids: torch.Tensor,
+        adapter_enabled: torch.Tensor,
+        offset: int,
+        token_lora_mapping: torch.Tensor,
+    ):
+        """Fused AscendC MoE-LoRA kernel.
+
+        Drop-in for `_add_lora_fused_moe_bgmv`: same combined-index trick
+        and the same set of pre-computed device tensors, but replaces the
+        ``bgmv_shrink + buffer.mul_(valid_mask) + bgmv_expand_slice`` triple
+        with a single ``fused_moe_lora`` kernel call that keeps the rank
+        buffer resident in UB.
+
+        See csrc/kernels/fused_moe_lora.cpp for the kernel implementation.
+        """
+        from vllm_ascend.lora.lora_ops import fused_moe_lora
+
+        max_loras = lora_a_stacked[0].shape[0]
+        local_E = lora_a_stacked[0].shape[1]
+
+        # --- combined index + valid mask (identical to bgmv path) ---
+        tlm_clamped = token_lora_mapping.clamp(min=0, max=max_loras)
+        valid_mask = (
+            (token_lora_mapping >= 0)
+            & (token_lora_mapping < max_loras)
+            & (adapter_enabled[tlm_clamped] != 0)
+        )
+        safe_lora = torch.where(
+            valid_mask, tlm_clamped, torch.zeros_like(tlm_clamped)
+        )
+        safe_lora = safe_lora.clamp(max=max_loras - 1)
+        safe_expert = expert_ids.clamp(min=0).to(torch.long)
+        # virtual_idx = expert * max_loras + lora_id; encode invalid as -1 so
+        # the AscendC kernel can use a single predicate to skip the row.
+        virtual_idx_valid = safe_expert * max_loras + safe_lora.to(torch.long)
+        virtual_idx = torch.where(
+            valid_mask,
+            virtual_idx_valid,
+            torch.full_like(virtual_idx_valid, -1),
+        )
+
+        for slice_idx in range(len(lora_a_stacked)):
+            A = lora_a_stacked[slice_idx]  # [max_loras, local_E, rank, in]
+            B = lora_b_stacked[slice_idx]  # [max_loras, local_E, slice, rank]
+            rank = A.shape[2]
+            slice_out = B.shape[2]
+            col_start = offset + slice_idx * slice_out
+
+            # Same permute+reshape as bgmv path; kernel consumes 3D combined
+            # tensors and addresses rows by virtual_idx directly.
+            A_flat = A.permute(1, 0, 2, 3).reshape(
+                local_E * max_loras, rank, A.shape[-1]
+            ).contiguous()
+            B_flat = B.permute(1, 0, 2, 3).reshape(
+                local_E * max_loras, slice_out, rank
+            ).contiguous()
+
+            fused_moe_lora(
+                x, A_flat, B_flat, virtual_idx, y,
+                col_start, slice_out, 1.0,
+            )
