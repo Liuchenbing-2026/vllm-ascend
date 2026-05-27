@@ -97,15 +97,28 @@ class AscendMultiHeadLatentAttention(MultiHeadLatentAttentionWrapper):
         # layer prefix here, so the feature works on vllm versions that don't
         # yet ship the framework-side wiring. Refer to arxiv 2603.12201.
         hf_config = get_current_vllm_config().model_config.hf_text_config
-        if not skip_topk and getattr(hf_config, "use_index_cache", False):
+        # MTP draft layers must NOT participate in IndexCache: they share
+        # `topk_indices_buffer` with the target model, and reusing target's
+        # stale topk on different draft hidden_states corrupts the indexer
+        # selection and tanks the speculative-decode acceptance rate.
+        # Convention: MTP layers in DeepSeek/GLM5 are appended after target,
+        # so their layer_id >= num_hidden_layers; also keep a prefix tag
+        # fallback for non-standard MTP naming (eagle / drafter / spec).
+        num_hidden_layers = getattr(hf_config, "num_hidden_layers", 0)
+        _layer_id_for_draft = extract_layer_index(prefix)
+        is_draft_layer = (num_hidden_layers > 0 and _layer_id_for_draft >= num_hidden_layers) or any(
+            tag in prefix.lower() for tag in ("mtp", "draft", "eagle", "drafter", "spec_decode")
+        )
+        if not skip_topk and not is_draft_layer and getattr(hf_config, "use_index_cache", False):
             freq = getattr(hf_config, "index_topk_freq", 1)
             pattern = getattr(hf_config, "index_topk_pattern", None)
-            layer_id = extract_layer_index(prefix)
+            layer_id = _layer_id_for_draft
             if pattern is None:
                 skip_topk = max(layer_id - 1, 0) % freq != 0
             elif 0 <= layer_id < len(pattern):
                 skip_topk = pattern[layer_id] == "S"
         self.skip_topk = skip_topk
+        self.is_draft_layer = is_draft_layer
         self.enable_shared_expert_dp = get_ascend_config().enable_shared_expert_dp
         self.tp_size = get_tensor_model_parallel_world_size()
         self.layers = hf_config.num_hidden_layers
@@ -128,7 +141,12 @@ class AscendMultiHeadLatentAttention(MultiHeadLatentAttentionWrapper):
             use_sparse=mla_modules.is_sparse,
             indexer=ascend_indexer,
             skip_topk=skip_topk,
-            topk_indices_buffer=getattr(mla_modules, "topk_indices_buffer", None),
+            # MTP draft layers get topk_indices_buffer=None so they neither
+            # read stale entries written by the target model nor pollute the
+            # buffer for subsequent target forwards.
+            topk_indices_buffer=(
+                None if is_draft_layer else getattr(mla_modules, "topk_indices_buffer", None)
+            ),
             # extra args
             rotary_emb=mla_modules.rotary_emb,
             fused_qkv_a_proj=mla_modules.fused_qkv_a_proj,
