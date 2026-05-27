@@ -1228,7 +1228,18 @@ class AscendSFAImpl(MLAAttentionImpl):
             if self.is_kv_producer:
                 attn_metadata.reshape_cache_event.record()
 
-        topk_num_tokens = num_input_tokens or hidden_states.shape[0]
+        # Use q_pe.shape[0] (per-rank actual query token count) instead of
+        # num_input_tokens (the padded full length pre-dsa_cp shard). In dsa_cp
+        # mode num_input_tokens stays at the pre-shard padded value (e.g. tp_size
+        # for single-token decode on PD disagg D-node + ACLGraph) while q_pe has
+        # already been sharded to per-rank by the cos/sin slice in builder. Reading
+        # buffer[:padded] then feeding it into npu_sparse_flash_attention (which
+        # expects per-rank T dim aligned with q) caused
+        # "sparse_indices shape [8,1,2048], expected [1,1,2048]" on PD分离 + ACLGraph.
+        # PD混步 happens to be safe because its mixed prefill+decode batch is
+        # large enough that pad-up to tp_size is a no-op (q_pe.shape[0] ==
+        # num_input_tokens), so this change is a no-op there.
+        topk_num_tokens = q_pe.shape[0]
         if self.skip_topk:
             topk_indices = self._get_indexcache_topk_indices(topk_num_tokens)
         else:
