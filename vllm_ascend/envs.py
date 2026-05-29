@@ -101,6 +101,11 @@ env_variables: dict[str, Callable[[], Any]] = {
     # `dispatch_gmm_combine_decode` can be used only for **decode node** moe layer
     # with W8A8. And MTP layer must be W8A8.
     "VLLM_ASCEND_ENABLE_FUSED_MC2": lambda: int(os.getenv("VLLM_ASCEND_ENABLE_FUSED_MC2", "0")),
+    # A2 adaptation: disable DSA-CP all2all by forcing pcp_size / dcp_size to 1
+    # at AscendConfig boot. On A3 / A5 / 310P this is a no-op even when set to 1.
+    # Default 1 (disabled on A2). Lower priority than
+    # additional_config.a2_adapt_config.dsa_cp_disable_all2all.
+    "VLLM_ASCEND_A2_DSA_CP_DISABLE_ALL2ALL": lambda: bool(int(os.getenv("VLLM_ASCEND_A2_DSA_CP_DISABLE_ALL2ALL", "1"))),
     # Whether to enable balance scheduling in the v1 scheduler.
     # Platform validation: only PD-mixed mode (`kv_role='kv_both'` or no kv_transfer_config).
     # Not supported in PD-disaggregated mode (`kv_producer` / `kv_consumer` only).

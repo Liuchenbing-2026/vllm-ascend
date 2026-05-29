@@ -1265,6 +1265,19 @@ def enable_dsa_cp_with_layer_shard() -> bool:
 def enable_dsa_cp_with_o_proj_tp() -> bool:
     if not enable_dsa_cp():
         return False
+
+    # On A2 the SFA o_proj TP all-to-all in sfa_v1.py:765 fires on every layer
+    # of every decode/MTP step under PD-mixed mode. A2's PCIe / cross-server
+    # topology makes that all-to-all dramatically more expensive than on A3
+    # (which has HCCS within a superpod). Disable the o_proj weight-switch /
+    # all-to-all path here so the standard o_proj forward is used instead.
+    # enable_dsa_cp() itself stays True so SFA backend's cos/sin pad+shard
+    # in the metadata builder still matches the per-rank q_pe produced under
+    # FlashComm1, avoiding the rope.py:277 shape-assert failure that surfaced
+    # when enable_dsa_cp() was forced False.
+    if get_ascend_device_type() == AscendDeviceType.A2:
+        return False
+
     from vllm.config import get_current_vllm_config
 
     vllm_config = get_current_vllm_config()

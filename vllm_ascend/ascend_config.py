@@ -47,6 +47,10 @@ class AscendConfig:
         eplb_config = additional_config.get("eplb_config", {})
         self.eplb_config = EplbConfig(eplb_config)
 
+        a2_adapt_config = additional_config.get("a2_adapt_config", {})
+        self.a2_adapt_config = A2AdaptConfig(a2_adapt_config)
+        self._apply_a2_dsa_cp_disable_overrides(vllm_config)
+
         weight_prefetch_config = additional_config.get("weight_prefetch_config", {})
         self.weight_prefetch_config = WeightPrefetchConfig(weight_prefetch_config)
 
@@ -208,6 +212,87 @@ class AscendConfig:
             if len(new_compile_ranges_split_points) > len(self._get_compile_ranges(vllm_config.compilation_config)):
                 new_compile_ranges_split_points = sorted(new_compile_ranges_split_points)
                 self._set_compile_ranges(vllm_config.compilation_config, new_compile_ranges_split_points)
+
+    def _apply_a2_dsa_cp_disable_overrides(self, vllm_config: "VllmConfig") -> None:
+        """On A2 force prefill / decode context-parallel sizes to 1.
+
+        When the runtime device is A2 (NpuArch 220) and
+        ``a2_adapt_config.dsa_cp_disable_all2all`` is True (the default),
+        rewrite ``parallel_config.prefill_context_parallel_size`` and
+        ``parallel_config.decode_context_parallel_size`` to 1 in place.
+
+        Downstream code in
+        ``vllm_ascend/attention/context_parallel/{attention_cp,common_cp,mla_cp}.py``
+        already gates every ``dist.all_to_all_single`` / ``all_gather`` CP
+        call on ``pcp_size > 1`` / ``dcp_size > 1``, so the override turns
+        those branches into dead code naturally.
+
+        The SFA TP all2all in ``vllm_ascend/attention/sfa_v1.py`` is *not*
+        a CP comm; it is left untouched (disabling it would break tp_size > 1
+        correctness).
+
+        On A3 / A5 / 310P this method is a no-op even if the flag is set.
+        """
+        if not self.a2_adapt_config.dsa_cp_disable_all2all:
+            return
+        try:
+            from vllm_ascend.utils import AscendDeviceType, get_ascend_device_type
+
+            device_type = get_ascend_device_type()
+        except Exception:
+            # NPU not yet initialised at AscendConfig boot. Fall back silently --
+            # the call sites still check `pcp_size > 1` so behaviour is correct
+            # if vLLM happens to default these to 1 (single-machine smoke).
+            return
+        if device_type != AscendDeviceType.A2:
+            return
+
+        parallel_config = vllm_config.parallel_config
+        original_pcp = getattr(parallel_config, "prefill_context_parallel_size", 1)
+        original_dcp = getattr(parallel_config, "decode_context_parallel_size", 1)
+        if original_pcp > 1 or original_dcp > 1:
+            logger.warning(
+                "A2 device + a2_adapt_config.dsa_cp_disable_all2all=True: "
+                "compressing parallel_config.prefill_context_parallel_size "
+                "(%d -> 1) and parallel_config.decode_context_parallel_size "
+                "(%d -> 1). DSA-CP all2all is disabled on A2; set "
+                "a2_adapt_config.dsa_cp_disable_all2all=False to restore "
+                "the upstream behaviour.",
+                original_pcp,
+                original_dcp,
+            )
+        if hasattr(parallel_config, "prefill_context_parallel_size"):
+            parallel_config.prefill_context_parallel_size = 1
+        if hasattr(parallel_config, "decode_context_parallel_size"):
+            parallel_config.decode_context_parallel_size = 1
+
+
+class A2AdaptConfig:
+    """Configuration for A2 (Ascend 910B series, NpuArch 220) adaptation features.
+
+    All fields below only take effect when the runtime device is A2.
+    On A3 / A5 / 310P every field is read-but-ignored - behaviour stays identical to
+    upstream main.
+
+    Priority: ``additional_config.a2_adapt_config.<field>`` > env var > default.
+
+    Fields
+    ------
+    dsa_cp_disable_all2all: bool
+        When True, force ``dcp_size = pcp_size = 1`` on A2 so that the
+        ``dist.all_to_all_single`` calls in
+        ``vllm_ascend/attention/context_parallel/attention_cp.py`` become
+        dead code paths. SFA TP all2all in ``sfa_v1.py`` is NOT touched.
+    """
+
+    def __init__(self, user_config: dict | None = None):
+        if user_config is None:
+            user_config = {}
+        from vllm_ascend import envs as ascend_envs
+
+        self.dsa_cp_disable_all2all: bool = bool(
+            user_config.get("dsa_cp_disable_all2all", ascend_envs.VLLM_ASCEND_A2_DSA_CP_DISABLE_ALL2ALL)
+        )
 
 
 class FinegrainedTPConfig:
