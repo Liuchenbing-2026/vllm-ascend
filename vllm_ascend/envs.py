@@ -101,6 +101,23 @@ env_variables: dict[str, Callable[[], Any]] = {
     # `dispatch_gmm_combine_decode` can be used only for **decode node** moe layer
     # with W8A8. And MTP layer must be W8A8.
     "VLLM_ASCEND_ENABLE_FUSED_MC2": lambda: int(os.getenv("VLLM_ASCEND_ENABLE_FUSED_MC2", "0")),
+    # Kill-switch for the A2 ALLTOALL fallback in MoE EP communication.
+    # Default 0 (ALLTOALL enabled). Set to 1 to fall back to the legacy
+    # ALLGATHER path when ALLTOALL is undesired on A2.
+    "VLLM_ASCEND_DISABLE_A2_ALLTOALL": lambda: bool(int(os.getenv("VLLM_ASCEND_DISABLE_A2_ALLTOALL", "0"))),
+    # Force A2 MoE EP communication to use ALLTOALL unconditionally,
+    # bypassing the MC2 strict-trio check (experts_per_device <= 24 AND
+    # ep_world_size >= 16 AND num_tokens <= mc2_tokens_capacity). Default 0.
+    # Set to 1 when you want ALLTOALL even at large EP where MC2 would
+    # normally win. Higher priority than VLLM_ASCEND_DISABLE_A2_ALLTOALL
+    # (FORCE wins if both are set).
+    "VLLM_ASCEND_FORCE_A2_ALLTOALL": lambda: bool(int(os.getenv("VLLM_ASCEND_FORCE_A2_ALLTOALL", "0"))),
+    # Force A2 MoE EP communication to use MC2 unconditionally, bypassing
+    # the MC2 strict-trio check (so small EP or large batch can still take
+    # the MC2 path). Default 0. Set to 1 for A/B testing MC2 outside its
+    # normal eligibility window. Lower priority than
+    # VLLM_ASCEND_FORCE_A2_ALLTOALL (FORCE_ALLTOALL wins if both are set).
+    "VLLM_ASCEND_FORCE_A2_MC2": lambda: bool(int(os.getenv("VLLM_ASCEND_FORCE_A2_MC2", "0"))),
     # Whether to enable balance scheduling in the v1 scheduler.
     # Platform validation: only PD-mixed mode (`kv_role='kv_both'` or no kv_transfer_config).
     # Not supported in PD-disaggregated mode (`kv_producer` / `kv_consumer` only).

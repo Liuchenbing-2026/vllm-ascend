@@ -242,8 +242,21 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
             vllm_config.parallel_config.world_size_across_dp // vllm_config.parallel_config.pipeline_parallel_size
         )
         num_experts_per_device = num_experts // ep_world_size
-        if num_experts_per_device <= 24 and ep_world_size >= 16 and num_tokens <= mc2_tokens_capacity:
+
+        # FORCE override: bypass MC2 strict-trio check and go straight to
+        # ALLTOALL when VLLM_ASCEND_FORCE_A2_ALLTOALL=1 is set.
+        # Higher priority than VLLM_ASCEND_DISABLE_A2_ALLTOALL.
+        if envs_ascend.VLLM_ASCEND_FORCE_A2_ALLTOALL and ep_world_size > 1:
+            moe_comm_type = MoECommType.ALLTOALL
+        # FORCE override: bypass MC2 strict-trio check and go straight to
+        # MC2 when VLLM_ASCEND_FORCE_A2_MC2=1 is set. Lower priority than
+        # FORCE_A2_ALLTOALL (the latter wins if both are set).
+        elif envs_ascend.VLLM_ASCEND_FORCE_A2_MC2 and ep_world_size > 1:
             moe_comm_type = MoECommType.MC2
+        elif num_experts_per_device <= 24 and ep_world_size >= 16 and num_tokens <= mc2_tokens_capacity:
+            moe_comm_type = MoECommType.MC2
+        elif ep_world_size > 1 and not envs_ascend.VLLM_ASCEND_DISABLE_A2_ALLTOALL:
+            moe_comm_type = MoECommType.ALLTOALL
         else:
             moe_comm_type = MoECommType.ALLGATHER
 
