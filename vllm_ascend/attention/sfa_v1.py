@@ -403,6 +403,8 @@ class AscendSFAImpl(MLAAttentionImpl):
         self.tp_size = get_tensor_model_parallel_world_size()
         self.tp_rank = get_tp_group().rank_in_group
         self.q_b_proj = kwargs["q_b_proj"]
+        self.skip_topk = kwargs.get("skip_topk", False)
+        self.topk_indices_buffer = kwargs.get("topk_indices_buffer")
 
         ascend_config = get_ascend_config()
         self.enable_shared_expert_dp = ascend_config.enable_shared_expert_dp
@@ -415,6 +417,11 @@ class AscendSFAImpl(MLAAttentionImpl):
 
         self.local_num_heads = self.num_heads
         self.vllm_config = get_current_vllm_config()
+        self.use_index_cache = self.skip_topk or getattr(
+            self.vllm_config.model_config.hf_config,
+            "use_index_cache",
+            False,
+        )
         self.is_kv_producer = (
             self.vllm_config.kv_transfer_config is not None and self.vllm_config.kv_transfer_config.is_kv_producer
         )
@@ -1006,6 +1013,26 @@ class AscendSFAImpl(MLAAttentionImpl):
             )
         return topk_indices
 
+    def _get_indexcache_topk_indices(self, num_tokens: int) -> torch.Tensor:
+        if self.topk_indices_buffer is None:
+            raise RuntimeError("IndexCache requires topk_indices_buffer when skip_topk is enabled.")
+        topk_indices = self.topk_indices_buffer[:num_tokens]
+        if topk_indices.dim() == 2:
+            topk_indices = topk_indices.unsqueeze(1)
+        return topk_indices
+
+    def _update_indexcache_topk_indices(self, topk_indices: torch.Tensor) -> None:
+        if self.topk_indices_buffer is None:
+            return
+        num_tokens = topk_indices.shape[0]
+        topk_tokens = topk_indices.shape[-1]
+        topk_indices_to_cache = topk_indices
+        topk_indices_buffer = self.topk_indices_buffer[:num_tokens, :topk_tokens]
+        if topk_indices_to_cache.dim() == 3 and topk_indices_buffer.dim() == 2:
+            assert topk_indices_to_cache.shape[1] == 1
+            topk_indices_to_cache = topk_indices_to_cache.squeeze(1)
+        topk_indices_buffer.copy_(topk_indices_to_cache)
+
     def _execute_sparse_flash_attention_process(
         self, ql_nope, q_pe, kv_cache, topk_indices, attn_metadata, actual_seq_lengths_query, actual_seq_lengths_key
     ):
@@ -1208,16 +1235,33 @@ class AscendSFAImpl(MLAAttentionImpl):
             if self.is_kv_producer:
                 attn_metadata.reshape_cache_event.record()
 
-        topk_indices = self.indexer_select_post_process(
-            x=hidden_states,
-            q_c=q_c,
-            kv_cache=kv_cache,
-            attn_metadata=attn_metadata,
-            cos=cos,
-            sin=sin,
-            actual_seq_lengths_query=actual_seq_lengths_query,
-            actual_seq_lengths_key=actual_seq_lengths_key,
-        )
+        # Use q_pe.shape[0] (per-rank actual query token count) instead of
+        # num_input_tokens (the padded full length pre-dsa_cp shard). In dsa_cp
+        # mode num_input_tokens stays at the pre-shard padded value (e.g. tp_size
+        # for single-token decode on PD disagg D-node + ACLGraph) while q_pe has
+        # already been sharded to per-rank by the cos/sin slice in builder. Reading
+        # buffer[:padded] then feeding it into npu_sparse_flash_attention (which
+        # expects per-rank T dim aligned with q) caused
+        # "sparse_indices shape [8,1,2048], expected [1,1,2048]" on PD分离 + ACLGraph.
+        # PD混步 happens to be safe because its mixed prefill+decode batch is
+        # large enough that pad-up to tp_size is a no-op (q_pe.shape[0] ==
+        # num_input_tokens), so this change is a no-op there.
+        topk_num_tokens = q_pe.shape[0]
+        if self.skip_topk:
+            topk_indices = self._get_indexcache_topk_indices(topk_num_tokens)
+        else:
+            topk_indices = self.indexer_select_post_process(
+                x=hidden_states,
+                q_c=q_c,
+                kv_cache=kv_cache,
+                attn_metadata=attn_metadata,
+                cos=cos,
+                sin=sin,
+                actual_seq_lengths_query=actual_seq_lengths_query,
+                actual_seq_lengths_key=actual_seq_lengths_key,
+            )
+            if self.use_index_cache:
+                self._update_indexcache_topk_indices(topk_indices)
 
         attn_output = self._execute_sparse_flash_attention_process(
             ql_nope, q_pe, kv_cache, topk_indices, attn_metadata, actual_seq_lengths_query, actual_seq_lengths_key
