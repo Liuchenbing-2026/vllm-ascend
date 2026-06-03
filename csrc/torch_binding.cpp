@@ -2270,6 +2270,28 @@ at::Tensor chunk_fwd_o(
     return o;
 }
 
+at::Tensor npu_slot_mapping(
+    const at::Tensor& query_start_loc,
+    const at::Tensor& positions,
+    const at::Tensor& block_table,
+    at::Tensor& slot_mapping,
+    int64_t num_tokens,
+    int64_t max_num_tokens,
+    int64_t block_size,
+    int64_t total_cp_world_size,
+    int64_t total_cp_rank,
+    int64_t cp_kv_cache_interleave_size,
+    int64_t pad_id)
+{
+    // Caller-provided output buffer (in-place); avoids per-call alloc + copy_.
+    EXEC_NPU_CMD(aclnnSlotMapping,
+        query_start_loc, positions, block_table,
+        num_tokens, max_num_tokens, block_size,
+        total_cp_world_size, total_cp_rank, cp_kv_cache_interleave_size, pad_id,
+        slot_mapping);
+    return slot_mapping;
+}
+
 } // namespace vllm_ascend
 
 #ifdef ASCEND_PLATFORM_310P
@@ -2934,6 +2956,15 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "                            int sparse_count=2048, int sparse_mode=3) -> Tensor"
     );
     ops.impl("npu_lightning_indexer_quant", torch::kPrivateUse1, &vllm_ascend::npu_lightning_indexer_quant);
+    // slot_mapping: in-place slot-mapping computation (replaces triton _compute_slot_mapping_kernel)
+    ops.def(
+        "npu_slot_mapping(Tensor query_start_loc, Tensor positions, Tensor block_table, "
+        "Tensor(a!) slot_mapping, "
+        "int num_tokens, int max_num_tokens, int block_size, "
+        "int total_cp_world_size=1, int total_cp_rank=0, int cp_kv_cache_interleave_size=1, int pad_id=-1) "
+        "-> Tensor(a!)"
+    );
+    ops.impl("npu_slot_mapping", torch::kPrivateUse1, &vllm_ascend::npu_slot_mapping);
     // N-gram spec decode
     ops.def(
         "npu_ngram_spec_decode(Tensor(a!) token_ids, Tensor num_tokens_no_spec, "
