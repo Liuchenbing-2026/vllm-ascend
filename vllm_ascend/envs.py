@@ -114,6 +114,19 @@ env_variables: dict[str, Callable[[], Any]] = {
     "VLLM_ASCEND_ENABLE_BATCH_MEMCPY": lambda: os.getenv("VLLM_ASCEND_ENABLE_BATCH_MEMCPY", None),
     # Whether to use MultiBlockPool for KV cache management
     "VLLM_ASCEND_APPLY_DSV4_PATCH": lambda: bool(int(os.getenv("VLLM_ASCEND_APPLY_DSV4_PATCH", "0"))),
+    # Mooncake disk-tier offload env vars (mirror of vllm PR #42689).
+    # Log per-batch memory/disk tier breakdown on external GETs.
+    "VLLM_MOONCAKE_STORE_TIER_LOG": lambda: (
+        os.getenv("VLLM_MOONCAKE_STORE_TIER_LOG", "False").lower() in ("true", "1")
+    ),
+    # Fraction of the owner's DirectIO staging buffer to fill per GET batch.
+    "VLLM_MOONCAKE_DISK_STAGING_USABLE_RATIO": lambda: float(
+        os.getenv("VLLM_MOONCAKE_DISK_STAGING_USABLE_RATIO", "0.9")
+    ),
+    # Pin this rank to a specific owner segment ("host:port").
+    "MOONCAKE_PREFERRED_SEGMENT": lambda: os.getenv("MOONCAKE_PREFERRED_SEGMENT"),
+    # Override the hostname the rank registers as a Mooncake requester.
+    "MOONCAKE_REQUESTER_LOCAL_HOSTNAME": lambda: os.getenv("MOONCAKE_REQUESTER_LOCAL_HOSTNAME"),
 }
 
 # end-env-vars-definition
