@@ -122,6 +122,22 @@ env_variables: dict[str, Callable[[], Any]] = {
     "VLLM_ASCEND_ENABLE_PREFIX_CACHE_RETENTION": lambda: bool(
         int(os.getenv("VLLM_ASCEND_ENABLE_PREFIX_CACHE_RETENTION", "0"))
     ),
+    # Sparse-checkpoint retention interval for sliding-window prefix cache
+    # (backport of vllm PR #43447 selective-retention mechanism). Only takes
+    # effect when VLLM_ASCEND_ENABLE_PREFIX_CACHE_RETENTION=1.
+    #   unset / None  -> dense caching (every block-size-aligned token); free
+    #                    queue prepend only.
+    #   "0"           -> keep only the latest replayable prompt boundary tail.
+    #   "<int>"       -> keep checkpoint tails at the configured token interval
+    #                    (must be a multiple of scheduler block size).
+    #   "auto"        -> reserved for the future PR-#43447-equivalent "1024, 2048,
+    #                    ..., 32768 then every 32768" schedule. Currently treated
+    #                    as 1024 (smallest useful interval) until PR is merged.
+    # Required to lift hit rate at low-to-medium context (e.g., 16k) where
+    # dense caching of every aligned block gets flushed under scratch pressure.
+    "VLLM_ASCEND_PREFIX_CACHE_RETENTION_INTERVAL": lambda: os.getenv(
+        "VLLM_ASCEND_PREFIX_CACHE_RETENTION_INTERVAL", None
+    ),
 }
 
 # end-env-vars-definition
