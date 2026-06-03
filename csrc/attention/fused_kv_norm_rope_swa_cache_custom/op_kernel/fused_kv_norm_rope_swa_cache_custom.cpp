@@ -1,4 +1,4 @@
-// FusedKvNormRopeSwaCacheCustom v2.2 (safe pipeline): DSV4-DSA SWA-kv prep fusion.
+// FusedKvNormRopeSwaCacheCustom v2.3 (skip invalid slots): DSV4-DSA SWA-kv prep fusion.
 //
 // Optimizations over v1:
 //   1. All-fp32 pipeline — NormKv result stays in fp32 xfBuf_; RopeTo works on fp32 directly;
@@ -11,6 +11,7 @@
 //   5. BlockDim=40 always — uses all AIV cores regardless of nt (idle cores early-exit).
 //      Tiling sets BlockDim=aivNum; kernel derives per-core range from GetBlockIdx/GetBlockNum.
 //   6. Invalid-slot guard retained from v1 (skip cache write when block/offset < 0, graph-safe).
+//   7. Invalid-slot early-skip: padding rows skip norm/RoPE/Cast/kv_out/cache entirely.
 //
 // Expected decode (nt=32) improvement: ~2× over v1 (Cast/buffer/barrier savings).
 // Prefill (nt=1024) improvement: ~1.5-2× (41 cores all working, fewer casts/barriers).
@@ -136,6 +137,12 @@ public:
             // slot
             int32_t block  = slotL.GetValue(tok * 2u);
             int32_t offset = slotL.GetValue(tok * 2u + 1u);
+            bool validSlot = (block >= 0 && offset >= 0 &&
+                              (uint32_t)block < numBlocks_ && (uint32_t)offset < blockSize_);
+            if (!validSlot) {
+                PipeBarrier<PIPE_ALL>();  // drain next cos/sin preload before the next iteration.
+                continue;
+            }
 
             // Norm + RoPE (all fp32, then one Cast to T)
             NormKvFp32(tok, gammaFp);
@@ -152,11 +159,8 @@ public:
             {
                 LocalTensor<T> kvOut = kvBuf_.Get<T>();
                 DataCopy(kvOutGm_[(uint64_t)tok * headDim_], kvOut, headDim_);
-                if (block >= 0 && offset >= 0 &&
-                    (uint32_t)block < numBlocks_ && (uint32_t)offset < blockSize_) {
-                    uint64_t dst = ((uint64_t)(uint32_t)block * blockSize_ + (uint32_t)offset) * headDim_;
-                    DataCopy(cacheGm_[dst], kvOut, headDim_);
-                }
+                uint64_t dst = ((uint64_t)(uint32_t)block * blockSize_ + (uint32_t)offset) * headDim_;
+                DataCopy(cacheGm_[dst], kvOut, headDim_);
             }
             PipeBarrier<PIPE_ALL>();  // MTE writes done + preloaded cos/sin ready for next iteration
         }
