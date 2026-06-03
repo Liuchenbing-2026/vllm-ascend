@@ -114,6 +114,14 @@ env_variables: dict[str, Callable[[], Any]] = {
     "VLLM_ASCEND_ENABLE_BATCH_MEMCPY": lambda: os.getenv("VLLM_ASCEND_ENABLE_BATCH_MEMCPY", None),
     # Whether to use MultiBlockPool for KV cache management
     "VLLM_ASCEND_APPLY_DSV4_PATCH": lambda: bool(int(os.getenv("VLLM_ASCEND_APPLY_DSV4_PATCH", "0"))),
+    # Whether to enable DSv4 SWA prefix-cache-retention free-queue ordering
+    # (backport of vllm PR #43447 core mechanism). When enabled, sliding-window
+    # KV cache manager splits freed blocks into cached (appended) and uncached
+    # (prepended) groups so concurrent scratch allocations no longer flush out
+    # older requests' prefix cache. Default off.
+    "VLLM_ASCEND_ENABLE_PREFIX_CACHE_RETENTION": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_ENABLE_PREFIX_CACHE_RETENTION", "0"))
+    ),
 }
 
 # end-env-vars-definition
