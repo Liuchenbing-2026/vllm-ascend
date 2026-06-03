@@ -102,6 +102,23 @@ env_variables: dict[str, Callable[[], Any]] = {
     # `dispatch_gmm_combine_decode` can be used only for **decode node** moe layer
     # with W8A8. And MTP layer must be W8A8.
     "VLLM_ASCEND_ENABLE_FUSED_MC2": lambda: int(os.getenv("VLLM_ASCEND_ENABLE_FUSED_MC2", "0")),
+    # TurboQuant KV-cache quantization (Plan A: MLA latent target).
+    # Target selects what to quantize:
+    #   "latent" (default): MLA compressed_kv [kv_lora_rank] -- DSA / GLM5 / DSV4
+    #   "full":             per-head K/V (upstream-compatible) -- non-MLA models
+    # Set to "off" to disable even when --kv-cache-dtype is a turboquant_* preset.
+    "VLLM_ASCEND_TURBOQUANT_TARGET": lambda: os.getenv("VLLM_ASCEND_TURBOQUANT_TARGET", "latent"),
+    # TurboQuant kernel backend selection:
+    #   "auto":      aclnn -> triton -> reference fallback (default)
+    #   "aclnn":     force AscendC kernel (raises if missing)
+    #   "triton":    force triton-ascend kernel (raises if missing)
+    #   "reference": force torch reference (slow but always available)
+    "VLLM_ASCEND_TURBOQUANT_BACKEND": lambda: os.getenv("VLLM_ASCEND_TURBOQUANT_BACKEND", "auto"),
+    # When True, on TurboQuant kernel error retry once with reference path
+    # before bubbling up. Default off (fail fast).
+    "VLLM_ASCEND_TURBOQUANT_FALLBACK_ON_ERROR": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_TURBOQUANT_FALLBACK_ON_ERROR", "0"))
+    ),
     # DEPRECATED: VLLM_ASCEND_BALANCE_SCHEDULING env var will be removed in a future release.
     # Use --additional-config '{"enable_balance_scheduling": true}' instead.
     "VLLM_ASCEND_BALANCE_SCHEDULING": lambda: bool(int(os.getenv("VLLM_ASCEND_BALANCE_SCHEDULING", "0"))),
