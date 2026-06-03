@@ -30,6 +30,7 @@
 #include "utils.h"
 #include "aclnn_torch_adapter/op_api_common.h"
 #include "moe/add_rms_norm_bias/add_rms_norm_bias_torch_adpt.h"
+#include "attention/fused_kv_norm_rope_swa_cache_custom/fused_kv_norm_rope_swa_cache_custom_torch_adpt.h"
 #include "moe/apply_top_k_top_p_custom/apply_top_k_top_p_custom_torch_adpt.h"
 #ifdef VLLM_ENABLE_ATB_AND_DIRECT_KERNELS
 #include "batch_matmul_transpose/batch_matmul_transpose_torch_adpt.h"
@@ -2524,6 +2525,19 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "-> (Tensor y ,Tensor rstd, Tensor x)"
         );
     ops.impl("npu_add_rms_norm_bias", torch::kPrivateUse1, &vllm_ascend::npu_add_rms_norm_bias);
+
+    ops.def(
+        "npu_fused_kv_norm_rope_swa_cache(Tensor kv_in, "
+                            "Tensor gamma, "
+                            "Tensor cos, "
+                            "Tensor sin, "
+                            "Tensor slot_mapping, "
+                            "Tensor(a!) kv_cache, "
+                            "float epsilon=1e-6)"
+        "-> Tensor"
+        );
+    ops.impl("npu_fused_kv_norm_rope_swa_cache", torch::kPrivateUse1, &vllm_ascend::npu_fused_kv_norm_rope_swa_cache);
+
 
     ops.def("npu_apply_top_k_top_p(Tensor logits, Tensor? p=None, Tensor? k=None) -> Tensor");
     ops.impl("npu_apply_top_k_top_p", torch::kPrivateUse1, &vllm_ascend::npu_apply_top_k_top_p);

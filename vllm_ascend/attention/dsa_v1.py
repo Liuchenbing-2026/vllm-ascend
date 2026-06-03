@@ -167,6 +167,13 @@ def pad_to_blocks(x: torch.Tensor, length_list: torch.Tensor, block_size: int = 
     return out
 
 
+def _vllm_ascend_use_fused_dsa_swa():
+    """Gate for the fused kv_norm + partial interleave RoPE + scatter-nd SWA-kv op.
+    Default OFF; set VLLM_ASCEND_FUSED_DSA_SWA=1 to enable."""
+    import os
+    return os.environ.get("VLLM_ASCEND_FUSED_DSA_SWA", "0") == "1"
+
+
 class AscendDSABackend(AttentionBackend):
     accept_output_buffer: bool = True
 
@@ -1903,21 +1910,30 @@ class AscendDSAImpl(DSAAttentionImpl):
                 partial_slice=[self.nope_head_dim, self.head_dim],
             )
             # win kv & tok_dis
-            kv = self.wkv(hidden_states)
-            kv = self.kv_norm(kv)
-            assert self.rope_head_dim is not None
-            kv = kv.view(-1, 1, self.nope_head_dim + self.rope_head_dim)
+            if _vllm_ascend_use_fused_dsa_swa():
+                # [FUSED] kv_norm(head_dim) + partial interleave RoPE([nope:head_dim]) + scatter-nd write
+                kv = self.wkv(hidden_states)
+                assert self.rope_head_dim is not None
+                torch.ops._C_ascend.npu_fused_kv_norm_rope_swa_cache(
+                    kv, self.kv_norm.weight,
+                    cos.reshape(-1, cos.shape[-1]), sin.reshape(-1, sin.shape[-1]),
+                    swa_prefill_metadata.slot_mapping, swa_kv_cache, self.kv_norm.variance_epsilon)
+            else:
+                kv = self.wkv(hidden_states)
+                kv = self.kv_norm(kv)
+                assert self.rope_head_dim is not None
+                kv = kv.view(-1, 1, self.nope_head_dim + self.rope_head_dim)
 
-            torch.ops._C_ascend.inplace_partial_rotary_mul(
-                kv.unsqueeze(1),
-                cos,
-                sin,
-                rotary_mode="interleave",
-                partial_slice=[self.nope_head_dim, self.head_dim],
-            )
+                torch.ops._C_ascend.inplace_partial_rotary_mul(
+                    kv.unsqueeze(1),
+                    cos,
+                    sin,
+                    rotary_mode="interleave",
+                    partial_slice=[self.nope_head_dim, self.head_dim],
+                )
 
-            # swa exec kv
-            torch.ops._C_ascend.npu_scatter_nd_update_v2(swa_kv_cache, swa_prefill_metadata.slot_mapping, kv)
+                # swa exec kv
+                torch.ops._C_ascend.npu_scatter_nd_update_v2(swa_kv_cache, swa_prefill_metadata.slot_mapping, kv)
 
         compress_cos = common_prefill_metadata.compress_cos[layer_name]
         compress_sin = common_prefill_metadata.compress_sin[layer_name]
@@ -2191,21 +2207,30 @@ class AscendDSAImpl(DSAAttentionImpl):
                     torch.npu.current_stream().wait_event(wait_hidden_state_cal_event)
 
                 # win kv & tok_dis
-                kv = self.wkv(hidden_states)
-                kv = self.kv_norm(kv)
-                assert self.rope_head_dim is not None
-                kv = kv.view(-1, 1, self.nope_head_dim + self.rope_head_dim)
+                if _vllm_ascend_use_fused_dsa_swa():
+                    # [FUSED] kv_norm(head_dim) + partial interleave RoPE([nope:head_dim]) + scatter-nd write
+                    kv = self.wkv(hidden_states)
+                    assert self.rope_head_dim is not None
+                    torch.ops._C_ascend.npu_fused_kv_norm_rope_swa_cache(
+                        kv, self.kv_norm.weight,
+                        cos.reshape(-1, cos.shape[-1]), sin.reshape(-1, sin.shape[-1]),
+                        swa_decode_metadata.slot_mapping, swa_kv_cache, self.kv_norm.variance_epsilon)
+                else:
+                    kv = self.wkv(hidden_states)
+                    kv = self.kv_norm(kv)
+                    assert self.rope_head_dim is not None
+                    kv = kv.view(-1, 1, self.nope_head_dim + self.rope_head_dim)
 
-                torch.ops._C_ascend.inplace_partial_rotary_mul(
-                    kv.unsqueeze(1),
-                    cos,
-                    sin,
-                    rotary_mode="interleave",
-                    partial_slice=[self.nope_head_dim, self.head_dim],
-                )
+                    torch.ops._C_ascend.inplace_partial_rotary_mul(
+                        kv.unsqueeze(1),
+                        cos,
+                        sin,
+                        rotary_mode="interleave",
+                        partial_slice=[self.nope_head_dim, self.head_dim],
+                    )
 
-                # swa exec kv
-                torch.ops._C_ascend.npu_scatter_nd_update_v2(swa_kv_cache, swa_decode_metadata.slot_mapping, kv)
+                    # swa exec kv
+                    torch.ops._C_ascend.npu_scatter_nd_update_v2(swa_kv_cache, swa_decode_metadata.slot_mapping, kv)
 
                 wait_attention_cal_event = (
                     torch.npu.current_stream().record_event() if self.multistream_dsa_preprocess else None

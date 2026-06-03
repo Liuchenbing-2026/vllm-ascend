@@ -436,6 +436,19 @@ std::tuple<at::Tensor,at::Tensor, at::Tensor> moe_gating_top_k_meta(
     return std::tuple<at::Tensor, at::Tensor, at::Tensor>(y,expert_idx,out);
 }
 
+
+at::Tensor npu_fused_kv_norm_rope_swa_cache_meta(
+    const at::Tensor& kv_in,
+    const at::Tensor& gamma,
+    const at::Tensor& cos,
+    const at::Tensor& sin,
+    const at::Tensor& slot_mapping,
+    at::Tensor& kv_cache,
+    double epsilon)
+{
+    return at::empty_symint(kv_in.sym_sizes(), kv_in.options());
+}
+
 std::tuple<at::Tensor,at::Tensor, at::Tensor> npu_add_rms_norm_bias_meta(
     const at::Tensor& x1,
     const at::Tensor& x2,
@@ -1601,6 +1614,8 @@ TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     ops.impl("moe_gating_top_k", &vllm_ascend::meta::moe_gating_top_k_meta);
     // Add_Rms_Norm_Bias
     ops.impl("npu_add_rms_norm_bias", &vllm_ascend::meta::npu_add_rms_norm_bias_meta);
+    ops.impl("npu_fused_kv_norm_rope_swa_cache", &vllm_ascend::meta::npu_fused_kv_norm_rope_swa_cache_meta);
+
     // transpose_kv_cache_by_block
     ops.impl("transpose_kv_cache_by_block", &vllm_ascend::meta::transpose_kv_cache_by_block_meta);
     // hamming_dist_top_k
