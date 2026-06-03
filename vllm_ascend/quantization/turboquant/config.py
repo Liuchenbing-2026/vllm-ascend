@@ -97,7 +97,7 @@ class AscendTurboQuantConfig:
     key_quant_bits: int = 3
     value_quant_bits: int = 4
     norm_correction: bool = False
-    target: str = "latent"  # "latent" | "full"
+    target: str = "latent"  # "latent" | "indexer" | "full"
 
     @property
     def key_fp8(self) -> bool:
@@ -169,8 +169,10 @@ class AscendTurboQuantConfig:
                 f"Unknown TurboQuant cache dtype: {cache_dtype!r}. "
                 f"Valid presets: {valid}"
             )
-        if target not in ("latent", "full"):
-            raise ValueError(f"target must be 'latent' or 'full', got {target!r}")
+        if target not in ("latent", "indexer", "full"):
+            raise ValueError(
+                f"target must be 'latent' | 'indexer' | 'full', got {target!r}"
+            )
         preset = TQ_PRESETS[cache_dtype]
         return AscendTurboQuantConfig(
             head_dim=head_dim,
