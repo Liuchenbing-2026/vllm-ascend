@@ -791,10 +791,30 @@ class AscendSFAImpl(MLAAttentionImpl):
         ``if self.tq_cfg is not None`` branch is dead and the original
         npu_kv_rmsnorm_rope_cache path runs unchanged.
         """
-        if not isinstance(kv_cache_dtype, str) or not kv_cache_dtype.startswith(
-            "turboquant_"
+        requested_cache_dtype = kv_cache_dtype
+        if not (
+            isinstance(requested_cache_dtype, str)
+            and requested_cache_dtype.startswith("turboquant_")
+        ):
+            import os
+
+            requested_cache_dtype = os.getenv(
+                "VLLM_ASCEND_TURBOQUANT_CACHE_DTYPE",
+                requested_cache_dtype,
+            )
+
+        if not (
+            isinstance(requested_cache_dtype, str)
+            and requested_cache_dtype.startswith("turboquant_")
         ):
             return None
+        if requested_cache_dtype != kv_cache_dtype:
+            logger.info(
+                "TurboQuant Plan A preset %s is enabled with actual KV cache "
+                "dtype %s; using bf16/fp16 cache plus fake-quant roundtrip.",
+                requested_cache_dtype,
+                kv_cache_dtype,
+            )
 
         from vllm_ascend import envs as ascend_envs
 
@@ -814,12 +834,12 @@ class AscendSFAImpl(MLAAttentionImpl):
         from vllm_ascend.quantization.turboquant import AscendTurboQuantConfig
 
         cfg = AscendTurboQuantConfig.from_cache_dtype(
-            kv_cache_dtype, head_dim=kv_lora_rank, target="latent"
+            requested_cache_dtype, head_dim=kv_lora_rank, target="latent"
         )
         logger.info(
             "TurboQuant Plan A enabled: cache_dtype=%s, kv_lora_rank=%d, "
             "slot_size_aligned=%d, compression≈%.2fx (bf16 baseline).",
-            kv_cache_dtype,
+            requested_cache_dtype,
             kv_lora_rank,
             cfg.slot_size_aligned,
             cfg.compression_ratio(),
