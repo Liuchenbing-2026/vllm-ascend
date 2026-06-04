@@ -1481,10 +1481,31 @@ class AscendDSAImpl(DSAAttentionImpl):
         `if self.tq_cfg is not None` branch is dead and the original
         npu_scatter_nd_update_v2 path runs unchanged.
         """
-        if not isinstance(kv_cache_dtype, str) or not kv_cache_dtype.startswith(
-            "turboquant_"
+        requested_cache_dtype = kv_cache_dtype
+        if not (
+            isinstance(requested_cache_dtype, str)
+            and requested_cache_dtype.startswith("turboquant_")
+        ):
+            import os
+
+            requested_cache_dtype = os.getenv(
+                "VLLM_ASCEND_TURBOQUANT_CACHE_DTYPE",
+                requested_cache_dtype,
+            )
+
+        if not (
+            isinstance(requested_cache_dtype, str)
+            and requested_cache_dtype.startswith("turboquant_")
         ):
             return None
+        if requested_cache_dtype != kv_cache_dtype:
+            logger.info(
+                "TurboQuant Plan A preset %s is enabled on DSA backend with "
+                "actual KV cache dtype %s; using bf16/fp16 cache plus "
+                "fake-quant roundtrip.",
+                requested_cache_dtype,
+                kv_cache_dtype,
+            )
 
         from vllm_ascend import envs as ascend_envs
 
@@ -1496,21 +1517,21 @@ class AscendDSAImpl(DSAAttentionImpl):
                 "TurboQuant cache_dtype=%s configured but latent_head_dim is "
                 "not available -- Plan A targets the MLA latent. Falling back "
                 "to the default (unquantized) path.",
-                kv_cache_dtype,
+                requested_cache_dtype,
             )
             return None
 
         from vllm_ascend.quantization.turboquant import AscendTurboQuantConfig
 
         cfg = AscendTurboQuantConfig.from_cache_dtype(
-            kv_cache_dtype, head_dim=latent_head_dim, target="latent"
+            requested_cache_dtype, head_dim=latent_head_dim, target="latent"
         )
         logger.info(
             "TurboQuant Plan A enabled on DSA backend: cache_dtype=%s, "
             "latent_head_dim=%d, slot_size_aligned=%d, compression~%.2fx "
             "(bf16 baseline). Fake-quant round-trip after npu_scatter_nd_update_v2; "
             "real packed storage kernel TODO.",
-            kv_cache_dtype,
+            requested_cache_dtype,
             latent_head_dim,
             cfg.slot_size_aligned,
             cfg.compression_ratio(),
