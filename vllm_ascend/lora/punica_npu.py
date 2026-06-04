@@ -216,8 +216,21 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         # Cast to y.dtype to match upstream contract.
         gathered = w_t_all[safe_indices, 0].to(y.dtype)  # [N, slice_size, rank]
         x_cast = x.to(y.dtype)  # [N, rank]
-        # [N, 1, rank] @ [N, rank, slice_size] -> [N, 1, slice_size]
-        delta = torch.bmm(x_cast.unsqueeze(1), gathered.transpose(1, 2)).squeeze(1)
+        # Equivalent of einsum("bi, boi -> bo", x_cast, gathered) using
+        # torch.matmul to avoid aclnnBatchMatMul error 161002 on NPU:
+        #   - transpose(1, 2) on the gathered weight produces a
+        #     non-contiguous view; aclnnBatchMatMul rejects it because
+        #     it requires both operands to be contiguous. Calling
+        #     .contiguous() forces a copy with packed strides.
+        #   - matmul + unsqueeze/squeeze is functionally identical to
+        #     torch.bmm here ([N,1,rank] @ [N,rank,slice_size] ->
+        #     [N,1,slice_size] -> [N,slice_size]).
+        # If the contiguous() copy turns out to be a perf cliff, an
+        # alternative is `torch.einsum("br,bor->bo", x_cast, gathered)`,
+        # but einsum's NPU backend is less predictable, so we stick to
+        # matmul for now.
+        weight = gathered.transpose(1, 2).contiguous()  # [N, rank, slice_size]
+        delta = torch.matmul(x_cast.unsqueeze(1), weight).squeeze(1)
         delta = delta * valid_mask  # [N, slice_size]
         if add_inputs:
             y[:, y_offset : y_offset + y_slice_size] += delta
