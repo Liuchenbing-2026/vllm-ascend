@@ -1454,14 +1454,18 @@ class AscendDSAImpl(DSAAttentionImpl):
         )
 
         # TurboQuant Plan A: detect kv_cache_dtype; build config that targets
-        # the MLA latent (swa_kv_cache, kv_cache[1] under compress_ratio>0).
+        # ONLY the nope (latent) slice of swa_kv_cache, since the rope slice
+        # is RoPE-rotated (different distribution) and `nope+rope` (e.g.
+        # 512+64 = 576) is not a power of 2 so the Hadamard matrix would
+        # error out. We quantize `[..., :nope_head_dim]` and leave the
+        # `[..., nope_head_dim:]` rope slice untouched.
         # `self.tq_cfg is None` is the OFF guard used in
         # _maybe_apply_turboquant_roundtrip; when None every TQ branch is dead
         # and the original npu_scatter_nd_update_v2 path runs unchanged.
         self.kv_cache_dtype = kwargs.get("kv_cache_dtype")
         self.tq_cfg = self._maybe_init_turboquant_config(
             self.kv_cache_dtype,
-            self.nope_head_dim + (self.rope_head_dim or 0),
+            self.nope_head_dim,
         )
 
     @staticmethod
@@ -1543,20 +1547,30 @@ class AscendDSAImpl(DSAAttentionImpl):
         if valid.numel() == 0:
             return
 
-        # swa_kv_cache layout: [num_blocks, block_size, 1, nope+rope_head_dim]
-        # Flatten over (num_blocks * block_size); head dim is 1.
+        # swa_kv_cache layout: [num_blocks, block_size, 1, nope+rope_head_dim].
+        # We only round-trip the nope slice (latent K) which is the
+        # power-of-2 portion (e.g. 512). The trailing rope slice is RoPE-
+        # rotated and intentionally left untouched (different distribution
+        # plus non-power-of-2 if combined with nope).
+        nope_dim = self.tq_cfg.head_dim  # set to self.nope_head_dim at init
+        if swa_kv_cache.shape[-1] < nope_dim:
+            # Defensive: layout doesn't match the expected nope+rope schema;
+            # skip rather than crash. Real packed layout will be handled by
+            # the future AscendC store kernel.
+            return
+
         cache_view = swa_kv_cache.view(-1, swa_kv_cache.shape[-2], swa_kv_cache.shape[-1])
-        latent = cache_view[valid].squeeze(-2)  # [N, nope+rope]
-        orig_dtype = latent.dtype
+        latent_slice = cache_view[valid, :, :nope_dim].squeeze(-2)  # [N, nope_dim]
+        orig_dtype = latent_slice.dtype
 
         from vllm_ascend.quantization.turboquant.quantizer import (
             reference_roundtrip_key,
         )
 
         latent_rt = reference_roundtrip_key(
-            latent.to(torch.float32), self.tq_cfg, seed=42
+            latent_slice.to(torch.float32), self.tq_cfg, seed=42
         ).to(orig_dtype)
-        cache_view[valid] = latent_rt.unsqueeze(-2)
+        cache_view[valid, :, :nope_dim] = latent_rt.unsqueeze(-2)
 
     def dsa_warmup_with_multistream(self, hidden_states: torch.Tensor) -> None:
         """
