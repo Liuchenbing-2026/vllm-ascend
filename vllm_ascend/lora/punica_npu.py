@@ -168,18 +168,19 @@ class PunicaWrapperNPU(PunicaWrapperBase):
             (bug.md 现象 4, stacked lora_b padded by max_lora_rank but
             einsum sees runtime rank).
 
-        Shapes (per vllm punica convention):
-          y          [N, hidden_total]            — output, in-place
-          x          [N, rank]                    — shrink intermediate
-          w_t_all    [max_loras+1, hidden_total, rank]
-                                                  — stacked lora_b
-          token_lora_indices [N]                  — per-token lora slot;
-                                                    -1 means no LoRA
+        Shapes (per vllm punica convention, confirmed against
+        vllm/lora/layers/{base_linear,column_parallel_linear,
+        logits_processor,vocal_parallel_embedding}.py — all four call
+        sites allocate lora_b_stacked as 4D):
+          y          [N, hidden_total]                      — output, in-place
+          x          [N, rank]                              — shrink intermediate
+          w_t_all    [max_loras+1, 1, hidden_total, rank]   — stacked lora_b
+          token_lora_indices [N]                            — per-token lora
+                                                              slot; -1 = no LoRA
 
         Computes:
-          delta[t, j] = sum_k x[t, k] * w_t_all[indices[t],
-                                                y_offset + j,
-                                                k]
+          delta[t, j] = sum_k x[t, k] * w_t_all[indices[t], 0,
+                                                y_offset + j, k]
         and either adds (add_inputs=True) or overwrites
         y[:, y_offset:y_offset + y_slice_size].
 
@@ -190,9 +191,13 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         indices = self.token_lora_indices
         valid_mask = (indices >= 0).to(x.dtype).unsqueeze(-1)  # [N, 1]
         safe_indices = indices.clamp(min=0).to(torch.long)
-        # Gather per-token lora_b weights.
-        # gathered: [N, hidden_total, rank]; sliced: [N, slice_size, rank]
-        gathered = w_t_all[safe_indices]
+        # Gather per-token lora_b weights. w_t_all is
+        # (max_loras+1, 1, hidden_total, rank); selecting [indices, 0]
+        # collapses the legacy stacking dim 1 and yields 3D
+        # (N, hidden_total, rank), which is what torch.bmm requires.
+        # Without the trailing 0 we would get a 4D tensor and bmm raises
+        # "mat2 must be a 3D tensor".
+        gathered = w_t_all[safe_indices, 0]
         sliced = gathered[:, y_offset : y_offset + y_slice_size, :]
         # [N, 1, rank] @ [N, rank, slice_size] -> [N, 1, slice_size]
         delta = torch.bmm(x.unsqueeze(1), sliced.transpose(1, 2)).squeeze(1)
