@@ -80,34 +80,11 @@ def _assert_ascend_moe_lora_supported(base_layer: AscendFusedMoE) -> None:
             "Set VLLM_ASCEND_ENABLE_FUSED_MC2=0."
         )
     if getattr(base_layer, "_shared_experts", None) is not None:
-        # Routed experts' LoRA delta is handled by this MoE wrapper through
-        # quant_method.apply. Shared experts are dense Qwen3MoeMLP-style
-        # MergedColumnParallelLinear / RowParallelLinear; vllm's stock LoRA
-        # wrappers replace those independently, and the resulting shrink
-        # path then collides with _C_ascend.bgmv NPU op shape constraints
-        # ("hidden in should be smaller than hidden out") on small
-        # moe_intermediate_size + large TP combos. To allow these models
-        # to run, the user can opt in to a slower torch_ops-shrink path
-        # via VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS=1; without the opt
-        # in we fail fast so users do not chase a confusing graph-capture
-        # error instead of a clear startup message.
-        if not envs_ascend.VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS:
-            raise AssertionError(
-                "Ascend MoE LoRA v1 does not wrap the shared_experts path "
-                "(it runs outside quant_method.apply). The target model "
-                "Qwen3-30B-A3B-Thinking-2507 has no shared experts; models "
-                "like Qwen3.5-35B-A3B / DeepSeek-V3 are gated behind the "
-                "experimental VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS=1 "
-                "env (expect ~20-30% throughput drop due to torch_ops "
-                "shrink fallback)."
-            )
-        logger.warning_once(
-            "Ascend MoE LoRA: shared_experts detected and "
-            "VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS=1. Routed-experts "
-            "LoRA delta is applied via this wrapper; shared-experts LoRA "
-            "is handled by vllm's standard dense wrappers. Shrink path "
-            "falls back to torch_ops (~20-30%% throughput drop). If your "
-            "adapter omits shared experts, those weights run as base only."
+        raise AssertionError(
+            "Ascend MoE LoRA v1 does not wrap the shared_experts path "
+            "(it runs outside quant_method.apply). The target model "
+            "Qwen3-30B-A3B-Thinking-2507 has no shared experts; models "
+            "like DeepSeek-V3 are not yet supported."
         )
     if getattr(base_layer, "multistream_overlap_gate", False):
         raise AssertionError(
@@ -138,18 +115,6 @@ class AscendFusedMoEWithLoRA(FusedMoEWithLoRA):
         # Per-layer scratch for state captured at apply-time and consumed
         # inside _apply_mlp_with_lora.
         self._moe_state: dict = {}
-        # Expose shared_experts so vllm's replace_submodule can resolve
-        # ``...experts._shared_experts.gate_up_proj`` after this wrapper
-        # has replaced the FusedMoE layer. nn.Module.__setattr__ auto-files
-        # the assigned nn.Module into self._modules (which get_submodule
-        # reads); the assignment is by reference so vllm's later setattr on
-        # shared_experts.gate_up_proj transparently updates the forward
-        # path base_layer actually invokes. Only honored under the
-        # ALLOW_SHARED_EXPERTS env (otherwise _assert_ascend_moe_lora_supported
-        # would have already raised above).
-        shared_experts = getattr(base_layer, "_shared_experts", None)
-        if shared_experts is not None:
-            self._shared_experts = shared_experts
         self._inject_lora_into_ascend_fused_moe()
 
     # ------------------------------------------------------------------
