@@ -174,34 +174,51 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         sites allocate lora_b_stacked as 4D):
           y          [N, hidden_total]                      — output, in-place
           x          [N, rank]                              — shrink intermediate
-          w_t_all    [max_loras+1, 1, hidden_total, rank]   — stacked lora_b
+          w_t_all    [max_loras+1, 1, output_size_i, rank]  — stacked lora_b
+                                                              for THIS slice
+                                                              (output_size_i ==
+                                                              y_slice_size)
           token_lora_indices [N]                            — per-token lora
                                                               slot; -1 = no LoRA
+          y_offset / y_slice_size                           — where to write
+                                                              into y; w_t_all
+                                                              already only
+                                                              covers this slice
 
-        Computes:
-          delta[t, j] = sum_k x[t, k] * w_t_all[indices[t], 0,
-                                                y_offset + j, k]
-        and either adds (add_inputs=True) or overwrites
-        y[:, y_offset:y_offset + y_slice_size].
+        Important: w_t_all.shape[2] is already output_size_i for this
+        slice (vllm allocates one stacked tensor per slice via
+        ``for output_size in self.output_slices``). y_offset is the
+        accumulated offset into y, NOT into w_t_all — so we do NOT
+        slice w_t_all by [y_offset:y_offset+y_slice_size]. Doing so
+        would either return an empty slice (when y_offset >=
+        output_size_i) or wrong rows. Mirroring upstream
+        torch_ops.bgmv_expand_slice, slicing happens only on the y
+        side; gathered is used in full.
+
+        dtype contract: upstream casts both inputs and selected_loras
+        to output_tensor.dtype before einsum (torch_ops/lora_ops.py:
+        119-120). We mirror that with .to(y.dtype) before bmm — NPU
+        mixed-dtype bmm behavior is unspecified, and matching upstream
+        ensures numerical parity.
 
         -1 indices are masked out (gather uses clamp(min=0) then the
         result is zeroed) so they neither corrupt valid rows nor force
         a host sync (graph-capture safe).
         """
         indices = self.token_lora_indices
-        valid_mask = (indices >= 0).to(x.dtype).unsqueeze(-1)  # [N, 1]
         safe_indices = indices.clamp(min=0).to(torch.long)
+        valid_mask = (indices >= 0).to(y.dtype).unsqueeze(-1)  # [N, 1]
         # Gather per-token lora_b weights. w_t_all is
-        # (max_loras+1, 1, hidden_total, rank); selecting [indices, 0]
-        # collapses the legacy stacking dim 1 and yields 3D
-        # (N, hidden_total, rank), which is what torch.bmm requires.
-        # Without the trailing 0 we would get a 4D tensor and bmm raises
-        # "mat2 must be a 3D tensor".
-        gathered = w_t_all[safe_indices, 0]
-        sliced = gathered[:, y_offset : y_offset + y_slice_size, :]
+        # (max_loras+1, 1, output_size_i, rank); [safe_indices, 0]
+        # collapses the legacy stacking dim 1 (equivalent to upstream
+        # torch_ops' "if len(selected_loras.shape) == 4:
+        # selected_loras = selected_loras.squeeze(dim=1)").
+        # Cast to y.dtype to match upstream contract.
+        gathered = w_t_all[safe_indices, 0].to(y.dtype)  # [N, slice_size, rank]
+        x_cast = x.to(y.dtype)  # [N, rank]
         # [N, 1, rank] @ [N, rank, slice_size] -> [N, 1, slice_size]
-        delta = torch.bmm(x.unsqueeze(1), sliced.transpose(1, 2)).squeeze(1)
-        delta = (delta * valid_mask).to(y.dtype)
+        delta = torch.bmm(x_cast.unsqueeze(1), gathered.transpose(1, 2)).squeeze(1)
+        delta = delta * valid_mask  # [N, slice_size]
         if add_inputs:
             y[:, y_offset : y_offset + y_slice_size] += delta
         else:
