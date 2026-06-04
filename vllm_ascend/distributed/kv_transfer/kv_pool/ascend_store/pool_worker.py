@@ -54,6 +54,10 @@ backend_map = {
         "name": "YuanrongBackend",
         "path": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend.yuanrong_backend",
     },
+    "ssd": {
+        "name": "SSDBackend",
+        "path": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend.ssd_backend",
+    },
 }
 
 
@@ -188,6 +192,11 @@ class KVPoolWorker:
             # DSV4 exposes compress_ratios; only use lazy store init for this
             # compressed-model path.
             backend_kwargs["lazy_init"] = self.use_compress
+        elif self.backend.lower() == "ssd":
+            backend_kwargs["extra_config"] = (
+                vllm_config.kv_transfer_config.kv_connector_extra_config
+            )
+
         self.m_store = real_backend(  # type: ignore[misc]
             parallel_config,
             **backend_kwargs,

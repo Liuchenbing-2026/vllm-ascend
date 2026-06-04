@@ -24,6 +24,7 @@ Usage at the top of each test file:
 """
 
 import os
+import re as _stdlib_re
 import sys
 import types
 from unittest.mock import MagicMock
@@ -68,6 +69,7 @@ _vllm_mock_modules = [
     "vllm.distributed.parallel_state",
     "vllm.envs",
     "vllm.forward_context",
+    "vllm.logger",
     "vllm.model_executor",
     "vllm.model_executor.layers",
     "vllm.model_executor.layers.linear",
@@ -95,6 +97,7 @@ for _mod_name in _vllm_mock_modules:
         sys.modules[_mod_name] = MagicMock()
 
 sys.modules["vllm.utils.math_utils"].cdiv = lambda a, b: -(-a // b)  # type: ignore[attr-defined]
+sys.modules["vllm.logger"].logger = MagicMock()  # type: ignore[attr-defined]
 
 _base_mod = sys.modules["vllm.distributed.kv_transfer.kv_connector.v1.base"]
 _base_mod.KVConnectorBase_V1 = type("KVConnectorBase_V1", (), {"__init__": lambda self, **kw: None})  # type: ignore[attr-defined]
@@ -135,6 +138,7 @@ sys.modules["vllm.envs"].VLLM_RPC_BASE_PATH = "/tmp/vllm_rpc"  # type: ignore[at
 # ---------------------------------------------------------------------------
 # Mock external backends
 # ---------------------------------------------------------------------------
+sys.modules["regex"] = _stdlib_re
 for _mod_name in [
     "mooncake",
     "mooncake.engine",

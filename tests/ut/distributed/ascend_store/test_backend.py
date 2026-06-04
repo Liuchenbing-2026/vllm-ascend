@@ -15,8 +15,10 @@
 # This file is a part of the vllm-ascend project.
 #
 
+import ctypes
 import json
 import os
+import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -27,6 +29,9 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend.mooncake_b
     MooncakeStoreConfig,
     _convert_to_bytes,
     _parse_global_segment_size,
+)
+from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend.ssd_backend import (
+    SSDBackend,
 )
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend.yuanrong_backend import (
     YuanrongConfig,
@@ -41,6 +46,83 @@ class TestBackendABC(unittest.TestCase):
     def test_cannot_instantiate(self):
         with self.assertRaises(TypeError):
             Backend(MagicMock())  # type: ignore[abstract]
+
+
+class _FakeAclRt:
+    def __init__(self):
+        self._host_buffers = {}
+
+    def malloc_host(self, size):
+        buf = ctypes.create_string_buffer(size)
+        ptr = ctypes.addressof(buf)
+        self._host_buffers[ptr] = buf
+        return ptr, 0
+
+    def free_host(self, ptr):
+        self._host_buffers.pop(ptr, None)
+        return 0
+
+    def memcpy(self, dst, dst_max, src, size, kind):
+        ctypes.memmove(dst, src, size)
+        return 0
+
+
+class _FakeAcl:
+    ACL_MEMCPY_HOST_TO_DEVICE = 1
+    ACL_MEMCPY_DEVICE_TO_HOST = 2
+
+    def __init__(self):
+        self.rt = _FakeAclRt()
+
+
+class TestSSDBackend(unittest.TestCase):
+    def test_put_get_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with patch.dict(sys.modules, {"acl": _FakeAcl()}):
+                parallel_config = MagicMock()
+                parallel_config.rank = 0
+                backend = SSDBackend(
+                    parallel_config,
+                    extra_config={"ssd_root_dir": tmp_dir},
+                )
+
+                src_a = ctypes.create_string_buffer(b"abcd")
+                src_b = ctypes.create_string_buffer(b"efg")
+                key = "model@rank:0@chunk:abc"
+
+                put_ret = backend.put(
+                    [key],
+                    [[ctypes.addressof(src_a), ctypes.addressof(src_b)]],
+                    [[4, 3]],
+                )
+                self.assertEqual(put_ret, [0])
+                self.assertEqual(backend.exists([key, "missing"]), [1, 0])
+
+                dst_a = ctypes.create_string_buffer(4)
+                dst_b = ctypes.create_string_buffer(3)
+                get_ret = backend.get(
+                    [key],
+                    [[ctypes.addressof(dst_a), ctypes.addressof(dst_b)]],
+                    [[4, 3]],
+                )
+                self.assertEqual(get_ret, [0])
+                self.assertEqual(dst_a.raw, b"abcd")
+                self.assertEqual(dst_b.raw, b"efg")
+
+    def test_get_missing_key_returns_failure(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with patch.dict(sys.modules, {"acl": _FakeAcl()}):
+                parallel_config = MagicMock()
+                parallel_config.rank = 0
+                backend = SSDBackend(
+                    parallel_config,
+                    extra_config={"ssd_root_dir": tmp_dir},
+                )
+                dst = ctypes.create_string_buffer(4)
+                self.assertEqual(
+                    backend.get(["missing"], [[ctypes.addressof(dst)]], [[4]]),
+                    [1],
+                )
 
 
 # =========================================================================
