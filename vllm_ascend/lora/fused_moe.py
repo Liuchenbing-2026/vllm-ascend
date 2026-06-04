@@ -127,6 +127,17 @@ class AscendFusedMoEWithLoRA(FusedMoEWithLoRA):
         # Per-layer scratch for state captured at apply-time and consumed
         # inside _apply_mlp_with_lora.
         self._moe_state: dict = {}
+        # Expose shared_experts on the wrapper so vllm's replace_submodule
+        # can resolve ``...experts._shared_experts.gate_up_proj`` after the
+        # MoE layer has been replaced by this wrapper. nn.Module.__setattr__
+        # auto-registers the assigned nn.Module into self._modules, which is
+        # what get_submodule looks up; the assignment shares the same object
+        # with base_layer (no parameter duplication). Without this, vllm's
+        # LoRA submodule walk fails as soon as the adapter's target_modules
+        # match anything under shared_experts (e.g. Qwen3.5-35B-A3B).
+        shared_experts = getattr(base_layer, "_shared_experts", None)
+        if shared_experts is not None:
+            self._shared_experts = shared_experts
         self._inject_lora_into_ascend_fused_moe()
 
     # ------------------------------------------------------------------
