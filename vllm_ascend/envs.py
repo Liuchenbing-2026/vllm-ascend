@@ -115,6 +115,27 @@ env_variables: dict[str, Callable[[], Any]] = {
     # "ascendc"                  : reserved for a future fused AscendC kernel (v2).
     #                              Currently raises NotImplementedError.
     "VLLM_ASCEND_MOE_LORA_KERNEL": lambda: os.getenv("VLLM_ASCEND_MOE_LORA_KERNEL", "bgmv").lower(),
+    # Allow MoE LoRA on models with shared experts (e.g. Qwen3.5-35B-A3B,
+    # DeepSeek-V3). Default 0 = fail-fast at wrapper init.
+    # When set to 1:
+    #   1. AscendFusedMoEWithLoRA skips the shared_experts assert and exposes
+    #      base_layer._shared_experts on the wrapper so vllm's
+    #      replace_submodule walk can resolve shared_expert.{gate_up_proj,
+    #      down_proj} parents.
+    #   2. PunicaWrapperNPU forces the LoRA shrink path onto vllm's
+    #      torch_ops.bgmv_shrink/sgmv_shrink (expand still uses the fused
+    #      _C_ascend ops). This avoids the
+    #      "hidden in should be smaller than hidden out" NPU op shape
+    #      constraint that the dense shrink path on
+    #      shared_experts.{gate_up_proj,down_proj} trips at ACL graph
+    #      capture when moe_intermediate_size is small (Qwen3.5-35B-A3B
+    #      = 512) and TP is large (per-card hidden < op limit).
+    # Expect ~20-30% throughput drop because the shrink fallback affects
+    # every LoRA layer in the model (QKV, dense, MoE), not just shared
+    # experts. Enable when correctness/coverage > speed.
+    "VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS", "0"))
+    ),
     # DEPRECATED: VLLM_ASCEND_BALANCE_SCHEDULING env var will be removed in a future release.
     # Use --additional-config '{"enable_balance_scheduling": true}' instead.
     "VLLM_ASCEND_BALANCE_SCHEDULING": lambda: bool(int(os.getenv("VLLM_ASCEND_BALANCE_SCHEDULING", "0"))),

@@ -27,9 +27,10 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         PunicaWrapperBase.__init__(self, max_num_batched_tokens, max_batches, device)
         refresh_all_lora_classes()
         self.lora_config = kwargs.get("lora_config")
-        if get_ascend_device_type() == AscendDeviceType._310P or (
+        force_torch_all = get_ascend_device_type() == AscendDeviceType._310P or (
             self.lora_config is not None and self.lora_config.max_lora_rank >= 128
-        ):
+        )
+        if force_torch_all:
             from vllm.lora.ops.torch_ops import (
                 bgmv_expand,
                 bgmv_expand_slice,
@@ -47,6 +48,25 @@ class PunicaWrapperNPU(PunicaWrapperBase):
                 sgmv_expand_slice,
                 sgmv_shrink,
             )
+
+            if envs_ascend.VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS:
+                # Shared-experts dense shrink trips the _C_ascend.bgmv_*
+                # "hidden in should be smaller than hidden out" check when
+                # moe_intermediate_size is small (Qwen3.5-35B-A3B = 512,
+                # per-card 128 under TP=4). Route only the shrink ops onto
+                # vllm's torch reference — expand keeps the fused kernel
+                # because its (in=rank, out=hidden_out) direction always
+                # satisfies the constraint, so the perf hit is bounded to
+                # the shrink half of every LoRA layer (~20-30% throughput).
+                from vllm.lora.ops.torch_ops import (
+                    bgmv_shrink as torch_bgmv_shrink,
+                )
+                from vllm.lora.ops.torch_ops import (
+                    sgmv_shrink as torch_sgmv_shrink,
+                )
+
+                bgmv_shrink = torch_bgmv_shrink
+                sgmv_shrink = torch_sgmv_shrink
         self.bgmv_expand = bgmv_expand
         self.bgmv_expand_slice = bgmv_expand_slice
         self.bgmv_shrink = bgmv_shrink
