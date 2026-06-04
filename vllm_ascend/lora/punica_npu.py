@@ -246,23 +246,24 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         if x_cast.shape[0] == 0 or gathered.shape[1] == 0:
             return
 
-        # Always log shapes when entering bmm_expand_slice; this path
-        # is opt-in via VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS and we
-        # need every shape on the floor for diagnosing aclnn 161002
-        # follow-ups. warning_once would deduplicate; we use plain info
-        # so each call site (different layers / slices) is visible.
-        logger.info(
-            "[lora.bmm_expand_slice] N=%d x=%s/%s w_t_all=%s/%s gathered=%s y_offset=%d y_slice_size=%d add=%s",
-            x_cast.shape[0],
-            tuple(x_cast.shape),
-            x_cast.dtype,
-            tuple(w_t_all.shape),
-            w_t_all.dtype,
-            tuple(gathered.shape),
-            y_offset,
-            y_slice_size,
-            add_inputs,
-        )
+        # bug.md 现象 7: logging.Logger methods are rejected by torch
+        # dynamo with "non-export cases" when this function is traced
+        # for ACL graph capture. Use `print(..., flush=True)` instead —
+        # dynamo treats print as a side-effect call and lets it through
+        # without tracing it into the graph. Guard with the
+        # VLLM_ASCEND_LORA_DEBUG env so production runs aren't spammed
+        # by per-layer/per-slice dumps.
+        if envs_ascend.VLLM_ASCEND_LORA_DEBUG:
+            print(
+                f"[lora.bmm_expand_slice] "
+                f"N={x_cast.shape[0]} "
+                f"x={tuple(x_cast.shape)}/{x_cast.dtype} "
+                f"w_t_all={tuple(w_t_all.shape)}/{w_t_all.dtype} "
+                f"gathered={tuple(gathered.shape)} "
+                f"y_offset={y_offset} y_slice_size={y_slice_size} "
+                f"add={add_inputs}",
+                flush=True,
+            )
 
         # bug.md 现象 5 + 此后的复测: torch.bmm / torch.matmul on the
         # NPU backend both call aclnnBatchMatMul / aclnnMatmul which
