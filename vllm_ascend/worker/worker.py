@@ -121,6 +121,15 @@ class NPUWorker(WorkerBase):
 
         if self.cache_config.cache_dtype == "auto":
             self.cache_dtype = self.model_config.dtype
+        elif isinstance(self.cache_config.cache_dtype, str) and self.cache_config.cache_dtype.startswith("turboquant_"):
+            # TurboQuant PoC (Plan A fake-quant): KV cache stays at the model's
+            # native dtype because the round-trip in `AscendSFAImpl.exec_kv`
+            # emulates quantization in-place. Upstream vllm maps these strings
+            # to torch.uint8 for packed storage, but Ascend has no packed
+            # store kernel yet and `npu_kv_rmsnorm_rope_cache` requires a
+            # floating cache. The original preset string survives untouched
+            # on `cache_config.cache_dtype` so SFA can still detect it.
+            self.cache_dtype = self.model_config.dtype
         else:
             self.cache_dtype = STR_DTYPE_TO_TORCH_DTYPE[self.cache_config.cache_dtype]
 
