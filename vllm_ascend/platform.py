@@ -629,6 +629,21 @@ class NPUPlatform(Platform):
         if is_310p():
             return backend_map_310.get(key, backend_map_310[(False, False)])
 
+        # TurboQuant KV-cache quantization: stays on the existing SFA / MLA
+        # backend; the quantization hook is mounted inside the impl class
+        # (see vllm_ascend/attention/sfa_v1.py exec_kv) gated by tq_cfg.
+        # We log on first hit so misconfiguration is observable in serve logs.
+        cache_dtype = getattr(attn_selector_config, "kv_cache_dtype", None) or getattr(
+            getattr(attn_selector_config, "cache_config", None), "cache_dtype", None
+        )
+        if isinstance(cache_dtype, str) and cache_dtype.startswith("turboquant_"):
+            logger.info(
+                "TurboQuant KV-cache dtype detected: %s. Quantization will be "
+                "applied inside the selected backend (SFA / MLA). Set "
+                "VLLM_ASCEND_TURBOQUANT_TARGET=off to disable.",
+                cache_dtype,
+            )
+
         return backend_map[(attn_selector_config.use_mla, attn_selector_config.use_sparse, use_compress)]
 
     @classmethod
