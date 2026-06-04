@@ -93,25 +93,21 @@ def _assert_ascend_moe_lora_supported(base_layer: AscendFusedMoE) -> None:
         # error instead of a clear startup message.
         if not envs_ascend.VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS:
             raise AssertionError(
-                "Ascend MoE LoRA v1 does not wrap the shared_experts "
-                "path (it runs outside quant_method.apply). Independently, "
-                "Qwen3-Next-style hybrid models (Qwen3.5-35B-A3B) trip a "
-                "_C_ascend.sgmv_expand layout bug on GDN block's "
-                "ColumnParallelLinear LoRA. Both classes of models are "
-                "gated behind VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS=1 "
-                "which forces ALL LoRA ops onto vllm's torch_ops reference "
-                "(~50%% throughput drop). Qwen3-30B-A3B-Thinking-2507 has "
-                "neither shared experts nor GDN and works without the env."
+                "Ascend MoE LoRA v1 does not wrap the shared_experts path "
+                "(it runs outside quant_method.apply). The target model "
+                "Qwen3-30B-A3B-Thinking-2507 has no shared experts; models "
+                "like Qwen3.5-35B-A3B / DeepSeek-V3 are gated behind the "
+                "experimental VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS=1 "
+                "env (expect ~20-30% throughput drop due to torch_ops "
+                "shrink fallback)."
             )
         logger.warning_once(
             "Ascend MoE LoRA: shared_experts detected and "
             "VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS=1. Routed-experts "
             "LoRA delta is applied via this wrapper; shared-experts LoRA "
-            "is handled by vllm's standard dense wrappers. ALL LoRA ops "
-            "(shrink + expand, both bgmv and sgmv) are routed to "
-            "torch_ops to bypass the _C_ascend.sgmv_expand layout bug "
-            "(~50%% throughput drop). If your adapter omits shared "
-            "experts, those weights run as base only."
+            "is handled by vllm's standard dense wrappers. Shrink path "
+            "falls back to torch_ops (~20-30%% throughput drop). If your "
+            "adapter omits shared experts, those weights run as base only."
         )
     if getattr(base_layer, "multistream_overlap_gate", False):
         raise AssertionError(

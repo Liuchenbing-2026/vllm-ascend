@@ -115,31 +115,24 @@ env_variables: dict[str, Callable[[], Any]] = {
     # "ascendc"                  : reserved for a future fused AscendC kernel (v2).
     #                              Currently raises NotImplementedError.
     "VLLM_ASCEND_MOE_LORA_KERNEL": lambda: os.getenv("VLLM_ASCEND_MOE_LORA_KERNEL", "bgmv").lower(),
-    # Allow LoRA on Ascend models that trip the _C_ascend NPU op shape
-    # constraint, e.g.
-    #   - Qwen3.5-35B-A3B (Qwen3-Next hybrid GDN + shared experts)
-    #   - DeepSeek-V3 (shared experts)
-    # Default 0 = fail-fast at MoE wrapper init when shared experts are
-    # detected. Hybrid GDN models trip the same constraint even without
-    # shared experts (see vllm_ascend/lora/fused_moe.py docstring).
+    # Allow MoE LoRA on models with shared experts (e.g. Qwen3.5-35B-A3B,
+    # DeepSeek-V3). Default 0 = fail-fast at wrapper init.
     # When set to 1:
-    #   1. AscendFusedMoEWithLoRA skips the shared_experts assert and
-    #      exposes base_layer._shared_experts on the wrapper so vllm's
+    #   1. AscendFusedMoEWithLoRA skips the shared_experts assert and exposes
+    #      base_layer._shared_experts on the wrapper so vllm's
     #      replace_submodule walk can resolve shared_expert.{gate_up_proj,
     #      down_proj} parents.
-    #   2. PunicaWrapperNPU routes ALL LoRA ops (shrink AND expand) to
-    #      vllm's torch_ops reference implementation. The fused
-    #      _C_ascend.sgmv_expand path is bypassed entirely because it
-    #      interprets lora_b's (hidden, rank) layout in a way that flips
-    #      the "hidden in should be smaller than hidden out" check on
-    #      Qwen3-Next GDN's ColumnParallelLinear LoRA (rank=16,
-    #      hidden_per_tp=128). Bypassing both shrink and expand is what
-    #      the previous shrink-only fallback should have been — see
-    #      bug.md "现象 3 调用栈打到底"订正.
-    # Expected throughput: ~50% lower vs the fused path. The hit covers
-    # every LoRA layer in the model (QKV, dense, MoE), so leave the env
-    # off if your model is Qwen3-30B-A3B-Thinking-2507 (no GDN, no shared
-    # experts) — that path stays on _C_ascend and is unaffected.
+    #   2. PunicaWrapperNPU forces the LoRA shrink path onto vllm's
+    #      torch_ops.bgmv_shrink/sgmv_shrink (expand still uses the fused
+    #      _C_ascend ops). This avoids the
+    #      "hidden in should be smaller than hidden out" NPU op shape
+    #      constraint that the dense shrink path on
+    #      shared_experts.{gate_up_proj,down_proj} trips at ACL graph
+    #      capture when moe_intermediate_size is small (Qwen3.5-35B-A3B
+    #      = 512) and TP is large (per-card hidden < op limit).
+    # Expect ~20-30% throughput drop because the shrink fallback affects
+    # every LoRA layer in the model (QKV, dense, MoE), not just shared
+    # experts. Enable when correctness/coverage > speed.
     "VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS": lambda: bool(
         int(os.getenv("VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS", "0"))
     ),
