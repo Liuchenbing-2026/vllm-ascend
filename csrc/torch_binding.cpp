@@ -2534,7 +2534,7 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
                             "Tensor slot_mapping, "
                             "Tensor(a!) kv_cache, "
                             "float epsilon=1e-6)"
-        "-> Tensor"
+        "-> Tensor(a!)"
         );
     ops.impl("npu_fused_kv_norm_rope_swa_cache", torch::kPrivateUse1, &vllm_ascend::npu_fused_kv_norm_rope_swa_cache);
 

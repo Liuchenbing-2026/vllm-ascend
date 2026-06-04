@@ -23,7 +23,7 @@ namespace vllm_ascend {
 //   cos / sin    [nt, rope_dim]            fp32, pre-gathered + pair-repeated
 //   slot_mapping [nt, 2]                   int32 (block_idx, block_offset)
 //   kv_cache     [num_blocks, bs, head_dim] fp16/bf16, mutated in place
-// Returns kv_out [nt, head_dim] (the normed+roped value); kv_cache is updated in place.
+// Returns kv_cache; the normalized+roped value is written only to cache.
 at::Tensor npu_fused_kv_norm_rope_swa_cache(
     const at::Tensor& kv_in,
     const at::Tensor& gamma,
@@ -33,13 +33,12 @@ at::Tensor npu_fused_kv_norm_rope_swa_cache(
     at::Tensor& kv_cache,
     double epsilon)
 {
-    at::Tensor kv_out = at::empty(kv_in.sizes(), kv_in.options());
-    // aclnn arg order = inputs..., attr..., outputs... (kv_cache is both input[5] and output[1], in place)
+    // aclnn arg order = inputs..., attr..., outputs... (kv_cache is both input[5] and output[0], in place)
     EXEC_NPU_CMD(aclnnFusedKvNormRopeSwaCacheCustom,
                  kv_in, gamma, cos, sin, slot_mapping, kv_cache,
                  epsilon,
-                 kv_out, kv_cache);
-    return kv_out;
+                 kv_cache);
+    return kv_cache;
 }
 }  // namespace vllm_ascend
 #endif

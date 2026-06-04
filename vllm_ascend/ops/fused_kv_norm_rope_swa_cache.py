@@ -22,7 +22,7 @@ def fused_kv_norm_rope_swa_cache(
     kv_cache: torch.Tensor,     # [num_blocks, block_size, head_dim] fp16/bf16, mutated in place
     epsilon: float = 1e-6,
 ) -> torch.Tensor:
-    """Returns kv_out [nt, head_dim] (normed+roped value); kv_cache is updated in place."""
+    """Returns kv_cache; the normalized+roped value is written only to cache."""
     enable_custom_op()
     return torch.ops._C_ascend.npu_fused_kv_norm_rope_swa_cache(
         kv_in, gamma, cos, sin, slot_mapping, kv_cache, epsilon)

@@ -1,4 +1,4 @@
-// FusedKvNormRopeSwaCacheCustom v2.3 (skip invalid slots): DSV4-DSA SWA-kv prep fusion.
+// FusedKvNormRopeSwaCacheCustom v2.6 (cache-only): DSV4-DSA SWA-kv prep fusion.
 //
 // Optimizations over v1:
 //   1. All-fp32 pipeline — NormKv result stays in fp32 xfBuf_; RopeTo works on fp32 directly;
@@ -11,7 +11,8 @@
 //   5. BlockDim=40 always — uses all AIV cores regardless of nt (idle cores early-exit).
 //      Tiling sets BlockDim=aivNum; kernel derives per-core range from GetBlockIdx/GetBlockNum.
 //   6. Invalid-slot guard retained from v1 (skip cache write when block/offset < 0, graph-safe).
-//   7. Invalid-slot early-skip: padding rows skip norm/RoPE/Cast/kv_out/cache entirely.
+//   7. Invalid-slot early-skip: padding rows skip norm/RoPE/Cast/cache entirely.
+//   8. Cache-only output: skip the unused kv_out GM write.
 //
 // Expected decode (nt=32) improvement: ~2× over v1 (Cast/buffer/barrier savings).
 // Prefill (nt=1024) improvement: ~1.5-2× (41 cores all working, fewer casts/barriers).
@@ -26,8 +27,7 @@ public:
     __aicore__ inline KernelKvNormRopeSwa() {}
 
     __aicore__ inline void Init(GM_ADDR kvIn, GM_ADDR gamma, GM_ADDR coss, GM_ADDR sinn,
-                                GM_ADDR slotMapping, GM_ADDR kvCacheIn,
-                                GM_ADDR kvOut, GM_ADDR kvCacheOut,
+                                GM_ADDR slotMapping, GM_ADDR kvCacheIn, GM_ADDR kvCacheOut,
                                 uint32_t numTokens, uint32_t headDim, uint32_t nopeDim,
                                 uint32_t ropeDim, uint32_t blockSize, uint32_t numBlocks,
                                 float eps, float headDimF) {
@@ -38,6 +38,7 @@ public:
         // Compute per-core token range from actual BlockDim (set by host tiling to aivNum=40).
         uint32_t coreIdx = GetBlockIdx();
         uint32_t totalCores = GetBlockNum();
+        if (totalCores == 0) totalCores = 1;
         uint32_t tasksPerCore = (numTokens_ + totalCores - 1u) / totalCores;
         startTask_ = coreIdx * tasksPerCore;
         endTask_   = startTask_ + tasksPerCore;
@@ -52,7 +53,6 @@ public:
         cosGm_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(coss), csLen);
         sinGm_.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(sinn), csLen);
         slotGm_.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t*>(slotMapping), (int64_t)numTokens_ * 2);
-        kvOutGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(kvOut), kvLen);
         cacheGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T*>(kvCacheOut), cacheLen);
         (void)kvCacheIn;
 
@@ -155,10 +155,9 @@ public:
             }
             PipeBarrier<PIPE_ALL>();  // V Cast -> MTE3 writes
 
-            // Write kv_out + cache (MTE3)
+            // Write cache (MTE3)
             {
                 LocalTensor<T> kvOut = kvBuf_.Get<T>();
-                DataCopy(kvOutGm_[(uint64_t)tok * headDim_], kvOut, headDim_);
                 uint64_t dst = ((uint64_t)(uint32_t)block * blockSize_ + (uint32_t)offset) * headDim_;
                 DataCopy(cacheGm_[dst], kvOut, headDim_);
             }
@@ -233,7 +232,7 @@ private:
     TBuf<TPosition::VECCALC> cfBuf0_, sfBuf0_, cfBuf1_, sfBuf1_;
     TBuf<TPosition::VECCALC> slotBuf_;
 
-    GlobalTensor<T> kvInGm_, gammaGm_, kvOutGm_, cacheGm_;
+    GlobalTensor<T> kvInGm_, gammaGm_, cacheGm_;
     GlobalTensor<float> cosGm_, sinGm_;
     GlobalTensor<int32_t> slotGm_;
 
@@ -244,22 +243,20 @@ private:
 
 extern "C" __global__ __aicore__ void fused_kv_norm_rope_swa_cache_custom(
     GM_ADDR kv_in, GM_ADDR gamma, GM_ADDR cos, GM_ADDR sin, GM_ADDR slot_mapping,
-    GM_ADDR kv_cache_in, GM_ADDR kv_out, GM_ADDR kv_cache_out,
+    GM_ADDR kv_cache_in, GM_ADDR kv_cache_out,
     GM_ADDR workspace, GM_ADDR tilingGm)
 {
     GET_TILING_DATA(td, tilingGm);
     if (TILING_KEY_IS(1)) {
         if (td.isBf16 == 1u) {
             KernelKvNormRopeSwa<bfloat16_t> op;
-            op.Init(kv_in, gamma, cos, sin, slot_mapping, kv_cache_in,
-                    kv_out, kv_cache_out,
+            op.Init(kv_in, gamma, cos, sin, slot_mapping, kv_cache_in, kv_cache_out,
                     td.numTokens, td.headDim, td.nopeDim, td.ropeDim,
                     td.blockSize, td.numBlocks, td.eps, td.headDimF);
             op.Process();
         } else {
             KernelKvNormRopeSwa<half> op;
-            op.Init(kv_in, gamma, cos, sin, slot_mapping, kv_cache_in,
-                    kv_out, kv_cache_out,
+            op.Init(kv_in, gamma, cos, sin, slot_mapping, kv_cache_in, kv_cache_out,
                     td.numTokens, td.headDim, td.nopeDim, td.ropeDim,
                     td.blockSize, td.numBlocks, td.eps, td.headDimF);
             op.Process();

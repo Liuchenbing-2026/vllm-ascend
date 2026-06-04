@@ -446,7 +446,13 @@ at::Tensor npu_fused_kv_norm_rope_swa_cache_meta(
     at::Tensor& kv_cache,
     double epsilon)
 {
-    return at::empty_symint(kv_in.sym_sizes(), kv_in.options());
+    (void)kv_in;
+    (void)gamma;
+    (void)cos;
+    (void)sin;
+    (void)slot_mapping;
+    (void)epsilon;
+    return kv_cache;
 }
 
 std::tuple<at::Tensor,at::Tensor, at::Tensor> npu_add_rms_norm_bias_meta(
