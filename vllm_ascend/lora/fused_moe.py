@@ -80,11 +80,23 @@ def _assert_ascend_moe_lora_supported(base_layer: AscendFusedMoE) -> None:
             "Set VLLM_ASCEND_ENABLE_FUSED_MC2=0."
         )
     if getattr(base_layer, "_shared_experts", None) is not None:
-        raise AssertionError(
-            "Ascend MoE LoRA v1 does not wrap the shared_experts path "
-            "(it runs outside quant_method.apply). The target model "
-            "Qwen3-30B-A3B-Thinking-2507 has no shared experts; models "
-            "like DeepSeek-V3 are not yet supported."
+        # Shared experts run outside quant_method.apply, so this MoE wrapper
+        # does NOT inject LoRA delta into the shared expert path. However,
+        # shared experts in upstream models (e.g. Qwen3.5-35B-A3B's
+        # Qwen3MoeMLP) are built from MergedColumnParallelLinear (gate_up_proj)
+        # + RowParallelLinear (down_proj), and those dense modules are
+        # independently replaced by vllm's standard
+        # MergedColumnParallelLinearWithLoRA / RowParallelLinearWithLoRA, so
+        # LoRA on shared experts still works as long as the adapter targets
+        # the shared expert modules. Routed experts continue to be handled by
+        # this MoE wrapper through quant_method.apply.
+        logger.warning_once(
+            "Ascend MoE LoRA: base_layer has shared_experts. LoRA delta on "
+            "routed experts is applied via the MoE wrapper; LoRA on shared "
+            "experts (if any) is handled independently by vllm's standard "
+            "dense LoRA wrappers on shared_expert.{gate_up_proj,down_proj}. "
+            "If your adapter's target_modules omit shared experts, those "
+            "weights will run as base only."
         )
     if getattr(base_layer, "multistream_overlap_gate", False):
         raise AssertionError(
