@@ -115,6 +115,33 @@ env_variables: dict[str, Callable[[], Any]] = {
     # "ascendc"                  : reserved for a future fused AscendC kernel (v2).
     #                              Currently raises NotImplementedError.
     "VLLM_ASCEND_MOE_LORA_KERNEL": lambda: os.getenv("VLLM_ASCEND_MOE_LORA_KERNEL", "bgmv").lower(),
+    # Allow LoRA on Ascend models that trip the _C_ascend.sgmv_expand
+    # layout bug. The op interprets stacked lora_b's (hidden, rank) shape
+    # as (in=hidden, out=rank) and raises
+    # "hidden in should be smaller than hidden out" on Qwen3-Next-style
+    # hybrid (GDN) models and on models with shared experts
+    # (Qwen3.5-35B-A3B, DeepSeek-V3). vllm's torch_ops fallback also
+    # crashes on the same path (einsum shape mismatch on padded
+    # lora_b_stacked, bug.md 现象 4), so we cannot just route to torch_ops.
+    #
+    # When set to 1:
+    #   1. AscendFusedMoEWithLoRA skips the shared_experts assert and
+    #      exposes base_layer._shared_experts on the wrapper (so vllm's
+    #      replace_submodule can resolve shared_expert.{gate_up_proj,
+    #      down_proj} parents).
+    #   2. PunicaWrapperNPU._expand_slice_prefill / _expand_slice_decode
+    #      bypass _C_ascend.sgmv/bgmv_expand_slice entirely and compute
+    #      the LoRA expand via a per-token gather + torch.bmm instead.
+    #      Shrink, embedding, and logits paths are NOT changed — those
+    #      ops are not the broken ones.
+    #
+    # Expect ~30-40% throughput drop (per-token gather + bmm vs the fused
+    # NPU op). Leave the env off if you are running Qwen3-30B-A3B
+    # (no GDN, no shared experts) — that path stays on _C_ascend and is
+    # unaffected.
+    "VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS", "0"))
+    ),
     # DEPRECATED: VLLM_ASCEND_BALANCE_SCHEDULING env var will be removed in a future release.
     # Use --additional-config '{"enable_balance_scheduling": true}' instead.
     "VLLM_ASCEND_BALANCE_SCHEDULING": lambda: bool(int(os.getenv("VLLM_ASCEND_BALANCE_SCHEDULING", "0"))),

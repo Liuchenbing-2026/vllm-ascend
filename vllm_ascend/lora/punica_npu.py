@@ -120,6 +120,9 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         # No LoRA request, so return directly
         if self.no_lora:
             return
+        if envs_ascend.VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS:
+            self._bmm_expand_slice(y, x, w_t_all, y_offset, y_slice_size, add_inputs)
+            return
         self.sgmv_expand_slice(
             x,
             w_t_all,
@@ -139,7 +142,65 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         y_slice_size: int,
         add_inputs: bool,
     ):
+        if envs_ascend.VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS:
+            self._bmm_expand_slice(y, x, w_t_all, y_offset, y_slice_size, add_inputs)
+            return
         self.bgmv_expand_slice(x, w_t_all, y, self.token_lora_indices, y_offset, y_slice_size, add_inputs)
+
+    def _bmm_expand_slice(
+        self,
+        y: torch.Tensor,
+        x: torch.Tensor,
+        w_t_all: torch.Tensor,
+        y_offset: int,
+        y_slice_size: int,
+        add_inputs: bool,
+    ):
+        """Drop-in expand-slice replacement using per-token gather + torch.bmm.
+
+        Replaces both sgmv_expand_slice and bgmv_expand_slice on the
+        ALLOW_SHARED_EXPERTS opt-in path. Avoids:
+
+          - _C_ascend.sgmv_expand layout bug (bug.md 现象 3, op interprets
+            lora_b (hidden, rank) as (in=hidden, out=rank) and trips
+            "hidden in should be smaller than hidden out");
+          - vllm torch_ops.bgmv_expand_slice einsum padding mismatch
+            (bug.md 现象 4, stacked lora_b padded by max_lora_rank but
+            einsum sees runtime rank).
+
+        Shapes (per vllm punica convention):
+          y          [N, hidden_total]            — output, in-place
+          x          [N, rank]                    — shrink intermediate
+          w_t_all    [max_loras+1, hidden_total, rank]
+                                                  — stacked lora_b
+          token_lora_indices [N]                  — per-token lora slot;
+                                                    -1 means no LoRA
+
+        Computes:
+          delta[t, j] = sum_k x[t, k] * w_t_all[indices[t],
+                                                y_offset + j,
+                                                k]
+        and either adds (add_inputs=True) or overwrites
+        y[:, y_offset:y_offset + y_slice_size].
+
+        -1 indices are masked out (gather uses clamp(min=0) then the
+        result is zeroed) so they neither corrupt valid rows nor force
+        a host sync (graph-capture safe).
+        """
+        indices = self.token_lora_indices
+        valid_mask = (indices >= 0).to(x.dtype).unsqueeze(-1)  # [N, 1]
+        safe_indices = indices.clamp(min=0).to(torch.long)
+        # Gather per-token lora_b weights.
+        # gathered: [N, hidden_total, rank]; sliced: [N, slice_size, rank]
+        gathered = w_t_all[safe_indices]
+        sliced = gathered[:, y_offset : y_offset + y_slice_size, :]
+        # [N, 1, rank] @ [N, rank, slice_size] -> [N, 1, slice_size]
+        delta = torch.bmm(x.unsqueeze(1), sliced.transpose(1, 2)).squeeze(1)
+        delta = (delta * valid_mask).to(y.dtype)
+        if add_inputs:
+            y[:, y_offset : y_offset + y_slice_size] += delta
+        else:
+            y[:, y_offset : y_offset + y_slice_size] = delta
 
     def _apply_expand(
         self,

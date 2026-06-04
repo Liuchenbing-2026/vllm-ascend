@@ -80,43 +80,37 @@ def _assert_ascend_moe_lora_supported(base_layer: AscendFusedMoE) -> None:
             "Set VLLM_ASCEND_ENABLE_FUSED_MC2=0."
         )
     if getattr(base_layer, "_shared_experts", None) is not None:
-        # Two compounding LoRA blockers prevent v1 from running on models
-        # that have shared experts (Qwen3.5-35B-A3B, DeepSeek-V3) or that
-        # share Qwen3-Next's hybrid GDN architecture:
-        #
-        # 1. The MoE wrapper itself does not cover the shared_experts path
-        #    (it runs outside quant_method.apply), so routed-experts LoRA
-        #    delta would be applied while shared-experts delta would not.
-        #
-        # 2. The dense LoRA path that would carry shared_experts (or any
-        #    ColumnParallelLinear in a GDN block) goes through
-        #    PunicaWrapperNPU._apply_expand_slice which calls
-        #    _C_ascend.sgmv_expand. That op interprets lora_b's
-        #    (hidden, rank) layout in a way that flips the
-        #    "hidden in should be smaller than hidden out" check on
-        #    realistic Qwen3-Next + TP=4 + rank=16 configurations and
-        #    crashes during ACL graph capture.
-        #
-        # Crucially, torch_ops fallback is NOT a workaround: vllm's
-        # torch_ops.bgmv_expand_slice (einsum implementation) also crashes
-        # with "subscript i has size 16 ... does not broadcast with
-        # previously seen size 64" on the same input, because the stacked
-        # lora_b is padded by max_lora_rank and torch_ops does not slice
-        # back to the runtime rank. See bug.md 现象 3/4.
-        #
-        # Fail fast here so users get a single clear error at startup
-        # instead of chasing a NPU op shape error or an einsum mismatch
-        # deep inside ACL graph capture.
-        raise AssertionError(
-            "Ascend MoE LoRA v1 does not support models with shared "
-            "experts (Qwen3.5-35B-A3B, DeepSeek-V3) or with Qwen3-Next "
-            "hybrid GDN blocks: the shared-experts/GDN LoRA path goes "
-            "through _C_ascend.sgmv_expand which has a layout bug, and "
-            "the vllm torch_ops fallback also crashes (einsum size "
-            "mismatch on stacked lora_b padded by max_lora_rank). No "
-            "runtime workaround exists in v1 — see bug.md 现象 3/4. "
-            "Use a pure MoE model without shared experts and without "
-            "GDN, e.g. Qwen3-30B-A3B-Thinking-2507."
+        # The dense LoRA path that carries shared_experts and Qwen3-Next
+        # GDN ColumnParallelLinear hits two compounding bugs:
+        #   - _C_ascend.sgmv_expand interprets lora_b's (hidden, rank)
+        #     layout so it trips "hidden in should be smaller than hidden
+        #     out" on Qwen3-Next + TP=4 + rank=16 (bug.md 现象 3);
+        #   - vllm's torch_ops.bgmv_expand_slice einsum crashes with
+        #     "subscript i has size 16 does not broadcast with previously
+        #     seen size 64" on the same lora_b stacked layout (bug.md
+        #     现象 4).
+        # Set VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS=1 to route this
+        # layer's expand-slice through PunicaWrapperNPU's torch.bmm
+        # fallback (gather + bmm) which avoids both ops.
+        if not envs_ascend.VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS:
+            raise AssertionError(
+                "Ascend MoE LoRA v1 does not support models with shared "
+                "experts (Qwen3.5-35B-A3B, DeepSeek-V3) or with Qwen3-Next "
+                "hybrid GDN blocks: the shared-experts/GDN LoRA path "
+                "trips _C_ascend.sgmv_expand AND vllm torch_ops einsum "
+                "(bug.md 现象 3/4). Set "
+                "VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS=1 to route "
+                "the expand-slice path through a torch.bmm fallback "
+                "(experimental; expect ~30-40%% throughput drop)."
+            )
+        logger.warning_once(
+            "Ascend MoE LoRA: shared_experts detected and "
+            "VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS=1. Routed-experts "
+            "LoRA delta is applied via this wrapper; shared-experts and "
+            "GDN LoRA are handled by vllm's standard dense wrappers. The "
+            "expand-slice path is routed to PunicaWrapperNPU's torch.bmm "
+            "fallback to bypass _C_ascend.sgmv_expand layout / vllm "
+            "torch_ops einsum bugs (~30-40%% throughput drop)."
         )
     if getattr(base_layer, "multistream_overlap_gate", False):
         raise AssertionError(
@@ -147,6 +141,17 @@ class AscendFusedMoEWithLoRA(FusedMoEWithLoRA):
         # Per-layer scratch for state captured at apply-time and consumed
         # inside _apply_mlp_with_lora.
         self._moe_state: dict = {}
+        # Expose shared_experts so vllm's replace_submodule can resolve
+        # ``...experts._shared_experts.gate_up_proj`` after this wrapper
+        # replaced the FusedMoE layer. Only present under the
+        # ALLOW_SHARED_EXPERTS env (otherwise the assert above already
+        # raised). nn.Module.__setattr__ auto-registers it under
+        # self._modules; the shared reference means vllm's later setattr
+        # on shared_experts.gate_up_proj transparently updates the
+        # forward path base_layer invokes.
+        shared_experts = getattr(base_layer, "_shared_experts", None)
+        if shared_experts is not None:
+            self._shared_experts = shared_experts
         self._inject_lora_into_ascend_fused_moe()
 
     # ------------------------------------------------------------------
