@@ -80,11 +80,43 @@ def _assert_ascend_moe_lora_supported(base_layer: AscendFusedMoE) -> None:
             "Set VLLM_ASCEND_ENABLE_FUSED_MC2=0."
         )
     if getattr(base_layer, "_shared_experts", None) is not None:
+        # Two compounding LoRA blockers prevent v1 from running on models
+        # that have shared experts (Qwen3.5-35B-A3B, DeepSeek-V3) or that
+        # share Qwen3-Next's hybrid GDN architecture:
+        #
+        # 1. The MoE wrapper itself does not cover the shared_experts path
+        #    (it runs outside quant_method.apply), so routed-experts LoRA
+        #    delta would be applied while shared-experts delta would not.
+        #
+        # 2. The dense LoRA path that would carry shared_experts (or any
+        #    ColumnParallelLinear in a GDN block) goes through
+        #    PunicaWrapperNPU._apply_expand_slice which calls
+        #    _C_ascend.sgmv_expand. That op interprets lora_b's
+        #    (hidden, rank) layout in a way that flips the
+        #    "hidden in should be smaller than hidden out" check on
+        #    realistic Qwen3-Next + TP=4 + rank=16 configurations and
+        #    crashes during ACL graph capture.
+        #
+        # Crucially, torch_ops fallback is NOT a workaround: vllm's
+        # torch_ops.bgmv_expand_slice (einsum implementation) also crashes
+        # with "subscript i has size 16 ... does not broadcast with
+        # previously seen size 64" on the same input, because the stacked
+        # lora_b is padded by max_lora_rank and torch_ops does not slice
+        # back to the runtime rank. See bug.md 现象 3/4.
+        #
+        # Fail fast here so users get a single clear error at startup
+        # instead of chasing a NPU op shape error or an einsum mismatch
+        # deep inside ACL graph capture.
         raise AssertionError(
-            "Ascend MoE LoRA v1 does not wrap the shared_experts path "
-            "(it runs outside quant_method.apply). The target model "
-            "Qwen3-30B-A3B-Thinking-2507 has no shared experts; models "
-            "like DeepSeek-V3 are not yet supported."
+            "Ascend MoE LoRA v1 does not support models with shared "
+            "experts (Qwen3.5-35B-A3B, DeepSeek-V3) or with Qwen3-Next "
+            "hybrid GDN blocks: the shared-experts/GDN LoRA path goes "
+            "through _C_ascend.sgmv_expand which has a layout bug, and "
+            "the vllm torch_ops fallback also crashes (einsum size "
+            "mismatch on stacked lora_b padded by max_lora_rank). No "
+            "runtime workaround exists in v1 — see bug.md 现象 3/4. "
+            "Use a pure MoE model without shared experts and without "
+            "GDN, e.g. Qwen3-30B-A3B-Thinking-2507."
         )
     if getattr(base_layer, "multistream_overlap_gate", False):
         raise AssertionError(
