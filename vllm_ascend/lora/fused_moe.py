@@ -80,23 +80,11 @@ def _assert_ascend_moe_lora_supported(base_layer: AscendFusedMoE) -> None:
             "Set VLLM_ASCEND_ENABLE_FUSED_MC2=0."
         )
     if getattr(base_layer, "_shared_experts", None) is not None:
-        # Shared experts run outside quant_method.apply, so this MoE wrapper
-        # does NOT inject LoRA delta into the shared expert path. However,
-        # shared experts in upstream models (e.g. Qwen3.5-35B-A3B's
-        # Qwen3MoeMLP) are built from MergedColumnParallelLinear (gate_up_proj)
-        # + RowParallelLinear (down_proj), and those dense modules are
-        # independently replaced by vllm's standard
-        # MergedColumnParallelLinearWithLoRA / RowParallelLinearWithLoRA, so
-        # LoRA on shared experts still works as long as the adapter targets
-        # the shared expert modules. Routed experts continue to be handled by
-        # this MoE wrapper through quant_method.apply.
-        logger.warning_once(
-            "Ascend MoE LoRA: base_layer has shared_experts. LoRA delta on "
-            "routed experts is applied via the MoE wrapper; LoRA on shared "
-            "experts (if any) is handled independently by vllm's standard "
-            "dense LoRA wrappers on shared_expert.{gate_up_proj,down_proj}. "
-            "If your adapter's target_modules omit shared experts, those "
-            "weights will run as base only."
+        raise AssertionError(
+            "Ascend MoE LoRA v1 does not wrap the shared_experts path "
+            "(it runs outside quant_method.apply). The target model "
+            "Qwen3-30B-A3B-Thinking-2507 has no shared experts; models "
+            "like DeepSeek-V3 are not yet supported."
         )
     if getattr(base_layer, "multistream_overlap_gate", False):
         raise AssertionError(
@@ -127,17 +115,6 @@ class AscendFusedMoEWithLoRA(FusedMoEWithLoRA):
         # Per-layer scratch for state captured at apply-time and consumed
         # inside _apply_mlp_with_lora.
         self._moe_state: dict = {}
-        # Expose shared_experts on the wrapper so vllm's replace_submodule
-        # can resolve ``...experts._shared_experts.gate_up_proj`` after the
-        # MoE layer has been replaced by this wrapper. nn.Module.__setattr__
-        # auto-registers the assigned nn.Module into self._modules, which is
-        # what get_submodule looks up; the assignment shares the same object
-        # with base_layer (no parameter duplication). Without this, vllm's
-        # LoRA submodule walk fails as soon as the adapter's target_modules
-        # match anything under shared_experts (e.g. Qwen3.5-35B-A3B).
-        shared_experts = getattr(base_layer, "_shared_experts", None)
-        if shared_experts is not None:
-            self._shared_experts = shared_experts
         self._inject_lora_into_ascend_fused_moe()
 
     # ------------------------------------------------------------------
