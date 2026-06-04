@@ -214,20 +214,32 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         # torch_ops' squeeze(dim=1)). Cast to y.dtype to match
         # upstream contract.
         gathered = w_t_all[safe_indices, 0].to(y.dtype)  # [N, slice_size, rank_dim]
-        x_cast = x.to(y.dtype)  # [N, rank_active]
+        x_cast = x.to(y.dtype)  # [N, rank_buffer]  (may be padded > active)
 
-        # bug.md 现象 5: aclnnMatmul/aclnnBatchMatMul error 161002 is
-        # raised when the K dim of the two matmul operands does not
-        # match. vllm allocates lora_b_stacked with the rank dim equal
-        # to max_lora_rank (padded), but the shrink buffer's rank dim
-        # is the runtime/active rank (also = lora_b_stacked.size(-1) =
-        # max_lora_rank in current vllm — but if a future call site
-        # passes a buffer sized to active_rank, K would mismatch).
-        # Slice gathered's last dim down to whatever the shrink buffer
-        # actually produced; this is the minimal fix that handles both
-        # the matched and the padded case.
-        if gathered.shape[-1] != x_cast.shape[-1]:
-            gathered = gathered[..., : x_cast.shape[-1]]
+        # bug.md 现象 6 (订正 of 现象 5): the K-dim mismatch is the OTHER
+        # way around. With dump shapes:
+        #     x         = (32768, 64)       ← shrink output buffer
+        #     w_t_all   = (1, 1, 512, 16)   ← lora_b, active rank=16
+        #     gathered  = (32768, 512, 16)
+        # The padded side is the SHRINK output (x), not w_t_all. The
+        # earlier "slice gathered to x.shape[-1]" was a no-op because
+        # gathered.shape[-1]=16 < x.shape[-1]=64 — slicing 16 elements
+        # to ":64" returns the full 16. We have to slice x down to
+        # w_t_all's rank dim (the real LoRA rank), not the other way
+        # around.
+        #
+        # Why the shrink buffer is wider: vllm punica allocates the
+        # shrink intermediate by lora_b_stacked.size(-1) on the upstream
+        # path, but on hybrid (GDN) / shared-experts layers the
+        # allocation route apparently lands on a rank "bucket" (16 -> 64
+        # is a typical sgmv bucket). lora_b is loaded against the active
+        # rank, so they disagree at exactly the matmul's K dim.
+        # bug.md 现象 6's recommended short-term fix is to slice x; a
+        # cleaner long-term fix is to align the shrink buffer at
+        # allocation time, but that's outside this opt-in fallback.
+        active_rank = w_t_all.shape[-1]
+        if x_cast.shape[-1] != active_rank:
+            x_cast = x_cast[..., :active_rank].contiguous()
 
         # 0-dim guard. profile_run / dummy_run can hand us N=0 or
         # slice_size=0; aclnnMatmul treats those as 161002 too.
