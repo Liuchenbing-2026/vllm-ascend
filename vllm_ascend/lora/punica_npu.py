@@ -209,28 +209,50 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         safe_indices = indices.clamp(min=0).to(torch.long)
         valid_mask = (indices >= 0).to(y.dtype).unsqueeze(-1)  # [N, 1]
         # Gather per-token lora_b weights. w_t_all is
-        # (max_loras+1, 1, output_size_i, rank); [safe_indices, 0]
+        # (max_loras+1, 1, output_size_i, rank_dim); [safe_indices, 0]
         # collapses the legacy stacking dim 1 (equivalent to upstream
-        # torch_ops' "if len(selected_loras.shape) == 4:
-        # selected_loras = selected_loras.squeeze(dim=1)").
-        # Cast to y.dtype to match upstream contract.
-        gathered = w_t_all[safe_indices, 0].to(y.dtype)  # [N, slice_size, rank]
-        x_cast = x.to(y.dtype)  # [N, rank]
-        # Equivalent of einsum("bi, boi -> bo", x_cast, gathered) using
-        # torch.matmul to avoid aclnnBatchMatMul error 161002 on NPU:
-        #   - transpose(1, 2) on the gathered weight produces a
-        #     non-contiguous view; aclnnBatchMatMul rejects it because
-        #     it requires both operands to be contiguous. Calling
-        #     .contiguous() forces a copy with packed strides.
-        #   - matmul + unsqueeze/squeeze is functionally identical to
-        #     torch.bmm here ([N,1,rank] @ [N,rank,slice_size] ->
-        #     [N,1,slice_size] -> [N,slice_size]).
-        # If the contiguous() copy turns out to be a perf cliff, an
-        # alternative is `torch.einsum("br,bor->bo", x_cast, gathered)`,
-        # but einsum's NPU backend is less predictable, so we stick to
-        # matmul for now.
-        weight = gathered.transpose(1, 2).contiguous()  # [N, rank, slice_size]
-        delta = torch.matmul(x_cast.unsqueeze(1), weight).squeeze(1)
+        # torch_ops' squeeze(dim=1)). Cast to y.dtype to match
+        # upstream contract.
+        gathered = w_t_all[safe_indices, 0].to(y.dtype)  # [N, slice_size, rank_dim]
+        x_cast = x.to(y.dtype)  # [N, rank_active]
+
+        # bug.md 现象 5: aclnnMatmul/aclnnBatchMatMul error 161002 is
+        # raised when the K dim of the two matmul operands does not
+        # match. vllm allocates lora_b_stacked with the rank dim equal
+        # to max_lora_rank (padded), but the shrink buffer's rank dim
+        # is the runtime/active rank (also = lora_b_stacked.size(-1) =
+        # max_lora_rank in current vllm — but if a future call site
+        # passes a buffer sized to active_rank, K would mismatch).
+        # Slice gathered's last dim down to whatever the shrink buffer
+        # actually produced; this is the minimal fix that handles both
+        # the matched and the padded case.
+        if gathered.shape[-1] != x_cast.shape[-1]:
+            gathered = gathered[..., : x_cast.shape[-1]]
+
+        # 0-dim guard. profile_run / dummy_run can hand us N=0 or
+        # slice_size=0; aclnnMatmul treats those as 161002 too.
+        if x_cast.shape[0] == 0 or gathered.shape[1] == 0:
+            return
+
+        if envs_ascend.VLLM_ASCEND_LORA_DEBUG:
+            logger.info(
+                "[lora.bmm_expand_slice] N=%d x=%s/%s w_t_all=%s/%s gathered=%s y_offset=%d y_slice_size=%d",
+                x_cast.shape[0],
+                tuple(x_cast.shape),
+                x_cast.dtype,
+                tuple(w_t_all.shape),
+                w_t_all.dtype,
+                tuple(gathered.shape),
+                y_offset,
+                y_slice_size,
+            )
+
+        # Equivalent of einsum("bi, boi -> bo", x_cast, gathered).
+        # bmm semantically: [N,1,rank] @ [N,rank,slice_size] ->
+        # [N,1,slice_size] -> [N,slice_size]. No need to force
+        # contiguous after transpose — 161002 is a K-dim shape issue,
+        # not a stride issue (see bug.md 现象 5 analysis).
+        delta = torch.bmm(x_cast.unsqueeze(1), gathered.transpose(1, 2)).squeeze(1)
         delta = delta * valid_mask  # [N, slice_size]
         if add_inputs:
             y[:, y_offset : y_offset + y_slice_size] += delta

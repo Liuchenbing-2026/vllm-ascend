@@ -142,6 +142,12 @@ env_variables: dict[str, Callable[[], Any]] = {
     "VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS": lambda: bool(
         int(os.getenv("VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS", "0"))
     ),
+    # Debug logging for the PunicaWrapperNPU bmm fallback. When set to 1,
+    # _bmm_expand_slice logs the shapes and dtypes of its operands
+    # before every matmul so users can diagnose aclnnMatmul / 161002
+    # failures (see bug.md 现象 5). Off by default; only useful while
+    # debugging shared experts / GDN LoRA paths.
+    "VLLM_ASCEND_LORA_DEBUG": lambda: bool(int(os.getenv("VLLM_ASCEND_LORA_DEBUG", "0"))),
     # DEPRECATED: VLLM_ASCEND_BALANCE_SCHEDULING env var will be removed in a future release.
     # Use --additional-config '{"enable_balance_scheduling": true}' instead.
     "VLLM_ASCEND_BALANCE_SCHEDULING": lambda: bool(int(os.getenv("VLLM_ASCEND_BALANCE_SCHEDULING", "0"))),
