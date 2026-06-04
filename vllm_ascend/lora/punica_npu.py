@@ -234,26 +234,47 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         if x_cast.shape[0] == 0 or gathered.shape[1] == 0:
             return
 
-        if envs_ascend.VLLM_ASCEND_LORA_DEBUG:
-            logger.info(
-                "[lora.bmm_expand_slice] N=%d x=%s/%s w_t_all=%s/%s gathered=%s y_offset=%d y_slice_size=%d",
-                x_cast.shape[0],
-                tuple(x_cast.shape),
-                x_cast.dtype,
-                tuple(w_t_all.shape),
-                w_t_all.dtype,
-                tuple(gathered.shape),
-                y_offset,
-                y_slice_size,
-            )
+        # Always log shapes when entering bmm_expand_slice; this path
+        # is opt-in via VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS and we
+        # need every shape on the floor for diagnosing aclnn 161002
+        # follow-ups. warning_once would deduplicate; we use plain info
+        # so each call site (different layers / slices) is visible.
+        logger.info(
+            "[lora.bmm_expand_slice] N=%d x=%s/%s w_t_all=%s/%s gathered=%s y_offset=%d y_slice_size=%d add=%s",
+            x_cast.shape[0],
+            tuple(x_cast.shape),
+            x_cast.dtype,
+            tuple(w_t_all.shape),
+            w_t_all.dtype,
+            tuple(gathered.shape),
+            y_offset,
+            y_slice_size,
+            add_inputs,
+        )
 
-        # Equivalent of einsum("bi, boi -> bo", x_cast, gathered).
-        # bmm semantically: [N,1,rank] @ [N,rank,slice_size] ->
-        # [N,1,slice_size] -> [N,slice_size]. No need to force
-        # contiguous after transpose — 161002 is a K-dim shape issue,
-        # not a stride issue (see bug.md 现象 5 analysis).
-        delta = torch.bmm(x_cast.unsqueeze(1), gathered.transpose(1, 2)).squeeze(1)
-        delta = delta * valid_mask  # [N, slice_size]
+        # bug.md 现象 5 + 此后的复测: torch.bmm / torch.matmul on the
+        # NPU backend both call aclnnBatchMatMul / aclnnMatmul which
+        # rejects with 161002 for reasons we can't deterministically
+        # tell apart from the Python side (K-dim, dtype combo, alignment,
+        # contiguity). Both 98eaa30a (contiguous) and 013ed7fb (active-
+        # rank slice + 0-dim guard) failed to clear it.
+        #
+        # Sidestep the matmul op family entirely: rewrite the
+        # einsum("br, bor -> bo", x, w) as a broadcast multiply +
+        # reduce_sum. On NPU this lowers to aclnnMul + aclnnReduceSum,
+        # which do not have the 161002 trap. Memory cost is
+        # N * slice_size * rank * dtype-bytes per slice (e.g. for
+        # Qwen3.5-35B-A3B at N=1024, slice=128, rank=16, bf16:
+        # 4 MB per slice, fully reclaimable after the sum). That's
+        # acceptable here because the fallback is only enabled
+        # under the opt-in shared-experts env.
+        #
+        # If even mul+sum hits an aclnn shape check, the next step is
+        # to chunk along N and do a Python loop; until we see a fresh
+        # error number, this is the cheapest path that avoids the
+        # matmul family.
+        delta = (x_cast.unsqueeze(1) * gathered).sum(dim=-1)  # [N, slice_size]
+        delta = delta * valid_mask
         if add_inputs:
             y[:, y_offset : y_offset + y_slice_size] += delta
         else:
