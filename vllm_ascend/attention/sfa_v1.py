@@ -397,6 +397,12 @@ class AscendSFAImpl(MLAAttentionImpl):
         self.num_kv_heads = num_kv_heads
         self.kv_cache_dtype = kv_cache_dtype
 
+        # TurboQuant: detect cache_dtype preset; defer all op work to
+        # vllm_ascend/quantization/turboquant/npu_ops.py.
+        # `self.tq_cfg is None` is the OFF guard used everywhere downstream;
+        # when None the original npu_kv_rmsnorm_rope_cache path runs unchanged.
+        self.tq_cfg = self._maybe_init_turboquant_config(kv_cache_dtype, kwargs.get("kv_lora_rank"))
+
         # MLA Args
         self.q_lora_rank = kwargs["q_lora_rank"]
         self.kv_lora_rank = kwargs["kv_lora_rank"]
@@ -770,6 +776,55 @@ class AscendSFAImpl(MLAAttentionImpl):
 
     def _get_full_kv(self, k, attn_metadata):
         return k
+
+    @staticmethod
+    def _maybe_init_turboquant_config(kv_cache_dtype, kv_lora_rank):
+        """Parse `kv_cache_dtype` and build an `AscendTurboQuantConfig`.
+
+        Returns None when:
+          - kv_cache_dtype is not a turboquant_* preset, OR
+          - VLLM_ASCEND_TURBOQUANT_TARGET is set to "off", OR
+          - kv_lora_rank is missing (non-MLA model — refuse Plan A silently
+            so the SFA backend stays runnable).
+
+        Default-path guarantee: when this returns None, every downstream
+        ``if self.tq_cfg is not None`` branch is dead and the original
+        npu_kv_rmsnorm_rope_cache path runs unchanged.
+        """
+        if not isinstance(kv_cache_dtype, str) or not kv_cache_dtype.startswith(
+            "turboquant_"
+        ):
+            return None
+
+        from vllm_ascend import envs as ascend_envs
+
+        target = getattr(ascend_envs, "VLLM_ASCEND_TURBOQUANT_TARGET", "latent")
+        if target == "off" or "latent" not in target:
+            return None
+
+        if not kv_lora_rank:
+            logger.warning(
+                "TurboQuant cache_dtype=%s configured but kv_lora_rank is not "
+                "available — Plan A targets MLA latent KV. Falling back to "
+                "the default (unquantized) path.",
+                kv_cache_dtype,
+            )
+            return None
+
+        from vllm_ascend.quantization.turboquant import AscendTurboQuantConfig
+
+        cfg = AscendTurboQuantConfig.from_cache_dtype(
+            kv_cache_dtype, head_dim=kv_lora_rank, target="latent"
+        )
+        logger.info(
+            "TurboQuant Plan A enabled: cache_dtype=%s, kv_lora_rank=%d, "
+            "slot_size_aligned=%d, compression≈%.2fx (bf16 baseline).",
+            kv_cache_dtype,
+            kv_lora_rank,
+            cfg.slot_size_aligned,
+            cfg.compression_ratio(),
+        )
+        return cfg
 
     def exec_kv(
         self,
