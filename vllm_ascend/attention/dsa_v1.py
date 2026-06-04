@@ -1453,6 +1453,111 @@ class AscendDSAImpl(DSAAttentionImpl):
             False,
         )
 
+        # TurboQuant Plan A: detect kv_cache_dtype; build config that targets
+        # the MLA latent (swa_kv_cache, kv_cache[1] under compress_ratio>0).
+        # `self.tq_cfg is None` is the OFF guard used in
+        # _maybe_apply_turboquant_roundtrip; when None every TQ branch is dead
+        # and the original npu_scatter_nd_update_v2 path runs unchanged.
+        self.kv_cache_dtype = kwargs.get("kv_cache_dtype")
+        self.tq_cfg = self._maybe_init_turboquant_config(
+            self.kv_cache_dtype,
+            self.nope_head_dim + (self.rope_head_dim or 0),
+        )
+
+    @staticmethod
+    def _maybe_init_turboquant_config(kv_cache_dtype, latent_head_dim):
+        """Parse kv_cache_dtype and build an AscendTurboQuantConfig for DSA.
+
+        Returns None when:
+          - kv_cache_dtype is not a turboquant_* preset, OR
+          - VLLM_ASCEND_TURBOQUANT_TARGET is set to "off" / missing "latent", OR
+          - latent_head_dim is non-positive.
+
+        Default-path guarantee: when this returns None, every downstream
+        `if self.tq_cfg is not None` branch is dead and the original
+        npu_scatter_nd_update_v2 path runs unchanged.
+        """
+        if not isinstance(kv_cache_dtype, str) or not kv_cache_dtype.startswith(
+            "turboquant_"
+        ):
+            return None
+
+        from vllm_ascend import envs as ascend_envs
+
+        target = getattr(ascend_envs, "VLLM_ASCEND_TURBOQUANT_TARGET", "latent")
+        if target == "off" or "latent" not in target:
+            return None
+        if not latent_head_dim or latent_head_dim <= 0:
+            logger.warning(
+                "TurboQuant cache_dtype=%s configured but latent_head_dim is "
+                "not available -- Plan A targets the MLA latent. Falling back "
+                "to the default (unquantized) path.",
+                kv_cache_dtype,
+            )
+            return None
+
+        from vllm_ascend.quantization.turboquant import AscendTurboQuantConfig
+
+        cfg = AscendTurboQuantConfig.from_cache_dtype(
+            kv_cache_dtype, head_dim=latent_head_dim, target="latent"
+        )
+        logger.info(
+            "TurboQuant Plan A enabled on DSA backend: cache_dtype=%s, "
+            "latent_head_dim=%d, slot_size_aligned=%d, compression~%.2fx "
+            "(bf16 baseline). Fake-quant round-trip after npu_scatter_nd_update_v2; "
+            "real packed storage kernel TODO.",
+            kv_cache_dtype,
+            latent_head_dim,
+            cfg.slot_size_aligned,
+            cfg.compression_ratio(),
+        )
+        return cfg
+
+    def _maybe_apply_turboquant_roundtrip(
+        self,
+        swa_kv_cache: torch.Tensor,
+        slot_mapping: torch.Tensor,
+    ) -> None:
+        """Plan A fake-quant for DSA backend.
+
+        After torch.ops._C_ascend.npu_scatter_nd_update_v2 writes the latent
+        KV (k_nope + k_pe concatenated) into swa_kv_cache at the freshly
+        scattered slot positions, read those positions back, run TurboQuant
+        round-trip (Hadamard + Lloyd-Max + optional norm correction), and
+        write them back in-place. Cache footprint stays at the model's
+        native dtype -- the round-trip merely degrades precision to the
+        chosen preset, so end-to-end PPL reflects TurboQuant quality.
+
+        Real packed-uint8 storage requires an AscendC / triton-ascend kernel
+        plus an unpack at attention read time; both are TODO.
+        """
+        if self.tq_cfg is None:
+            return
+        if slot_mapping is None or slot_mapping.numel() == 0:
+            return
+
+        # slot_mapping is shape [..., 1] (npu_scatter_nd_update_v2 convention)
+        # or [B] (raw). Flatten + filter -1.
+        slots = slot_mapping.reshape(-1).to(torch.int64)
+        valid = slots[slots >= 0]
+        if valid.numel() == 0:
+            return
+
+        # swa_kv_cache layout: [num_blocks, block_size, 1, nope+rope_head_dim]
+        # Flatten over (num_blocks * block_size); head dim is 1.
+        cache_view = swa_kv_cache.view(-1, swa_kv_cache.shape[-2], swa_kv_cache.shape[-1])
+        latent = cache_view[valid].squeeze(-2)  # [N, nope+rope]
+        orig_dtype = latent.dtype
+
+        from vllm_ascend.quantization.turboquant.quantizer import (
+            reference_roundtrip_key,
+        )
+
+        latent_rt = reference_roundtrip_key(
+            latent.to(torch.float32), self.tq_cfg, seed=42
+        ).to(orig_dtype)
+        cache_view[valid] = latent_rt.unsqueeze(-2)
+
     def dsa_warmup_with_multistream(self, hidden_states: torch.Tensor) -> None:
         """
         Warmup function for DSA profiling run.
@@ -1724,6 +1829,7 @@ class AscendDSAImpl(DSAAttentionImpl):
                 partial_slice=[self.nope_head_dim, self.head_dim],
             )
             torch.ops._C_ascend.npu_scatter_nd_update_v2(swa_kv_cache, slot_mapping, kv)
+            self._maybe_apply_turboquant_roundtrip(swa_kv_cache, slot_mapping)
 
         if is_prefill:
             q = self.cv_wq_b.matmul(q_b_quant, q_b_scale).unflatten(-1, (self.n_local_heads, self.head_dim))
@@ -1828,6 +1934,7 @@ class AscendDSAImpl(DSAAttentionImpl):
             partial_slice=[self.nope_head_dim, self.head_dim],
         )
         torch.ops._C_ascend.npu_scatter_nd_update_v2(swa_kv_cache, slot_mapping, kv)
+        self._maybe_apply_turboquant_roundtrip(swa_kv_cache, slot_mapping)
 
         return q, qr, full_hidden_states
 
@@ -1918,6 +2025,7 @@ class AscendDSAImpl(DSAAttentionImpl):
 
             # swa exec kv
             torch.ops._C_ascend.npu_scatter_nd_update_v2(swa_kv_cache, swa_prefill_metadata.slot_mapping, kv)
+            self._maybe_apply_turboquant_roundtrip(swa_kv_cache, swa_prefill_metadata.slot_mapping)
 
         compress_cos = common_prefill_metadata.compress_cos[layer_name]
         compress_sin = common_prefill_metadata.compress_sin[layer_name]
@@ -2206,6 +2314,7 @@ class AscendDSAImpl(DSAAttentionImpl):
 
                 # swa exec kv
                 torch.ops._C_ascend.npu_scatter_nd_update_v2(swa_kv_cache, swa_decode_metadata.slot_mapping, kv)
+                self._maybe_apply_turboquant_roundtrip(swa_kv_cache, swa_decode_metadata.slot_mapping)
 
                 wait_attention_cal_event = (
                     torch.npu.current_stream().record_event() if self.multistream_dsa_preprocess else None
