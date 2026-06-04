@@ -826,6 +826,54 @@ class AscendSFAImpl(MLAAttentionImpl):
         )
         return cfg
 
+    def _maybe_apply_turboquant_roundtrip(
+        self,
+        kv_cache: tuple,
+        slots: torch.Tensor,
+    ) -> None:
+        """Plan A fake-quant: round-trip the just-written latent slots.
+
+        PoC-only emulation: after npu_kv_rmsnorm_rope_cache has written the
+        cache, read back the freshly-written latent rows, run the full
+        TurboQuant key quantize -> dequantize chain (Hadamard rotation +
+        Lloyd-Max + optional norm correction), and write back. Cache footprint
+        stays bf16/fp16 (no memory savings yet), but the numerical impact of
+        TurboQuant is now baked into every subsequent attention read -- which
+        is the metric that drives end-to-end PPL.
+
+        Real memory-saving storage (packed uint8 + scale + zero) requires an
+        AscendC / triton-ascend store kernel and a matching unpack at decode;
+        those are TODO.
+        """
+        if self.tq_cfg is None:
+            return
+        if slots is None or slots.numel() == 0:
+            return
+
+        # Filter out -1 (padded positions).
+        valid_mask = slots >= 0
+        if not bool(valid_mask.any().item()):
+            return
+        valid_slots = slots[valid_mask].to(torch.int64)
+
+        # kv_cache[0] (k_nope cache) holds the kv_lora_rank-dim latent KV.
+        # Shape: [num_blocks, block_size, num_kv_heads, kv_lora_rank].
+        # Slot mapping is flat over num_blocks*block_size (head dim is shared).
+        latent_cache = kv_cache[0]
+        cache_view = latent_cache.view(-1, latent_cache.shape[-2], latent_cache.shape[-1])
+        # n_kv_heads is 1 for compressed MLA; squeeze for the quantizer API.
+        latent = cache_view[valid_slots].squeeze(-2)  # [N, kv_lora_rank]
+        orig_dtype = latent.dtype
+
+        from vllm_ascend.quantization.turboquant.quantizer import (
+            reference_roundtrip_key,
+        )
+
+        latent_rt = reference_roundtrip_key(
+            latent.to(torch.float32), self.tq_cfg, seed=42
+        ).to(orig_dtype)
+        cache_view[valid_slots] = latent_rt.unsqueeze(-2)
+
     def exec_kv(
         self,
         kv_no_split: torch.Tensor,
@@ -855,6 +903,9 @@ class AscendSFAImpl(MLAAttentionImpl):
                 cache_mode=cache_mode,
                 is_output_kv=True,
             )
+            # TurboQuant Plan A: emulate cache precision loss in-place.
+            # No-op when self.tq_cfg is None; default path stays byte-identical.
+            self._maybe_apply_turboquant_roundtrip(kv_cache, slots)
             return k_pe, k_nope
         else:
             torch_npu.npu_kv_rmsnorm_rope_cache(
@@ -868,6 +919,7 @@ class AscendSFAImpl(MLAAttentionImpl):
                 epsilon=self.kv_a_layernorm.variance_epsilon,  # type: ignore[union-attr]
                 cache_mode=cache_mode,
             )
+            self._maybe_apply_turboquant_roundtrip(kv_cache, slots)
             return None, None
 
     # Return `ql_nope`, `q_pe`
