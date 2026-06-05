@@ -1864,7 +1864,6 @@ class AscendDSAImpl(DSAAttentionImpl):
                 partial_slice=[self.nope_head_dim, self.head_dim],
             )
             torch.ops._C_ascend.npu_scatter_nd_update_v2(swa_kv_cache, slot_mapping, kv)
-            self._maybe_apply_turboquant_roundtrip(swa_kv_cache, slot_mapping)
 
         if is_prefill:
             q = self.cv_wq_b.matmul(q_b_quant, q_b_scale).unflatten(-1, (self.n_local_heads, self.head_dim))
@@ -1882,6 +1881,14 @@ class AscendDSAImpl(DSAAttentionImpl):
 
         # Serial tail: wait for auxiliary stream then execute q_rms[V] + rope[V]
         main_stream.wait_stream(aux_stream)
+        # TurboQuant round-trip: deliberately run on the MAIN stream after
+        # the aux scatter completes, NOT inside the aux part3 block. Putting
+        # this expensive torch-level Hadamard+Lloyd-Max chain on aux blocks
+        # the whole point of multistream_dsv4_dsa_overlap (main would wait
+        # for aux to finish the round-trip, killing the prefill overlap).
+        # Cost is still paid serially -- the real fix is a fused AscendC
+        # store kernel (TODO).
+        self._maybe_apply_turboquant_roundtrip(swa_kv_cache, slot_mapping)
 
         q = triton_q_rms(q, self.eps)
         torch.ops._C_ascend.inplace_partial_rotary_mul(
