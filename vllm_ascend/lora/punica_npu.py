@@ -147,6 +147,27 @@ class PunicaWrapperNPU(PunicaWrapperBase):
             return
         self.bgmv_expand_slice(x, w_t_all, y, self.token_lora_indices, y_offset, y_slice_size, add_inputs)
 
+    # bug.md 现象 9: full stack trace landed on
+    #   aot_compile_fullgraph -> split_graph -> _decompose_size_nodes
+    # crashing on multi-user size nodes that this helper introduces
+    # under dynamo trace on Qwen3.5 hybrid + LoRA + graph mode.
+    # Disable dynamo on this whole function (recursive=True covers
+    # everything it calls into) so dynamo treats the entire LoRA
+    # expand-slice as a single opaque call. The size nodes never enter
+    # the graph; split_graph's _decompose_size_nodes has nothing to
+    # erase here. acl_graph still captures the surrounding model
+    # forward — only this helper opts out of trace.
+    #
+    # This is the root fix for 现象 8/9. Even with 9d346545's narrow +
+    # torch.where reducing the number of size nodes, any size node
+    # crossing attention/setitem boundaries can still trip the
+    # _decompose_size_nodes upstream bug; opting out of trace is the
+    # only guarantee.
+    #
+    # Qwen3-30B path is unaffected: the bmm fallback is only reached
+    # under VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS=1; the default
+    # _C_ascend.sgmv/bgmv_expand_slice path stays inside dynamo trace.
+    @torch.compiler.disable(recursive=True)
     def _bmm_expand_slice(
         self,
         y: torch.Tensor,
