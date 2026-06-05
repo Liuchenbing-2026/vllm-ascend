@@ -205,59 +205,61 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         result is zeroed) so they neither corrupt valid rows nor force
         a host sync (graph-capture safe).
         """
+        # bug.md 现象 8 (graph-mode crash in vLLM _decompose_size_nodes):
+        # the earlier version of this helper produced size nodes on
+        # several intermediate tensors (`x[..., :rank]` slice,
+        # `valid_mask * delta` multiply, `y[:, y_offset:y_offset+
+        # y_slice_size]` view). On Qwen3.5 / hybrid GDN, those size
+        # nodes cross attention / setitem boundaries inside dynamo's
+        # graph; split_graph then trips on a multi-user size node it
+        # cannot erase ("core_attn_out + setitem_7"). LoRA is the
+        # trigger, not the root bug, but until vLLM fixes
+        # _decompose_size_nodes upstream we have to keep this path
+        # producing as few size nodes as possible.
+        #
+        # Three changes vs the prior version:
+        #   1. Use ``narrow`` instead of slice-with-arithmetic for the
+        #      y target. narrow(dim, start, length) takes ints directly
+        #      and is more stable under dynamo than ``y[:, start:end]``
+        #      where ``end`` is ``start + length``.
+        #   2. Use ``torch.where`` instead of multiply for the -1 mask.
+        #      A boolean mask + where collapses to a single fused
+        #      select and skips the intermediate "delta * mask" tensor
+        #      that the previous code allocated.
+        #   3. Compute ``x_active`` once at the top and pass it through;
+        #      avoid keeping both ``x_cast`` and ``x_active`` alive.
         indices = self.token_lora_indices
         safe_indices = indices.clamp(min=0).to(torch.long)
-        valid_mask = (indices >= 0).to(y.dtype).unsqueeze(-1)  # [N, 1]
-        # Gather per-token lora_b weights. w_t_all is
-        # (max_loras+1, 1, output_size_i, rank_dim); [safe_indices, 0]
-        # collapses the legacy stacking dim 1 (equivalent to upstream
-        # torch_ops' squeeze(dim=1)). Cast to y.dtype to match
-        # upstream contract.
-        gathered = w_t_all[safe_indices, 0].to(y.dtype)  # [N, slice_size, rank_dim]
-        x_cast = x.to(y.dtype)  # [N, rank_buffer]  (may be padded > active)
+        # Gather per-token lora_b. w_t_all is
+        # (max_loras+1, 1, output_size_i, active_rank); [safe_indices, 0]
+        # collapses the legacy stacking dim 1 (mirrors upstream's
+        # ``selected_loras.squeeze(dim=1)``). Cast to y.dtype to match
+        # upstream contract (torch_ops/lora_ops.py:119-120).
+        gathered = w_t_all[safe_indices, 0].to(y.dtype)  # [N, slice_size, active_rank]
 
-        # bug.md 现象 6 (订正 of 现象 5): the K-dim mismatch is the OTHER
-        # way around. With dump shapes:
-        #     x         = (32768, 64)       ← shrink output buffer
-        #     w_t_all   = (1, 1, 512, 16)   ← lora_b, active rank=16
-        #     gathered  = (32768, 512, 16)
-        # The padded side is the SHRINK output (x), not w_t_all. The
-        # earlier "slice gathered to x.shape[-1]" was a no-op because
-        # gathered.shape[-1]=16 < x.shape[-1]=64 — slicing 16 elements
-        # to ":64" returns the full 16. We have to slice x down to
-        # w_t_all's rank dim (the real LoRA rank), not the other way
-        # around.
-        #
-        # Why the shrink buffer is wider: vllm punica allocates the
-        # shrink intermediate by lora_b_stacked.size(-1) on the upstream
-        # path, but on hybrid (GDN) / shared-experts layers the
-        # allocation route apparently lands on a rank "bucket" (16 -> 64
-        # is a typical sgmv bucket). lora_b is loaded against the active
-        # rank, so they disagree at exactly the matmul's K dim.
-        # bug.md 现象 6's recommended short-term fix is to slice x; a
-        # cleaner long-term fix is to align the shrink buffer at
-        # allocation time, but that's outside this opt-in fallback.
-        active_rank = w_t_all.shape[-1]
-        if x_cast.shape[-1] != active_rank:
-            x_cast = x_cast[..., :active_rank].contiguous()
+        # bug.md 现象 6: the SHRINK buffer (x) is the padded side on
+        # hybrid / shared-experts layers (rank 16 lora_a but buffer
+        # bucketed to 64). Slice x to the active rank that w_t_all was
+        # actually loaded against. The condition compares two static
+        # ints from .shape, so dynamo folds the branch at trace time.
+        active_rank = gathered.shape[-1]
+        if x.shape[-1] != active_rank:
+            x_active = x[..., :active_rank].to(y.dtype).contiguous()
+        else:
+            x_active = x.to(y.dtype)
 
-        # 0-dim guard. profile_run / dummy_run can hand us N=0 or
-        # slice_size=0; aclnnMatmul treats those as 161002 too.
-        if x_cast.shape[0] == 0 or gathered.shape[1] == 0:
+        # 0-dim guard. profile_run / dummy_run hands us N=0 or
+        # slice_size=0; downstream ops trip 161002 / index errors.
+        if x_active.shape[0] == 0 or gathered.shape[1] == 0:
             return
 
-        # bug.md 现象 7: logging.Logger methods are rejected by torch
-        # dynamo with "non-export cases" when this function is traced
-        # for ACL graph capture. Use `print(..., flush=True)` instead —
-        # dynamo treats print as a side-effect call and lets it through
-        # without tracing it into the graph. Guard with the
-        # VLLM_ASCEND_LORA_DEBUG env so production runs aren't spammed
-        # by per-layer/per-slice dumps.
+        # Debug dump (现象 7): print is dynamo-safe, logger is not.
+        # Guarded by env so production runs aren't spammed.
         if envs_ascend.VLLM_ASCEND_LORA_DEBUG:
             print(
                 f"[lora.bmm_expand_slice] "
-                f"N={x_cast.shape[0]} "
-                f"x={tuple(x_cast.shape)}/{x_cast.dtype} "
+                f"N={x_active.shape[0]} "
+                f"x={tuple(x_active.shape)}/{x_active.dtype} "
                 f"w_t_all={tuple(w_t_all.shape)}/{w_t_all.dtype} "
                 f"gathered={tuple(gathered.shape)} "
                 f"y_offset={y_offset} y_slice_size={y_slice_size} "
@@ -265,33 +267,26 @@ class PunicaWrapperNPU(PunicaWrapperBase):
                 flush=True,
             )
 
-        # bug.md 现象 5 + 此后的复测: torch.bmm / torch.matmul on the
-        # NPU backend both call aclnnBatchMatMul / aclnnMatmul which
-        # rejects with 161002 for reasons we can't deterministically
-        # tell apart from the Python side (K-dim, dtype combo, alignment,
-        # contiguity). Both 98eaa30a (contiguous) and 013ed7fb (active-
-        # rank slice + 0-dim guard) failed to clear it.
-        #
-        # Sidestep the matmul op family entirely: rewrite the
-        # einsum("br, bor -> bo", x, w) as a broadcast multiply +
-        # reduce_sum. On NPU this lowers to aclnnMul + aclnnReduceSum,
-        # which do not have the 161002 trap. Memory cost is
-        # N * slice_size * rank * dtype-bytes per slice (e.g. for
-        # Qwen3.5-35B-A3B at N=1024, slice=128, rank=16, bf16:
-        # 4 MB per slice, fully reclaimable after the sum). That's
-        # acceptable here because the fallback is only enabled
-        # under the opt-in shared-experts env.
-        #
-        # If even mul+sum hits an aclnn shape check, the next step is
-        # to chunk along N and do a Python loop; until we see a fresh
-        # error number, this is the cheapest path that avoids the
-        # matmul family.
-        delta = (x_cast.unsqueeze(1) * gathered).sum(dim=-1)  # [N, slice_size]
-        delta = delta * valid_mask
+        # Equivalent to einsum("br, bor -> bo", x_active, gathered),
+        # rewritten as broadcast multiply + reduce_sum to sidestep the
+        # aclnnMatmul / aclnnBatchMatMul 161002 trap (bug.md 现象 5).
+        # On NPU this lowers to aclnnMul + aclnnReduceSum.
+        delta = (x_active.unsqueeze(1) * gathered).sum(dim=-1)  # [N, slice_size]
+
+        # Mask invalid (-1) tokens via torch.where instead of a
+        # separate multiply. Saves one intermediate tensor and one
+        # less size node for dynamo to track.
+        valid_mask = (indices >= 0).unsqueeze(-1)  # [N, 1], bool
+        delta = torch.where(valid_mask, delta, torch.zeros_like(delta))
+
+        # narrow is the dynamo-friendly form of y[:, off:off+sz].
+        # add_ / copy_ are in-place; they don't create new size nodes
+        # like the slice + augmented assignment form did.
+        y_slice = y.narrow(1, y_offset, y_slice_size)
         if add_inputs:
-            y[:, y_offset : y_offset + y_slice_size] += delta
+            y_slice.add_(delta)
         else:
-            y[:, y_offset : y_offset + y_slice_size] = delta
+            y_slice.copy_(delta)
 
     def _apply_expand(
         self,
