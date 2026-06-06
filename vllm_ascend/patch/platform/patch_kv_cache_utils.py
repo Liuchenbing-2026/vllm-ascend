@@ -134,8 +134,11 @@ def _get_kv_cache_groups_uniform_groups(
     # Split each SWA UniformKV group into smaller groups to align their #(layer tuples)
     # Possibly padding layer tuples for this.
     # Additionally, we also pad KV blocks in each SWA layer, to align the page size
-    # with the corresponding layer in the full-MLA group.
-    all_page_sizes = full_mla_spec.get_page_sizes()
+    # with a known bucket.  C4/C128 compressed MLA can use smaller storage
+    # pages than SWA-MLA, so group0 alone is no longer a valid canonical set.
+    all_page_sizes = sorted(
+        {page_size for grouped_spec in grouped_specs for page_size in grouped_spec.get_page_sizes()}
+    )
     swa_mla_groups = []
     for sm_spec in swa_mla_specs:
         sm_page_sizes = sm_spec.get_page_sizes()
@@ -200,9 +203,7 @@ def _get_kv_cache_config_deepseek_v4(
     """
     full_mla_spec = kv_cache_groups[0].kv_cache_spec
     assert isinstance(full_mla_spec, UniformTypeKVCacheSpecs)
-    page_sizes = sorted(full_mla_spec.get_page_sizes())
-    layer_tuple_page_bytes = sum(page_sizes)
-
+    page_sizes = sorted({page_size for group in kv_cache_groups for page_size in group.kv_cache_spec.get_page_sizes()})
     # Pre-bucket each group's layers by page_size (registration order within
     # bucket). bucketed[g_idx][page_size] = [layer_name, ...].
     mtp_layer_names = []
@@ -224,20 +225,31 @@ def _get_kv_cache_config_deepseek_v4(
     # full-MLA group this equals the count of layers in the largest
     # per-page-size bucket (= get_num_layer_tuples()); for SWA sub-groups
     # this equals the sub-group size (each has a single page_size).
-    num_layer_tuples = max(len(layers) for b in bucketed for layers in b.values()) + len(mtp_layer_names)
+    num_regular_tuples = max(len(layers) for b in bucketed for layers in b.values())
 
-    num_blocks = available_memory // (layer_tuple_page_bytes * num_layer_tuples)
+    # Compute the bytes actually allocated per block.  A page-size bucket may
+    # exist only for some groups, so do not charge empty tuple/bucket slots.
+    active_page_bytes = 0
+    for tuple_idx in range(num_regular_tuples):
+        for ps in page_sizes:
+            if any((bucket := b.get(ps)) is not None and tuple_idx < len(bucket) for b in bucketed):
+                active_page_bytes += ps
+    active_page_bytes += mtp_page_size * len(mtp_layer_names)
+    assert active_page_bytes > 0
+
+    num_blocks = available_memory // active_page_bytes
     num_blocks = may_override_num_blocks(vllm_config, num_blocks)
 
     kv_cache_tensors: list[KVCacheTensor] = []
-    for tuple_idx in range(num_layer_tuples - len(mtp_layer_names)):
+    for tuple_idx in range(num_regular_tuples):
         for ps in page_sizes:
             shared_by: list[str] = []
             for b in bucketed:
                 bucket = b.get(ps)
                 if bucket is not None and tuple_idx < len(bucket):
                     shared_by.append(bucket[tuple_idx])
-            kv_cache_tensors.append(KVCacheTensor(size=ps * num_blocks, shared_by=shared_by))
+            if shared_by:
+                kv_cache_tensors.append(KVCacheTensor(size=ps * num_blocks, shared_by=shared_by))
     for i in range(len(mtp_layer_names)):
         kv_cache_tensors.append(KVCacheTensor(size=mtp_page_size * num_blocks, shared_by=[mtp_layer_names[i]]))
 

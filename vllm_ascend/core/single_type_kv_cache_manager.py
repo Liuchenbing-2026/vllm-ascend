@@ -26,6 +26,14 @@ class CompressAttentionManager(FullAttentionManager):
         super().__init__(kv_cache_spec, block_pool, **kwargs)
         self.compress_ratio = kv_cache_spec.compress_ratio
         self._null_block = block_pool.null_block
+        # Runtime block tables for DSA compressed caches are in compressed-token
+        # space. Prefix hashes still use kv_cache_spec.block_size in original
+        # token space, so cache_blocks() below passes that size explicitly.
+        self.block_size = kv_cache_spec.storage_block_size
+
+    @staticmethod
+    def _prefix_block_size(kv_cache_spec: MLAAttentionSpec) -> int:
+        return kv_cache_spec.storage_block_size * max(kv_cache_spec.compress_ratio, 1)
 
     def get_num_blocks_to_allocate(
         self,
@@ -40,8 +48,8 @@ class CompressAttentionManager(FullAttentionManager):
         # speculative decoding (MTP/EAGLE) with linear attention.
         # assert isinstance(self.kv_cache_spec, (CompressAttentionSpec, C4IndexerSpec))
 
-        num_tokens //= self.compress_ratio
-        num_tokens_main_model //= self.compress_ratio
+        num_tokens //= max(self.compress_ratio, 1)
+        num_tokens_main_model //= max(self.compress_ratio, 1)
 
         return super().get_num_blocks_to_allocate(
             request_id,
@@ -85,7 +93,7 @@ class CompressAttentionManager(FullAttentionManager):
         req_blocks = self.req_to_blocks[request_id]
         assert len(req_blocks) == 0
         num_total_computed_tokens = num_local_computed_tokens + num_external_computed_tokens
-        num_total_computed_tokens //= self.compress_ratio
+        num_total_computed_tokens //= max(self.compress_ratio, 1)
         num_skipped_tokens = self.get_num_skipped_tokens(num_total_computed_tokens)
         num_skipped_blocks = num_skipped_tokens // self.block_size
         if num_skipped_blocks > 0:
@@ -135,9 +143,9 @@ class CompressAttentionManager(FullAttentionManager):
         Returns:
             The new allocated blocks.
         """
-        num_tokens //= self.compress_ratio
+        num_tokens //= max(self.compress_ratio, 1)
         ## TODO: check spec decode
-        num_tokens_main_model //= self.compress_ratio
+        num_tokens_main_model //= max(self.compress_ratio, 1)
 
         req_blocks = self.req_to_blocks[request_id]
         num_required_blocks = cdiv(num_tokens, self.block_size)
@@ -158,9 +166,23 @@ class CompressAttentionManager(FullAttentionManager):
             num_tokens: The total number of tokens that need to be cached
                 (including tokens that are already cached).
         """
-        num_tokens //= self.compress_ratio
+        compressed_tokens = num_tokens // max(self.compress_ratio, 1)
+        prefix_block_size = self._prefix_block_size(self.kv_cache_spec)
+        num_cached_blocks = self.num_cached_block.get(request.request_id, 0)
+        num_full_blocks = compressed_tokens // self.block_size
 
-        return super().cache_blocks(request, num_tokens)
+        if num_cached_blocks >= num_full_blocks:
+            return
+
+        self.block_pool.cache_full_blocks(
+            request=request,
+            blocks=self.req_to_blocks[request.request_id],
+            num_cached_blocks=num_cached_blocks,
+            num_full_blocks=num_full_blocks,
+            block_size=prefix_block_size,
+            kv_cache_group_id=self.kv_cache_group_id,
+        )
+        self.num_cached_block[request.request_id] = num_full_blocks
 
     @classmethod
     def find_longest_cache_hit(
@@ -181,7 +203,7 @@ class CompressAttentionManager(FullAttentionManager):
         #     "CompressAttentionManager can only be used for compressor attention groups"
         # )
         computed_blocks: tuple[list[KVCacheBlock], ...] = tuple([] for _ in range(len(kv_cache_group_ids)))
-        block_size = kv_cache_spec.block_size
+        block_size = kv_cache_spec.storage_block_size * max(kv_cache_spec.compress_ratio, 1)
         if dcp_world_size * pcp_world_size > 1:
             block_size *= dcp_world_size * pcp_world_size
         max_num_blocks = max_length // block_size
@@ -199,8 +221,6 @@ class CompressAttentionManager(FullAttentionManager):
             for computed in computed_blocks:
                 computed.pop()
 
-        # NOTE: Div the compress ratio when finding the longest cache hit token length.
-        alignment_tokens = cdiv(alignment_tokens, kv_cache_spec.compress_ratio)
         while (
             block_size != alignment_tokens  # Faster for common case.
             and len(computed_blocks[0]) * block_size % alignment_tokens != 0
@@ -237,9 +257,9 @@ def get_manager_for_kv_cache_spec(
     if isinstance(kv_cache_spec, MLAAttentionSpec) and kv_cache_spec.compress_ratio > 1:
         manager_class = CompressAttentionManager
         if max_model_len is not None:
-            # Compressed-MLA peak in blocks: ceil(max_model_len/compress/block).
+            # Compressed-MLA peak in compressed-token storage blocks.
             compress_ratio = kv_cache_spec.compress_ratio
-            block_size = kv_cache_spec.block_size
+            block_size = kv_cache_spec.storage_block_size
             max_compressed_tokens = max_model_len // compress_ratio
             kwargs["max_admission_blocks_per_request"] = cdiv(max_compressed_tokens, block_size) + 1
     elif isinstance(kv_cache_spec, (SlidingWindowSpec, ChunkedLocalAttentionSpec)):

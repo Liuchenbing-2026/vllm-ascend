@@ -3815,8 +3815,9 @@ class NPUModelRunner(GPUModelRunner):
                     assert num_blocks == kv_cache_config.num_blocks, \
                         f"num_blocks: {num_blocks} should be equal to " \
                         f"kv_cache_config.num_blocks: {kv_cache_config.num_blocks}"
+                    shape_block_size = current_kv_cache_spec.storage_block_size
                     kv_cache_shape = self.attn_backend.get_kv_cache_shape(
-                        num_blocks, current_kv_cache_spec.block_size,
+                        num_blocks, shape_block_size,
                         current_kv_cache_spec.num_kv_heads,
                         current_kv_cache_spec.head_size)
                     kv_cache_shape_list = [kv_cache_shape]
@@ -3825,7 +3826,7 @@ class NPUModelRunner(GPUModelRunner):
                     if hasattr(current_kv_cache_spec, "scale_dim") and current_kv_cache_spec.scale_dim != 0:
                         indexer_k_shape = kv_cache_shape
                         indexer_scale_shape = self.attn_backend.get_kv_cache_shape(
-                                                num_blocks, current_kv_cache_spec.block_size,
+                                                num_blocks, shape_block_size,
                                                 current_kv_cache_spec.num_kv_heads,
                                                 current_kv_cache_spec.scale_dim
                                                 )
@@ -4049,8 +4050,15 @@ class NPUModelRunner(GPUModelRunner):
         Args:
             kv_cache_config: The KV cache configuration.
         """
+        def _block_table_block_size(kv_cache_spec: KVCacheSpec) -> int:
+            if isinstance(kv_cache_spec, UniformTypeKVCacheSpecs):
+                kv_cache_spec = next(iter(kv_cache_spec.kv_cache_specs.values()))
+            if isinstance(kv_cache_spec, MLAAttentionSpec) and getattr(kv_cache_spec, "compress_ratio", 1) > 1:
+                return kv_cache_spec.storage_block_size
+            return kv_cache_spec.block_size
+
         block_sizes = [
-            kv_cache_group.kv_cache_spec.block_size
+            _block_table_block_size(kv_cache_group.kv_cache_spec)
             for kv_cache_group in kv_cache_config.kv_cache_groups
             if not isinstance(kv_cache_group.kv_cache_spec, EncoderOnlyAttentionSpec)
         ]
@@ -4076,10 +4084,13 @@ class NPUModelRunner(GPUModelRunner):
                 # the backend.
                 attn_groups = self.attn_groups[kv_cache_group_id]
                 backends = [attn_group.backend for attn_group in attn_groups]
-                kv_manager_block_size = kv_cache_group.kv_cache_spec.block_size
-                selected_kernel_size = select_common_block_size(
-                    kv_manager_block_size, backends
-                )
+                if isinstance(kv_cache_spec, MLAAttentionSpec) and getattr(kv_cache_spec, "compress_ratio", 1) > 1:
+                    selected_kernel_size = 0
+                else:
+                    kv_manager_block_size = kv_cache_group.kv_cache_spec.block_size
+                    selected_kernel_size = select_common_block_size(
+                        kv_manager_block_size, backends
+                    )
                 self.kernel_block_sizes.append([selected_kernel_size])
             else:
                 # This is likely Mamba or other non-attention cache,
@@ -4094,7 +4105,14 @@ class NPUModelRunner(GPUModelRunner):
         for i, kv_cache_group in enumerate(kv_cache_config.kv_cache_groups):
             if isinstance(kv_cache_group.kv_cache_spec, EncoderOnlyAttentionSpec):
                 continue
-            max_num_blocks_per_req = cdiv(max_model_len, block_sizes[i] * get_total_cp_world_size())
+            kv_cache_spec = kv_cache_group.kv_cache_spec
+            if isinstance(kv_cache_spec, UniformTypeKVCacheSpecs):
+                kv_cache_spec = next(iter(kv_cache_spec.kv_cache_specs.values()))
+            compress_ratio = max(getattr(kv_cache_spec, "compress_ratio", 1), 1)
+            max_num_blocks_per_req = cdiv(
+                max_model_len // compress_ratio,
+                block_sizes[i] * get_total_cp_world_size(),
+            )
             if isinstance(kv_cache_group.kv_cache_spec, MambaSpec):
                 mamba_blocks_per_req = (
                     max_num_blocks_per_req if self.cache_config.enable_prefix_caching else 1

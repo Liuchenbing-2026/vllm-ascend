@@ -17,7 +17,11 @@ from vllm.v1.core.kv_cache_utils import (
     KVCacheBlock,
 )
 from vllm.v1.core.single_type_kv_cache_manager import SingleTypeKVCacheManager
-from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KVCacheSpec
+from vllm.v1.kv_cache_interface import (
+    FullAttentionSpec,
+    KVCacheConfig,
+    KVCacheSpec,
+)
 
 from vllm_ascend.core.single_type_kv_cache_manager import get_manager_for_kv_cache_spec
 
@@ -100,6 +104,14 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
 
         self.use_eagle = use_eagle
 
+    @staticmethod
+    def _prefix_block_size(spec: KVCacheSpec) -> int:
+        compress_ratio = max(getattr(spec, "compress_ratio", 1), 1)
+        storage_block_size = getattr(spec, "storage_block_size", None)
+        if compress_ratio > 1 and storage_block_size is not None:
+            return storage_block_size * compress_ratio
+        return spec.block_size
+
     def verify_and_split_kv_cache_groups(self) -> None:
         """
         Groups KV cache groups by their spec type for efficient batch processing
@@ -142,8 +154,7 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         # to make sure the cache hit length is a multiple of the block size of
         # each attention type. Requiring this because we don't support partial
         # block cache hit yet.
-        # NOTE: use 16k as the alignment tokens for model with compress ratio
-        block_sizes = [spec.block_size * getattr(spec, "compress_ratio", 1) for spec, _, _ in self.attention_groups]
+        block_sizes = [self._prefix_block_size(spec) for spec, _, _ in self.attention_groups]
         self.lcm_block_size = lcm(*block_sizes)
 
     def find_longest_cache_hit(
@@ -170,9 +181,10 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         """
 
         def _get_block_hashes(kv_cache_spec: KVCacheSpec) -> BlockHashList:
-            if kv_cache_spec.block_size == self.hash_block_size:
+            prefix_block_size = self._prefix_block_size(kv_cache_spec)
+            if prefix_block_size == self.hash_block_size:
                 return block_hashes
-            return BlockHashListWithBlockSize(block_hashes, self.hash_block_size, kv_cache_spec.block_size)
+            return BlockHashListWithBlockSize(block_hashes, self.hash_block_size, prefix_block_size)
 
         num_groups = len(self.kv_cache_config.kv_cache_groups)
         hit_length = max_cache_hit_length
@@ -193,12 +205,13 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
             curr_hit_length = hit_length
 
             for idx, (spec, group_ids, manager_cls) in enumerate(self.attention_groups):
+                prefix_block_size = self._prefix_block_size(spec)
                 cached_blocks = hit_blocks_by_group[group_ids[0]]
                 if isinstance(spec, FullAttentionSpec) and cached_blocks is not None:
                     # Full attention is downward-closed: we only need to look
                     # up cached blocks once; on subsequent iterations just trim
                     # to the (reduced) current hit length.
-                    curr_hit_length = curr_hit_length // spec.block_size * spec.block_size
+                    curr_hit_length = curr_hit_length // prefix_block_size * prefix_block_size
                     continue
 
                 use_eagle = idx in self.eagle_attn_group_indices and idx not in eagle_verified
@@ -206,7 +219,7 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                 _max_length = curr_hit_length
                 if use_eagle:
                     # Eagle needs to match one more block and then pop the last.
-                    _max_length = min(curr_hit_length + spec.block_size, max_cache_hit_length)
+                    _max_length = min(curr_hit_length + prefix_block_size, max_cache_hit_length)
                 hit_blocks = manager_cls.find_longest_cache_hit(
                     block_hashes=_get_block_hashes(spec),
                     max_length=_max_length,
@@ -216,15 +229,13 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                     use_eagle=use_eagle,
                     alignment_tokens=self.lcm_block_size,
                 )
-                _new_hit_length = len(hit_blocks[0]) * spec.block_size
+                _new_hit_length = len(hit_blocks[0]) * prefix_block_size
                 if use_eagle:
                     eagle_verified.add(idx)
                 elif _new_hit_length < curr_hit_length:
                     # length shrunk; invalidate previous eagle verifications
                     eagle_verified.clear()
                 curr_hit_length = _new_hit_length
-                compress_ratio = getattr(spec, "compress_ratio", 1)
-                curr_hit_length = len(hit_blocks[0]) * spec.block_size * max(compress_ratio, 1)
                 for group_id, blocks in zip(group_ids, hit_blocks):
                     hit_blocks_by_group[group_id] = blocks
 
@@ -237,7 +248,7 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         # Truncate full attention blocks to final hit_length (if present)
         spec, group_ids, _ = self.attention_groups[0]
         if isinstance(spec, FullAttentionSpec):
-            num_blocks = hit_length // spec.block_size
+            num_blocks = hit_length // self._prefix_block_size(spec)
             for group_id in group_ids:
                 if (blks := hit_blocks_by_group[group_id]) is not None:
                     del blks[num_blocks:]

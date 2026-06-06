@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import os
 from dataclasses import dataclass
 
 import torch
@@ -14,6 +15,39 @@ from vllm.v1.kv_cache_interface import (
     MLAAttentionSpec,
     SlidingWindowMLASpec,
 )
+
+DSV4_COMPRESSED_KV_BLOCK_SIZE_ENV = "VLLM_ASCEND_DSV4_COMPRESSED_KV_BLOCK_SIZE"
+_DSV4_COMPRESSED_KV_BLOCK_SIZE_DEFAULT = 128
+_DSV4_COMPRESSED_KV_BLOCK_SIZE_CHOICES = frozenset({32, 64, 128})
+
+
+def get_dsv4_compressed_kv_block_size(
+    compress_ratio: int,
+    default: int = _DSV4_COMPRESSED_KV_BLOCK_SIZE_DEFAULT,
+) -> int:
+    if compress_ratio != 128:
+        return default
+
+    raw_value = os.getenv(DSV4_COMPRESSED_KV_BLOCK_SIZE_ENV)
+    if not raw_value:
+        return default
+
+    try:
+        block_size = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(
+            f"{DSV4_COMPRESSED_KV_BLOCK_SIZE_ENV} must be an integer in "
+            f"{sorted(_DSV4_COMPRESSED_KV_BLOCK_SIZE_CHOICES)}, got "
+            f"{raw_value!r}."
+        ) from exc
+
+    if block_size not in _DSV4_COMPRESSED_KV_BLOCK_SIZE_CHOICES:
+        raise ValueError(
+            f"{DSV4_COMPRESSED_KV_BLOCK_SIZE_ENV} must be one of "
+            f"{sorted(_DSV4_COMPRESSED_KV_BLOCK_SIZE_CHOICES)}, got "
+            f"{block_size}."
+        )
+    return block_size
 
 
 @dataclass(frozen=True)
@@ -50,11 +84,20 @@ class AscendMLAAttentionSpec(MLAAttentionSpec):
     c8_k_scale_cache_dtype: torch.dtype = torch.float16
 
     @property
+    def storage_block_size(self) -> int:
+        if self.compress_ratio <= 1:
+            return self.block_size
+        # DSA sparse_attn_sharedkv requires the compressed KV cache block size
+        # to be 16-aligned.  Prefix hashing still uses original-token ranges;
+        # see CompressAttentionManager._prefix_block_size.
+        return max(16, self.block_size // self.compress_ratio)
+
+    @property
     def page_size_bytes(self) -> int:
+        num_heads_per_page = self.storage_block_size * self.num_kv_heads
         if self.cache_sparse_c8:
             assert self.sparse_head_dim is not None
             assert len(self.sparse_head_dim) == 3
-            num_heads_per_page = self.block_size * self.num_kv_heads
             # kv_cache[0]: bfloat16, kv_cache[1]: bfloat16
             kv_lora_rank, qk_rope_head_dim = self.sparse_head_dim[:2]
             k_pe_nope_bytes = num_heads_per_page * (kv_lora_rank + qk_rope_head_dim) * get_dtype_size(self.dtype)
@@ -67,13 +110,16 @@ class AscendMLAAttentionSpec(MLAAttentionSpec):
             indexer_k_scale_bytes = (
                 num_heads_per_page * index_scale_head_dim * get_dtype_size(self.c8_k_scale_cache_dtype)
             )
-            return k_pe_nope_bytes + indexer_k_bytes + indexer_k_scale_bytes
+            real_page_size = k_pe_nope_bytes + indexer_k_bytes + indexer_k_scale_bytes
+        else:
+            real_page_size = num_heads_per_page * (
+                self.head_size * get_dtype_size(self.dtype) + self.scale_dim * get_dtype_size(self.scale_dtype)
+            )
 
-        return (
-            self.block_size
-            * self.num_kv_heads
-            * (self.head_size * get_dtype_size(self.dtype) + self.scale_dim * get_dtype_size(self.scale_dtype))
-        )
+        if self.page_size_padded is not None:
+            assert self.page_size_padded >= real_page_size
+            return self.page_size_padded
+        return real_page_size
 
     @property
     def sparse_kv_cache_ratio(self) -> tuple[float, float, float, float | None]:
@@ -136,18 +182,33 @@ class AscendMLAAttentionSpec(MLAAttentionSpec):
         assert len(cache_dtype_str_set) == 1, (
             "All attention layers in the same KV cache group must use the same quantization method."
         )
+        compress_ratio_set = set(spec.compress_ratio for spec in specs)
+        model_version_set = set(spec.model_version for spec in specs)
+        page_size_padded_set = set(spec.page_size_padded for spec in specs)
         cache_sparse_c8_set = set(spec.cache_sparse_c8 for spec in specs)
-        assert len(cache_sparse_c8_set) == 1, (
-            "All attention layers in the same KV cache group must use the same sparse C8 setting."
+        scale_dtype_set = set(spec.scale_dtype for spec in specs)
+        assert (
+            len(compress_ratio_set) == 1
+            and len(model_version_set) == 1
+            and len(page_size_padded_set) == 1
+            and len(cache_sparse_c8_set) == 1
+            and len(scale_dtype_set) == 1
+        ), (
+            "All attention layers in the same KV cache group must use the same "
+            "compression, model version, padding, scale dtype and sparse C8 setting."
         )
         return cls(
             block_size=specs[0].block_size,
             num_kv_heads=specs[0].num_kv_heads,
             head_size=specs[0].head_size,
             scale_dim=specs[0].scale_dim,
+            scale_dtype=scale_dtype_set.pop(),
             sparse_head_dim=specs[0].sparse_head_dim,
             dtype=specs[0].dtype,
+            page_size_padded=page_size_padded_set.pop(),
             cache_dtype_str=cache_dtype_str_set.pop(),
+            compress_ratio=compress_ratio_set.pop(),
+            model_version=model_version_set.pop(),
             cache_sparse_c8=specs[0].cache_sparse_c8,
         )
 
@@ -159,7 +220,10 @@ class AscendMLAAttentionSpec(MLAAttentionSpec):
         # (max_model_len//dcp_world_size) tokens locally.
         if dcp_world_size * pcp_world_size > 1:
             max_model_len = cdiv(max_model_len, dcp_world_size * pcp_world_size)
-        return cdiv(max_model_len, self.block_size * self.compress_ratio) * self.page_size_bytes
+        if self.compress_ratio > 1:
+            max_compressed_tokens = cdiv(max_model_len, self.compress_ratio)
+            return cdiv(max_compressed_tokens, self.storage_block_size) * self.page_size_bytes
+        return cdiv(max_model_len, self.block_size) * self.page_size_bytes
 
 
 def _init_mla_cache_fields(spec: MLAAttentionSpec | SlidingWindowMLASpec):
