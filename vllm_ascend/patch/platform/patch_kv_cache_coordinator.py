@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM projectx
 import sys
-from math import lcm
 
 import vllm
 from vllm.v1.core.block_pool import BlockPool
@@ -43,6 +42,7 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         dcp_world_size: int,
         pcp_world_size: int,
         hash_block_size: int,
+        scheduler_block_size: int | None = None,
         eagle_attn_layer_names: list[str] | None = None,
         metrics_collector: KVCacheMetricsCollector | None = None,
         max_num_batched_tokens: int | None = None,
@@ -56,6 +56,13 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         if max_num_batched_tokens is None:
             max_num_batched_tokens = max_model_len
         self.max_num_batched_tokens = max_num_batched_tokens
+        if scheduler_block_size is None:
+            scheduler_block_size = hash_block_size
+        assert scheduler_block_size % hash_block_size == 0 and all(
+            scheduler_block_size % g.kv_cache_spec.block_size == 0
+            for g in kv_cache_config.kv_cache_groups
+        )
+        self.scheduler_block_size = scheduler_block_size
 
         self.block_pool = BlockPool(
             kv_cache_config.num_blocks,
@@ -143,14 +150,9 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
             if any(gid in self.eagle_group_ids for gid in group_ids)
         }
 
-        # The LCM of the block sizes of all attention types.
-        # The cache hit length must be a multiple of the LCM of the block sizes
-        # to make sure the cache hit length is a multiple of the block size of
-        # each attention type. Requiring this because we don't support partial
-        # block cache hit yet.
-        # NOTE: use 16k as the alignment tokens for model with compress ratio
-        block_sizes = [spec.block_size * getattr(spec, "compress_ratio", 1) for spec, _, _ in self.attention_groups]
-        self.lcm_block_size = lcm(*block_sizes)
+        # Prefix-cache hits are aligned to scheduler_block_size, not to
+        # block_size * compress_ratio. The latter forces DSv4 compressed
+        # groups to 16K-aligned hits and makes shorter prompts miss.
 
     def find_longest_cache_hit(
         self,
@@ -220,7 +222,7 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                     block_pool=self.block_pool,
                     kv_cache_spec=spec,
                     use_eagle=use_eagle,
-                    alignment_tokens=self.lcm_block_size,
+                    alignment_tokens=self.scheduler_block_size,
                 )
                 _new_hit_length = len(hit_blocks[0]) * spec.block_size
                 if use_eagle:
@@ -261,6 +263,7 @@ def get_kv_cache_coordinator(
     dcp_world_size: int,
     pcp_world_size: int,
     hash_block_size: int,
+    scheduler_block_size: int | None = None,
     eagle_attn_layer_names: list[str] | None = None,
     metrics_collector: KVCacheMetricsCollector | None = None,
 ) -> KVCacheCoordinator:
@@ -273,6 +276,7 @@ def get_kv_cache_coordinator(
         dcp_world_size=dcp_world_size,
         pcp_world_size=pcp_world_size,
         hash_block_size=hash_block_size,
+        scheduler_block_size=scheduler_block_size,
         eagle_attn_layer_names=eagle_attn_layer_names,
         metrics_collector=metrics_collector,
         max_num_batched_tokens=max_num_batched_tokens,
