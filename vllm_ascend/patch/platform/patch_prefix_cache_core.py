@@ -122,6 +122,9 @@ def _patch_remove_skipped_blocks() -> None:
 
 
 def _patch_sliding_window_mask() -> None:
+    if not hasattr(SlidingWindowManager, "_cache_block_mask"):
+        return
+
     if _source_contains(
         SlidingWindowManager._cache_block_mask,
         "use_eagle",
