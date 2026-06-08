@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import os
 from dataclasses import dataclass
 
 import torch
@@ -14,6 +15,39 @@ from vllm.v1.kv_cache_interface import (
     MLAAttentionSpec,
     SlidingWindowMLASpec,
 )
+
+DSV4_COMPRESSED_KV_BLOCK_SIZE_ENV = "VLLM_ASCEND_DSV4_COMPRESSED_KV_BLOCK_SIZE"
+_DSV4_COMPRESSED_KV_BLOCK_SIZE_DEFAULT = 128
+_DSV4_COMPRESSED_KV_BLOCK_SIZE_CHOICES = frozenset({32, 64, 128})
+
+
+def get_dsv4_compressed_kv_block_size(
+    compress_ratio: int,
+    default: int = _DSV4_COMPRESSED_KV_BLOCK_SIZE_DEFAULT,
+) -> int:
+    if compress_ratio != 128:
+        return default
+
+    raw_value = os.getenv(DSV4_COMPRESSED_KV_BLOCK_SIZE_ENV)
+    if not raw_value:
+        return default
+
+    try:
+        block_size = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(
+            f"{DSV4_COMPRESSED_KV_BLOCK_SIZE_ENV} must be an integer in "
+            f"{sorted(_DSV4_COMPRESSED_KV_BLOCK_SIZE_CHOICES)}, got "
+            f"{raw_value!r}."
+        ) from exc
+
+    if block_size not in _DSV4_COMPRESSED_KV_BLOCK_SIZE_CHOICES:
+        raise ValueError(
+            f"{DSV4_COMPRESSED_KV_BLOCK_SIZE_ENV} must be one of "
+            f"{sorted(_DSV4_COMPRESSED_KV_BLOCK_SIZE_CHOICES)}, got "
+            f"{block_size}."
+        )
+    return block_size
 
 
 @dataclass(frozen=True)
@@ -172,7 +206,11 @@ def _init_mla_cache_fields(spec: MLAAttentionSpec | SlidingWindowMLASpec):
     assert (spec.model_version == "v32" and spec.compress_ratio == 1) or (
         spec.model_version == "deepseek_v4" and spec.compress_ratio in [0, 4, 128]
     ), "Invalid compress ratio."
-    if spec.compress_ratio > 1:
+    if spec.compress_ratio > 1 and not (
+        spec.model_version == "deepseek_v4"
+        and spec.compress_ratio == 128
+        and spec.block_size in _DSV4_COMPRESSED_KV_BLOCK_SIZE_CHOICES
+    ):
         assert spec.block_size % spec.compress_ratio == 0, (
             f"Block size {spec.block_size} must be divisible by compress ratio."
         )

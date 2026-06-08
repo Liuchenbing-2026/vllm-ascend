@@ -9,7 +9,10 @@ from vllm.v1.kv_cache_interface import (
 )
 
 from vllm_ascend.attention.dsa_v1 import AscendDSABackend
-from vllm_ascend.patch.platform.patch_kv_cache_interface import AscendMLAAttentionSpec
+from vllm_ascend.patch.platform.patch_kv_cache_interface import (
+    AscendMLAAttentionSpec,
+    get_dsv4_compressed_kv_block_size,
+)
 from vllm_ascend.utils import vllm_version_is
 
 if vllm_version_is("0.20.2"):
@@ -83,7 +86,7 @@ class AscendDeepseekV4IndexerCache(DeepseekV4IndexerCache):
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
         return AscendMLAAttentionSpec(  # Only has one vector instead of K + V
-            block_size=128,
+            block_size=get_dsv4_compressed_kv_block_size(self.compress_ratio),
             num_kv_heads=1,
             head_size=self.head_dim,
             dtype=self.dtype,

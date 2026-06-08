@@ -3746,7 +3746,24 @@ class NPUModelRunner(GPUModelRunner):
                 if layer_name in self.runner_only_attn_layers:
                     continue
                 layer_names.add(layer_name)
-        assert layer_names == set(kv_cache_raw_tensors.keys()), "Some layers are not correctly initialized"
+        initialized_layer_names = set(kv_cache_raw_tensors.keys())
+        if layer_names != initialized_layer_names:
+            tensor_summary = [
+                {
+                    "size": tensor.size,
+                    "shared_by": list(tensor.shared_by),
+                }
+                for tensor in kv_cache_config.kv_cache_tensors[:8]
+            ]
+            raise AssertionError(
+                "Some layers are not correctly initialized: "
+                f"missing={sorted(layer_names - initialized_layer_names)[:16]}, "
+                f"extra={sorted(initialized_layer_names - layer_names)[:16]}, "
+                f"num_expected={len(layer_names)}, "
+                f"num_initialized={len(initialized_layer_names)}, "
+                f"num_tensors={len(kv_cache_config.kv_cache_tensors)}, "
+                f"tensor_summary={tensor_summary}"
+            )
 
         return kv_cache_raw_tensors
 

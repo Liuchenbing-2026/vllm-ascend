@@ -149,9 +149,13 @@ class DSAAttention(nn.Module, AttentionLayerBase):
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
         if self.compress_ratio <= 1:  # SWA part. Allocated separately as DeepseekV4SWACache.
             return None
+        from vllm_ascend.patch.platform.patch_kv_cache_interface import (
+            get_dsv4_compressed_kv_block_size,
+        )
+
         kv_cache_dtype = kv_cache_dtype_str_to_dtype(self.kv_cache_dtype, vllm_config.model_config)
         return MLAAttentionSpec(
-            block_size=128,
+            block_size=get_dsv4_compressed_kv_block_size(self.compress_ratio),
             num_kv_heads=1,
             head_size=self.head_size,
             dtype=kv_cache_dtype,

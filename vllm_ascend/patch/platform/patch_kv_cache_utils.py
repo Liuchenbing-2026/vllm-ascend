@@ -200,7 +200,7 @@ def _get_kv_cache_config_deepseek_v4(
     """
     full_mla_spec = kv_cache_groups[0].kv_cache_spec
     assert isinstance(full_mla_spec, UniformTypeKVCacheSpecs)
-    page_sizes = sorted(full_mla_spec.get_page_sizes())
+    page_sizes = sorted({page_size for group in kv_cache_groups for page_size in group.kv_cache_spec.get_page_sizes()})
     layer_tuple_page_bytes = sum(page_sizes)
 
     # Pre-bucket each group's layers by page_size (registration order within
@@ -237,7 +237,8 @@ def _get_kv_cache_config_deepseek_v4(
                 bucket = b.get(ps)
                 if bucket is not None and tuple_idx < len(bucket):
                     shared_by.append(bucket[tuple_idx])
-            kv_cache_tensors.append(KVCacheTensor(size=ps * num_blocks, shared_by=shared_by))
+            if shared_by:
+                kv_cache_tensors.append(KVCacheTensor(size=ps * num_blocks, shared_by=shared_by))
     for i in range(len(mtp_layer_names)):
         kv_cache_tensors.append(KVCacheTensor(size=mtp_page_size * num_blocks, shared_by=[mtp_layer_names[i]]))
 
