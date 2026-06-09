@@ -26,7 +26,7 @@ from copy import copy, deepcopy
 from dataclasses import dataclass, replace
 from functools import partial
 from multiprocessing import Manager
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, TypeAlias
 
 import numpy as np
 import torch
@@ -1660,6 +1660,61 @@ class NPUModelRunner(GPUModelRunner):
             else:
                 self.draft_token_ids_cpu[:num_reqs] = 0
             self.draft_token_ids_event.record()
+
+    def _copy_prefix_cache_blocks(self, scheduler_output: "SchedulerOutput") -> None:
+        copy_block_ids = getattr(scheduler_output, "new_block_ids_to_copy", None)
+        if not copy_block_ids:
+            return
+        if not hasattr(self, "_kv_caches_by_layer"):
+            logger.warning("Skip prefix-cache block copy because layer KV caches are not registered.")
+            return
+
+        copies_by_group: dict[int, list[tuple[int, int]]] = defaultdict(list)
+        for group_id, src_block_id, dst_block_id in copy_block_ids:
+            copies_by_group[group_id].append((src_block_id, dst_block_id))
+
+        for group_id, copy_pairs in copies_by_group.items():
+            if group_id >= len(self.kv_cache_config.kv_cache_groups):
+                logger.warning("Skip prefix-cache block copy for invalid group_id=%s.", group_id)
+                continue
+            src_ids = [src for src, _ in copy_pairs]
+            dst_ids = [dst for _, dst in copy_pairs]
+            copied_cache_keys: set[tuple[int, ...]] = set()
+            for layer_name in self.kv_cache_config.kv_cache_groups[group_id].layer_names:
+                kv_cache = self._kv_caches_by_layer.get(layer_name)
+                if kv_cache is None:
+                    continue
+                cache_key = self._prefix_cache_data_ptrs(kv_cache)
+                if cache_key in copied_cache_keys:
+                    continue
+                copied_cache_keys.add(cache_key)
+                self._copy_prefix_cache_tensor(kv_cache, src_ids, dst_ids)
+        logger.debug("Copied DSv4 partial prefix-cache blocks: %s", copy_block_ids)
+
+    def _prefix_cache_data_ptrs(self, kv_cache) -> tuple[int, ...]:
+        if torch.is_tensor(kv_cache):
+            return (kv_cache.data_ptr(),)
+        if isinstance(kv_cache, (list, tuple)):
+            ptrs: list[int] = []
+            for item in kv_cache:
+                ptrs.extend(self._prefix_cache_data_ptrs(item))
+            return tuple(ptrs)
+        return (id(kv_cache),)
+
+    def _copy_prefix_cache_tensor(self, kv_cache, src_ids: list[int], dst_ids: list[int]) -> None:
+        if torch.is_tensor(kv_cache):
+            src_tensor = torch.tensor(src_ids, dtype=torch.long, device=kv_cache.device)
+            dst_tensor = torch.tensor(dst_ids, dtype=torch.long, device=kv_cache.device)
+            kv_cache[dst_tensor] = kv_cache[src_tensor]
+            return
+        if isinstance(kv_cache, (list, tuple)):
+            for item in kv_cache:
+                self._copy_prefix_cache_tensor(item, src_ids, dst_ids)
+
+    def _update_states(self, scheduler_output: "SchedulerOutput") -> Callable | None:
+        deferred_state_corrections_fn = super()._update_states(scheduler_output)
+        self._copy_prefix_cache_blocks(scheduler_output)
+        return deferred_state_corrections_fn
 
     @torch.inference_mode()
     def execute_model(
@@ -3558,6 +3613,7 @@ class NPUModelRunner(GPUModelRunner):
                 kvcomp_meta_data=self.kvcomp_meta_data
             )
 
+        self._kv_caches_by_layer = kv_caches
         return kv_caches
 
     def _get_layer_kv_cache_specs(self, kv_cache_config: KVCacheConfig) -> dict[str, KVCacheSpec]:
