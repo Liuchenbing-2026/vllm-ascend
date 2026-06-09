@@ -9,6 +9,7 @@ import vllm.envs as envs_vllm
 from vllm.config import VllmConfig, get_current_vllm_config
 from vllm.distributed import get_tensor_model_parallel_world_size
 from vllm.forward_context import get_forward_context
+from vllm.logger import logger
 from vllm.triton_utils import HAS_TRITON
 from vllm.v1.attention.backend import AttentionBackend, AttentionCGSupport, AttentionMetadataBuilder
 from vllm.v1.kv_cache_interface import AttentionSpec, MLAAttentionSpec
@@ -1564,9 +1565,11 @@ class AscendDSAImpl(DSAAttentionImpl):
         # slot_mapping is shape [..., 1] (npu_scatter_nd_update_v2 convention)
         # or [B] (raw). Flatten + filter -1.
         slots = slot_mapping.reshape(-1).to(torch.int64)
-        valid = slots[slots >= 0]
-        if valid.numel() == 0:
+        if slots.numel() == 0:
             return
+        # Avoid boolean indexing here: it lowers to aclnnNonzeroV2 and
+        # breaks NPU graph capture during model runner initialization.
+        valid = slots.clamp_min(0)
 
         # swa_kv_cache layout: [num_blocks, block_size, 1, nope+rope_head_dim].
         # We only round-trip the nope slice (latent K) which is the

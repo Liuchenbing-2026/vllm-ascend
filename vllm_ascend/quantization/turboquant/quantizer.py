@@ -41,6 +41,7 @@ Dequant is the symmetric inverse.
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import torch
@@ -58,6 +59,23 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 _HADAMARD_CACHE: dict[int, torch.Tensor] = {}
+_DEVICE_TENSOR_CACHE: dict[tuple[object, ...], torch.Tensor] = {}
+
+
+def _to_device_cached(
+    name: str,
+    params: tuple[object, ...],
+    tensor: torch.Tensor,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Move a CPU constant once, then reuse it during NPU graph capture."""
+    key = (name, *params, str(device), dtype)
+    cached = _DEVICE_TENSOR_CACHE.get(key)
+    if cached is None:
+        cached = tensor.to(device=device, dtype=dtype)
+        _DEVICE_TENSOR_CACHE[key] = cached
+    return cached
 
 
 def get_hadamard_matrix(d: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
@@ -82,17 +100,20 @@ def get_hadamard_matrix(d: int, device: torch.device, dtype: torch.dtype) -> tor
         H = H / math.sqrt(d)
         _HADAMARD_CACHE[key] = H
 
-    return _HADAMARD_CACHE[key].to(device=device, dtype=dtype)
+    return _to_device_cached("hadamard", (d,), _HADAMARD_CACHE[key], device, dtype)
 
 
-def _signs_from_seed(d: int, seed: int, device: torch.device) -> torch.Tensor:
+def _signs_from_seed(
+    d: int, seed: int, device: torch.device, dtype: torch.dtype = torch.float32
+) -> torch.Tensor:
     """Deterministic ±1 sign vector. Stays in sync between store / load."""
     g = torch.Generator(device="cpu").manual_seed(seed)
-    return torch.where(
+    signs = torch.where(
         torch.rand(d, generator=g) < 0.5,
         torch.full((d,), -1.0),
         torch.full((d,), 1.0),
-    ).to(device=device)
+    )
+    return _to_device_cached("signs", (d, seed), signs, device, dtype)
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +140,7 @@ def quantize_key_mse(
     k_f = k.to(dtype)
 
     # 1. Random sign flip + Hadamard rotation.
-    signs = _signs_from_seed(d, seed, device)
+    signs = _signs_from_seed(d, seed, device, dtype)
     H = get_hadamard_matrix(d, device, dtype)
     k_rot = (k_f * signs) @ H.T  # [B, d]
 
@@ -132,8 +153,8 @@ def quantize_key_mse(
 
     # 3. Lloyd-Max quantize each coordinate independently.
     centroids, boundaries = get_centroids_and_boundaries(d, cfg.key_mse_bits)
-    centroids = centroids.to(device=device, dtype=dtype)
-    boundaries = boundaries.to(device=device, dtype=dtype)
+    centroids = _to_device_cached("centroids", (d, cfg.key_mse_bits), centroids, device, dtype)
+    boundaries = _to_device_cached("boundaries", (d, cfg.key_mse_bits), boundaries, device, dtype)
     # bucketize: returns the index of the first centroid bin k_n[i] falls into.
     q_idx = torch.bucketize(k_n, boundaries)  # [B, d] int64 0..n_centroids-1
     return q_idx, vec_norm
@@ -151,7 +172,7 @@ def dequantize_key_mse(
     device = q_idx.device
 
     centroids, _ = get_centroids_and_boundaries(d, cfg.key_mse_bits)
-    centroids = centroids.to(device=device, dtype=torch.float32)
+    centroids = _to_device_cached("centroids", (d, cfg.key_mse_bits), centroids, device, torch.float32)
 
     # Look up centroid values; result is approximately unit-norm.
     k_n_hat = centroids[q_idx.clamp(0, len(centroids) - 1)]  # [B, d]
@@ -164,7 +185,7 @@ def dequantize_key_mse(
     k_rot_hat = k_n_hat * vec_norm.unsqueeze(-1).to(torch.float32)
 
     # Inverse Hadamard + sign flip.
-    signs = _signs_from_seed(d, seed, device)
+    signs = _signs_from_seed(d, seed, device, torch.float32)
     H = get_hadamard_matrix(d, device, torch.float32)
     k_hat = (k_rot_hat @ H) * signs  # H @ H^T = I and H == H^T (symmetric).
     return k_hat.to(out_dtype)
@@ -214,9 +235,22 @@ def dequantize_value_uniform(
 def reference_roundtrip_key(
     k: torch.Tensor, cfg: "AscendTurboQuantConfig", seed: int = 42
 ) -> torch.Tensor:
-    """End-to-end quantize → dequantize for a key tensor (correctness check)."""
+    """End-to-end quantize → dequantize for a key tensor.
+
+    TurboQuant Hadamard rotation requires a power-of-2 dimension. DSV4 uses
+    a 448-d latent slice, so pad only inside the reference round-trip and
+    crop back to the cache layout afterwards.
+    """
+    orig_dim = k.shape[-1]
+    if orig_dim <= 0:
+        return k
+    if orig_dim & (orig_dim - 1):
+        padded_dim = 1 << (orig_dim - 1).bit_length()
+        k = torch.nn.functional.pad(k, (0, padded_dim - orig_dim))
+        cfg = replace(cfg, head_dim=padded_dim)
     q_idx, vec_norm = quantize_key_mse(k, cfg, seed)
-    return dequantize_key_mse(q_idx, vec_norm, cfg, seed, out_dtype=k.dtype)
+    out = dequantize_key_mse(q_idx, vec_norm, cfg, seed, out_dtype=k.dtype)
+    return out[..., :orig_dim]
 
 
 def reference_roundtrip_value(
