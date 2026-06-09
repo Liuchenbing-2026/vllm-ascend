@@ -178,6 +178,8 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         """
 
         def _get_block_hashes(kv_cache_spec: KVCacheSpec) -> BlockHashList:
+            if getattr(kv_cache_spec, "compress_ratio", 1) > 1:
+                return block_hashes
             if kv_cache_spec.block_size == self.hash_block_size:
                 return block_hashes
             return BlockHashListWithBlockSize(block_hashes, self.hash_block_size, kv_cache_spec.block_size)
@@ -224,15 +226,16 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                     use_eagle=use_eagle,
                     alignment_tokens=self.scheduler_block_size,
                 )
-                _new_hit_length = len(hit_blocks[0]) * spec.block_size
+                compress_ratio = getattr(spec, "compress_ratio", 1)
+                _new_hit_length = getattr(hit_blocks[0], "logical_hit_length", None)
+                if _new_hit_length is None:
+                    _new_hit_length = len(hit_blocks[0]) * spec.block_size * max(compress_ratio, 1)
                 if use_eagle:
                     eagle_verified.add(idx)
                 elif _new_hit_length < curr_hit_length:
                     # length shrunk; invalidate previous eagle verifications
                     eagle_verified.clear()
                 curr_hit_length = _new_hit_length
-                compress_ratio = getattr(spec, "compress_ratio", 1)
-                curr_hit_length = len(hit_blocks[0]) * spec.block_size * max(compress_ratio, 1)
                 for group_id, blocks in zip(group_ids, hit_blocks):
                     hit_blocks_by_group[group_id] = blocks
 
@@ -251,6 +254,14 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                     del blks[num_blocks:]
 
         return tuple(blocks if blocks is not None else [] for blocks in hit_blocks_by_group), hit_length
+
+    def take_copy_block_ids(self) -> list[tuple[int, int, int]]:
+        copy_block_ids: list[tuple[int, int, int]] = []
+        for manager in self.single_type_managers:
+            take_copy_block_ids = getattr(manager, "take_copy_block_ids", None)
+            if take_copy_block_ids is not None:
+                copy_block_ids.extend(take_copy_block_ids())
+        return copy_block_ids
 
 
 def get_kv_cache_coordinator(
