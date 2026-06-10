@@ -94,6 +94,14 @@ def _patch_scheduler_scheduler_block_size() -> None:
         return
     if _source_contains(current_init, "scheduler_block_size=self.block_size"):
         return
+    try:
+        if "scheduler_block_size" in inspect.signature(scheduler_mod.KVCacheManager.__init__).parameters:
+            # Upstream already threads the hit granularity natively; forwarding
+            # the scheduler's hash-sized block here would violate the manager's
+            # divisibility assert. Nothing to patch.
+            return
+    except (TypeError, ValueError):
+        pass
 
     original_init = current_init
     original_signature = inspect.signature(original_init)
