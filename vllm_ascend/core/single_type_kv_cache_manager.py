@@ -9,6 +9,7 @@ from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_utils import (
     BlockHash,
     BlockHashList,
+    BlockHashListWithBlockSize,
     BlockHashWithGroupId,
     KVCacheBlock,
     make_block_hash_with_group_id,
@@ -40,8 +41,22 @@ class ComputedBlockList(list[KVCacheBlock]):
         self.logical_hit_length = logical_hit_length
 
 
-_PARTIAL_BLOCK_HASH_TO_BLOCK: dict[BlockHashWithGroupId, KVCacheBlock] = {}
-_PARTIAL_BLOCK_ID_TO_HASHES: defaultdict[int, set[BlockHashWithGroupId]] = defaultdict(set)
+def _partial_prefix_cache(
+    block_pool: BlockPool,
+) -> tuple[dict[BlockHashWithGroupId, KVCacheBlock], defaultdict[int, set[BlockHashWithGroupId]]]:
+    """Return the (hash -> block, block_id -> hashes) maps used to track DSv4
+    partial-prefix cache entries for ``block_pool``.
+
+    The maps are stored on the ``BlockPool`` instance (created lazily on first
+    use) rather than as module-level globals so the state is scoped to a single
+    engine's cache and cannot leak across engines in the same process.
+    """
+    hash_to_block = getattr(block_pool, "_dsv4_partial_hash_to_block", None)
+    if hash_to_block is None:
+        hash_to_block = {}
+        block_pool._dsv4_partial_hash_to_block = hash_to_block
+        block_pool._dsv4_partial_block_id_to_hashes = defaultdict(set)
+    return hash_to_block, block_pool._dsv4_partial_block_id_to_hashes
 
 
 def _hash_range(
@@ -62,32 +77,33 @@ def _hash_range(
 
 
 def _insert_partial_cache(
+    block_pool: BlockPool,
     block_hash: BlockHash,
     kv_cache_group_id: int,
     block: KVCacheBlock,
 ) -> None:
+    hash_to_block, block_id_to_hashes = _partial_prefix_cache(block_pool)
     key = make_block_hash_with_group_id(block_hash, kv_cache_group_id)
-    old_block = _PARTIAL_BLOCK_HASH_TO_BLOCK.get(key)
+    old_block = hash_to_block.get(key)
     if old_block is not None and old_block.block_id != block.block_id:
-        _PARTIAL_BLOCK_ID_TO_HASHES[old_block.block_id].discard(key)
-    _PARTIAL_BLOCK_HASH_TO_BLOCK[key] = block
-    _PARTIAL_BLOCK_ID_TO_HASHES[block.block_id].add(key)
+        block_id_to_hashes[old_block.block_id].discard(key)
+    hash_to_block[key] = block
+    block_id_to_hashes[block.block_id].add(key)
 
 
-def get_partial_cached_block(block_hash: BlockHash, kv_cache_group_id: int) -> KVCacheBlock | None:
-    key = make_block_hash_with_group_id(block_hash, kv_cache_group_id)
-    block = _PARTIAL_BLOCK_HASH_TO_BLOCK.get(key)
-    if block is None:
-        return None
-    return block
+def get_partial_cached_block(
+    block_pool: BlockPool, block_hash: BlockHash, kv_cache_group_id: int
+) -> KVCacheBlock | None:
+    hash_to_block, _ = _partial_prefix_cache(block_pool)
+    return hash_to_block.get(make_block_hash_with_group_id(block_hash, kv_cache_group_id))
 
 
-def remove_partial_cache_entries_for_block(block_id: int) -> None:
-    keys = _PARTIAL_BLOCK_ID_TO_HASHES.pop(block_id, set())
-    for key in keys:
-        block = _PARTIAL_BLOCK_HASH_TO_BLOCK.get(key)
+def remove_partial_cache_entries_for_block(block_pool: BlockPool, block_id: int) -> None:
+    hash_to_block, block_id_to_hashes = _partial_prefix_cache(block_pool)
+    for key in block_id_to_hashes.pop(block_id, set()):
+        block = hash_to_block.get(key)
         if block is not None and block.block_id == block_id:
-            _PARTIAL_BLOCK_HASH_TO_BLOCK.pop(key, None)
+            hash_to_block.pop(key, None)
 
 
 class CompressAttentionManager(FullAttentionManager):
@@ -97,15 +113,16 @@ class CompressAttentionManager(FullAttentionManager):
         self._null_block = block_pool.null_block
         self.copy_block_ids: list[tuple[int, int, int]] = []
         self._copy_src_blocks: defaultdict[str, list[KVCacheBlock]] = defaultdict(list)
-
-    def _num_partial_hit_blocks(
-        self,
-        new_computed_blocks: Sequence[KVCacheBlock],
-        total_computed_tokens: int,
-    ) -> int:
-        compressed_tokens = total_computed_tokens // self.compress_ratio
-        num_full_hit_blocks = compressed_tokens // self.block_size
-        return max(0, len(new_computed_blocks) - num_full_hit_blocks)
+        # Per-request bookkeeping for partial-prefix boundary registration.
+        # The first compressed block's boundaries are immutable once that block
+        # is full and its hashes are available, so each request is registered at
+        # most once and then recorded in ``_partial_boundaries_done``. Until then
+        # ``_partial_last_compressed`` dedups repeated calls at the same length.
+        # This is what previously stalled the scheduler loop and collapsed
+        # long-context decode throughput: the boundary hashing re-ran on every
+        # decode step even though the first block never changed.
+        self._partial_last_compressed: dict[str, int] = {}
+        self._partial_boundaries_done: set[str] = set()
 
     def get_num_blocks_to_allocate(
         self,
@@ -135,10 +152,8 @@ class CompressAttentionManager(FullAttentionManager):
         # Partial compressed hits are copied into a private destination block
         # before the request resumes. The source block may also need to be
         # pinned if it is an eviction candidate, which super() already counts.
-        return num_blocks + self._num_partial_hit_blocks(
-            new_computed_blocks,
-            total_computed_tokens * self.compress_ratio,
-        )
+        num_full_hit_blocks = total_computed_tokens // self.block_size
+        return num_blocks + max(0, len(new_computed_blocks) - num_full_hit_blocks)
 
     def allocate_new_computed_blocks(
         self,
@@ -260,35 +275,32 @@ class CompressAttentionManager(FullAttentionManager):
             num_tokens: The total number of tokens that need to be cached
                 (including tokens that are already cached).
         """
-        num_cached_blocks = self.num_cached_block.get(request.request_id, 0)
         compressed_tokens = num_tokens // self.compress_ratio
-        num_full_blocks = compressed_tokens // self.block_size
-        logical_block_size = self.block_size * self.compress_ratio
-
-        if num_cached_blocks < num_full_blocks:
-            self.block_pool.cache_full_blocks(
-                request=request,
-                blocks=self.req_to_blocks[request.request_id],
-                num_cached_blocks=num_cached_blocks,
-                num_full_blocks=num_full_blocks,
-                block_size=logical_block_size,
-                kv_cache_group_id=self.kv_cache_group_id,
-            )
-            self.num_cached_block[request.request_id] = num_full_blocks
-
+        super().cache_blocks(request, compressed_tokens)
         self._cache_partial_block_boundaries(request, compressed_tokens)
 
     def _cache_partial_block_boundaries(self, request: Request, compressed_tokens: int) -> None:
         req_blocks = self.req_to_blocks[request.request_id]
         if compressed_tokens <= 0 or not req_blocks:
             return
+        # The first block's boundaries are final once it is full; never revisit.
+        if request.request_id in self._partial_boundaries_done:
+            return
+        # Dedup repeated calls at the same compressed length (identical entries).
+        if self._partial_last_compressed.get(request.request_id) == compressed_tokens:
+            return
+        self._partial_last_compressed[request.request_id] = compressed_tokens
 
         hash_block_size = self.block_pool.hash_block_size
         logical_block_size = self.block_size * self.compress_ratio
         max_logical_tokens = compressed_tokens * self.compress_ratio
         num_blocks_with_tokens = min(cdiv(compressed_tokens, self.block_size), len(req_blocks))
 
-        for block_idx in range(num_blocks_with_tokens):
+        # Partial compressed hits are only needed before the first full
+        # compressed KV block exists (the <16K DSv4 case). Once a prompt has a
+        # full compressed-block hit, keep the normal full-block reuse path to
+        # avoid adding private copy work to long-context decode.
+        for block_idx in range(min(num_blocks_with_tokens, 1)):
             block = req_blocks[block_idx]
             if block.is_null:
                 continue
@@ -306,8 +318,16 @@ class CompressAttentionManager(FullAttentionManager):
                         boundary,
                     )
                     if block_hash is not None:
-                        _insert_partial_cache(block_hash, self.kv_cache_group_id, block)
+                        _insert_partial_cache(self.block_pool, block_hash, self.kv_cache_group_id, block)
                 boundary += hash_block_size
+
+        # Once the first block is full and all of its hashes are available, its
+        # partial boundaries are final. Latch the request so subsequent calls
+        # (every long-context decode step) return immediately above, paying zero
+        # boundary-hashing cost.
+        if compressed_tokens >= self.block_size and len(request.block_hashes) * hash_block_size >= logical_block_size:
+            self._partial_boundaries_done.add(request.request_id)
+            self._partial_last_compressed.pop(request.request_id, None)
 
     def take_copy_block_ids(self) -> list[tuple[int, int, int]]:
         copy_block_ids = self.copy_block_ids
@@ -316,6 +336,8 @@ class CompressAttentionManager(FullAttentionManager):
 
     def free(self, request_id: str) -> None:
         pinned_src_blocks = self._copy_src_blocks.pop(request_id, [])
+        self._partial_last_compressed.pop(request_id, None)
+        self._partial_boundaries_done.discard(request_id)
         super().free(request_id)
         if pinned_src_blocks:
             self.block_pool.free_blocks(reversed(pinned_src_blocks))
@@ -341,23 +363,18 @@ class CompressAttentionManager(FullAttentionManager):
         computed_blocks: tuple[ComputedBlockList, ...] = tuple(
             ComputedBlockList() for _ in range(len(kv_cache_group_ids))
         )
+        raw_alignment_tokens = alignment_tokens
         block_size = kv_cache_spec.block_size
-        compress_ratio = kv_cache_spec.compress_ratio
-        logical_block_size = block_size * compress_ratio
         hash_block_size = block_pool.hash_block_size
         if dcp_world_size * pcp_world_size > 1:
             block_size *= dcp_world_size * pcp_world_size
-            logical_block_size *= dcp_world_size * pcp_world_size
-        max_num_blocks = max_length // logical_block_size
+        max_num_blocks = max_length // block_size
         full_block_hashes = (
             block_hashes
-            if logical_block_size == hash_block_size
-            else [_hash_range(block_hashes, hash_block_size, i * logical_block_size, (i + 1) * logical_block_size)
-                  for i in range(max_num_blocks)]
+            if block_size == hash_block_size
+            else BlockHashListWithBlockSize(block_hashes, hash_block_size, block_size)
         )
         for block_hash in itertools.islice(full_block_hashes, max_num_blocks):
-            if block_hash is None:
-                break
             # block_hashes is a chain of block hashes. If a block hash is not
             # in the cached_block_hash_to_id, the following block hashes are
             # not computed yet for sure.
@@ -371,40 +388,41 @@ class CompressAttentionManager(FullAttentionManager):
             for computed in computed_blocks:
                 computed.pop()
 
-        logical_hit_length = len(computed_blocks[0]) * logical_block_size
-        partial_start = logical_hit_length
-        candidate = min(max_length // alignment_tokens * alignment_tokens, partial_start + logical_block_size - alignment_tokens)
-        while candidate > partial_start:
-            partial_hash = _hash_range(block_hashes, hash_block_size, partial_start, candidate)
-            if partial_hash is None:
-                candidate -= alignment_tokens
-                continue
-            partial_blocks: list[KVCacheBlock] = []
-            for group_id in kv_cache_group_ids:
-                block = get_partial_cached_block(partial_hash, group_id)
-                if block is None:
-                    partial_blocks = []
-                    break
-                partial_blocks.append(block)
-            if partial_blocks:
+        # Keep the original compressed full-block path for prompts that can hit
+        # normally. Only fall back to a private partial copy when the prompt is
+        # shorter than one compressed cache block and would otherwise get 0 hit.
+        if not computed_blocks[0]:
+            logical_block_size = kv_cache_spec.block_size * kv_cache_spec.compress_ratio
+            candidate = min(
+                max_length // raw_alignment_tokens * raw_alignment_tokens,
+                logical_block_size - raw_alignment_tokens,
+            )
+            while candidate > 0:
+                partial_hash = _hash_range(block_hashes, hash_block_size, 0, candidate)
+                if partial_hash is None:
+                    candidate -= raw_alignment_tokens
+                    continue
+                partial_blocks = [
+                    block
+                    for group_id in kv_cache_group_ids
+                    if (block := get_partial_cached_block(block_pool, partial_hash, group_id)) is not None
+                ]
+                if len(partial_blocks) != len(kv_cache_group_ids):
+                    candidate -= raw_alignment_tokens
+                    continue
                 for computed, cached in zip(computed_blocks, partial_blocks):
                     computed.append(cached)
                     computed.logical_hit_length = candidate
-                logical_hit_length = candidate
                 break
-            candidate -= alignment_tokens
 
+        # NOTE: Div the compress ratio when finding the longest cache hit token length.
+        alignment_tokens = cdiv(alignment_tokens, kv_cache_spec.compress_ratio)
         while (
-            logical_block_size != alignment_tokens  # Faster for common case.
-            and logical_hit_length % alignment_tokens != 0
+            block_size != alignment_tokens  # Faster for common case.
+            and len(computed_blocks[0]) * block_size % alignment_tokens != 0
         ):
             for computed in computed_blocks:
                 computed.pop()
-                computed.logical_hit_length = len(computed) * logical_block_size
-            logical_hit_length = len(computed_blocks[0]) * logical_block_size
-        if logical_hit_length and computed_blocks[0].logical_hit_length is None:
-            for computed in computed_blocks:
-                computed.logical_hit_length = logical_hit_length
         return computed_blocks
 
 
