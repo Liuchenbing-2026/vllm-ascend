@@ -195,27 +195,12 @@ def _patch_partial_prefix_cache_cleanup() -> None:
 
     def _maybe_evict_cached_block(self: BlockPool, block: KVCacheBlock) -> bool:
         evicted = original_maybe_evict(self, block)
-        remove_partial_cache_entries_for_block(block.block_id)
+        remove_partial_cache_entries_for_block(self, block.block_id)
         return evicted
 
     _maybe_evict_cached_block._vllm_ascend_partial_prefix_cache_cleanup_patch = True
     BlockPool._maybe_evict_cached_block = _maybe_evict_cached_block
     logger.debug("Patched BlockPool partial prefix-cache cleanup.")
-
-
-def _patch_kv_cache_manager_copy_blocks() -> None:
-    kv_cache_manager_cls = kv_cache_manager_mod.KVCacheManager
-    if hasattr(kv_cache_manager_cls, "take_copy_block_ids"):
-        return
-
-    def take_copy_block_ids(self) -> list[tuple[int, int, int]]:
-        take_copy_block_ids = getattr(self.coordinator, "take_copy_block_ids", None)
-        if take_copy_block_ids is None:
-            return []
-        return take_copy_block_ids()
-
-    kv_cache_manager_cls.take_copy_block_ids = take_copy_block_ids
-    logger.debug("Patched KVCacheManager.take_copy_block_ids.")
 
 
 def _patch_scheduler_copy_blocks() -> None:
@@ -244,7 +229,8 @@ def _patch_scheduler_copy_blocks() -> None:
 
         def schedule(self, *args, __original_schedule=original_schedule, **kwargs):
             scheduler_output = __original_schedule(self, *args, **kwargs)
-            take_copy_block_ids = getattr(self.kv_cache_manager, "take_copy_block_ids", None)
+            coordinator = getattr(self.kv_cache_manager, "coordinator", None)
+            take_copy_block_ids = getattr(coordinator, "take_copy_block_ids", None)
             if take_copy_block_ids is not None:
                 copy_block_ids = take_copy_block_ids()
                 if copy_block_ids:
@@ -358,7 +344,6 @@ _patch_scheduler_scheduler_block_size()
 _patch_free_queue_prepend()
 _patch_block_pool_free_blocks()
 _patch_partial_prefix_cache_cleanup()
-_patch_kv_cache_manager_copy_blocks()
 _patch_scheduler_copy_blocks()
 _patch_remove_skipped_blocks()
 _patch_sliding_window_mask()

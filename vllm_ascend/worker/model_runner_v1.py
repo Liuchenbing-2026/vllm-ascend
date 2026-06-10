@@ -1884,6 +1884,18 @@ class NPUModelRunner(GPUModelRunner):
             self.draft_token_ids_event.record()
 
     def _copy_prefix_cache_blocks(self, scheduler_output: "SchedulerOutput") -> None:
+        """Materialize DSv4 partial-prefix cache hits by copying the source KV
+        block into the request's private destination block before the model runs.
+
+        This lives in the model runner (rather than a patch) because it needs the
+        runner-owned ``_kv_caches_by_layer`` map from layer name to the on-device
+        KV tensors, and the copy must happen inside ``_update_states`` so the
+        destination blocks are populated before this step's forward pass. It is a
+        no-op for every model except DSv4 with partial prefix caching: when no
+        partial hit was scheduled, ``new_block_ids_to_copy`` is empty and this
+        returns immediately, so it adds no cost to other models or to the
+        long-context decode path.
+        """
         copy_block_ids = getattr(scheduler_output, "new_block_ids_to_copy", None)
         if not copy_block_ids:
             return
@@ -1899,39 +1911,23 @@ class NPUModelRunner(GPUModelRunner):
             if group_id >= len(self.kv_cache_config.kv_cache_groups):
                 logger.warning("Skip prefix-cache block copy for invalid group_id=%s.", group_id)
                 continue
-            src_ids = [src for src, _ in copy_pairs]
-            dst_ids = [dst for _, dst in copy_pairs]
-            copied_cache_keys: set[tuple[int, ...]] = set()
+            copied_cache_ids: set[int] = set()
             for layer_name in self.kv_cache_config.kv_cache_groups[group_id].layer_names:
                 kv_cache = self._kv_caches_by_layer.get(layer_name)
-                if kv_cache is None:
+                if kv_cache is None or id(kv_cache) in copied_cache_ids:
                     continue
-                cache_key = self._prefix_cache_data_ptrs(kv_cache)
-                if cache_key in copied_cache_keys:
-                    continue
-                copied_cache_keys.add(cache_key)
-                self._copy_prefix_cache_tensor(kv_cache, src_ids, dst_ids)
+                copied_cache_ids.add(id(kv_cache))
+                self._copy_prefix_cache_tensor(kv_cache, copy_pairs)
         logger.debug("Copied DSv4 partial prefix-cache blocks: %s", copy_block_ids)
 
-    def _prefix_cache_data_ptrs(self, kv_cache) -> tuple[int, ...]:
+    def _copy_prefix_cache_tensor(self, kv_cache, copy_pairs: list[tuple[int, int]]) -> None:
         if torch.is_tensor(kv_cache):
-            return (kv_cache.data_ptr(),)
-        if isinstance(kv_cache, (list, tuple)):
-            ptrs: list[int] = []
-            for item in kv_cache:
-                ptrs.extend(self._prefix_cache_data_ptrs(item))
-            return tuple(ptrs)
-        return (id(kv_cache),)
-
-    def _copy_prefix_cache_tensor(self, kv_cache, src_ids: list[int], dst_ids: list[int]) -> None:
-        if torch.is_tensor(kv_cache):
-            src_tensor = torch.tensor(src_ids, dtype=torch.long, device=kv_cache.device)
-            dst_tensor = torch.tensor(dst_ids, dtype=torch.long, device=kv_cache.device)
-            kv_cache[dst_tensor] = kv_cache[src_tensor]
+            src_to_dst = torch.tensor(copy_pairs, dtype=torch.long, device=kv_cache.device)
+            kv_cache[src_to_dst[:, 1]] = kv_cache[src_to_dst[:, 0]]
             return
         if isinstance(kv_cache, (list, tuple)):
             for item in kv_cache:
-                self._copy_prefix_cache_tensor(item, src_ids, dst_ids)
+                self._copy_prefix_cache_tensor(item, copy_pairs)
 
     def _update_states(self, scheduler_output: "SchedulerOutput") -> Callable | None:
         deferred_state_corrections_fn = super()._update_states(scheduler_output)
