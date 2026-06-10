@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM projectx
 import sys
+from math import lcm
 
 import vllm
 from vllm.v1.core.block_pool import BlockPool
@@ -68,10 +69,13 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         self.max_num_batched_tokens = max_num_batched_tokens
         if scheduler_block_size is None:
             scheduler_block_size = hash_block_size
-        assert scheduler_block_size % hash_block_size == 0 and all(
-            scheduler_block_size % g.kv_cache_spec.block_size == 0
-            for g in kv_cache_config.kv_cache_groups
-        )
+        # vLLM may thread its hash-sized scheduler granularity here; round the
+        # hit alignment up so every cache group's block size divides it.
+        for _g in kv_cache_config.kv_cache_groups:
+            _bsz = _g.kv_cache_spec.block_size
+            if scheduler_block_size % _bsz:
+                scheduler_block_size = lcm(scheduler_block_size, _bsz)
+        assert scheduler_block_size % hash_block_size == 0
         self.scheduler_block_size = scheduler_block_size
 
         self.block_pool = BlockPool(
