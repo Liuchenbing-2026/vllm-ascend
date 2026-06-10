@@ -84,6 +84,8 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
             )
             for i, kv_cache_group in enumerate(self.kv_cache_config.kv_cache_groups)
         )
+        for i, manager in enumerate(self.single_type_managers):
+            manager.use_eagle = i in self.eagle_group_ids
 
         # hash_block_size: the block size used to compute block hashes.
         # The actual block size usually equals hash_block_size, but in cases where
@@ -97,6 +99,10 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         assert dcp_world_size == 1, "DCP not support hybrid attn now."
         assert pcp_world_size == 1, "PCP not support hybrid attn now."
         self.verify_and_split_kv_cache_groups()
+        for _, group_ids, _ in self.attention_groups:
+            group_uses_eagle = any(group_id in self.eagle_group_ids for group_id in group_ids)
+            for group_id in group_ids:
+                self.single_type_managers[group_id].use_eagle = group_uses_eagle
 
         self.use_eagle = use_eagle
 
