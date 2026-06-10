@@ -9,7 +9,6 @@ from vllm.v1.kv_cache_interface import (
 )
 
 from vllm_ascend.attention.dsa_v1 import AscendDSABackend
-from vllm_ascend.models.layer.attention.dsv4_block_sizes import DSV4_BLOCK_SIZES
 from vllm_ascend.patch.platform.patch_kv_cache_interface import AscendMLAAttentionSpec
 from vllm_ascend.utils import vllm_version_is
 
@@ -54,10 +53,7 @@ class AscendCompressorStateCache(CompressorStateCache):
         self.block_size = block_size
 
     def get_kv_cache_spec(self, vllm_config) -> KVCacheSpec:
-        if self.state_dim == 2 * 256 and self.compress_ratio == 4:
-            page_size_padded = DSV4_BLOCK_SIZES[vllm_config.cache_config.block_size][1][0]
-        else:
-            page_size_padded = DSV4_BLOCK_SIZES[vllm_config.cache_config.block_size][1][1]
+        page_size_padded = 16640 if self.state_dim == 2 * 256 and self.compress_ratio == 4 else 131072
         return SlidingWindowMLASpec(  # only has one vector instead of K + V
             block_size=self.block_size,
             num_kv_heads=1,
@@ -87,7 +83,7 @@ class AscendDeepseekV4IndexerCache(DeepseekV4IndexerCache):
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
         return AscendMLAAttentionSpec(  # Only has one vector instead of K + V
-            block_size=DSV4_BLOCK_SIZES[vllm_config.cache_config.block_size][0][0],
+            block_size=128,
             num_kv_heads=1,
             head_size=self.head_dim,
             dtype=self.dtype,
@@ -121,7 +117,7 @@ class AscendDeepseekV4SWACache(DeepseekV4SWACache):
         # same page size. The C4A KV block shape [256//4, head_dim] = [64, head_dim]
         # determines the SWA block size of 64 tokens per block.
         # TODO(cmq): make SWA block size automatically determined and configurable.
-        self.block_size = DSV4_BLOCK_SIZES[cache_config.block_size][0][1]
+        self.block_size = 128
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
         # TODO(cmq): alignment = 0 if A3 else 128
