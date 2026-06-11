@@ -28,8 +28,6 @@ from vllm.v1.kv_cache_interface import (
 )
 from vllm.v1.request import Request
 
-from vllm_ascend.utils import vllm_version_is
-
 
 class ComputedBlockList(list[KVCacheBlock]):
     """KV blocks plus the logical token length they cover."""
@@ -284,24 +282,18 @@ class CompressAttentionManager(FullAttentionManager):
             alignment_tokens: The cache-hit alignment used by upstream vLLM
                 main. v0.21.0 does not expose this argument in the base class.
         """
-        num_cached_blocks = self.num_cached_block.get(request.request_id, 0)
         compressed_tokens = num_tokens // self.compress_ratio
-        num_full_blocks = compressed_tokens // self.block_size
-        logical_block_size = self.block_size * self.compress_ratio
-
-        if num_cached_blocks < num_full_blocks:
-            # Register keys at logical span on every vLLM version; the base
-            # class registers raw-block keys that the lookup never composes.
-            self.block_pool.cache_full_blocks(
-                request=request,
-                blocks=self.req_to_blocks[request.request_id],
-                num_cached_blocks=num_cached_blocks,
-                num_full_blocks=num_full_blocks,
-                block_size=logical_block_size,
-                kv_cache_group_id=self.kv_cache_group_id,
-            )
-            self.num_cached_block[request.request_id] = num_full_blocks
-
+        # 0.20.2-style short-key convention: the key of the i-th compressed
+        # block is request.block_hashes[i] (the raw 128-token chained hash).
+        # When block_size == hash_block_size the base class uses the raw
+        # chained hashes directly; otherwise both the base class and the
+        # lookup side in find_longest_cache_hit compose them with the same
+        # BlockHashListWithBlockSize(target=self.block_size), so the two
+        # sides always match. A key only attests the first
+        # (i+1)*hash_block_size tokens; the tail block claimed beyond
+        # max_length is backed by the private copy made in
+        # allocate_new_computed_blocks.
+        super().cache_blocks(request, compressed_tokens)
         self._cache_partial_block_boundaries(request, compressed_tokens)
 
     def _cache_partial_block_boundaries(self, request: Request, compressed_tokens: int) -> None:

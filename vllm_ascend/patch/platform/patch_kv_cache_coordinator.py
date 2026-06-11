@@ -227,9 +227,13 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                 if isinstance(spec, FullAttentionSpec) and cached_blocks is not None:
                     # Full attention is downward-closed: we only need to look
                     # up cached blocks once; on subsequent iterations just trim
-                    # to the (reduced) current hit length.
-                    num_blocks = curr_hit_length // effective_block_size
-                    curr_hit_length = num_blocks * effective_block_size
+                    # to the (reduced) current hit length. Trim in raw
+                    # spec.block_size units (times CP factors), NOT the
+                    # compress_ratio-scaled effective size: a 128-aligned
+                    # partial hit (e.g. 8064) must survive the iteration
+                    # instead of collapsing to 0 under a 16K unit.
+                    trim_block_size = spec.block_size * self.dcp_world_size * self.pcp_world_size
+                    curr_hit_length = curr_hit_length // trim_block_size * trim_block_size
                     continue
 
                 use_eagle = idx in self.eagle_attn_group_indices and idx not in eagle_verified
@@ -276,7 +280,14 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         # any prefix cache hit, because `hit_length` of SWA is 0.
         spec, group_ids, _ = self.attention_groups[0]
         if isinstance(spec, FullAttentionSpec):
-            num_blocks = hit_length // self._get_effective_block_size(spec)
+            # Truncate in raw spec.block_size units (times CP factors). For
+            # compressed groups this is an effective no-op: the claimed tail
+            # block must be kept for the private copy in
+            # allocate_new_computed_blocks; cutting it under a
+            # compress_ratio-scaled unit would drop KV the request needs.
+            # Behavior for true full-attn / CP groups is unchanged.
+            trim_block_size = spec.block_size * self.dcp_world_size * self.pcp_world_size
+            num_blocks = hit_length // trim_block_size
             for group_id in group_ids:
                 if (blks := hit_blocks_by_group[group_id]) is not None:
                     del blks[num_blocks:]
@@ -316,6 +327,7 @@ def get_kv_cache_coordinator(
             dcp_world_size=dcp_world_size,
             pcp_world_size=pcp_world_size,
             hash_block_size=hash_block_size,
+            scheduler_block_size=scheduler_block_size,
             eagle_attn_layer_names=eagle_attn_layer_names,
             metrics_collector=metrics_collector,
             max_num_batched_tokens=max_num_batched_tokens,
