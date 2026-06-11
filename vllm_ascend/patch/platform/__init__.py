@@ -48,6 +48,7 @@ import vllm_ascend.patch.platform.patch_balance_schedule  # noqa
 import vllm_ascend.patch.platform.patch_kv_cache_coordinator  # noqa
 
 if envs.VLLM_ASCEND_APPLY_DSV4_PATCH:
+    import vllm_ascend.patch.platform.patch_prefix_cache_core  # noqa
     import vllm_ascend.patch.platform.patch_speculative_config  # noqa
 
 import vllm_ascend.patch.platform.patch_scheduler  # noqa

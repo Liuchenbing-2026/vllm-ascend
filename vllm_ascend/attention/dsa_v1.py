@@ -209,7 +209,9 @@ class AscendDSABackend(AttentionBackend):
     @staticmethod
     def get_supported_kernel_block_sizes() -> list[int]:
         kernel_block_sizes = DeviceOperator.get_dsa_kernel_block_sizes()
-        return kernel_block_sizes
+        # Small-block APC support: merge DSV4_BLOCK_SIZES-mapped sizes with the
+        # device-reported list.
+        return sorted(set(kernel_block_sizes) | {2, 4, 8, 16, 32, 64, 128})
 
 
 @dataclass
