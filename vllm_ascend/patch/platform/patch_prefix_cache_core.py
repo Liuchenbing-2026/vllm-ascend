@@ -19,6 +19,12 @@ from vllm.v1.core.single_type_kv_cache_manager import (
     SingleTypeKVCacheManager,
     SlidingWindowManager,
 )
+from vllm.v1.kv_cache_interface import SlidingWindowSpec
+
+try:
+    from vllm.v1.kv_cache_interface import SlidingWindowMLASpec
+except ImportError:  # pragma: no cover - older vLLM without DSv4 MLA SWA spec
+    SlidingWindowMLASpec = SlidingWindowSpec
 from vllm_ascend.core.single_type_kv_cache_manager import (
     remove_partial_cache_entries_for_block,
 )
@@ -273,40 +279,211 @@ def _patch_remove_skipped_blocks() -> None:
     logger.debug("Patched SingleTypeKVCacheManager.remove_skipped_blocks.")
 
 
-def _patch_sliding_window_mask() -> None:
-    if not hasattr(SlidingWindowManager, "_cache_block_mask"):
+def _patch_cache_full_blocks_mask() -> None:
+    """Add a ``block_mask`` argument to ``BlockPool.cache_full_blocks``.
+
+    The vLLM v0.21.0 base ``cache_full_blocks`` has no ``block_mask`` parameter
+    (vLLM PR #43447 is built on a newer base that already carries it), so the
+    sparse SWA retention mask computed in ``SlidingWindowManager.cache_blocks``
+    would have nowhere to land. This wraps the original so that:
+
+    * ``block_mask is None`` -> the original function is called verbatim, i.e.
+      every full block is cached exactly as before (byte-for-byte safety net for
+      the env-unset / dense path).
+    * ``block_mask`` provided -> blocks whose ``mask[j]`` is ``False`` (``j`` is
+      the 0-based index into ``new_full_blocks``, i.e. the ``blocks`` slice
+      ``[num_cached_blocks:num_full_blocks]``) are temporarily replaced with the
+      null block so the original function's ``is_null`` branch skips them. The
+      ``blocks`` list is restored afterwards so the request's block table is not
+      polluted; masked-out blocks keep ``block_hash is None`` (scratch) and are
+      reclaimed with front-insert priority by the existing free patches.
+    """
+    if "block_mask" in inspect.signature(BlockPool.cache_full_blocks).parameters:
+        return
+    if getattr(BlockPool.cache_full_blocks, "_vllm_ascend_block_mask_patch", False):
         return
 
-    if _source_contains(
-        SlidingWindowManager._cache_block_mask,
-        "use_eagle",
-        "shift = 1 if use_eagle else 0",
+    original_cache_full_blocks = BlockPool.cache_full_blocks
+
+    def cache_full_blocks(
+        self: BlockPool,
+        *,
+        request,
+        blocks: list[KVCacheBlock],
+        num_cached_blocks: int,
+        num_full_blocks: int,
+        block_size: int,
+        kv_cache_group_id: int,
+        block_mask: list[bool] | None = None,
+    ) -> None:
+        if block_mask is None:
+            return original_cache_full_blocks(
+                self,
+                request=request,
+                blocks=blocks,
+                num_cached_blocks=num_cached_blocks,
+                num_full_blocks=num_full_blocks,
+                block_size=block_size,
+                kv_cache_group_id=kv_cache_group_id,
+            )
+
+        # Mask mode: temporarily swap masked blocks for the null block so the
+        # original function's "skip null" branch leaves them uncached, then
+        # restore the request's block list verbatim.
+        saved: list[tuple[int, KVCacheBlock]] = []
+        null_block = self.null_block
+        for j in range(num_full_blocks - num_cached_blocks):
+            if not block_mask[j]:
+                idx = num_cached_blocks + j
+                saved.append((idx, blocks[idx]))
+                blocks[idx] = null_block
+        try:
+            original_cache_full_blocks(
+                self,
+                request=request,
+                blocks=blocks,
+                num_cached_blocks=num_cached_blocks,
+                num_full_blocks=num_full_blocks,
+                block_size=block_size,
+                kv_cache_group_id=kv_cache_group_id,
+            )
+        finally:
+            for idx, blk in saved:
+                blocks[idx] = blk
+
+    cache_full_blocks._vllm_ascend_block_mask_patch = True
+    BlockPool.cache_full_blocks = cache_full_blocks
+    logger.debug("Patched BlockPool.cache_full_blocks(block_mask=...).")
+
+
+def _patch_sliding_window_mask() -> None:
+    """Inject the retention three-state mask onto ``SlidingWindowManager``.
+
+    vLLM v0.21.0's ``SlidingWindowManager`` has neither ``reachable_block_mask``
+    nor ``_contiguous_blocks_for_hit`` (the cache-hit side inlines
+    ``cdiv(sliding_window-1, block_size)`` + EAGLE ``+1``), and the base
+    ``cache_blocks`` takes no retention argument. We therefore inject all three
+    pieces of vLLM PR #43447's algorithm here.
+
+    Deliberate deviation from PR #43447 (see §2c of the design): when
+    ``retention_interval is None`` (env unset) we return ``None`` to keep the
+    prior dense "cache every full block" behavior byte-for-byte, rather than the
+    PR's dense-per-segment sparsification which would tighten the existing SWA
+    hit rate. Only the 0 / >0 states walk the sparse path.
+    """
+    if hasattr(SlidingWindowManager, "reachable_block_mask") and _source_contains(
+        SlidingWindowManager.cache_blocks, "retention_interval"
     ):
         return
 
-    def _cache_block_mask(
-        self: SlidingWindowManager,
-        num_cached_blocks: int,
-        num_full_blocks: int,
-        alignment_tokens: int,
-    ) -> list[bool] | None:
-        assert alignment_tokens > self.block_size
-        per_segment = alignment_tokens // self.block_size
-        tail = cdiv(self.sliding_window - 1, self.block_size)
-        use_eagle = getattr(self, "use_eagle", False)
-        if use_eagle:
-            tail += 1
-        if tail >= per_segment:
-            return None
-        skip = per_segment - tail
-        shift = 1 if use_eagle else 0
-        return [
-            i >= shift and (i - shift) % per_segment >= skip
-            for i in range(num_cached_blocks, num_full_blocks)
-        ]
+    @staticmethod
+    def _contiguous_blocks_for_hit(
+        window_size: int, block_size: int, use_eagle: bool
+    ) -> int:
+        # Mirror find_longest_cache_hit's hit granularity exactly:
+        # cdiv(sliding_window-1, block_size), +1 when EAGLE is enabled. Keeping
+        # this identical to the lookup side avoids cache-vs-hit misalignment.
+        need = cdiv(window_size - 1, block_size)
+        return need + 1 if use_eagle else need
 
-    SlidingWindowManager._cache_block_mask = _cache_block_mask
-    logger.debug("Patched SlidingWindowManager._cache_block_mask.")
+    @classmethod
+    def reachable_block_mask(
+        cls,
+        start_block: int,
+        end_block: int,
+        alignment_tokens: int | None,
+        kv_cache_spec,
+        use_eagle: bool,
+        retention_interval: int | None = None,
+        num_prompt_tokens: int | None = None,
+    ) -> list[bool] | None:
+        assert isinstance(kv_cache_spec, SlidingWindowSpec)
+        # Deviation from PR #43447: env-unset (None) keeps the dense cache-all
+        # path so existing hit behavior is unchanged. cache_full_blocks receives
+        # block_mask=None and runs verbatim.
+        if retention_interval is None:
+            return None
+        if alignment_tokens is None:
+            return None
+        assert alignment_tokens % kv_cache_spec.block_size == 0
+        block_size = kv_cache_spec.block_size
+        need = cls._contiguous_blocks_for_hit(
+            window_size=kv_cache_spec.sliding_window,
+            block_size=block_size,
+            use_eagle=use_eagle,
+        )
+        shift = 1 if use_eagle else 0
+        mask = [False] * (end_block - start_block)
+
+        # retention_interval == 0 -> only the latest replay boundary is kept
+        # (segment tail loop disabled); >0 -> keep one tail per interval segment.
+        segment_tokens = None if retention_interval == 0 else retention_interval
+        if segment_tokens is not None:
+            per_segment = segment_tokens // block_size
+            if need >= per_segment:
+                # The whole segment is within reach; nothing can be dropped, so
+                # fall back to caching everything (dense).
+                return None
+            for i in range(start_block, end_block):
+                if i >= shift and (i - shift) % per_segment >= per_segment - need:
+                    mask[i - start_block] = True
+
+        # Replay tail: always retain the contiguous tail covering the latest
+        # completed prompt boundary so a replay of the prompt still hits. This
+        # only runs when retention is enabled (matches PR #43447: the dense None
+        # path never adds a replay tail).
+        if num_prompt_tokens is not None:
+            latest = (num_prompt_tokens - 1) // alignment_tokens * alignment_tokens
+            prompt_end_block = latest // block_size + shift
+            for i in range(
+                max(start_block, prompt_end_block - need),
+                min(end_block, prompt_end_block),
+            ):
+                mask[i - start_block] = True
+        return mask
+
+    def cache_blocks(
+        self: SlidingWindowManager,
+        request,
+        num_tokens: int,
+        retention_interval: int | None = None,
+    ) -> None:
+        num_cached = self.num_cached_block.get(request.request_id, 0)
+        num_full = num_tokens // self.block_size
+        if num_cached >= num_full:
+            return
+        # The coordinator injects scheduler_block_size / use_eagle onto each
+        # manager; fall back conservatively so pure-SWA (unitary) coordinators
+        # that bypass the Ascend coordinator still behave (dense) correctly.
+        alignment_tokens = getattr(self, "scheduler_block_size", self.block_size)
+        use_eagle = getattr(self, "use_eagle", False)
+        block_mask = self.reachable_block_mask(
+            start_block=num_cached,
+            end_block=num_full,
+            alignment_tokens=alignment_tokens,
+            kv_cache_spec=self.kv_cache_spec,
+            use_eagle=use_eagle,
+            retention_interval=retention_interval,
+            num_prompt_tokens=request.num_prompt_tokens,
+        )
+        self.block_pool.cache_full_blocks(
+            request=request,
+            blocks=self.req_to_blocks[request.request_id],
+            num_cached_blocks=num_cached,
+            num_full_blocks=num_full,
+            block_size=self.block_size,
+            kv_cache_group_id=self.kv_cache_group_id,
+            block_mask=block_mask,
+        )
+        self.num_cached_block[request.request_id] = num_full
+
+    SlidingWindowManager._contiguous_blocks_for_hit = _contiguous_blocks_for_hit
+    SlidingWindowManager.reachable_block_mask = reachable_block_mask
+    SlidingWindowManager.cache_blocks = cache_blocks
+    logger.debug(
+        "Patched SlidingWindowManager.reachable_block_mask / cache_blocks "
+        "(prefix-cache retention)."
+    )
 
 
 def _patch_sliding_window_free() -> None:
@@ -335,6 +512,7 @@ _patch_kv_cache_manager_scheduler_block_size()
 _patch_scheduler_scheduler_block_size()
 _patch_free_queue_prepend()
 _patch_block_pool_free_blocks()
+_patch_cache_full_blocks_mask()
 _patch_partial_prefix_cache_cleanup()
 _patch_scheduler_copy_blocks()
 _patch_remove_skipped_blocks()
