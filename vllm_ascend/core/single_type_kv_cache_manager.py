@@ -172,8 +172,9 @@ class CompressAttentionManager(FullAttentionManager):
 
         if num_cached_blocks >= num_full_blocks:
             return
-        if vllm_version_is("0.21.0"):
-            return super().cache_blocks(request, num_tokens)
+        # NOTE: do NOT delegate to super() here: the base class registers keys
+        # at raw block_size granularity while lookup composes logical
+        # block_size * compress_ratio spans; mismatched keys mean 0% hits.
 
         self.block_pool.cache_full_blocks(
             request=request,
