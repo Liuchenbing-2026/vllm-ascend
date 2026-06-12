@@ -26,7 +26,7 @@ from copy import copy, deepcopy
 from dataclasses import dataclass, replace
 from functools import partial
 from multiprocessing import Manager
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, TypeAlias
 
 import numpy as np
 import torch
@@ -1661,6 +1661,57 @@ class NPUModelRunner(GPUModelRunner):
                 self.draft_token_ids_cpu[:num_reqs] = 0
             self.draft_token_ids_event.record()
 
+    def _copy_prefix_cache_blocks(self, scheduler_output: "SchedulerOutput") -> None:
+        """Materialize DSv4 partial-prefix cache hits by copying the source KV
+        block into the request's private destination block before the model runs.
+
+        This lives in the model runner (rather than a patch) because it needs the
+        runner-owned ``_kv_caches_by_layer`` map from layer name to the on-device
+        KV tensors, and the copy must happen inside ``_update_states`` so the
+        destination blocks are populated before this step's forward pass. It is a
+        no-op for every model except DSv4 with partial prefix caching: when no
+        partial hit was scheduled, ``new_block_ids_to_copy`` is empty and this
+        returns immediately, so it adds no cost to other models or to the
+        long-context decode path.
+        """
+        copy_block_ids = getattr(scheduler_output, "new_block_ids_to_copy", None)
+        if not copy_block_ids:
+            return
+        if not hasattr(self, "_kv_caches_by_layer"):
+            logger.warning("Skip prefix-cache block copy because layer KV caches are not registered.")
+            return
+
+        copies_by_group: dict[int, list[tuple[int, int]]] = defaultdict(list)
+        for group_id, src_block_id, dst_block_id in copy_block_ids:
+            copies_by_group[group_id].append((src_block_id, dst_block_id))
+
+        for group_id, copy_pairs in copies_by_group.items():
+            if group_id >= len(self.kv_cache_config.kv_cache_groups):
+                logger.warning("Skip prefix-cache block copy for invalid group_id=%s.", group_id)
+                continue
+            copied_cache_ids: set[int] = set()
+            for layer_name in self.kv_cache_config.kv_cache_groups[group_id].layer_names:
+                kv_cache = self._kv_caches_by_layer.get(layer_name)
+                if kv_cache is None or id(kv_cache) in copied_cache_ids:
+                    continue
+                copied_cache_ids.add(id(kv_cache))
+                self._copy_prefix_cache_tensor(kv_cache, copy_pairs)
+        logger.debug("Copied DSv4 partial prefix-cache blocks: %s", copy_block_ids)
+
+    def _copy_prefix_cache_tensor(self, kv_cache, copy_pairs: list[tuple[int, int]]) -> None:
+        if torch.is_tensor(kv_cache):
+            src_to_dst = torch.tensor(copy_pairs, dtype=torch.long, device=kv_cache.device)
+            kv_cache[src_to_dst[:, 1]] = kv_cache[src_to_dst[:, 0]]
+            return
+        if isinstance(kv_cache, (list, tuple)):
+            for item in kv_cache:
+                self._copy_prefix_cache_tensor(item, copy_pairs)
+
+    def _update_states(self, scheduler_output: "SchedulerOutput") -> Callable | None:
+        deferred_state_corrections_fn = super()._update_states(scheduler_output)
+        self._copy_prefix_cache_blocks(scheduler_output)
+        return deferred_state_corrections_fn
+
     @torch.inference_mode()
     def execute_model(
         self,
@@ -2184,10 +2235,6 @@ class NPUModelRunner(GPUModelRunner):
 
         with record_function_or_nullcontext("draft_token"):
             if self.speculative_config:
-                input_fits_in_drafter = spec_decode_common_attn_metadata is not None and (
-                    spec_decode_common_attn_metadata.max_seq_len + self.num_spec_tokens
-                    <= self.effective_drafter_max_model_len
-                )
                 use_padded_batch = (
                     self.speculative_config
                     and (
@@ -2201,27 +2248,8 @@ class NPUModelRunner(GPUModelRunner):
                 if use_padded_batch:
                     # EAGLE speculative decoding can use the GPU sampled tokens
                     # as inputs, and does not need to wait for bookkeeping to finish.
-                    sampled_token_ids = sampler_output.sampled_token_ids
-                    if input_fits_in_drafter:
-                        propose_draft_token_ids(sampler_output.sampled_token_ids)
-                    elif self.valid_sampled_token_count_event is not None:
-                        assert spec_decode_common_attn_metadata is not None
-                        if self.drafter is not None: # Fix mypy type check for drafter None check
-                            next_token_ids, valid_sampled_tokens_count = self.drafter.prepare_next_token_ids_padded(
-                                    sampled_token_ids,
-                                    self.requests,
-                                    self.input_batch,
-                                    self.discard_request_indices.gpu,
-                                    self.num_discarded_requests,
-                                )
-                            self._copy_valid_sampled_token_count(
-                                next_token_ids, valid_sampled_tokens_count
-                            )
-                            self._draft_token_ids = torch.zeros(
-                                1, device=self.device, dtype=torch.int32
-                            ).expand(len(self.input_batch.req_ids), self.num_spec_tokens)
-                            self._copy_draft_token_ids_to_cpu(scheduler_output, zeros_only=True)
-                if self.speculative_config and not use_padded_batch and input_fits_in_drafter:
+                    propose_draft_token_ids(sampler_output.sampled_token_ids)
+                if self.speculative_config and not use_padded_batch:
                     # ngram and other speculative decoding methods use the sampled
                     # tokens on the CPU, so they are run after bookkeeping.
                     propose_draft_token_ids(valid_sampled_token_ids)
@@ -3558,6 +3586,7 @@ class NPUModelRunner(GPUModelRunner):
                 kvcomp_meta_data=self.kvcomp_meta_data
             )
 
+        self._kv_caches_by_layer = kv_caches
         return kv_caches
 
     def _get_layer_kv_cache_specs(self, kv_cache_config: KVCacheConfig) -> dict[str, KVCacheSpec]:

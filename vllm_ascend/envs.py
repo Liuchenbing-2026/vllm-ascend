@@ -114,6 +114,17 @@ env_variables: dict[str, Callable[[], Any]] = {
     "VLLM_ASCEND_ENABLE_BATCH_MEMCPY": lambda: os.getenv("VLLM_ASCEND_ENABLE_BATCH_MEMCPY", None),
     # Whether to use MultiBlockPool for KV cache management
     "VLLM_ASCEND_APPLY_DSV4_PATCH": lambda: bool(int(os.getenv("VLLM_ASCEND_APPLY_DSV4_PATCH", "0"))),
+    # Retain sparse sliding-window KV checkpoints for prefix caching.
+    # Unset (None, default): dense local checkpointing (current behavior, byte-for-byte).
+    # 0: keep only the latest completed prompt (replay) boundary.
+    # >0: keep one tail per interval-sized segment (must be a multiple of
+    #     scheduler_block_size). Applies to SWA only, not Mamba/linear attn.
+    "VLLM_ASCEND_PREFIX_CACHE_RETENTION_INTERVAL": lambda: (
+        None
+        if os.getenv("VLLM_ASCEND_PREFIX_CACHE_RETENTION_INTERVAL") is None
+        or os.getenv("VLLM_ASCEND_PREFIX_CACHE_RETENTION_INTERVAL", "").lower() == "auto"
+        else int(os.environ["VLLM_ASCEND_PREFIX_CACHE_RETENTION_INTERVAL"])
+    ),
 }
 
 # end-env-vars-definition
