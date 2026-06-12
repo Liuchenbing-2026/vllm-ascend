@@ -219,6 +219,25 @@
 #       Remove this patch once upstream vLLM supports hybrid KV cache + CP for
 #       non-CUDA backends, or exposes a platform hook for this behavior.
 #
+# ** 10b. File: platform/patch_prefix_cache_core.py**
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.v1.core.block_pool.BlockPool._maybe_evict_cached_block`
+#   2. `vllm.v1.core.sched.scheduler.Scheduler.schedule`
+#    Why:
+#       DSv4 partial compressed prefix cache needs two vllm-ascend-side hooks
+#       that vLLM does not provide upstream: (1) drop per-BlockPool partial-
+#       cache map entries when a block is evicted, (2) forward partial-hit copy
+#       block ids from Scheduler to model runner via scheduler_output.
+#    How:
+#       When `VLLM_ASCEND_APPLY_DSV4_PATCH` is enabled, monkey-patch BlockPool
+#       eviction and Scheduler.schedule. Both patches are idempotent.
+#    Related PR (if no, explain why):
+#       None — vllm-ascend-only DSv4 partial prefix-cache hooks. PR #43447
+#       block-reuse APIs are assumed to already be present in vLLM.
+#    Future Plan:
+#       Fold into upstream vllm-ascend AscendScheduler / coordinator when those
+#       paths land.
+#
 # ** 10. File: platform/patch_kv_cache_interface.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.v1.kv_cache_interface.MLAAttentionSpec`
