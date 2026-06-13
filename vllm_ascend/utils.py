@@ -1302,6 +1302,9 @@ def get_flashcomm2_reorgnized_batch_ids(global_tp_size) -> list[list[int]]:
     return reorgnized_batch_ids
 
 
+_ENIGINE_CORE_BLOCK_SIZE = None
+
+
 def refresh_block_size(vllm_config):
     """
     Refresh the block size in cache config.
@@ -1317,8 +1320,27 @@ def refresh_block_size(vllm_config):
         cache_config.block_size = 128
 
     if model_config.hf_config.model_type == "deepseek_v4":
-        # TODO(qcs): generalize the block_size
-        cache_config.block_size = 128
+        # Keep the engine-core requested block size. In DSv4, vLLM may later
+        # reduce cache_config.block_size to the minimum among KV cache groups;
+        # using that reduced value as the global scheduler block size breaks
+        # hybrid KV cache alignment.
+        global _ENIGINE_CORE_BLOCK_SIZE
+
+        if _ENIGINE_CORE_BLOCK_SIZE is not None:
+            cache_config.block_size = _ENIGINE_CORE_BLOCK_SIZE
+            return
+
+        if cache_config.block_size is None:
+            cache_config.block_size = 32
+        elif cache_config.block_size not in [32, 64, 128]:
+            logger.warning(
+                "For deepseek_v4 model, block size should be 32, 64 or 128. "
+                "Setting block size to 32 for better performance."
+            )
+            cache_config.block_size = 32
+
+        _ENIGINE_CORE_BLOCK_SIZE = cache_config.block_size
+        return
 
     if not scheduler_config or not model_config:
         return

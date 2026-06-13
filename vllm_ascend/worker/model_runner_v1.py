@@ -122,6 +122,7 @@ from vllm_ascend.eplb.core.eplb_device_transfer_loader import D2DExpertWeightLoa
 from vllm_ascend.eplb.core.eplb_worker import EplbProcess
 from vllm_ascend.eplb.eplb_updator import EplbUpdator
 from vllm_ascend.eplb.utils import model_register
+from vllm_ascend.models.layer.attention.layer import DSV4_BLOCK_SIZES
 from vllm_ascend.ops.rotary_embedding import set_cos_and_sin, update_cos_sin
 from vllm_ascend.patch.worker.patch_draft_quarot import patch_load_weights
 from vllm_ascend.quantization.utils import enable_fa_quant
@@ -220,6 +221,22 @@ def graph_capture(device: torch.device):
 
     with torch.npu.stream(stream), maybe_ca_context:
         yield graph_capture_context
+
+
+def _is_deepseek_v4_model(model_config) -> bool:
+    hf_config = getattr(model_config, "hf_config", None)
+    return (
+        getattr(hf_config, "model_type", None) == "deepseek_v4"
+        or type(hf_config).__name__ == "DeepseekV4Config"
+    )
+
+
+def _is_dsv4_compressor_state_block(model_config, cache_block_size: int, spec_block_size: int) -> bool:
+    if not _is_deepseek_v4_model(model_config):
+        return False
+    if cache_block_size not in DSV4_BLOCK_SIZES:
+        return False
+    return spec_block_size in set(DSV4_BLOCK_SIZES[cache_block_size][0][2:])
 
 
 def get_tp_context(drafter):
@@ -4131,6 +4148,13 @@ class NPUModelRunner(GPUModelRunner):
                 attn_groups = self.attn_groups[kv_cache_group_id]
                 backends = [attn_group.backend for attn_group in attn_groups]
                 kv_manager_block_size = kv_cache_group.kv_cache_spec.block_size
+                if _is_dsv4_compressor_state_block(
+                    self.model_config,
+                    self.cache_config.block_size,
+                    kv_manager_block_size,
+                ):
+                    self.kernel_block_sizes.append([0])
+                    continue
                 selected_kernel_size = select_common_block_size(
                     kv_manager_block_size, backends
                 )
