@@ -245,6 +245,94 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         return tuple(blocks if blocks is not None else [] for blocks in hit_blocks_by_group), hit_length
 
 
+class AscendUnitaryKVCacheCoordinator(KVCacheCoordinator):
+    """
+    KV cache coordinator for models with only one KV cache group.
+
+    This mirrors vLLM's UnitaryKVCacheCoordinator but keeps the Ascend
+    single-type manager factory, which is required for compressed MLA cache
+    accounting and admission caps.
+    """
+
+    def __init__(
+        self,
+        kv_cache_config: KVCacheConfig,
+        max_model_len: int,
+        max_num_batched_tokens: int,
+        use_eagle: bool,
+        enable_caching: bool,
+        enable_kv_cache_events: bool,
+        dcp_world_size: int,
+        pcp_world_size: int,
+        hash_block_size: int,
+        metrics_collector: KVCacheMetricsCollector | None = None,
+    ):
+        self.kv_cache_config = kv_cache_config
+        self.max_model_len = max_model_len
+        self.enable_caching = enable_caching
+        self.max_num_batched_tokens = max_num_batched_tokens
+
+        self.block_pool = BlockPool(
+            kv_cache_config.num_blocks,
+            enable_caching,
+            hash_block_size,
+            enable_kv_cache_events,
+            metrics_collector,
+        )
+
+        self.eagle_group_ids: set[int] = {i for i, g in enumerate(kv_cache_config.kv_cache_groups) if g.is_eagle_group}
+        if use_eagle and not self.eagle_group_ids:
+            self.eagle_group_ids = set(range(len(kv_cache_config.kv_cache_groups)))
+
+        self.single_type_managers = tuple(
+            get_manager_for_kv_cache_spec(
+                kv_cache_spec=kv_cache_group.kv_cache_spec,
+                block_pool=self.block_pool,
+                enable_caching=enable_caching,
+                kv_cache_group_id=i,
+                dcp_world_size=dcp_world_size,
+                pcp_world_size=pcp_world_size,
+                max_num_batched_tokens=max_num_batched_tokens,
+                max_model_len=max_model_len,
+            )
+            for i, kv_cache_group in enumerate(self.kv_cache_config.kv_cache_groups)
+        )
+
+        assert len(self.kv_cache_config.kv_cache_groups) == 1, (
+            "AscendUnitaryKVCacheCoordinator assumes only one kv cache group"
+        )
+        self.kv_cache_spec = self.kv_cache_config.kv_cache_groups[0].kv_cache_spec
+        self.block_size = self.kv_cache_spec.block_size
+        self.dcp_world_size = dcp_world_size
+        self.pcp_world_size = pcp_world_size
+        if dcp_world_size > 1:
+            self.block_size *= dcp_world_size
+        if pcp_world_size > 1:
+            self.block_size *= pcp_world_size
+        assert not enable_caching or (hash_block_size == self.block_size), (
+            "AscendUnitaryKVCacheCoordinator assumes hash_block_size == block_size"
+        )
+        self.cache_hit_block_size = self.block_size * max(getattr(self.kv_cache_spec, "compress_ratio", 1), 1)
+
+    def find_longest_cache_hit(
+        self,
+        block_hashes: list[BlockHash],
+        max_cache_hit_length: int,
+    ) -> tuple[tuple[list[KVCacheBlock], ...], int]:
+        hit_blocks = self.single_type_managers[0].find_longest_cache_hit(
+            block_hashes=block_hashes,
+            max_length=max_cache_hit_length,
+            kv_cache_group_ids=[0],
+            block_pool=self.block_pool,
+            kv_cache_spec=self.kv_cache_spec,
+            use_eagle=0 in self.eagle_group_ids,
+            alignment_tokens=self.cache_hit_block_size,
+            dcp_world_size=self.dcp_world_size,
+            pcp_world_size=self.pcp_world_size,
+        )
+        return hit_blocks, len(hit_blocks[0]) * self.cache_hit_block_size
+
+
 def get_kv_cache_coordinator(
     kv_cache_config: KVCacheConfig,
     max_model_len: int,
@@ -258,6 +346,19 @@ def get_kv_cache_coordinator(
     eagle_attn_layer_names: list[str] | None = None,
     metrics_collector: KVCacheMetricsCollector | None = None,
 ) -> KVCacheCoordinator:
+    if len(kv_cache_config.kv_cache_groups) == 1:
+        return AscendUnitaryKVCacheCoordinator(
+            kv_cache_config,
+            max_model_len,
+            max_num_batched_tokens,
+            use_eagle,
+            enable_caching,
+            enable_kv_cache_events,
+            dcp_world_size=dcp_world_size,
+            pcp_world_size=pcp_world_size,
+            hash_block_size=hash_block_size,
+            metrics_collector=metrics_collector,
+        )
     return AscendHybridKVCacheCoordinator(
         kv_cache_config,
         max_model_len,
