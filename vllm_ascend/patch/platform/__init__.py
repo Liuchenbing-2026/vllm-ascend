@@ -33,6 +33,9 @@ import vllm_ascend.patch.platform.patch_glm_tool_call_streaming  # noqa
 import vllm_ascend.patch.platform.patch_glm47_tool_call_parser  # noqa
 import vllm_ascend.patch.platform.patch_anthropic_system_message  # noqa
 import vllm_ascend.patch.platform.patch_minimax_m2_tool_call_parser  # noqa
+import vllm_ascend.patch.platform.patch_minimax_m3_config  # noqa
+import vllm_ascend.patch.platform.patch_minimax_m3_attn_backend  # noqa
+import vllm_ascend.patch.platform.patch_minimax_m3_tool_call_parser  # noqa
 import vllm_ascend.patch.platform.patch_deepseek_v4_tool_call_parser  # noqa
 import vllm_ascend.patch.platform.patch_deepseek_v4_thinking  # noqa
 import vllm_ascend.patch.platform.patch_torch_accelerator  # noqa

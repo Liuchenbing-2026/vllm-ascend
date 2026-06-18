@@ -15,6 +15,7 @@
 # This file is a part of the vllm-ascend project.
 
 
+import os
 import torch
 import torch_npu
 from torch.nn.functional import pad
@@ -141,12 +142,28 @@ def quant_apply_mlp(
         quantized_hidden_states = hidden_states
 
     bias1, bias2 = None, None
+    if os.environ.get("MM3_SWIGLUOAI") and (w1_offset is None) and (w1_scale_bias is None) and (not use_mxfp_quant):
+        # MiniMax-M3: int8 routed experts need swigluoai, but the fused quant MoE
+        # kernels only do (clamped) silu. Force the non-fused GMM1 -> dequant_swiglu_quant
+        # (which supports glu_alpha / glu_bias / clamp_limit) -> GMM2 path.
+        _alpha=float(os.environ.get("MM3_ALPHA","1.702")); _gbias=float(os.environ.get("MM3_BIAS","1.0"))
+        _lim=float(os.environ.get("MM3_LIM", str(swiglu_limit) if swiglu_limit else "7.0")); _mode=int(os.environ.get("MM3_SWMODE","1"))
+        _w1s = w1_scale[0] if isinstance(w1_scale, list) else w1_scale
+        if _w1s.dtype != torch.float32: _w1s = _w1s.to(torch.float32)
+        _hs = torch_npu.npu_grouped_matmul(x=[hidden_states], weight=w1, split_item=3, group_list_type=group_list_type, group_type=0, group_list=group_list, output_dtype=torch.int32)[0]
+        _hs, _ssc = torch.ops._C_ascend.npu_dequant_swiglu_quant(x=_hs, weight_scale=_w1s, activation_scale=pertoken_scale, bias=None, quant_scale=None, quant_offset=None, group_index=cumsum_group_list(group_list, group_list_type, 1), activate_left=True, quant_mode=1, swiglu_mode=_mode, clamp_limit=_lim, glu_alpha=_alpha, glu_bias=_gbias)
+        _b4gmm2 = torch.npu.current_stream().record_event()
+        _mlpout = DeviceOperator.npu_grouped_matmul_gmm2(hidden_states=_hs, weight=w2, weight_scale=w2_scale, per_token_scale=_ssc, group_list=group_list, group_list_type=group_list_type, input_dtype=input_hidden_dtype, act_quant_type=act_quant_type, weight_quant_type=weight_quant_type, scale_type=scale_type, per_token_scale_type=per_token_scale_type, use_bf16=use_bf16, use_mxfp_quant=use_mxfp_quant, bias=None, fallback_output_dtype=(w2_scale[0].dtype if isinstance(w2_scale, list) else w2_scale.dtype), mxfp_quant_dtype=mxfp_quant_dtype)
+        return _mlpout, _b4gmm2
     _output_dtype = w2_scale[0].dtype if isinstance(w2_scale, list) else w2_scale.dtype
 
     weight_prefetch_method = get_weight_prefetch_method()
     if weight_prefetch_method:
         weight_prefetch_method.maybe_prefetch_moe_weight_postprocess(hidden_states)
     is_mc2 = _EXTRA_CTX.moe_comm_type == MoECommType.MC2
+    if os.environ.get('MM3_SWIGLUOAI') and not getattr(quant_apply_mlp,'_dbg',False):
+        print(f'[MM3MLP] is_mc2={is_mc2} w1off_none={w1_offset is None} wsb_none={w1_scale_bias is None} fusion={fusion} usefus={use_gmm_swiglu_quant_fusion} mxfp={use_mxfp_quant} w4a8pc={use_w4a8_per_channel_gmm_swiglu} custom={_custom_gmm_swiglu_enabled(fusion,dynamic_eplb)} slim={swiglu_limit} dynscale_none={dynamic_scale is None}',flush=True)
+        quant_apply_mlp._dbg=True
     if w1_scale_bias is None and w1_offset is None and is_mc2:
         if _custom_gmm_swiglu_enabled(fusion, dynamic_eplb) and not use_mxfp_quant:
             # gmm1: gate_up_proj & act_fn: swiglu
