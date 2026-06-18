@@ -209,6 +209,24 @@ packed_modules_model_mapping: dict[str, dict[str, list[str]]] = {
         ],
         "experts": ["experts.0.w1", "experts.0.w2", "experts.0.w3"],
     },
+    # MiniMax-M3 (text decoder is minimax_m3, VL wrapper is minimax_m3_vl).
+    # Checkpoint uses the SAME `block_sparse_moe` + w1/w2/w3 expert naming as m2.
+    # NOTE: unlike m2, the vllm-ascend M3 model keeps q/k/v as SEPARATE linears
+    # (no fused qkv_proj), so qkv_proj is intentionally omitted here. The dense
+    # MLP and shared experts use a fused gate_up_proj.
+    # TODO(verify): confirm the quant_model_description.json expert keys are
+    # block_sparse_moe.experts.N.{w1,w2,w3} (they are, per safetensors headers),
+    # and that the `language_model.` VL prefix is handled by quant_prefix_mapper.
+    "minimax_m3": {
+        "qkv_proj": ["q_proj", "k_proj", "v_proj"],
+        "gate_up_proj": ["gate_proj", "up_proj"],
+        "experts": ["experts.0.w1", "experts.0.w2", "experts.0.w3"],
+    },
+    "minimax_m3_vl": {
+        "qkv_proj": ["q_proj", "k_proj", "v_proj"],
+        "gate_up_proj": ["gate_proj", "up_proj"],
+        "experts": ["experts.0.w1", "experts.0.w2", "experts.0.w3"],
+    },
     "qwen3_omni_moe": {
         "qkv_proj": [
             "q_proj",
@@ -265,6 +283,18 @@ QUANT_MODEL_PREFIX_MAPPINGS = {
         "embed.": "model.embed_tokens.",
         "head.": "lm_head.",
     },
+    # MiniMax-M3: text model builds layers under `model.*` (VL prefix stripped for
+    # text-only), but quant_model_description.json keys carry the VL wrapper
+    # prefix `language_model.model.*`. Map model prefix -> json key prefix so the
+    # quant-type lookup (e.g. model.embed_tokens.weight) resolves. lm_head is
+    # already handled by the lm_head special-case in quant_prefix_mapper; experts
+    # (w1/w2/w3) by packed_modules_model_mapping["minimax_m3*"].
+    "minimax_m3": {
+        "model.": "language_model.model.",
+    },
+    "minimax_m3_vl": {
+        "model.": "language_model.model.",
+    },
 }
 
 
@@ -278,6 +308,13 @@ QUANT_MODEL_SUBSTR_MAPPINGS = {
         ".ffn_norm.": ".post_attention_layernorm.",
         ".attn_norm.": ".input_layernorm.",
     },
+    # MiniMax-M3: only a prefix remap (model.->language_model.model.) is needed;
+    # module names already match the json (self_attn / q_proj / experts.N.w{1,2,3}
+    # via packed_modules_model_mapping). An EMPTY substr map is REQUIRED (not
+    # absent) because WeightsMapper._map_name iterates orig_to_new_substr.items()
+    # and crashes on None when a prefix mapping exists without a substr mapping.
+    "minimax_m3": {},
+    "minimax_m3_vl": {},
 }
 
 
@@ -520,16 +557,37 @@ class AscendModelSlimConfig(QuantizationConfig):
         vllm_config = get_current_vllm_config()
         model_type = vllm_config.model_config.hf_config.model_type
 
-        if model_type in ["minimax", "minimax_m2"]:
-            # Adapt to Minimax architecture: update layer names to MoE convention
-            prefix = prefix.replace("mlp", "block_sparse_moe")
-            # Normalize the prefix by stripping specific expert indices (e.g., 'experts.0' -> 'experts')
-            parts = prefix.split(".")
-            if "experts" in parts and len(parts) > 2:
-                exp_idx = parts.index("experts")
-                if exp_idx + 1 < len(parts) and parts[exp_idx + 1].isdigit():
-                    parts = parts[: exp_idx + 1]
-                    prefix = ".".join(parts)
+        if model_type in ["minimax", "minimax_m2", "minimax_m3", "minimax_m3_vl"]:
+            # Adapt to Minimax architecture: update layer names to MoE convention.
+            # MiniMax-M3 has leading DENSE layers (moe_layer_freq[i]==0) whose MLP
+            # is named 'mlp' in the checkpoint, plus MoE layers named
+            # 'block_sparse_moe'. Only rename 'mlp'->'block_sparse_moe' for real
+            # MoE layers; dense layers keep 'mlp'. (minimax/m2 are all-MoE.)
+            do_moe_rename = True
+            if model_type in ["minimax_m3", "minimax_m3_vl"] and ".layers." in prefix:
+                try:
+                    li = int(prefix.split(".layers.")[1].split(".")[0])
+                    tcfg = getattr(
+                        vllm_config.model_config.hf_config,
+                        "text_config",
+                        vllm_config.model_config.hf_config,
+                    )
+                    freq = getattr(tcfg, "moe_layer_freq", None)
+                    if isinstance(freq, (list, tuple)) and li < len(freq):
+                        do_moe_rename = bool(freq[li])
+                    else:
+                        do_moe_rename = li >= int(getattr(tcfg, "first_k_dense_replace", 3))
+                except (ValueError, IndexError):
+                    do_moe_rename = True
+            if do_moe_rename:
+                prefix = prefix.replace("mlp", "block_sparse_moe")
+                # Normalize the prefix by stripping specific expert indices (e.g., 'experts.0' -> 'experts')
+                parts = prefix.split(".")
+                if "experts" in parts and len(parts) > 2:
+                    exp_idx = parts.index("experts")
+                    if exp_idx + 1 < len(parts) and parts[exp_idx + 1].isdigit():
+                        parts = parts[: exp_idx + 1]
+                        prefix = ".".join(parts)
 
         if model_type in ["bailing_hybrid"]:
             # Adapt to bailing_hybrid architecture: update layer names to MoE convention
