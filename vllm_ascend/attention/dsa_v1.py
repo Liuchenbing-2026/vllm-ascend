@@ -1322,6 +1322,17 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
             has_cmp_kv=False,
         )
 
+        # MTP FullGraph fix (P0): sas_metadata must live at a per-draft-step FIXED
+        # address — mirror step-0 (build_decode_metadata binds self.decode_sas_metadata,
+        # refreshed in-place). The raw metadata_op output above is freshly allocated each
+        # iteration, so under FULL cudagraph the captured attn op reads a stale descriptor
+        # at replay. Give each draft_step its own persistent buffer, refreshed in-place.
+        if not hasattr(self, "decode_sas_metadata_draft"):
+            self.decode_sas_metadata_draft: dict[int, torch.Tensor] = {}
+        if draft_step not in self.decode_sas_metadata_draft:
+            self.decode_sas_metadata_draft[draft_step] = torch.empty_like(self.decode_sas_metadata)
+        self.decode_sas_metadata_draft[draft_step][:1024] = decode_sas_metadata
+
         decode_metadata = AscendDSADecodeMetadata(
             input_positions=None,
             block_table=block_table[:num_decodes, ...],
@@ -1341,7 +1352,7 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
             cp_seq_len=None,
             batch_seq_mask=None,
             start_pos=None,
-            sas_metadata=decode_sas_metadata,
+            sas_metadata=self.decode_sas_metadata_draft[draft_step],
             qli_metadata=None,
         )
         return decode_metadata
