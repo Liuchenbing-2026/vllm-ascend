@@ -558,6 +558,13 @@ class MiniMaxM3Attention(nn.Module):
             self.index_k_norm = GemmaRMSNorm(index_dim, eps=rms_norm_eps)
             self._msa_nih = int(num_index_heads)
             self._msa_idim = int(index_dim)
+            # FULL-cudagraph: size idxk side cache to the REAL num_gpu_blocks.
+            # cache_config is mutated IN-PLACE by vllm after memory profiling;
+            # stash it so _ensure_idxk_cache reads the real block count at the
+            # warmup forward (eager, pre-capture) instead of a 1-block dummy.
+            _impl = getattr(self.attn, "impl", None)
+            if _impl is not None:
+                _impl._cache_config = cache_config
         else:
             self.index_q_proj = None
             self.index_k_proj = None
@@ -610,6 +617,7 @@ class MiniMaxM3Attention(nn.Module):
             if _impl is not None:
                 _impl._msa_iq = _iq
                 _impl._msa_ik = _ik
+                _impl._msa_positions = positions
         attn_output = self.attn(q, k, v)
         output, _ = self.o_proj(attn_output)
         return output

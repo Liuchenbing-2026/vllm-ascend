@@ -209,6 +209,10 @@ class AscendMetadata:
 
     kvcomp_metadata: KVCompMetaData | None = None
 
+    # Device (persistent, in-place-updated graph buffer) seq_lens for the M3 MSA
+    # selection op. attn_metadata.seq_lens may be CPU; this is common_attn_metadata.seq_lens.
+    seq_lens_gpu: torch.Tensor = None
+
 
 class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
     """
@@ -328,6 +332,7 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
             causal=common_attn_metadata.causal,
             model_runner_type=self.model_config.runner_type,
             kvcomp_metadata=common_attn_metadata.kvcomp_metadata,
+            seq_lens_gpu=common_attn_metadata.seq_lens,
         )
         return attn_metadata
 

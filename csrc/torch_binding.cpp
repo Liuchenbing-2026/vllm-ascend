@@ -630,6 +630,28 @@ at::Tensor npu_hamming_dist_top_k(const at::Tensor &hashq,
     return out;
 }
 
+at::Tensor msa_dist_top_k(const at::Tensor &index_q,
+                          const at::Tensor &index_k_cache,
+                          const at::Tensor &seq_len,
+                          const at::Tensor &block_table,
+                          const at::Tensor &indices_in,
+                          const c10::optional<int64_t> block_size,
+                          const c10::optional<int64_t> topk,
+                          const c10::optional<int64_t> local_blocks,
+                          const c10::optional<int64_t> init_blocks)
+{
+    auto &&block_size_   = block_size.value_or(128);
+    auto &&topk_         = topk.value_or(16);
+    auto &&local_blocks_ = local_blocks.value_or(1);
+    auto &&init_blocks_  = init_blocks.value_or(0);
+    // In-place persistent-buffer pattern (mirror hamming): out aliases indices_in so its
+    // data_ptr is stable across ACL-graph capture and every replay.
+    at::Tensor out = indices_in;
+    EXEC_NPU_CMD(aclnnMsaDistTopK, index_q, index_k_cache, seq_len, block_table, indices_in,
+                 block_size_, topk_, local_blocks_, init_blocks_, out);
+    return out;
+}
+
 at::Tensor npu_reshape_and_cache_bnsd(const at::Tensor& hashq,
                                            const at::Tensor& hashkCache,
                                            const at::Tensor& slotMapping,
@@ -2378,6 +2400,13 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "                      Tensor? key_block_table=None, Tensor? mask=None, Tensor? indices=None) -> Tensor"
     );
     ops.impl("npu_hamming_dist_top_k", torch::kPrivateUse1, &vllm_ascend::npu_hamming_dist_top_k);
+    ops.def(
+        "msa_dist_top_k(Tensor index_q, Tensor index_k_cache, Tensor seq_len, Tensor block_table, "
+        "               Tensor indices_in, int? block_size=128, int? topk=16, int? local_blocks=1, "
+        "               int? init_blocks=0) -> Tensor"
+    );
+    ops.impl("msa_dist_top_k", torch::kPrivateUse1, &vllm_ascend::msa_dist_top_k);
+
 
     ops.def(
         "npu_reshape_and_cache_bnsd(Tensor q, Tensor k_comp, Tensor slot_mapping, Tensor seq_len, Tensor k_out) -> Tensor"

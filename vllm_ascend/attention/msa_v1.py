@@ -41,21 +41,57 @@ class AscendMSAImpl(AscendAttentionBackendImpl):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._idxk_cache = None          # [num_blocks, block_size, idx_dim]
-        self._ic_step = 0                # decode step counter (IndexCache)
-        self._ic_sel = None              # cached per-seq selected block ids: list[list[set]]
+        self._ic_step = 0                # decode step counter (IndexCache, legacy)
+        self._ic_sel = None              # legacy per-seq selection (unused by vec path)
+        self._ic_cache = {}              # IndexCache(vec): key(block0)->(topk_idx[G,K], sel_seq_len)
+        self._ic_logged = False
         if not AscendMSAImpl._ann:
             sys.stderr.write(f"[MSA] AscendMSAImpl ACTIVE (M3b: prefill+decode sparse, FREQ={_FREQ})\n")
             sys.stderr.flush()
             AscendMSAImpl._ann = True
 
     def _ensure_idxk_cache(self, kv_cache, idx_dim, device, dtype):
-        if self._idxk_cache is None:
-            kc = kv_cache[0]
-            num_blocks, block_size = kc.shape[0], kc.shape[1]
-            self._idxk_cache = torch.zeros(num_blocks, block_size, idx_dim, device=device, dtype=dtype)
+        kc = kv_cache[0]
+        block_size = kc.shape[1]
+        # idxk side cache must cover the REAL num_gpu_blocks. Under FULL cudagraph the
+        # kv_cache passed at capture is a 1-block dummy (vllm swaps the real paged cache
+        # in only at replay and does NOT manage our side tensor); sizing from kc.shape[0]
+        # gives 1 block -> slot=block_id*block_size overruns -> MTE OOB. Allocate a fixed
+        # generous block count (>= real num_gpu_blocks) once.
+        # Size to the REAL num_gpu_blocks (cache_config mutated in-place after
+        # profiling). Profiling forward: num_gpu_blocks is None -> 1-block dummy
+        # (no profiling-peak inflation -> no startup OOM). Warmup forward (eager,
+        # pre-capture): real count -> allocate the persistent buffer ONCE so the
+        # FULL graph captures/replays a stable, correctly-sized side cache.
+        _ng = None
+        _cc = getattr(self, "_cache_config", None)
+        if _cc is not None:
+            _ng = getattr(_cc, "num_gpu_blocks", None)
+        _ov = os.environ.get("MM3_IDXK_NUM_BLOCKS")
+        if _ov:
+            num_blocks = max(kc.shape[0], int(_ov))
+        elif _ng:
+            num_blocks = max(kc.shape[0], int(_ng))
+        else:
+            num_blocks = kc.shape[0]
+        if self._idxk_cache is None or self._idxk_cache.shape[0] < num_blocks:
+            # 4D ND [num_blocks, block_size, num_kv_heads=1, idx_dim] so the graph-safe
+            # paged writer _npu_reshape_and_cache accepts it (a bare 3D cache OOBs:
+            # 0x3000035). N=1 makes it byte-identical to the old 3D layout, so the
+            # kernel (flat GM pointer) and all .view/.reshape readers are unaffected.
+            # BNSD [num_blocks, num_kv_heads=1, block_size, idx_dim] for the graph-safe
+            # aclnn writer npu_reshape_and_cache_bnsd. ATB reshape_and_cache is NOT
+            # ACL-graph capturable (OperationSetup fails at replay -> 507000). N=1 keeps
+            # this byte-identical to the prior layout so kernel/.view/.reshape readers
+            # are unaffected; only the declared shape changes for the bnsd op.
+            self._idxk_cache = torch.zeros(num_blocks, 1, block_size, idx_dim, device=device, dtype=dtype)
+            self._idxk_vcache = None
 
     def forward(self, layer, query, key, value, kv_cache, attn_metadata,
                 output=None, output_scale=None, output_block_scale=None):
+        if os.environ.get("MM3_MSA_BYPASS", "0") == "1":
+            return super().forward(layer, query, key, value, kv_cache, attn_metadata,
+                                   output, output_scale, output_block_scale)
         iq = getattr(self, "_msa_iq", None)
         ik = getattr(self, "_msa_ik", None)
         self._msa_iq = None
@@ -80,9 +116,37 @@ class AscendMSAImpl(AscendAttentionBackendImpl):
             idx_dim = ik.shape[-1]
             self._ensure_idxk_cache(kv_cache, idx_dim, ik.device, ik.dtype)
             slot = attn_metadata.slot_mapping
-            nt = slot.shape[0]
-            # write index_k of current tokens into the side cache (prefill+decode)
-            self._idxk_cache.view(-1, idx_dim)[slot[:nt]] = ik[:nt, 0, :].to(self._idxk_cache.dtype)
+            nt = attn_metadata.num_actual_tokens
+            if not getattr(AscendMSAImpl, "_racdbg", False):
+                AscendMSAImpl._racdbg = True
+                try:
+                    sys.stderr.write(f"[MSA-DBG] kc={tuple(kv_cache[0].shape)} idxk={tuple(self._idxk_cache.shape)} ik={tuple(ik.shape)} slot={tuple(slot.shape)}/{slot.dtype} nt={nt} idx_dim={idx_dim}\n"); sys.stderr.flush()
+                except Exception as _e:
+                    sys.stderr.write(f"[MSA-DBG] err {_e}\n"); sys.stderr.flush()
+            # write index_k of current tokens into the side cache (prefill+decode) via the
+            # graph-safe paged-cache writer (same primitive as the main KV cache). Raw
+            # advanced-index assignment and index_copy_/ScatterUpdate are NOT cudagraph-safe
+            # (MTE OOB on FULL-graph replay); _npu_reshape_and_cache is. idxk is key-only so
+            # key==value and key_cache==value_cache (idempotent double write).
+            if os.environ.get("MM3_SKIP_IDXK_WRITE", "0") != "1":
+                # graph-safe aclnn side-cache write (kvcomp's proven primitive). seq_len
+                # = per-request query-token count (decode -> all ones, constant across
+                # steps so replay-safe). idxk is key-only: q==k_out single cache.
+                _ndt = getattr(attn_metadata, "num_decode_tokens", 0) or 0
+                if _ndt == nt and _ndt > 0:
+                    # pure decode: exactly 1 query token per request, so per-request
+                    # query-len is a constant ones(nt). Building it as a constant avoids
+                    # a captured Sub over the NON-persistent query_start_loc (fresh H2D
+                    # each step) which read a stale address at FULL-graph replay -> MTE OOB.
+                    _qlen = torch.ones(nt, dtype=torch.int32, device=slot.device)
+                else:
+                    # prefill / mixed runs eager (capture size is decode=1), so reading
+                    # query_start_loc here is safe and gives the true per-request lengths.
+                    _qsl = attn_metadata.query_start_loc
+                    _qlen = (_qsl[1:] - _qsl[:-1]).to(torch.int32)
+                _k2 = ik[:nt, 0, :].to(self._idxk_cache.dtype).contiguous()  # [nt, idx_dim]
+                torch.ops._C_ascend.npu_reshape_and_cache_bnsd(
+                    _k2, self._idxk_cache, slot[:nt].to(torch.int32), _qlen, self._idxk_cache)
         except Exception as e:
             if not AscendMSAImpl._dec_logged:
                 sys.stderr.write(f"[MSA] idxk cache write ERROR: {type(e).__name__}: {e}\n"); sys.stderr.flush()
@@ -112,54 +176,106 @@ class AscendMSAImpl(AscendAttentionBackendImpl):
                     AscendMSAImpl._pf_logged = True
             return out
 
-        # ---------- DECODE (1 new token per sequence) ----------
+        # ---------- DECODE (vectorized, FULL-cudagraph capturable) ----------
         if num_decodes == 0 or ndt != num_decodes or num_decodes > _MAXDEC:
-            return out  # mixed / spec / large batch -> dense for now
+            return out
         try:
-            from vllm_ascend.models.minimax_m3_msa import msa_decode_attn
+            from vllm_ascend.models.minimax_m3_msa import msa_decode_vec
             bt = attn_metadata.block_tables
             seqlens = attn_metadata.seq_lens
-            if hasattr(seqlens, "tolist"):
-                seqlens_l = seqlens.tolist()
-            else:
-                seqlens_l = list(seqlens)
             kc = kv_cache[0]; vc = kv_cache[1]
-            recompute = (self._ic_step % _FREQ == 0)
-            self._ic_step += 1
-            if self._ic_sel is None or len(self._ic_sel) != num_decodes:
-                self._ic_sel = [None] * num_decodes
-            qd = query.reshape(S, nH, hd)[:num_decodes]        # [nd,nH,hd]
-            iqd = iq.reshape(iq.shape[0], -1, idx_dim)[:num_decodes]  # [nd,G,d]
-            for sidx in range(num_decodes):
-                L = int(seqlens_l[sidx])
-                nb = (L + _BK - 1) // _BK
-                blocks = bt[sidx, :nb].to(torch.long)
-                kf = kc[blocks].reshape(nb * _BK, nKV, hd)[:L]   # [L,nKV,hd]
-                vf = vc[blocks].reshape(nb * _BK, nKV, hd)[:L]
-                ikf = self._idxk_cache[blocks].reshape(nb * _BK, idx_dim)[:L]  # [L,d]
-                q1 = qd[sidx:sidx + 1]                            # [1,nH,hd]
-                iq1 = iqd[sidx:sidx + 1]                          # [1,G,d]
-                if recompute or self._ic_sel[sidx] is None:
-                    o1 = msa_decode_attn(q1.float(), kf.float(), vf.float(), iq1.float(), ikf.float(),
-                                         block_size=_BK, topk_blocks=_KB, local_blocks=_LOCAL, init_blocks=_INIT,
-                                         scale=self.scale, positions=torch.tensor([L - 1], device=q1.device),
-                                         return_sel=True)
-                    o1, sel = o1
-                    self._ic_sel[sidx] = sel
+            B = num_decodes
+            qd = query.reshape(S, nH, hd)[:B]
+            iqd = iq.reshape(iq.shape[0], -1, idx_dim)[:B]
+            # ---- IndexCache (eager): recompute indexer selection every _FREQ decode
+            # steps per sequence; reuse the cached selection otherwise (the local block
+            # is always re-added inside the attend fn). Cadence keyed on seq_len growth,
+            # so batched out-of-phase sequences each keep their own _FREQ cadence and a
+            # stale block-table reuse (seq_len < cached) self-invalidates.
+            ic_topk = None
+            if _FREQ > 1:
+                from vllm_ascend.models.minimax_m3_msa import msa_decode_select
+                keys = bt[:B, 0].tolist()
+                sls = seqlens[:B].tolist()
+                need = [b for b in range(B)
+                        if (self._ic_cache.get(keys[b]) is None
+                            or sls[b] < self._ic_cache[keys[b]][1]
+                            or sls[b] - self._ic_cache[keys[b]][1] >= _FREQ)]
+                if need:
+                    nidx = torch.tensor(need, device=query.device, dtype=torch.long)
+                    fresh = msa_decode_select(iqd[nidx], seqlens[:B][nidx], bt[:B][nidx],
+                                              self._idxk_cache, block_size=_BK,
+                                              topk_blocks=_KB, init_blocks=_INIT)
+                    for j, b in enumerate(need):
+                        self._ic_cache[keys[b]] = (fresh[j], sls[b])
+                G_ic, K_ic = self._ic_cache[keys[0]][0].shape
+                ic_topk = torch.empty(B, G_ic, K_ic, dtype=torch.long, device=query.device)
+                for b in range(B):
+                    ic_topk[b] = self._ic_cache[keys[b]][0]
+                if len(self._ic_cache) > 4096:
+                    self._ic_cache = {keys[b]: self._ic_cache[keys[b]] for b in range(B)}
+                if not self._ic_logged:
+                    sys.stderr.write(f"[MSA] IndexCache ON FREQ={_FREQ}: recompute {len(need)}/{B} this step\n"); sys.stderr.flush()
+                    self._ic_logged = True
+            if os.environ.get("MM3_DECODE_OPGRAPH", "0") == "1":
+                from vllm_ascend.models.minimax_m3_msa import msa_decode_fia_opgraph
+                # persistent device seq_lens (in-place-updated graph buffer) so the captured
+                # selection op reads the correct seq_len -> numBlocks at FULL-graph replay
+                # (positions-derived sl_dev was unreliable -> garbage numBlocks -> the
+                # kernel read block_table[b] past its width -> MTE OOB).
+                _slg = getattr(attn_metadata, "seq_lens_gpu", None)
+                if _slg is not None:
+                    sl_dev = _slg[:B].to(torch.int32)
                 else:
-                    # IndexCache: reuse cached block selection (+ current local block), skip indexer
-                    o1 = msa_decode_attn(q1.float(), kf.float(), vf.float(), iq1.float(), ikf.float(),
-                                         block_size=_BK, topk_blocks=_KB, local_blocks=_LOCAL, init_blocks=_INIT,
-                                         scale=self.scale, positions=torch.tensor([L - 1], device=q1.device),
-                                         forced_sel=self._ic_sel[sidx])
-                out[sidx] = o1[0].reshape(out[sidx].shape).to(out.dtype)
+                    _pos = getattr(self, "_msa_positions", None)
+                    sl_dev = (_pos[:B].to(torch.int32) + 1) if _pos is not None else seqlens[:B].to(query.device, dtype=torch.int32)
+                _tot = _KB + _LOCAL + _INIT
+                if getattr(self, "_sel_buffer", None) is None:
+                    self._sel_buffer = torch.zeros(_MAXDEC, iqd.shape[1], _tot, dtype=torch.int32, device=query.device)
+                ovo = msa_decode_fia_opgraph(qd, iqd, sl_dev, bt[:B], kc, vc, self._idxk_cache,
+                                             block_size=_BK, topk_blocks=_KB, scale=self.scale,
+                                             num_heads=nH, num_kv_heads=nKV,
+                                             local_blocks=_LOCAL, init_blocks=_INIT,
+                                             sel_buffer=self._sel_buffer[:B])
+                out[:B] = ovo.reshape(out[:B].shape).to(out.dtype)
+            elif os.environ.get("MM3_DECODE_FGRAPH", "0") == "1":
+                from vllm_ascend.models.minimax_m3_msa import msa_decode_fia_graph
+                _slg = getattr(attn_metadata, "seq_lens_gpu", None)
+                if _slg is not None:
+                    sl_dev = _slg[:B].to(torch.int32)
+                else:
+                    _pos = getattr(self, "_msa_positions", None)
+                    sl_dev = (_pos[:B].to(torch.int32) + 1) if _pos is not None else seqlens[:B].to(query.device, dtype=torch.int32)
+                ovg = msa_decode_fia_graph(qd, iqd, sl_dev, bt[:B], kc, vc, self._idxk_cache,
+                                           block_size=_BK, topk_blocks=_KB, scale=self.scale,
+                                           num_heads=nH, num_kv_heads=nKV,
+                                           local_blocks=_LOCAL, init_blocks=_INIT)
+                out[:B] = ovg.reshape(out[:B].shape).to(out.dtype)
+            elif os.environ.get("MM3_DECODE_FIA", "0") == "1":
+                from vllm_ascend.models.minimax_m3_msa import msa_decode_fia
+                ovf = msa_decode_fia(qd, iqd, seqlens[:B], bt[:B], kc, vc, self._idxk_cache,
+                                     block_size=_BK, topk_blocks=_KB, scale=self.scale,
+                                     num_heads=nH, num_kv_heads=nKV,
+                                     local_blocks=_LOCAL, init_blocks=_INIT, topk_idx=ic_topk)
+                if os.environ.get("MM3_DECODE_FIA_CHECK", "0") == "1" and not AscendMSAImpl._dec_logged:
+                    ovv = msa_decode_vec(qd, iqd, seqlens[:B], bt[:B], kc, vc, self._idxk_cache,
+                                         block_size=_BK, topk_blocks=_KB, scale=self.scale,
+                                         local_blocks=_LOCAL, init_blocks=_INIT, topk_idx=ic_topk)
+                    _diff = (ovf.float() - ovv.float()).abs().max().item()
+                    sys.stderr.write(f"[MSA] FIA vs VEC maxabsdiff={_diff:.3e} B={B}\n"); sys.stderr.flush()
+                out[:B] = ovf.reshape(out[:B].shape).to(out.dtype)
+            else:
+                ov = msa_decode_vec(qd, iqd, seqlens[:B], bt[:B], kc, vc, self._idxk_cache,
+                                    block_size=_BK, topk_blocks=_KB, scale=self.scale,
+                                    local_blocks=_LOCAL, init_blocks=_INIT, topk_idx=ic_topk)
+                out[:B] = ov.reshape(out[:B].shape).to(out.dtype)
             if not AscendMSAImpl._dec_logged:
-                sys.stderr.write(f"[MSA] decode SPARSE applied nd={num_decodes} L0={int(seqlens_l[0])} recompute={recompute} FREQ={_FREQ}\n"); sys.stderr.flush()
+                sys.stderr.write(f"[MSA] decode VEC applied nd={B} (FULL-capable)\n"); sys.stderr.flush()
                 AscendMSAImpl._dec_logged = True
         except Exception as e:
             import traceback
             if not AscendMSAImpl._dec_logged:
-                sys.stderr.write(f"[MSA] decode ERROR (kept dense): {type(e).__name__}: {e}\n{traceback.format_exc()}\n"); sys.stderr.flush()
+                sys.stderr.write(f"[MSA] decode VEC ERROR (kept dense): {type(e).__name__}: {e}\n{traceback.format_exc()}\n"); sys.stderr.flush()
                 AscendMSAImpl._dec_logged = True
         return out
 

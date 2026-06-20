@@ -547,6 +547,19 @@ at::Tensor npu_hamming_dist_top_k_meta(const at::Tensor &hashq,
     return out;
 }
 
+at::Tensor msa_dist_top_k_meta(const at::Tensor &index_q,
+                               const at::Tensor &index_k_cache,
+                               const at::Tensor &seq_len,
+                               const at::Tensor &block_table,
+                               const at::Tensor &indices_in,
+                               const c10::optional<int64_t> block_size,
+                               const c10::optional<int64_t> topk,
+                               const c10::optional<int64_t> local_blocks,
+                               const c10::optional<int64_t> init_blocks)
+{
+    return at::empty_like(indices_in);
+}
+
 at::Tensor npu_sign_bits_pack_meta(const at::Tensor& input,
                                    const int64_t size) {
     int64_t ySize = (input.size(0) + 7) / 8;
@@ -1693,6 +1706,8 @@ TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     ops.impl("transpose_kv_cache_by_block", &vllm_ascend::meta::transpose_kv_cache_by_block_meta);
     // hamming_dist_top_k
     ops.impl("npu_hamming_dist_top_k", &vllm_ascend::meta::npu_hamming_dist_top_k_meta);
+    ops.impl("msa_dist_top_k", &vllm_ascend::meta::msa_dist_top_k_meta);
+
     // reshape_and_cache_bnsd
     ops.impl("npu_reshape_and_cache_bnsd", &vllm_ascend::meta::npu_reshape_and_cache_bnsd_meta);
     // npu_sign_bits_pack
