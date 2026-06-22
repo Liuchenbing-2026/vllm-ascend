@@ -137,8 +137,11 @@ __aicore__ inline void ReduceMaxBlock128(const GlobalTensor<half> &inputGm, cons
             (dataBlockNumAligned - dataBlockNum) * 16);
     }
 
-    SetFlag<HardEvent::MTE2_V>(1);
-    WaitFlag<HardEvent::MTE2_V>(1);
+    {
+        int32_t evtM2V = static_cast<int32_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
+        SetFlag<HardEvent::MTE2_V>(evtM2V);
+        WaitFlag<HardEvent::MTE2_V>(evtM2V);
+    }
     PipeBarrier<PIPE_V>();
     PipeBarrier<PIPE_ALL>();
 

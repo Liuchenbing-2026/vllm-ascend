@@ -116,8 +116,9 @@ void MsaDistTopKTiling::SetMatmulTiling() {
     auto ascendcPlatform = platform_ascendc::PlatformAscendC(context_->GetPlatformInfo());
     matmul_tiling::MultiCoreMatmulTiling tiling(ascendcPlatform);
     tiling.SetDim(1);
-    // A = iq[M=head, K=dim] transposed; B = keys[N=maxSeqLen, K=dim] transposed; C = scores half.
-    tiling.SetAType(matmul_tiling::TPosition::GM, matmul_tiling::CubeFormat::ND, matmul_tiling::DataType::DT_BF16, true);
+    // A = iq[M=head, K=dim] NOT transposed (row-major [M,K], matches kernel
+    // AMatmulType isTrans=false); B = keys[N=maxSeqLen, K=dim] transposed; C = scores half.
+    tiling.SetAType(matmul_tiling::TPosition::GM, matmul_tiling::CubeFormat::ND, matmul_tiling::DataType::DT_BF16, false);
     tiling.SetBType(matmul_tiling::TPosition::GM, matmul_tiling::CubeFormat::ND, matmul_tiling::DataType::DT_BF16, true);
     tiling.SetCType(matmul_tiling::TPosition::GM, matmul_tiling::CubeFormat::ND, matmul_tiling::DataType::DT_FLOAT16);
     uint32_t M = tilingData_.params.get_head();

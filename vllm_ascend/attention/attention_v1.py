@@ -595,6 +595,28 @@ class AscendAttentionBackendImpl(AttentionImpl):
                     graph_params.handles[num_tokens],
                     graph_params.events[num_tokens],
                 ):
+                    if isinstance(param, tuple) and len(param) > 0 and param[0] == "MSA":
+                        # MSA sparse-FIA param (12-tuple, from AscendMSAImpl.full_graph_fia):
+                        # re-plan tiling with the deterministic host kv_lens for THIS step;
+                        # block_table = the persistent fbt buffer (filled in-graph by the
+                        # in-graph selection at replay). Bypasses the dense rebind. M3 is
+                        # hybrid (dense + MSA layers) so this is a per-param branch.
+                        from vllm_ascend.models.minimax_m3_msa import msa_host_kv_lens
+                        (_tag, _q, _kp, _vp, _fbt, _bs, _nkv, _nh, _sc, _o, _lse, _B) = param
+                        _slm = list(forward_context.attn_metadata[key].seq_lens_list)
+                        _kv = msa_host_kv_lens(_slm[:_B], _bs, 16, 0)
+                        _aslq = list(range(1, _B + 1))
+                        torch.npu.graph_task_update_begin(update_stream, handle)
+                        torch_npu.npu_fused_infer_attention_score.out(
+                            query=_q, key=_kp, value=_vp, block_table=_fbt,
+                            input_layout="TND", block_size=_bs,
+                            actual_seq_lengths=_aslq, actual_seq_lengths_kv=_kv,
+                            num_key_value_heads=_nkv, num_heads=_nh, scale=_sc, sparse_mode=0,
+                            workspace=graph_params.workspaces.get(num_tokens),
+                            out=[_o, _lse])
+                        torch.npu.graph_task_update_end(update_stream)
+                        event.record(update_stream)
+                        continue
                     (
                         query,
                         key_cache,
@@ -639,6 +661,29 @@ class AscendAttentionBackendImpl(AttentionImpl):
                         # block_tables from attn_metadata.
                         if not hasattr(vllm_config.model_config.hf_text_config, "sliding_window"):
                             block_tables = attn_metadata[key].block_tables
+
+                    try:
+                        import os as _os
+                        if _os.environ.get("MM3_PTR_DBG", "0") == "1" and key == attn_keys[0]:
+                            import sys as _sys
+                            _n = int(_os.environ.get("_MSA_PTR_N", "0")) + 1
+                            _os.environ["_MSA_PTR_N"] = str(_n)
+                            _cbt = param[3]
+                            _ckc = param[1]
+                            _cur_bt = attn_metadata[key].block_tables
+                            _cur_sl = getattr(attn_metadata[key], "seq_lens", None)
+                            _sys.stderr.write(
+                                f"[MSA-PTR upd step={_n}] cap_bt={_cbt.data_ptr():x}/{_cbt.shape[0]} "
+                                f"cur_bt={_cur_bt.data_ptr():x}/{_cur_bt.shape[0]} "
+                                f"same_bt={_cbt.data_ptr() == _cur_bt.data_ptr()} "
+                                f"cur_sl_ptr={(_cur_sl.data_ptr() if _cur_sl is not None else 0):x} "
+                                f"cur_sl={(_cur_sl[:4].tolist() if _cur_sl is not None else None)} "
+                                f"cap_kc={_ckc.data_ptr():x}/{_ckc.shape[0]}\n")
+                            _sys.stderr.flush()
+                    except Exception as _e:
+                        import sys as _sys
+                        _sys.stderr.write(f"[MSA-PTR upd ERR] {type(_e).__name__}: {_e}\n")
+                        _sys.stderr.flush()
 
                     torch.npu.graph_task_update_begin(update_stream, handle)
                     input_layout = "TND"

@@ -3810,6 +3810,12 @@ class NPUModelRunner(GPUModelRunner):
                 kvcomp_meta_data=self.kvcomp_meta_data
             )
 
+        try:
+            from vllm_ascend.attention.msa_v1 import bind_msa_idxk_caches
+            bind_msa_idxk_caches(kv_caches, self.compilation_config.static_forward_context, self.device)
+        except Exception:
+            pass
+
         return kv_caches
 
     def _get_layer_kv_cache_specs(self, kv_cache_config: KVCacheConfig) -> dict[str, KVCacheSpec]:

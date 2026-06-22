@@ -42,7 +42,7 @@ public:
             .UnknownShapeFormat({ge::FORMAT_ND});
         this->Input("indices_in")
             .ParamType(REQUIRED)
-            .DataType({ge::DT_INT32})
+            .DataType({ge::DT_FLOAT16})
             .Format({ge::FORMAT_ND})
             .UnknownShapeFormat({ge::FORMAT_ND});
         this->Attr("block_size")
@@ -59,7 +59,7 @@ public:
             .Int(0);
         this->Output("indices")
             .ParamType(REQUIRED)
-            .DataType({ge::DT_INT32})
+            .DataType({ge::DT_FLOAT16})
             .Format({ge::FORMAT_ND})
             .UnknownShapeFormat({ge::FORMAT_ND});
 

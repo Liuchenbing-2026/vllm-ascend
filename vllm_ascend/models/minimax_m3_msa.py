@@ -329,15 +329,17 @@ def msa_decode_fia_graph(query, iq, seq_lens, block_tables, kc, vc, idxk_cache, 
 
 def msa_decode_fia_opgraph(query, iq, seq_lens, block_tables, kc, vc, idxk_cache, *,
                            block_size, topk_blocks, scale, num_heads, num_kv_heads,
-                           local_blocks=1, init_blocks=0, sel_buffer=None):
-    """FULL-cudagraph-safe MSA decode via the custom AscendC selection op
-    torch.ops._C_ascend.msa_dist_top_k (single graph-safe kernel: indexer score +
-    block max-pool + force-local + top-k), then a static gather to the physical
-    block_table + standard FIA. Replaces the pure-torch einsum/topk/broadcast path
-    that hit a BroadcastTo MTE OOB under FULL graph replay. kv_lens derives purely
-    from seq_len (no data-dependent dedup): the op pads with the local block id, and
-    those duplicate slots fall beyond kv_lens so FIA never reads them twice.
-    Numerically == msa_decode_fia / msa_decode_vec."""
+                           local_blocks=1, init_blocks=0, sel_buffer=None,
+                           maxes_buffer=None, topk_idx_buffer=None, skip_topk=False):
+    """FULL-cudagraph-safe MSA decode (Hybrid). The custom AscendC op
+    torch.ops._C_ascend.msa_dist_top_k does ONLY the data-dependent indexer scoring
+    (gather idxk via block_table + bf16 K=128 matmul + per-block max-pool) and emits
+    fp16 block maxes [B,G,MAXB]. That op is graph-safe (the per-block matmul loop that
+    broke FULL capture is replaced by a single gather+matmul -> static Cube task
+    stream, verified no 0x3000093 across varying seq_len). The exact top-k +
+    force-local + block_table rewrite are fixed-shape torch ops (graph-capturable).
+    Optional IndexCache via persistent topk_idx_buffer (skip_topk reads it; else
+    compute + copy_), mirroring GLM/DSA. Numerically == msa_decode_select."""
     import torch
     import torch_npu
     B, nH, hd = query.shape
@@ -346,31 +348,26 @@ def msa_decode_fia_opgraph(query, iq, seq_lens, block_tables, kc, vc, idxk_cache
     MAXB = block_tables.shape[1]
     nblk = kc.shape[0]
     dev = query.device
-    topk_total = topk_blocks + local_blocks + init_blocks
+    K = min(topk_blocks, MAXB)
     sl = seq_lens.to(torch.int32)
-    # Clamp the block_table fed to the selection op to the idxk side-cache block
-    # range. The kernel reads idxk_cache[block_table[b]] for b<numBlocks where
-    # numBlocks=ceil(seq_len/128); under FULL-graph replay a stale/garbage seq_len
-    # (or padding slots beyond the real sequence length) yields out-of-range phys
-    # ids -> MTE DDR OOB. Clamping guarantees every gathered phys is in-range; valid
-    # entries (< num_gpu_blocks << idxk blocks) are unaffected, so correctness holds
-    # when seq_len is right and we merely avoid the crash when it is not.
-    _nblk_idxk = idxk_cache.shape[0]
-    bt_i32 = block_tables.clamp(0, _nblk_idxk - 1).to(torch.int32).contiguous()
-    iqb = iq.to(torch.bfloat16).contiguous()
-    ikc = idxk_cache.view(idxk_cache.shape[0], block_size, d).to(torch.bfloat16)
-    if sel_buffer is None:
-        sel_buffer = torch.zeros(B, G, topk_total, dtype=torch.int32, device=dev)
-    sel = torch.ops._C_ascend.msa_dist_top_k(
-        iqb, ikc, sl, bt_i32, sel_buffer,
-        block_size, topk_blocks, local_blocks, init_blocks)
-    sel_logical = sel[:, 0, :].to(torch.long).clamp(0, MAXB - 1)
-    fbt = block_tables.to(torch.long).gather(1, sel_logical).to(torch.int32)
-    sll = sl.to(torch.long)
-    numBlocks = ((sll + block_size - 1) // block_size).clamp(min=1)
-    nsel = numBlocks.clamp(max=topk_blocks)
-    partial = (sll - (numBlocks - 1) * block_size).clamp(min=1, max=block_size)
-    kv_lens = ((nsel - 1) * block_size + partial).to(torch.int32)
+    if skip_topk and topk_idx_buffer is not None:
+        topk_idx = topk_idx_buffer[:B]
+    else:
+        _nblk_idxk = idxk_cache.shape[0]
+        bt_i32 = block_tables.clamp(0, _nblk_idxk - 1).to(torch.int32).contiguous()
+        iqb = iq.to(torch.bfloat16).contiguous()
+        ikc = idxk_cache.view(idxk_cache.shape[0], block_size, d).to(torch.bfloat16)
+        if maxes_buffer is None:
+            maxes_buffer = torch.zeros(B, G, MAXB, dtype=torch.float16, device=dev)
+        maxes = torch.ops._C_ascend.msa_dist_top_k(
+            iqb, ikc, sl, bt_i32, maxes_buffer,
+            block_size, topk_blocks, local_blocks, init_blocks)
+        M = maxes[:, 0, :].float()  # [B, MAXB] per-block maxes (future/pad already -inf)
+        topk_idx = M.topk(K, dim=-1).indices.to(torch.long)  # [B, K]
+        if topk_idx_buffer is not None:
+            topk_idx_buffer[:B].copy_(topk_idx)
+    fbt, kv_lens = _msa_rewrite_blocktable(topk_idx, sl, block_tables, block_size=block_size,
+                                           topk_blocks=topk_blocks, init_blocks=init_blocks)
     key = kc.view(nblk, block_size, -1)
     value = vc.view(nblk, block_size, -1)
     asl_q = torch.arange(1, B + 1, dtype=torch.int32, device=dev)
@@ -380,6 +377,95 @@ def msa_decode_fia_opgraph(query, iq, seq_lens, block_tables, kc, vc, idxk_cache
         actual_seq_lengths=asl_q, actual_seq_lengths_kv=kv_lens,
         num_key_value_heads=num_kv_heads, num_heads=nH, scale=scale, sparse_mode=0)
     return attn_out.view(B, nH, hd)
+
+
+def msa_select_into_fbt(iq, seq_lens, block_tables, idxk_cache, fbt_buffer, maxes_buffer, *,
+                        block_size, topk_blocks, local_blocks=1, init_blocks=0):
+    """FULL-cudagraph selection that writes a PERSISTENT rewritten block_table buffer
+    IN-PLACE (address constant across replays -> graph-safe). The custom op + topk +
+    rewrite are graph-safe. The LOCAL block is EXCLUDED from the top-k pool then
+    force-added by the rewrite, so nsel = min(numBlocks, topk_blocks+1) is DETERMINISTIC
+    from seq_len -> the sparse actual_seq_lengths_kv is host-computable (msa_host_kv_lens),
+    which is what lets the FIA tiling be re-planned at replay via graph_task_update.
+    Returns the device kv_lens (host equivalent: msa_host_kv_lens). init_blocks must be 0
+    for the host kv_lens to match (M3 uses init_blocks=0)."""
+    import torch
+    B = iq.shape[0]
+    d = iq.shape[2]
+    MAXB = block_tables.shape[1]
+    K = min(topk_blocks, MAXB)
+    sl = seq_lens.to(torch.int32)
+    _nblk_idxk = idxk_cache.shape[0]
+    bt_i32 = block_tables.clamp(0, _nblk_idxk - 1).to(torch.int32).contiguous()
+    iqb = iq.to(torch.bfloat16).contiguous()
+    ikc = idxk_cache.view(idxk_cache.shape[0], block_size, d).to(torch.bfloat16)
+    maxes = torch.ops._C_ascend.msa_dist_top_k(
+        iqb, ikc, sl, bt_i32, maxes_buffer,
+        block_size, topk_blocks, local_blocks, init_blocks)
+    M = maxes[:, 0, :].float()  # [B, MAXB] per-block maxes (future/pad already -inf)
+    # Exclude the LOCAL block from the top-k pool so nsel is deterministic (rewrite re-adds it).
+    qblk = ((sl.long() - 1) // block_size).clamp(min=0)  # [B]
+    NEG = torch.finfo(torch.float32).min
+    M.scatter_(1, qblk[:, None], NEG)
+    topk_idx = M.topk(K, dim=-1).indices.to(torch.long)  # [B, K] (non-local)
+    fbt, kv_lens = _msa_rewrite_blocktable(topk_idx, sl, block_tables, block_size=block_size,
+                                           topk_blocks=topk_blocks, init_blocks=init_blocks)
+    fbt_buffer[:B, :fbt.shape[1]].copy_(fbt)
+    return kv_lens
+
+
+def msa_select_into_fbt_torch(iq, seq_lens, block_tables, idxk_cache, fbt_buffer, *,
+                              block_size, topk_blocks, local_blocks=1, init_blocks=0):
+    """Torch-only variant of msa_select_into_fbt (NO custom AscendC op). Gathers idxk via
+    block_table, scores the query, block max-pools, excludes the local block, top-k, rewrite.
+    For isolating whether the custom op is the FFTS+-cudagraph-replay OOB culprit. Same
+    deterministic nsel (local excluded) so msa_host_kv_lens matches."""
+    import torch
+    B = iq.shape[0]
+    d = iq.shape[2]
+    MAXB = block_tables.shape[1]
+    BS = block_size
+    K = min(topk_blocks, MAXB)
+    dev = iq.device
+    nblk = idxk_cache.shape[0]
+    sl = seq_lens.to(torch.long)
+    bt = block_tables.to(torch.long).clamp(0, nblk - 1)
+    L = MAXB * BS
+    ikf = idxk_cache.reshape(nblk, BS, d)[bt].reshape(B, L, d).float()
+    pos = torch.arange(L, device=dev)
+    valid = pos[None, :] < sl[:, None]
+    NEG = torch.finfo(torch.float32).min
+    isc = torch.einsum('bgd,bld->bgl', iq.float(), ikf) * (d ** -0.5)
+    isc = isc.masked_fill(~valid[:, None, :], NEG)
+    M = isc.reshape(B, -1, MAXB, BS).amax(-1)[:, 0, :]  # [B, MAXB]
+    numBlocks = ((sl + BS - 1) // BS).clamp(min=1)
+    blk = torch.arange(MAXB, device=dev)[None, :]
+    M = M.masked_fill(blk >= numBlocks[:, None], NEG)
+    qblk = ((sl - 1) // BS).clamp(min=0)
+    M.scatter_(1, qblk[:, None], NEG)  # exclude local from top-k pool (deterministic nsel)
+    topk_idx = M.topk(K, dim=-1).indices.to(torch.long)
+    fbt, _ = _msa_rewrite_blocktable(topk_idx, seq_lens.to(torch.int32), block_tables,
+                                     block_size=BS, topk_blocks=topk_blocks, init_blocks=init_blocks)
+    fbt_buffer[:B, :fbt.shape[1]].copy_(fbt)
+
+
+def msa_host_kv_lens(seq_lens_list, block_size, topk_blocks, init_blocks=0):
+    """Deterministic sparse actual_seq_lengths_kv (host list) matching the rewrite under
+    msa_select_into_fbt (local excluded from top-k): nsel=min(numBlocks, topk_blocks+1),
+    kv_lens=(nsel-1)*block_size + partial, partial=((sl-1)%block_size)+1. Assumes
+    init_blocks==0 (M3)."""
+    Kp = topk_blocks + 1
+    out = []
+    for sl in seq_lens_list:
+        sl = int(sl)
+        if sl <= 0:
+            out.append(1)
+            continue
+        numBlocks = (sl + block_size - 1) // block_size
+        nsel = min(numBlocks, Kp)
+        partial = ((sl - 1) % block_size) + 1
+        out.append((nsel - 1) * block_size + partial)
+    return out
 
 
 def msa_decode_fia(query, iq, seq_lens, block_tables, kc, vc, idxk_cache, *,

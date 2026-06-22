@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Copyright (c) Huawei Technologies Co., Ltd. 2023-2024. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,6 +45,12 @@ constexpr int32_t DOUBLE_BUFFER_NUM = 2;
 constexpr uint32_t RESET_NUM = 0U;
 constexpr uint32_t VECTOR_CUBE_RATIO = 2;
 constexpr uint32_t MAX_MSA_BATCH = 256;
+// Blocks pooled per WholeReduceMax batch. chunkBuf_ = POOL_CHUNK_BLOCKS*128 half
+// (= 8 KiB at 32), a FIXED UB cost independent of context length. This is what
+// lets long contexts (numBlocks up to thousands) avoid the old maxSeqLen-sized
+// scratch that overflowed UB at numBlocks >= 128. Must be <= MAX_REPEAT_TIMES
+// and a multiple of 16 so blockMax[chunkStart] stays 32B-aligned.
+constexpr uint32_t POOL_CHUNK_BLOCKS = 32;
 
 class MsaDistTopKSplitSKernel {
 public:
@@ -92,21 +98,36 @@ public:
             uint32_t curSeqLen = static_cast<uint32_t>(seqLenGm_.GetValue(batchIdx));
             uint32_t numBlocks = (curSeqLen == 0) ? 0 : ((curSeqLen + MSA_BLOCK_SIZE - 1) / MSA_BLOCK_SIZE);
 
-            if ASCEND_IS_AIC {
-                if (curSeqLen != 0) {
-                    ComputeMM(batchIdx, headIdx, numBlocks);
-                }
-                CubeNotifyVector(SYNC_AIC_AIV_FLAG);
-            }
+            // Per-row task/sync structure is identical on every replay:
+            //   AIV gather (static blockCount loop) -> Vector->Cube notify ->
+            //   AIC ONE IterateAll -> Cube->Vector notify -> AIV pool/TopK/write.
+            // Exactly ONE Cube task and exactly TWO cross-core flags per row,
+            // both counts fixed by tiling (batchN / usedCoreNum). curSeqLen only
+            // changes DATA (gather source addresses, masked score positions).
+            //
+            // gatherCore picks the per-cube-core slab of keyGatherGm_. The two
+            // paired AIVs and their AIC must agree on it: AIC uses its raw cube
+            // id; the AIVs divide their id by VECTOR_CUBE_RATIO to get the same.
+            uint32_t gatherCore = blockIdx_;
             if ASCEND_IS_AIV {
-                VectorWaitCube(SYNC_AIC_AIV_FLAG);
-                // Only the first vector of each pair does the (cheap) selection
-                // for v1; the second idles to keep the handshake balanced.
+                gatherCore = blockIdx_ / VECTOR_CUBE_RATIO;
+            }
+
+            // All-AIV vector path: subBlock 0 computes iq dot ik scores on the
+            // vector core (no Cube matmul, no cross-core handoff). The M=1 Cube
+            // GEMV GM write was not reliably visible to the paired AIV for N>128;
+            // here matmulGm_ is AIV-written + AIV-read = same-core coherent. No
+            // Cube task => no FFTS+ Cube stream variability (safer graph capture).
+            (void)gatherCore;
+            if ASCEND_IS_AIV {
                 if (subBlockIdx_ == 0) {
                     if (curSeqLen == 0) {
                         WriteEmpty(row);
                     } else {
-                        ComputeTopK(row, batchIdx, headIdx, curSeqLen, numBlocks, tilingData);
+                        // Fused score + per-block max-pool: scores are reduced to
+                        // block maxes chunk-by-chunk in UB, never materialised at
+                        // maxSeqLen width, so UB stays bounded for any context len.
+                        ComputeBlockMax(row, batchIdx, headIdx, curSeqLen, numBlocks);
                     }
                 }
             }
@@ -115,166 +136,200 @@ public:
 
 protected:
     // ------------------------------------------------------------------
-    // Cube: scores[1, numBlocks*128] = iq[1,128] . keys[numBlocks*128, 128]^T
-    // keys are the gathered idxk_cache physical blocks for this seq.
-    // The B operand is declared transposed so the per-token-major key layout
-    // [n_keys, dim] yields C[1, n_keys] directly.
+    // Vector: gather this seq's logical idxk blocks (paged via block_table)
+    // into the contiguous per-cube-core slab keyGatherGm_[gatherCore*...]. This
+    // is the graph-safety pivot (mirrors hamming UnpackKey): the block_table
+    // walk lives on AIV as a DMA loop, NOT in the Cube task stream, and the
+    // contiguous result lets the Cube issue exactly ONE IterateAll afterwards.
+    //
+    // The loop is bounded by the runtime numBlocks, but this is a Vector-only
+    // DataCopy loop -- its trip count never lengthens the captured FFTS+ Cube /
+    // cross-core task stream (same class as hamming's UnpackKey and msa's own
+    // ReduceMaxBlock128 WholeReduceMax loop). Logical block b always lands at
+    // logical slot b of the slab regardless of its physical id, so the single
+    // matmul below reads one contiguous, token-major [maxSeqLen, dim] operand.
+    //
+    // Columns [numBlocks*128, maxSeqLen) of the slab are left untouched: the
+    // matmul does compute scores there, but ComputeTopK is bounded by numBlocks
+    // and never reads them, so their (stale) contents cannot affect selection.
     // ------------------------------------------------------------------
-    __aicore__ inline void ComputeMM(uint32_t batchIdx, uint32_t headIdx, uint32_t numBlocks)
+    __aicore__ inline void GatherKeys(uint32_t batchIdx, uint32_t numBlocks, uint32_t gatherCore)
+    {
+        if ASCEND_IS_AIC {
+            return;
+        }
+        uint64_t slabBase = static_cast<uint64_t>(gatherCore) * param_.maxSeqLen * param_.dimension;
+        uint32_t blkElems = MSA_BLOCK_SIZE * param_.dimension;            // 128*128 bf16 per physical block
+        uint32_t blkBytes = blkElems * static_cast<uint32_t>(sizeof(bfloat16_t));
+        DataCopyExtParams cpBlk{1, blkBytes, 0, 0, 0};
+        DataCopyPadExtParams<bfloat16_t> cpPad{false, 0, 0, 0};
+        for (uint32_t b = 0; b < numBlocks; ++b) {
+            int32_t phys = keyBlockTableGm_.GetValue(batchIdx * param_.blockCount + b);
+            uint64_t srcOff = static_cast<uint64_t>(phys) * blkElems;     // paged idxk_cache block
+            uint64_t dstOff = slabBase + static_cast<uint64_t>(b) * blkElems;
+            LocalTensor<bfloat16_t> ub = keyGatherInQueue_.AllocTensor<bfloat16_t>();
+            DataCopyPad(ub, idxkCacheGm_[srcOff], cpBlk, cpPad);         // GM(paged) -> UB
+            keyGatherInQueue_.EnQue(ub);
+            ub = keyGatherInQueue_.DeQue<bfloat16_t>();
+            DataCopyPad(keyGatherGm_[dstOff], ub, cpBlk);               // UB -> GM(contiguous)
+            keyGatherInQueue_.FreeTensor(ub);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Cube: ONE matmul over the contiguous gathered keys.
+    //   C[1, maxSeqLen] = iq[1, dim] . gatheredKeys[maxSeqLen, dim]^T  (B transposed)
+    // N is the STATIC maxSeqLen (= blockCount*128), exactly the value the host
+    // matmul tiling was built with (SetMatmulTiling N=maxSeqLen). A single
+    // IterateAll with a fixed shape => one Cube task whose internal base-block
+    // loop is identical at capture and replay. Element C[0, b*128 + t] is the
+    // score of token t of logical block b -- byte-identical to what the old
+    // per-block loop wrote, because the gather preserves the source key bytes
+    // and slot order.
+    // ------------------------------------------------------------------
+    __aicore__ inline void ComputeMM(uint32_t batchIdx, uint32_t headIdx, uint32_t gatherCore)
     {
         if ASCEND_IS_AIV {
             return;
         }
         // A: iq for this (batch, head). Decode -> 1 query token, G=1.
         uint64_t offA = (batchIdx * param_.head + headIdx) * param_.ka;
+        // B: this cube core's contiguous gathered-key slab.
+        uint64_t offB = static_cast<uint64_t>(gatherCore) * param_.maxSeqLen * param_.dimension;
         // C: this row's score region in workspace (maxSeqLen wide per row).
         uint64_t offC = static_cast<uint64_t>(batchIdx * param_.head + headIdx) * param_.maxSeqLen;
 
-        // Score each logical block directly against its physical idxk_cache block.
-        // Each physical block is contiguous [block_size, dim] in idxk_cache, so the
-        // matmul reads B straight from the paged cache (no GM->GM gather needed):
-        //   C[1, block_size] = iq[1, dim] . ik_block[block_size, dim]^T   (B transposed)
-        // written to the contiguous per-row score region at offset b*block_size.
-        for (uint32_t b = 0; b < numBlocks; ++b) {
-            int32_t phys = keyBlockTableGm_.GetValue(batchIdx * param_.blockCount + b);
-            uint64_t bOff = static_cast<uint64_t>(phys) * MSA_BLOCK_SIZE * param_.dimension;
-            mm_.SetOrgShape(param_.M, MSA_BLOCK_SIZE, param_.ka);
-            mm_.SetSingleShape(param_.M, MSA_BLOCK_SIZE, param_.ka);
-            mm_.SetTensorA(iqGm_[offA], AMatmulType::isTrans);
-            mm_.SetTensorB(idxkCacheGm_[bOff], BMatmulType::isTrans);
-            mm_.IterateAll(matmulGm_[offC + static_cast<uint64_t>(b) * MSA_BLOCK_SIZE]);
-        }
+        mm_.SetOrgShape(param_.M, param_.maxSeqLen, param_.ka);
+        mm_.SetSingleShape(param_.M, param_.maxSeqLen, param_.ka);
+        mm_.SetTensorA(iqGm_[offA], AMatmulType::isTrans);
+        mm_.SetTensorB(keyGatherGm_[offB], BMatmulType::isTrans);
+        mm_.IterateAll(matmulGm_[offC]);
+        // cross-core notify (PIPE_FIX) handles matmul->AIV ordering. legacy note:
+        // CrossCoreSetFlag<SYNC_MODE2, PIPE_FIX>, which itself gates on the
+        // matmul's PIPE_FIX (fixpipe) ops finishing before the paired AIV is
+        // released to pool matmulGm_. A FIX_MTE2 drain BEFORE that notify empties
+        // PIPE_FIX, so the cross-core flag no longer waits on the matmul write
+        // and the AIV pools partially-landed (under-max) scores. Mirrors hamming.
     }
 
     // ------------------------------------------------------------------
-    // Vector: causal mask -> block max-pool -> force local -> TopK -> write.
+    // Vector fused score + block max-pool (replaces ComputeScoresVec + the old
+    // ComputeTopK matmulGm round-trip). Per logical block b: page-load its
+    // 128x128 bf16 key tile, cast bf16->fp32->fp16, broadcast-multiply by iq,
+    // WholeReduceSum over dim -> 128 token scores written into a small per-chunk
+    // UB buffer (POOL_CHUNK_BLOCKS blocks). After each chunk fills, one
+    // WholeReduceMax collapses it to chunkBlocks block-maxes straight into the
+    // output buffer. Causal masking of the partial last block is applied with a
+    // 128-lane masked Duplicate on its (32B-aligned) chunk slot before pooling.
+    //
+    // Peak UB is the gather queue + the bf16->fp16 cast scratch + the FIXED
+    // POOL_CHUNK_BLOCKS chunk buffer -- none of which scale with numBlocks. This
+    // is the long-context fix: the old path read all maxSeqLen scores back into a
+    // maxSeqLen-sized UB scratch, overflowing UB at numBlocks >= 128.
     // ------------------------------------------------------------------
-    template <typename TilingT>
-    __aicore__ inline void ComputeTopK(uint32_t row, uint32_t batchIdx, uint32_t headIdx, uint32_t curSeqLen,
-        uint32_t numBlocks, const TilingT &tilingData)
+    __aicore__ inline void ComputeBlockMax(uint32_t row, uint32_t batchIdx, uint32_t headIdx,
+        uint32_t curSeqLen, uint32_t numBlocks)
     {
         if ASCEND_IS_AIC {
             return;
         }
-        uint64_t scoreOff = static_cast<uint64_t>(row) * param_.maxSeqLen;
+        uint32_t dim = param_.dimension;                 // 128
+        uint32_t blkElems = MSA_BLOCK_SIZE * dim;        // 128*128
+        uint32_t outW = param_.blockCount;
+        uint32_t fillN = matmul::CeilDiv(outW, 32U) * 32U;
 
-        // 1) Causal mask: positions j >= curSeqLen forced to MIN_HALF_VALUE so
-        //    future tokens never win the per-block max. Only the local
-        //    (partial) block has a tail to mask; full blocks are entirely valid.
-        uint32_t nKeysPadded = numBlocks * MSA_BLOCK_SIZE;
-        uint32_t invalidTail = nKeysPadded - curSeqLen; // tokens beyond seq_len in the last block
-        if (invalidTail > 0) {
-            LocalTensor<half> maskTmp = scratchQueue_.AllocTensor<half>();
-            Duplicate(maskTmp, static_cast<half>(MIN_HALF_VALUE), invalidTail);
-            scratchQueue_.EnQue(maskTmp);
-            maskTmp = scratchQueue_.DeQue<half>();
-            DataCopyExtParams cpTail{1, static_cast<uint32_t>(invalidTail * sizeof(half)), 0, 0, 0};
-            DataCopyPad(matmulGm_[scoreOff + curSeqLen], maskTmp, cpTail);
-            scratchQueue_.FreeTensor(maskTmp);
-            SetFlag<HardEvent::MTE3_MTE2>(1);
-            WaitFlag<HardEvent::MTE3_MTE2>(1);
+        // iq bf16 -> fp32 -> fp16 (Mul needs fp16/fp32; bf16->fp16 direct cast unsupported).
+        LocalTensor<bfloat16_t> iqBf = iqBf16Buf_.Get<bfloat16_t>();
+        LocalTensor<float> iqF = iqF32Buf_.Get<float>();
+        LocalTensor<half> iqH = iqHalfBuf_.Get<half>();
+        uint64_t offA = (static_cast<uint64_t>(batchIdx) * param_.head + headIdx) * param_.ka;
+        DataCopyExtParams cpIq{1, static_cast<uint32_t>(dim * sizeof(bfloat16_t)), 0, 0, 0};
+        DataCopyPadExtParams<bfloat16_t> cpIqPad{false, 0, 0, 0};
+        DataCopyPad(iqBf, iqGm_[offA], cpIq, cpIqPad);
+        {
+            int32_t e = static_cast<int32_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
+            SetFlag<HardEvent::MTE2_V>(e);
+            WaitFlag<HardEvent::MTE2_V>(e);
         }
-
-        // 2) Block max-pool over each 128-token block -> M_b (numBlocks values).
-        //    Pre-fill the full TopK inner range [0, innerN) with MIN from an
-        //    aligned (offset 0) pre-fill, then let the pool overwrite the leading
-        //    numBlocks values. This avoids the unaligned VEC Duplicate at
-        //    poolValue[numBlocks] (numBlocks is rarely a multiple of 16 -> the
-        //    half offset numBlocks*2B violates the 32B VEC UB-address alignment).
-        uint32_t innerN = matmul::CeilDiv(numBlocks, 32) * 32;
-        LocalTensor<half> poolValue = topKValueInQueue_.AllocTensor<half>();
-        LocalTensor<half> reduceScratch = scratchQueue_.AllocTensor<half>();
-        Duplicate(poolValue, static_cast<half>(MIN_HALF_VALUE), innerN);
+        Cast(iqF, iqBf, RoundMode::CAST_NONE, dim);
         PipeBarrier<PIPE_V>();
-        ReduceMaxBlock128(matmulGm_[scoreOff], reduceScratch, poolValue, static_cast<uint16_t>(numBlocks));
-        scratchQueue_.FreeTensor(reduceScratch);
-
-        // 3) Determine k and the local block index.
-        uint32_t localBlk = (curSeqLen - 1) / MSA_BLOCK_SIZE;     // forced block
-        uint32_t kBlocks = Min(param_.maxK, numBlocks);            // top-k, capped to valid blocks
-
-        // 4) Force-keep the local block. The local block is the LAST valid block
-        //    (numBlocks-1) in the pooled tensor, so reuse the tail-fill helper.
-        if (param_.localBlocks > 0) {
-            FillMaxValueFromTail(poolValue, numBlocks, param_.localBlocks);
-        }
+        Cast(iqH, iqF, RoundMode::CAST_NONE, dim);
         PipeBarrier<PIPE_V>();
 
-        topKValueInQueue_.EnQue(poolValue);
-        poolValue = topKValueInQueue_.DeQue<half>();
+        // Output block-max buffer, pre-filled MIN so padding blocks [numBlocks,
+        // blockCount) score -inf and the python top-k never selects them.
+        LocalTensor<half> blockMax = topKValueInQueue_.AllocTensor<half>();
+        Duplicate(blockMax, static_cast<half>(MIN_HALF_VALUE), fillN);
+        PipeBarrier<PIPE_V>();
 
-        // 5) TopK over the numBlocks pooled scores. Candidate indices are the
-        //    logical block ids 0..numBlocks-1.
-        LocalTensor<int32_t> topKInIndex = topKIndexInQueue_.AllocTensor<int32_t>();
-        ArithProgression(topKInIndex, 0, 1, static_cast<int32_t>(numBlocks));
-        topKIndexInQueue_.EnQue(topKInIndex);
-        topKInIndex = topKIndexInQueue_.DeQue<int32_t>();
+        LocalTensor<float> keyF = keyF32Buf_.Get<float>();
+        LocalTensor<half> keyH = keyHalfBuf_.Get<half>();
+        LocalTensor<half> chunkBuf = chunkBuf_.Get<half>();
+        uint64_t fmask[2] = {UINT64_MAX, UINT64_MAX};
+        DataCopyExtParams cpKey{1, static_cast<uint32_t>(blkElems * sizeof(bfloat16_t)), 0, 0, 0};
+        DataCopyPadExtParams<bfloat16_t> cpKeyPad{false, 0, 0, 0};
 
-        LocalTensor<half> topKOutValue = topKValueOutQueue_.AllocTensor<half>();
-        LocalTensor<int32_t> topKOutIndex = topKIndexOutQueue_.AllocTensor<int32_t>();
-        TopKCustom(topKOutValue, topKOutIndex, poolValue, topKInIndex, static_cast<int32_t>(kBlocks),
-            tilingData, numBlocks);
-        topKValueInQueue_.FreeTensor(poolValue);
-        topKIndexInQueue_.FreeTensor(topKInIndex);
-        topKValueOutQueue_.FreeTensor(topKOutValue);
-
-        // 6) Write selected logical block ids: the local block is force-kept and
-        //    appears among the kBlocks winners; we drop it from the ascending
-        //    set, sort the rest ascending, then append the local block LAST.
-        WriteSelected(row, batchIdx, topKOutIndex, kBlocks, localBlk);
-        topKIndexOutQueue_.FreeTensor(topKOutIndex);
-    }
-
-    // Writes the canonical ordered logical-block list for this row:
-    //   [ ascending(top-k winners minus local), local_block ]
-    // padded to topkTotal with the local block id (dedup-safe duplicate of the
-    // already-selected local block is harmless because FIA reads it once via the
-    // gathered block_table; the python glue dedups for actual_seq_lengths_kv).
-    __aicore__ inline void WriteSelected(uint32_t row, uint32_t batchIdx, LocalTensor<int32_t> &topKOutIndex,
-        uint32_t kBlocks, uint32_t localBlk)
-    {
-        if ASCEND_IS_AIC {
-            return;
-        }
-        LocalTensor<int32_t> outBuf = outIndexBuf_.template Get<int32_t>();
-        __ubuf__ const int32_t *winners = reinterpret_cast<__ubuf__ const int32_t *>(topKOutIndex.GetPhyAddr());
-        __ubuf__ int32_t *out = reinterpret_cast<__ubuf__ int32_t *>(outBuf.GetPhyAddr());
-
-        // Collect winners excluding the local block (it is placed last).
-        uint32_t cnt = 0;
-        for (uint32_t i = 0; i < kBlocks; ++i) {
-            int32_t blk = winners[i];
-            if (blk < 0) {
-                continue;
+        // Causal mask for the (only possibly partial) last block: lanes
+        // [lastValid, 128) are tokens >= curSeqLen and must be forced to MIN.
+        uint32_t lastBlock = numBlocks - 1;
+        uint32_t lastValid = curSeqLen - lastBlock * MSA_BLOCK_SIZE;   // 1..128
+        uint64_t tailMask[2] = {0, 0};
+        if (lastValid < MSA_BLOCK_SIZE) {
+            if (lastValid < 64) {
+                tailMask[0] = UINT64_MAX << lastValid;                 // lanes [lastValid,64)
+                tailMask[1] = UINT64_MAX;                              // lanes [64,128)
+            } else {
+                tailMask[0] = 0;
+                tailMask[1] = UINT64_MAX << (lastValid - 64);         // lanes [lastValid,128)
             }
-            if (static_cast<uint32_t>(blk) == localBlk && param_.localBlocks > 0) {
-                continue; // drop, will append last
+        }
+
+        for (uint32_t chunkStart = 0; chunkStart < numBlocks; chunkStart += POOL_CHUNK_BLOCKS) {
+            uint32_t chunkBlocks = Min(POOL_CHUNK_BLOCKS, numBlocks - chunkStart);
+            for (uint32_t j = 0; j < chunkBlocks; ++j) {
+                uint32_t b = chunkStart + j;
+                int32_t phys = keyBlockTableGm_.GetValue(batchIdx * param_.blockCount + b);
+                uint64_t srcOff = static_cast<uint64_t>(phys) * blkElems;
+                LocalTensor<bfloat16_t> keyBf = keyGatherInQueue_.AllocTensor<bfloat16_t>();
+                DataCopyPad(keyBf, idxkCacheGm_[srcOff], cpKey, cpKeyPad);
+                keyGatherInQueue_.EnQue(keyBf);
+                keyBf = keyGatherInQueue_.DeQue<bfloat16_t>();
+                Cast(keyF, keyBf, RoundMode::CAST_NONE, blkElems);   // bf16 -> fp32
+                keyGatherInQueue_.FreeTensor(keyBf);
+                PipeBarrier<PIPE_V>();
+                Cast(keyH, keyF, RoundMode::CAST_NONE, blkElems);    // fp32 -> fp16
+                PipeBarrier<PIPE_V>();
+                // products keyH[t,d] *= iq[d]  (iq broadcast across 128 token rows)
+                Mul(keyH, keyH, iqH, static_cast<int32_t>(MSA_BLOCK_SIZE), MSA_BLOCK_SIZE,
+                    {1, 1, 1, 8, 8, 0});
+                PipeBarrier<PIPE_V>();
+                // dot product per token = sum over dim (fp16) -> this block's
+                // 128-half slot in the chunk buffer (j*128 is 32B-aligned).
+                WholeReduceSum<half>(chunkBuf[static_cast<uint32_t>(j) * MSA_BLOCK_SIZE], keyH, fmask,
+                    MSA_BLOCK_SIZE, 1, 1, 8);
+                PipeBarrier<PIPE_V>();
+                if (b == lastBlock && lastValid < MSA_BLOCK_SIZE) {
+                    // mask invalid tail lanes (masked Duplicate over the 8-datablock
+                    // repeat at the 32B-aligned slot, mirrors FillMaxValueFromTail).
+                    Duplicate(chunkBuf[static_cast<uint32_t>(j) * MSA_BLOCK_SIZE],
+                        static_cast<half>(MIN_HALF_VALUE), tailMask, 1, 1, 8);
+                    PipeBarrier<PIPE_V>();
+                }
             }
-            out[cnt++] = blk;
+            // Collapse this chunk: chunkBlocks blocks -> chunkBlocks maxes, written
+            // contiguously at blockMax[chunkStart] (32B-aligned, chunkStart % 32 == 0).
+            WholeReduceMax<half>(blockMax[chunkStart], chunkBuf, fmask,
+                static_cast<int32_t>(chunkBlocks), 1, 1, 8, ReduceOrder::ORDER_ONLY_VALUE);
+            PipeBarrier<PIPE_V>();
         }
 
-        // Sort the non-local winners ascending.
-        SortInt32AscendingUB(outBuf, cnt);
-
-        // Append the local block last (recent=1).
-        uint32_t writeLen = cnt;
-        if (param_.localBlocks > 0) {
-            out[cnt] = static_cast<int32_t>(localBlk);
-            writeLen = cnt + param_.localBlocks; // local appended (+1)
-        }
-
-        // Pad up to topkTotal with the local block id so the output shape is
-        // static [B, G, topkTotal] for graph capture. Extra slots repeat the
-        // local block; python dedups when building actual_seq_lengths_kv.
-        for (uint32_t i = writeLen; i < param_.topkTotal; ++i) {
-            out[i] = static_cast<int32_t>(localBlk);
-        }
-
-        outIndexBuf_.template EnQue<int32_t>(outBuf);
-        outBuf = outIndexBuf_.template DeQue<int32_t>();
-        uint64_t outOff = static_cast<uint64_t>(row) * param_.topkTotal;
-        DataCopyExtParams cpOut{1, static_cast<uint32_t>(param_.topkTotal * sizeof(int32_t)), 0, 0, 0};
-        DataCopyPad(indicesGm_[outOff], outBuf, cpOut);
+        // Emit per-block maxes [0, blockCount) as fp16. Full barrier so the
+        // WholeReduceMax (PIPE_V) writes land before the UB->GM DMA (PIPE_MTE3).
+        PipeBarrier<PIPE_ALL>();
+        uint64_t outOff = static_cast<uint64_t>(row) * static_cast<uint64_t>(outW);
+        DataCopyExtParams cpOut{1, static_cast<uint32_t>(outW * sizeof(half)), 0, 0, 0};
+        DataCopyPad(indicesGm_[outOff], blockMax, cpOut);
+        topKValueInQueue_.FreeTensor(blockMax);
     }
 
     // For a zero-length / padded row, emit a deterministic block-0 list.
@@ -283,16 +338,41 @@ protected:
         if ASCEND_IS_AIC {
             return;
         }
-        LocalTensor<int32_t> outBuf = outIndexBuf_.template Get<int32_t>();
-        Duplicate(outBuf, static_cast<int32_t>(0), param_.topkTotal);
-        outIndexBuf_.template EnQue<int32_t>(outBuf);
-        outBuf = outIndexBuf_.template DeQue<int32_t>();
-        uint64_t outOff = static_cast<uint64_t>(row) * param_.topkTotal;
-        DataCopyExtParams cpOut{1, static_cast<uint32_t>(param_.topkTotal * sizeof(int32_t)), 0, 0, 0};
-        DataCopyPad(indicesGm_[outOff], outBuf, cpOut);
+        uint32_t outW = param_.blockCount;
+        uint32_t fillN = matmul::CeilDiv(outW, 32U) * 32U;
+        LocalTensor<half> poolValue = topKValueInQueue_.AllocTensor<half>();
+        Duplicate(poolValue, static_cast<half>(MIN_HALF_VALUE), fillN);
+        PipeBarrier<PIPE_V>();
+        // Full barrier before the UB->GM emit: guarantees the WholeReduceMax
+        // (PIPE_V) writes to poolValue are fully landed before the DMA (PIPE_MTE3)
+        // reads them. A lone V_MTE3 flag left a residual race that duplicated /
+        // shifted the leading pooled values non-deterministically.
+        PipeBarrier<PIPE_ALL>();
+        uint64_t outOff = static_cast<uint64_t>(row) * static_cast<uint64_t>(outW);
+        DataCopyExtParams cpOut{1, static_cast<uint32_t>(outW * sizeof(half)), 0, 0, 0};
+        DataCopyPad(indicesGm_[outOff], poolValue, cpOut);
+        topKValueInQueue_.FreeTensor(poolValue);
     }
 
-    // ---- sync helpers (simplified single Cube : Vector handshake) ----
+    // ---- sync helpers (two-leg Vector<->Cube handshake per row) ----
+    // Leg 1 (gather done): AIV sets after its UB->GM gather writes (PIPE_MTE3),
+    //                      AIC waits before reading the slab in ComputeMM.
+    __aicore__ inline void VectorNotifyCube(uint16_t evt)
+    {
+        // All-AIV barrier first: both paired vector cores must reach here (the
+        // gathering AIV only after PIPE_MTE3 drains its keyGatherGm writes)
+        // before either notifies the cube -- otherwise the idle AIV's early
+        // notify lets the cube read a half-written key slab.
+        CrossCoreSetFlag<SYNC_MODE0, PIPE_MTE3>(SYNC_AIV_ONLY_ALL_FLAG);
+        CrossCoreWaitFlag(SYNC_AIV_ONLY_ALL_FLAG);
+        CrossCoreSetFlag<SYNC_MODE2, PIPE_MTE3>(evt);
+    }
+    __aicore__ inline void CubeWaitVector(uint16_t evt)
+    {
+        CrossCoreWaitFlag(evt);
+    }
+    // Leg 2 (scores ready): AIC sets after the matmul output pipe (PIPE_FIX),
+    //                       AIV waits before pooling matmulGm_.
     __aicore__ inline void CubeNotifyVector(uint16_t evt)
     {
         CrossCoreSetFlag<SYNC_MODE2, PIPE_FIX>(evt);
@@ -340,7 +420,7 @@ protected:
         idxkCacheGm_.SetGlobalBuffer(reinterpret_cast<__gm__ bfloat16_t *>(idxkCache));
         seqLenGm_.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t *>(seqLen));
         keyBlockTableGm_.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t *>(keyBlockTable));
-        indicesGm_.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t *>(indices));
+        indicesGm_.SetGlobalBuffer(reinterpret_cast<__gm__ half *>(indices));
 
         // Workspace layout (host tiling must size user workspace to match):
         //   [0]        gathered keys, per-cube-core: usedCoreNum * maxSeqLen * dim (bf16)
@@ -353,14 +433,27 @@ protected:
 
     __aicore__ inline void InitLocalBuffers()
     {
-        // Pooled value tensor: one half per block, padded to topKInnerSize.
+        // Gather staging: one physical idxk block ([128,128] bf16 = 32 KiB) per
+        // buffer, double-buffered so the GM->UB and UB->GM legs of consecutive
+        // blocks overlap. The gather and the TopK phases share UB but run in
+        // distinct phases (separated by the Cube round-trip), so peak UB is the
+        // gather queue plus the (KB-scale) TopK buffers -- well within AIV UB.
+        pipe_->InitBuffer(keyGatherInQueue_, DOUBLE_BUFFER_NUM,
+            MSA_BLOCK_SIZE * param_.dimension * sizeof(bfloat16_t));
+        // Output block-max tensor: one half per block, padded to topKInnerSize
+        // (= CeilDiv(blockCount,32)*32 on the host), so it always holds fillN.
         uint32_t innerSize = Max(param_.topKInnerSize, static_cast<uint32_t>(MAX_FP16_PROCESS_NUM));
         pipe_->InitBuffer(topKValueInQueue_, 1, innerSize * sizeof(half));
-        pipe_->InitBuffer(topKIndexInQueue_, 1, innerSize * sizeof(int32_t));
-        pipe_->InitBuffer(topKValueOutQueue_, 1, param_.maxK * sizeof(half) + DATABLOCK_BYTES);
-        pipe_->InitBuffer(topKIndexOutQueue_, 1, param_.maxK * sizeof(int32_t) + DATABLOCK_BYTES);
-        pipe_->InitBuffer(scratchQueue_, 1, (param_.maxSeqLen + MAX_FP16_PROCESS_NUM) * sizeof(half));
-        pipe_->InitBuffer(outIndexBuf_, (param_.topkTotal + 16) * sizeof(int32_t));
+        pipe_->InitBuffer(iqBf16Buf_, param_.dimension * sizeof(bfloat16_t));
+        pipe_->InitBuffer(iqF32Buf_, param_.dimension * sizeof(float));
+        pipe_->InitBuffer(iqHalfBuf_, param_.dimension * sizeof(half));
+        pipe_->InitBuffer(keyF32Buf_, MSA_BLOCK_SIZE * param_.dimension * sizeof(float));
+        pipe_->InitBuffer(keyHalfBuf_, MSA_BLOCK_SIZE * param_.dimension * sizeof(half));
+        // Fixed-size chunk buffer for the fused pool (POOL_CHUNK_BLOCKS*128 half).
+        // FIXED regardless of numBlocks -- replaces the old maxSeqLen scratch that
+        // overflowed UB once numBlocks reached 128. The unused topK index/out
+        // queues + maxSeqLen scratch are no longer allocated (top-k is python-side).
+        pipe_->InitBuffer(chunkBuf_, POOL_CHUNK_BLOCKS * MSA_BLOCK_SIZE * sizeof(half));
     }
 
 protected:
@@ -371,22 +464,32 @@ protected:
     GlobalTensor<bfloat16_t> keyGatherGm_;
     GlobalTensor<int32_t> seqLenGm_;
     GlobalTensor<int32_t> keyBlockTableGm_;
-    GlobalTensor<int32_t> indicesGm_;
+    GlobalTensor<half> indicesGm_;
     GlobalTensor<half> matmulGm_;
 
+    TQue<TPosition::VECIN, DOUBLE_BUFFER_NUM> keyGatherInQueue_;
     TQue<TPosition::VECIN, 1> topKValueInQueue_;
     TQue<TPosition::VECIN, 1> topKIndexInQueue_;
     TQue<TPosition::VECOUT, 1> topKValueOutQueue_;
     TQue<TPosition::VECOUT, 1> topKIndexOutQueue_;
     TQue<TPosition::VECIN, DOUBLE_BUFFER_NUM> scratchQueue_;
     TBuf<TPosition::VECCALC> outIndexBuf_;
+    TBuf<TPosition::VECCALC> iqBf16Buf_;
+    TBuf<TPosition::VECCALC> iqF32Buf_;
+    TBuf<TPosition::VECCALC> iqHalfBuf_;
+    TBuf<TPosition::VECCALC> keyF32Buf_;
+    TBuf<TPosition::VECCALC> keyHalfBuf_;
+    TBuf<TPosition::VECCALC> chunkBuf_;
 
     MsaTilingParam param_;
     uint32_t blockIdx_ = 0;
     uint32_t subBlockIdx_ = 0;
 
-    static constexpr uint64_t SYNC_MODE2 = 2;
-    static constexpr uint16_t SYNC_AIC_AIV_FLAG = 4;
+    static constexpr uint64_t SYNC_MODE0 = 0; // AIV<->AIV (all vector cores)
+    static constexpr uint64_t SYNC_MODE2 = 2; // AIC<->AIV
+    static constexpr uint16_t SYNC_AIV_ONLY_ALL_FLAG = 0; // all-AIV barrier
+    static constexpr uint16_t SYNC_AIV_AIC_FLAG = 2; // gather done: Vector -> Cube
+    static constexpr uint16_t SYNC_AIC_AIV_FLAG = 4; // scores ready: Cube -> Vector
 
     using AMatmulType = matmul::MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t, false>;
     using BMatmulType = matmul::MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t, true>;
