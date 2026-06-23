@@ -1282,7 +1282,11 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
             _seq_lens_cpu = common_attn_metadata.seq_lens_cpu
         else:
             _seq_lens_cpu = common_attn_metadata.seq_lens.cpu()
-        max_seqlen_kv = torch.max(_seq_lens_cpu[:num_decodes]).item()
+        # DSv4 507011 fix (Part 2): _seq_lens_cpu is the optimistic mirror (committed +
+        # all scheduled draft tokens); seq_lens (GPU) is the rejection-corrected committed
+        # value. Use the committed one so the kernel's KV planning bound never exceeds the
+        # committed extent under FULL_DECODE cudagraph replay.
+        max_seqlen_kv = torch.max(seq_lens[:num_decodes]).item()
 
         input_positions = common_attn_metadata.positions[:num_decode_tokens_typed].long()
         # MTP FullGraph fix: use a per-draft-step fixed-address cache slot. use_cache=False
@@ -1294,6 +1298,18 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
 
         slot_mapping = self.spec_slot_mapping[draft_step - 1][:num_decode_tokens_typed]  # type: ignore[index]
         block_table = common_attn_metadata.block_table_tensor
+
+        # DSv4 507011 fix (Part 1): scrub the UNCOMMITTED block-table columns of each active
+        # decode row. Under FULL_DECODE cudagraph replay the SWA page-attention walk can index
+        # columns in [committed_blocks, max_blocks_per_req) that still hold stale block ids
+        # reused from a prior longer occupancy of this row; idInBlockTable * kvStride then
+        # dereferences a wild DDR address -> AIV MTE out-of-bounds -> NPU error 507011. Block 0
+        # is always an in-range block id, and these columns are never legitimately attended
+        # (seqused_kv stops at the committed extent), so overwriting them is correctness-safe.
+        _bt = block_table[:num_decodes, ...]
+        _committed_blocks = (seq_lens[:num_decodes].to(torch.int64) + (self.block_size - 1)) // self.block_size
+        _cols = torch.arange(_bt.shape[1], device=_bt.device).unsqueeze(0)
+        _bt.masked_fill_(_cols >= _committed_blocks.unsqueeze(1), 0)
 
         metadata_op = DeviceOperator.get_dsa_sparse_attn_metadata_op()
         metadata_kwargs = DeviceOperator.get_dsa_sparse_attn_metadata_kwargs(self.seqused_q.device)
