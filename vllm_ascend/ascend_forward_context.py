@@ -267,6 +267,19 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
         getattr(vllm_config.model_config.hf_text_config, "quantize", None),
     )
 
+    if (
+        vllm_config.lora_config is not None
+        and vllm_config.parallel_config.enable_expert_parallel
+        and get_ep_group().world_size > 1
+    ):
+        # MoE-LoRA injects on _apply_mlp (between dispatch and combine). Force
+        # all-gather under EP: it shards experts (the EP memory benefit is
+        # kept), exposes expanded_row_idx for the per-token adapter lookup,
+        # and is cudagraph-capturable. (All-to-all's dynamic split sizes need
+        # a host sync that is illegal during FULL-decode graph capture; MC2 /
+        # fused-MC2 dispatch are fused ops without a usable LoRA hook point.)
+        return MoECommType.ALLGATHER
+
     if not vllm_config.parallel_config.enable_expert_parallel or get_ep_group().world_size == 1:
         moe_comm_type = MoECommType.ALLGATHER
     elif soc_version in {AscendDeviceType.A2}:

@@ -141,6 +141,11 @@ class MoEMlpComputeInput:
     need_trans: bool = False
     dynamic_eplb: bool = False
     swiglu_limit: float = 0.0
+    # MoE-LoRA hook needs (permuted_row -> orig_token) mapping to look up
+    # per-token LoRA slot ids. Populated by build_mlp_compute_input for comm
+    # methods whose combine_metadata carries expanded_row_idx (AllGather).
+    expanded_row_idx: torch.Tensor | None = None
+    topk_ids: torch.Tensor | None = None
 
 
 __all__ = [

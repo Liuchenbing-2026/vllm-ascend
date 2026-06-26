@@ -68,3 +68,4 @@ if _V2_MODEL_RUNNER_SUPPORTED:
 # only patch routed experts capture in main2main.
 if _V2_MODEL_RUNNER_SUPPORTED:
     import vllm_ascend.patch.worker.patch_routed_experts_capture  # noqa
+
