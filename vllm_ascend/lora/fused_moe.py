@@ -95,13 +95,11 @@ def _assert_ascend_moe_lora_supported(base_layer: AscendFusedMoE) -> None:
             "(dispatch_ffn_combine is a single fused C++ op). "
             "Set VLLM_ASCEND_ENABLE_FUSED_MC2=0."
         )
-    if getattr(base_layer, "_shared_experts", None) is not None:
-        raise AssertionError(
-            "Ascend MoE LoRA v1 does not wrap the shared_experts path "
-            "(it runs outside quant_method.apply). The target model "
-            "Qwen3-30B-A3B-Thinking-2507 has no shared experts; models "
-            "like DeepSeek-V3 are not yet supported."
-        )
+    # Shared experts (Qwen3.5-MoE) are supported: the fused shared-expert
+    # MLP runs outside quant_method.apply, but its own gate/up/down linears
+    # are wrapped by the *standard* linear LoRA path (not this MoE wrapper).
+    # This wrapper only injects the routed-expert delta; the shared expert
+    # is exposed on the wrapper in __init__ for submodule resolution.
     if getattr(base_layer, "multistream_overlap_gate", False):
         raise AssertionError(
             "multistream_overlap_gate=True interleaves quant_method.apply "
@@ -124,6 +122,13 @@ class AscendFusedMoEWithLoRA(FusedMoEWithLoRA):
         BaseLayerWithLoRA.__init__(self)
         self.base_layer = base_layer
         _assert_ascend_moe_lora_supported(base_layer)
+        # Expose the fused shared-expert submodule (Qwen3.5-MoE) so the
+        # LoRA manager can resolve ...experts._shared_experts.* after
+        # `experts` is replaced by this wrapper. Its linears get LoRA via
+        # the standard linear path; this wrapper handles routed experts.
+        _se = getattr(base_layer, "_shared_experts", None)
+        if _se is not None:
+            self._shared_experts = _se
         self.tp_size = get_tensor_model_parallel_world_size()
         self.tp_rank = get_tensor_model_parallel_rank()
         self.device = _get_lora_device(base_layer)
@@ -197,16 +202,22 @@ class AscendFusedMoEWithLoRA(FusedMoEWithLoRA):
         BaseLayerWithLoRA.set_mapping(self, punica_wrapper)
 
     def create_lora_weights(self, max_loras, lora_config, model_config=None):
-        # Inherit upstream weight allocation (already local-expert-sized for
-        # EP via base_layer.local_num_experts), then pin n_slices to the flat
-        # stacked-list length. create_dummy_lora derives its per-slice loop
-        # bound from packed_modules_mapping, which counts GLOBAL experts; under
-        # EP the stacked buffers are local-expert-sized (shorter), so without
-        # this the dummy-LoRA loop runs past the end of lora_a_stacked
-        # (IndexError during profile_run). Equals the global count in the
-        # non-EP case, so this is a no-op there.
         super().create_lora_weights(max_loras, lora_config, model_config)
-        self.n_slices = len(self.lora_a_stacked)
+        # EP fix, 2D wrapper only. The dummy-LoRA loop in LoRAModelManager
+        # iterates ``n_slices`` and indexes the flat ``lora_a_stacked``.
+        # Upstream derives n_slices from packed_modules_mapping (GLOBAL
+        # expert count), but under EP the stacked buffers are local-expert-
+        # sized, so the loop would run past the end of lora_a_stacked
+        # (IndexError in profile_run). Pin n_slices to the actual flat
+        # length; equals the global count when EP is off, so it is a no-op
+        # there.
+        #
+        # The 3D wrapper (Qwen3.5-MoE fuses w1+w3) builds no lora_a_stacked
+        # and has its own dummy branch (FusedMoE3DWithLoRA, which reads
+        # w13/w2_lora_a_stacked directly and never touches n_slices), so the
+        # override is both impossible and unnecessary there -- skip it.
+        if hasattr(self, "lora_a_stacked"):
+            self.n_slices = len(self.lora_a_stacked)
         # The grouped kernel (FULL-decode aclgraph / EP) folds adapter slot 0
         # only; a request whose adapter lands in slot >= 1 silently gets no
         # delta. Warn (not raise) since max_loras counts slots, not active

@@ -3661,6 +3661,18 @@ class NPUModelRunner(GPUModelRunner):
                     self.model.set_aux_hidden_state_layers(aux_layers)
 
             if self.lora_config:
+                # Qwen3.5-MoE is a hybrid GDN + MoE model. Strip the GDN
+                # in_proj from the LoRA packed mapping *before* the LoRA
+                # manager is built: LoRAModelManager.__init__ snapshots
+                # model.packed_modules_mapping before it creates the punica
+                # wrapper (and thus before refresh_all_lora_classes runs),
+                # so the strip must happen here, in the worker, right before
+                # load_lora_model. The Ascend sgmv_expand kernel rejects
+                # in_proj_ba (per-shard output dim < lora rank).
+                from vllm_ascend.lora.utils import (
+                    _strip_gdn_inproj_from_lora_mapping,
+                )
+                _strip_gdn_inproj_from_lora_mapping(self.model)
                 self.model = self.load_lora_model(self.model, self.vllm_config, self.device)
         self.model_memory_usage = m.consumed_memory
         logger.info("Loading model weights took %.4f GB", m.consumed_memory / float(2**30))
