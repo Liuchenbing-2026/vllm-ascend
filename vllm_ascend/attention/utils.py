@@ -111,6 +111,11 @@ class AscendPrefillContextParallelMetadata:
     # original max_query_len before pcp split
     max_query_len_pcp_full: int = 0
 
+    # original (pre-PCP-split) global num_computed_tokens per request, stashed by
+    # generate_pcp_metadata so SFA-CP can recover it when async-spec decode nulls
+    # common_attn_metadata.num_computed_tokens_cpu.
+    global_num_computed_tokens_cpu: torch.Tensor | None = None
+
     # the following attributes are specifically used in hybrid-attn models.
     pcp_use_hybrid_attn: bool = False
 

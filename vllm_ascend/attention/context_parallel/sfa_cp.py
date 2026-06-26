@@ -175,7 +175,16 @@ class AscendSFACPMetadataBuilder(AscendSFAMetadataBuilder):
     ) -> AscendPCPMetadata | None:
         common_long_seq_metadata = common_attn_metadata.prefill_context_parallel_metadata
         assert common_long_seq_metadata is not None
-        num_computed_tokens = common_attn_metadata.num_computed_tokens_cpu.to(seq_lens.device)
+        num_computed_tokens_cpu = common_attn_metadata.num_computed_tokens_cpu
+        if num_computed_tokens_cpu is None:
+            # async-spec decode (use_async_spec_decode) nulls num_computed_tokens_cpu in
+            # _prepare_inputs; recover the global value stashed by generate_pcp_metadata.
+            num_computed_tokens_cpu = common_long_seq_metadata.global_num_computed_tokens_cpu
+            assert num_computed_tokens_cpu is not None, (
+                "SFA-CP async path requires generate_pcp_metadata to stash global_num_computed_tokens_cpu"
+            )
+            num_computed_tokens_cpu = num_computed_tokens_cpu[: seq_lens.shape[0]]
+        num_computed_tokens = num_computed_tokens_cpu.to(seq_lens.device)
         q_head_kv_lens = (seq_lens // 2) * (self.pcp_rank + 1) + num_computed_tokens
         q_tail_kv_lens = seq_lens * self.pcp_size - (seq_lens // 2) * self.pcp_rank + num_computed_tokens
         return AscendPCPMetadata(

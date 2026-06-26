@@ -278,6 +278,31 @@ class TestAscendSFACPMetadataBuilder(TestBase):
         self.assertIsNotNone(result.tail_attn_nomask_seqlens)
 
     @patch("vllm_ascend.attention.context_parallel.sfa_cp.enabling_mlapo", return_value=False)
+    @patch_distributed_groups(dcp_size=2, pcp_size=2, needs_mocks=False)
+    def test_build_cp_metadata_async_spec_num_computed_none(self, mock_enabling_mlapo):
+        # Under async-spec decode (MTP), common_attn_metadata.num_computed_tokens_cpu is None;
+        # build_cp_metadata must recover the global value stashed on long_seq_metadata instead
+        # of dereferencing None (the GLM5 + PCP + MTP crash).
+        builder = self._build_builder()
+        block_arange = builder.block_arange_buffer
+        seq_lens = torch.tensor([8, 16], dtype=torch.int32)
+
+        common_attn_metadata = MagicMock()
+        long_seq_metadata = MagicMock()
+        long_seq_metadata.q_head_idx_tensor = torch.tensor([0, 1])
+        long_seq_metadata.q_tail_idx_tensor = torch.tensor([2, 3])
+        long_seq_metadata.q_full_idx = torch.tensor([0, 1, 2, 3])
+        long_seq_metadata.pcp_allgather_restore_idx = torch.tensor([0, 1, 2, 3])
+        long_seq_metadata.global_num_computed_tokens_cpu = torch.tensor([0, 0], dtype=torch.int32)
+        common_attn_metadata.prefill_context_parallel_metadata = long_seq_metadata
+        common_attn_metadata.num_computed_tokens_cpu = None
+
+        result = builder.build_cp_metadata(block_arange, seq_lens, common_attn_metadata)
+        self.assertIsInstance(result, AscendPCPMetadata)
+        self.assertIsNotNone(result.head_attn_nomask_seqlens)
+        self.assertIsNotNone(result.tail_attn_nomask_seqlens)
+
+    @patch("vllm_ascend.attention.context_parallel.sfa_cp.enabling_mlapo", return_value=False)
     @patch("vllm_ascend.attention.context_parallel.sfa_cp.split_decodes_and_prefills")
     @patch_distributed_groups(dcp_size=1, pcp_size=1, needs_mocks=False)
     def test_build_decode_only_no_pcp(self, mock_split, mock_mlapo):

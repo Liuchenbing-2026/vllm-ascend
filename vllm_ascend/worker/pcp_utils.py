@@ -1112,6 +1112,12 @@ class PCPManager:
                 query_lens_pcp_full_cpu=ori_query_lens_cpu,
                 max_query_len_pcp_full=ori_query_lens_cpu.max().item(),
             )
+            # GLM5+PCP: stash the GLOBAL (pre-PCP-split) num_computed_tokens so SFA-CP can
+            # recover it when async-spec decode nulls common_attn_metadata.num_computed_tokens_cpu.
+            # .clone() decouples from the mutable batch buffer (same convention used elsewhere).
+            long_seq_metadata.global_num_computed_tokens_cpu = input_batch.num_computed_tokens_cpu_tensor[
+                :num_reqs_padded
+            ].clone()
             if self.pcp_world_size > 1:
                 q_head_idx, q_tail_idx = [], []
                 kv_with_q_head_nomask_idx, kv_with_q_head_mask_idx = [], []
