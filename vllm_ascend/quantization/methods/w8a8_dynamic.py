@@ -303,10 +303,20 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         topk_weights = topk_weights.to(self.in_dtype)
 
         moe_comm_method = _EXTRA_CTX.moe_comm_method
+        megamoe_flag = _EXTRA_CTX.moe_comm_type == MoECommType.MEGAMOE
         fused_scale_flag = (
             _EXTRA_CTX.moe_comm_type == MoECommType.FUSED_MC2 and get_ascend_config().enable_fused_mc2 == 1
         )
-        if self.dynamic_eplb:
+        if megamoe_flag:
+            # mega_moe (A8W8-INT) consumes per-expert weight/scale lists:
+            #   l1_weights[e] (hidden, 2*intermediate) int8 NZ,
+            #   l2_weights[e] (intermediate, hidden) int8 NZ,
+            #   l1/l2 weight scales as per-channel uint64 (see docs/zh/mega_moe.md, #6927).
+            w1 = layer.megamoe_w13_weight_list
+            w1_scale = layer.megamoe_w13_scale_list
+            w2 = layer.megamoe_w2_weight_list
+            w2_scale = layer.megamoe_w2_scale_list
+        elif self.dynamic_eplb:
             w1 = layer.w13_weight_list
             w1_scale = layer.fused_w1_scale_list if fused_scale_flag else layer.w13_weight_scale_fp32_list
             w2 = layer.w2_weight_list
@@ -363,6 +373,23 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         if get_ascend_config().enable_fused_mc2 == 1:
             layer.fused_w1_scale = scale_from_float_to_int64(layer.w13_weight_scale.data)
             layer.fused_w2_scale = scale_from_float_to_int64(layer.w2_weight_scale.data)
+
+        if get_ascend_config().enable_megamoe == 1:
+            # mega_moe (A8W8-INT) needs per-expert weight/scale lists. The weights are the
+            # already-transposed, NZ-formatted per-expert slices; the per-channel quant
+            # factors are packed as uint64 (bit-compatible with the int64 packing used by
+            # the dispatch_ffn_combine path). See docs/zh/mega_moe.md (ops-transformer #6927).
+            num_local_experts = layer.w13_weight.data.shape[0]
+            megamoe_w1_scale = scale_from_float_to_int64(layer.w13_weight_scale.data).view(torch.uint64)
+            megamoe_w2_scale = scale_from_float_to_int64(layer.w2_weight_scale.data).view(torch.uint64)
+            layer.megamoe_w13_weight_list = [w.clone() for w in layer.w13_weight.data.unbind(dim=0)]
+            layer.megamoe_w2_weight_list = [w.clone() for w in layer.w2_weight.data.unbind(dim=0)]
+            layer.megamoe_w13_scale_list = [
+                s.clone() for s in megamoe_w1_scale.view(num_local_experts, -1).unbind(dim=0)
+            ]
+            layer.megamoe_w2_scale_list = [
+                s.clone() for s in megamoe_w2_scale.view(num_local_experts, -1).unbind(dim=0)
+            ]
 
         if self.dynamic_eplb:
             layer.w13_weight_list = [weight.clone() for weight in layer.w13_weight.data.unbind(dim=0)]

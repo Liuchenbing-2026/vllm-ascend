@@ -100,6 +100,15 @@ env_variables: dict[str, Callable[[], Any]] = {
     # `dispatch_gmm_combine_decode` can be used only for **decode node** moe layer
     # with W8A8. And MTP layer must be W8A8.
     "VLLM_ASCEND_ENABLE_FUSED_MC2": lambda: int(os.getenv("VLLM_ASCEND_ENABLE_FUSED_MC2", "0")),
+    # Whether to enable the fully-fused MegaMoe operator (`cann_ops_transformer.ops.mega_moe`,
+    # which fuses Dispatch + Linear1 + SwiGLU + Linear2 + Combine into a single op with
+    # communication/computation overlap). See gitcode cann/ops-transformer PR #6927
+    # (docs/zh/mega_moe.md) for the operator spec.
+    # 0, or not set: MegaMoe is disabled, the default MoE comm method is used.
+    # 1: on A2/A3 with expert parallel, the routed-expert MoE is replaced by `mega_moe`.
+    #    Requires the `cann_ops_transformer` package (shipped in a later CANN release),
+    #    a W8A8 (A8W8-INT) moe layer, EP world_size in {2,4,8,16,32}, and non-mtp.
+    "VLLM_ASCEND_ENABLE_MEGAMOE": lambda: int(os.getenv("VLLM_ASCEND_ENABLE_MEGAMOE", "0")),
     # DEPRECATED: VLLM_ASCEND_BALANCE_SCHEDULING env var will be removed in a future release.
     # Use --additional-config '{"enable_balance_scheduling": true}' instead.
     "VLLM_ASCEND_BALANCE_SCHEDULING": lambda: bool(int(os.getenv("VLLM_ASCEND_BALANCE_SCHEDULING", "0"))),

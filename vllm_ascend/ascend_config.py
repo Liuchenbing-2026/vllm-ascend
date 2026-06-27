@@ -149,6 +149,12 @@ class AscendConfig:
             "VLLM_ASCEND_ENABLE_FUSED_MC2",
             ascend_envs.VLLM_ASCEND_ENABLE_FUSED_MC2,
         )
+        self.enable_megamoe = self._get_config_value(
+            additional_config,
+            "enable_megamoe",
+            "VLLM_ASCEND_ENABLE_MEGAMOE",
+            ascend_envs.VLLM_ASCEND_ENABLE_MEGAMOE,
+        )
         self.enable_mlapo = self._get_config_value(
             additional_config,
             "enable_mlapo",

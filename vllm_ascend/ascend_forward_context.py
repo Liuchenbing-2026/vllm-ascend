@@ -28,6 +28,7 @@ class MoECommType(Enum):
     MC2 = 1
     ALLTOALL = 2
     FUSED_MC2 = 3
+    MEGAMOE = 4
 
 
 _MRV2_IN_PROFILE_RUN: ContextVar[bool] = ContextVar("_MRV2_IN_PROFILE_RUN", default=False)
@@ -269,6 +270,17 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
 
     if not vllm_config.parallel_config.enable_expert_parallel or get_ep_group().world_size == 1:
         moe_comm_type = MoECommType.ALLGATHER
+    elif (
+        get_ascend_config().enable_megamoe == 1
+        and soc_version in {AscendDeviceType.A2, AscendDeviceType.A3}
+        and get_ep_group().world_size in {2, 4, 8, 16, 32}
+        and not is_draft_model
+    ):
+        # Fully-fused MegaMoe (`cann_ops_transformer.ops.mega_moe`) replaces the whole
+        # dispatch + experts + combine pipeline on A2/A3 expert-parallel MoE layers.
+        # It is opt-in via VLLM_ASCEND_ENABLE_MEGAMOE and constrained to the EP world
+        # sizes the operator supports (see docs/zh/mega_moe.md from ops-transformer #6927).
+        moe_comm_type = MoECommType.MEGAMOE
     elif soc_version in {AscendDeviceType.A2}:
         num_experts = vllm_config.model_config.get_num_experts()
         ep_world_size = (

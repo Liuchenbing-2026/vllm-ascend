@@ -23,6 +23,7 @@ from vllm.model_executor.layers.fused_moe import FusedMoEConfig
 
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType
+from vllm_ascend.distributed.parallel_state import get_mc2_group
 from vllm_ascend.ops.fused_moe.moe_mlp import unified_apply_mlp
 from vllm_ascend.ops.fused_moe.moe_runtime_args import (
     MoEFusedExpertsInput,
@@ -58,6 +59,8 @@ def setup_moe_comm_method(moe_config):
         _MoECommMethods[MoECommType.ALLGATHER] = AllGatherCommImpl(moe_config)
         _MoECommMethods[MoECommType.MC2] = MC2CommImpl(moe_config)
         _MoECommMethods[MoECommType.FUSED_MC2] = FusedMC2CommImpl(moe_config)
+        if get_ascend_config().enable_megamoe == 1:
+            _MoECommMethods[MoECommType.MEGAMOE] = MegaMoeCommImpl(moe_config)
     else:
         _MoECommMethods[MoECommType.ALLGATHER] = AllGatherCommImpl(moe_config)
 
@@ -345,4 +348,110 @@ class FusedMC2CommImpl(MoECommMethod):
             raise ValueError(f"Wrong value of {get_ascend_config().enable_fused_mc2=}")
         return FusedExpertsResult(
             routed_out=out, expert_tokens=expert_tokens, swiglu_limit=fused_experts_input.swiglu_limit
+        )
+
+
+class MegaMoeCommImpl(MoECommMethod):
+    """Fully-fused MoE via the ``cann_ops_transformer.ops.mega_moe`` operator.
+
+    ``mega_moe`` fuses Dispatch + Linear1 (gate_up GMM) + SwiGLU + Linear2 (down GMM)
+    + Combine into a single op with communication/computation overlap, so it
+    supersedes the separate token_dispatch / grouped-matmul / token_combine pipeline.
+    Like :class:`FusedMC2CommImpl`, this class therefore overrides ``fused_experts`` to
+    call the operator directly and only reuses the MC2 token dispatcher /
+    prepare-finalize for their local (non-communicating) pad/unpad and group bookkeeping.
+
+    Usage follows the operator spec (gitcode cann/ops-transformer PR #6927,
+    ``docs/zh/mega_moe.md``): build a symmetric communication buffer once per EP comm
+    domain via ``get_symm_buffer_for_mega_moe``, then call ``mega_moe`` every forward.
+    The operator ships in a later CANN release, so the import is deferred and this comm
+    method is only registered/selected when ``VLLM_ASCEND_ENABLE_MEGAMOE == 1``.
+    """
+
+    def __init__(self, moe_config):
+        super().__init__(moe_config)
+        # The symmetric buffer is created lazily on the first forward, once the EP HCCL
+        # communicator is initialized and the hidden / intermediate dims are known.
+        self._sym_buffer = None
+
+    def pad_and_split_input_ids(self, input_ids):
+        return self.prepare_finalize.pad_and_split_input_ids(input_ids)  # type: ignore[attr-defined]
+
+    def _get_token_dispatcher(self):
+        return TokenDispatcherWithMC2()
+
+    def _get_prepare_finalize(self):
+        return PrepareAndFinalizeWithMC2(self.moe_config)
+
+    def _ensure_sym_buffer(self, hidden: int, intermediate_hidden: int):
+        if self._sym_buffer is not None:
+            return self._sym_buffer
+        # `cann_ops_transformer` ships in a later CANN release; import lazily so the
+        # module loads (and other comm methods work) even when the package is absent.
+        from cann_ops_transformer.ops import get_symm_buffer_for_mega_moe
+
+        # Use the MoE all-to-all (MC2) communication domain, i.e. the same EP group the
+        # existing fused MoE comm methods run on.
+        ep_group = get_mc2_group().device_group
+        ep_rank = torch.distributed.get_rank(ep_group)
+        # SymmBuffer internally fetches the comm name with init_comm=False, so make sure
+        # the EP HCCL communicator has been initialized first (init_comm defaults to True).
+        ep_group._get_backend(torch.device("npu")).get_hccl_comm_name(ep_rank)
+        # A8W8-INT scenario (matches the W8A8-dynamic MoE layer): per-token int8 dispatch
+        # quantization. dispatch_quant_mode=2 / out dtype int8 per docs/zh/mega_moe.md.
+        self._sym_buffer = get_symm_buffer_for_mega_moe(
+            ep_group,
+            num_experts=self.moe_config.num_experts,
+            num_max_tokens_per_rank=0,  # 0 => auto-size from the comm buffer capacity
+            num_topk=self.moe_config.experts_per_token,
+            hidden=hidden,
+            intermediate_hidden=intermediate_hidden,
+            dispatch_quant_mode=2,
+            dispatch_quant_out_dtype=torch.int8,
+        )
+        return self._sym_buffer
+
+    def fused_experts(
+        self,
+        fused_experts_input: MoEFusedExpertsInput,
+    ):
+        from cann_ops_transformer.ops import mega_moe
+
+        weights = fused_experts_input.weights
+        l1_weights = weights.w1
+        l2_weights = weights.w2
+        assert isinstance(l1_weights, list) and isinstance(l2_weights, list), (
+            "MegaMoeCommImpl expects per-expert weight lists (built in the W8A8 apply path)."
+        )
+
+        x = fused_experts_input.hidden_states
+        hidden = x.shape[-1]
+        # Each per-expert l2 weight is (intermediate_hidden, hidden) after the
+        # process_weights transpose, so the leading dim is intermediate_hidden.
+        intermediate_hidden = l2_weights[0].shape[0]
+        sym_buffer = self._ensure_sym_buffer(hidden, intermediate_hidden)
+
+        # Apply log2phy redirection if needed (mirrors FusedMC2CommImpl).
+        topk_ids = fused_experts_input.topk_ids
+        if fused_experts_input.routing.log2phy is not None:
+            topk_ids = fused_experts_input.routing.log2phy[topk_ids]
+
+        swiglu_limit = fused_experts_input.swiglu_limit
+        y, expert_token_nums = mega_moe(
+            x,
+            topk_ids.to(torch.int32),
+            fused_experts_input.topk_weights,
+            l1_weights,
+            l2_weights,
+            sym_buffer,
+            l1_weights_sf=weights.w1_scale,
+            l2_weights_sf=weights.w2_scale,
+            l1_bias=weights.w1_scale_bias,
+            l2_bias=weights.w2_scale_bias,
+            x_active_mask=fused_experts_input.routing.mc2_mask,
+            activation="swiglu",
+            activation_clamp=swiglu_limit if swiglu_limit and swiglu_limit > 0 else None,
+        )
+        return FusedExpertsResult(
+            routed_out=y, expert_tokens=expert_token_nums, swiglu_limit=swiglu_limit
         )
