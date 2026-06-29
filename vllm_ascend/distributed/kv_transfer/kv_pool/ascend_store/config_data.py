@@ -433,6 +433,58 @@ class ChunkedTokenDatabase:
                 start = end
         return new_key, new_addr, new_size
 
+    def prefill_adaptor_producer_pp(
+        self,
+        keys,
+        addrs,
+        sizes,
+        kv_cache_group_id: int = 0,
+        cache_role: str = "kv",
+        pp_rank: int = 0,
+    ):
+        """P-side producer-put PP adaptation.
+
+        When the P-side runs with ``pipeline_parallel_size > 1`` each PP worker
+        only holds a slice of the model's layers (``partitions[pp_rank]``).
+        Without this adaptation each worker would send addr/size pairs that
+        cover the full layer range (because the upstream key-building code
+        does not know about PP), and Mooncake would refuse the put because
+        the addr range falls outside the buffer registered by this worker.
+
+        This method keeps the key as-is (each key already carries the worker's
+        ``@pp_rank:{self.pp_rank}``) and slices ``addr_list`` / ``size_list``
+        down to ``[layer_start : layer_end] * caches_per_layer`` where
+        ``layer_start = sum(partitions[:pp_rank])``. This is the symmetric
+        counterpart of ``decode_adaptor_prefill_pp``: the consumer can later
+        gather the per-PP-rank slices back into a full-layer view.
+        """
+        if self.partitions is None or len(self.partitions) == 1:
+            return keys, addrs, sizes
+
+        group_num_layers = self.group_num_layers.get(cache_role, {}).get(kv_cache_group_id, 0)
+        if not group_num_layers:
+            return keys, addrs, sizes
+
+        layer_start = sum(self.partitions[:pp_rank])
+        layer_end = layer_start + self.partitions[pp_rank]
+
+        new_addrs = []
+        new_sizes = []
+        for addr_list, size_list in zip(addrs, sizes):
+            caches_per_layer = max(len(addr_list) // group_num_layers, 1)
+            a_start = layer_start * caches_per_layer
+            a_end = layer_end * caches_per_layer
+            # Defensive clamp — if upstream has already trimmed addr_list to
+            # this worker's layers (i.e. a_end == len(addr_list)), the slice
+            # is a no-op rather than crashing on a bad pp_rank/partitions
+            # combination.
+            a_start = min(a_start, len(addr_list))
+            a_end = min(a_end, len(addr_list))
+            new_addrs.append(addr_list[a_start:a_end])
+            new_sizes.append(size_list[a_start:a_end])
+
+        return keys, new_addrs, new_sizes
+
 
 def normalize_block_ids_by_group(block_ids: tuple[list[int], ...] | list[int] | list[list[int]]) -> list[list[int]]:
     if isinstance(block_ids, tuple):

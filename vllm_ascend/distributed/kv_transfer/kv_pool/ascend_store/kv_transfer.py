@@ -213,6 +213,30 @@ class KVTransferThread(threading.Thread):
         except TypeError:
             return self.token_database.decode_adaptor_prefill_pp(keys, addrs, sizes)
 
+    def _prefill_adaptor_producer_pp(
+        self,
+        keys: list[str],
+        addrs: list[list[int]],
+        sizes: list[list[int]],
+        kv_cache_group_id: int = 0,
+        cache_role: str = "kv",
+        pp_rank: int = 0,
+    ):
+        adaptor = getattr(self.token_database, "prefill_adaptor_producer_pp", None)
+        if adaptor is None:
+            return keys, addrs, sizes
+        try:
+            return adaptor(
+                keys,
+                addrs,
+                sizes,
+                kv_cache_group_id=kv_cache_group_id,
+                cache_role=cache_role,
+                pp_rank=pp_rank,
+            )
+        except TypeError:
+            return adaptor(keys, addrs, sizes, pp_rank=pp_rank)
+
 
 class KVCacheStoreSendingThread(KVTransferThread):
     def __init__(
@@ -227,12 +251,16 @@ class KVCacheStoreSendingThread(KVTransferThread):
         ready_event: threading.Event,
         group_uses_align_state: list[bool],
         enable_kv_event: bool = False,
+        pp_size: int = 1,
+        pp_rank: int = 0,
     ):
         super().__init__(
             m_store, token_database, block_size, tp_rank, dcp_size, ready_event, name="KVCacheSendingThread"
         )
         self.put_step = put_step
         self.kv_role = kv_role
+        self.pp_size = pp_size
+        self.pp_rank = pp_rank
         self.stored_requests = defaultdict[str, int](int)
         self.group_uses_align_state = group_uses_align_state
         self.enable_kv_event = enable_kv_event
@@ -384,6 +412,20 @@ class KVCacheStoreSendingThread(KVTransferThread):
                         addrs,
                         sizes,
                         kv_cache_group_id=group_id,
+                    )
+                elif self.kv_role in {"kv_producer", "kv_both"} and self.pp_size > 1:
+                    # P-side PP > 1: this worker only registered the KV cache
+                    # for its own pp_rank's layers, so addr/size must be sliced
+                    # accordingly before m_store.put — otherwise Mooncake sees
+                    # addresses outside the registered buffer range and aborts
+                    # with TRANSFER_FAIL / INTERNAL_ERROR (see GLM5 PP_KVPOOL
+                    # bug.md @pp_rank:1 producer-put failures).
+                    keys, addrs, sizes = self._prefill_adaptor_producer_pp(
+                        keys,
+                        addrs,
+                        sizes,
+                        kv_cache_group_id=group_id,
+                        pp_rank=self.pp_rank,
                     )
 
                 if current_event is not None:

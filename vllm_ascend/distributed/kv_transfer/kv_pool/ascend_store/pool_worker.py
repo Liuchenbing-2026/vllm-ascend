@@ -151,12 +151,33 @@ class KVPoolWorker:
             self.put_step = 1
 
         partitions = None
-        if self.kv_role == "kv_consumer" and self.consumer_is_to_put:
+        # PP-aware partition info is needed on:
+        #   (a) D side when consumer_is_to_put — to split a P-side @pp_rank:0 key
+        #       into N @pp_rank:0..N-1 lookups (existing behavior).
+        #   (b) P side when pp_size > 1 — so each PP worker's producer-put can
+        #       slice keys/addrs/sizes to only the layers it actually holds,
+        #       instead of putting addrs that span the full layer range.
+        need_pp_partitions = (self.kv_role == "kv_consumer" and self.consumer_is_to_put) or (
+            self.kv_role in {"kv_producer", "kv_both"} and self.pp_size > 1
+        )
+        if need_pp_partitions:
             num_hidden_layers = model_config.hf_text_config.num_hidden_layers
             partition_list_str = vllm_config.kv_transfer_config.kv_connector_extra_config.get(
                 "prefill_pp_layer_partition", None
             )
-            prefill_pp_size = int(vllm_config.kv_transfer_config.kv_connector_extra_config.get("prefill_pp_size", 1))
+            # Producer side defaults prefill_pp_size to self.pp_size (the local
+            # PP size). Consumer side keeps reading it from kv_connector_extra_config
+            # because the consumer may have a different topology.
+            if self.kv_role in {"kv_producer", "kv_both"}:
+                prefill_pp_size = int(
+                    vllm_config.kv_transfer_config.kv_connector_extra_config.get(
+                        "prefill_pp_size", self.pp_size
+                    )
+                )
+            else:
+                prefill_pp_size = int(
+                    vllm_config.kv_transfer_config.kv_connector_extra_config.get("prefill_pp_size", 1)
+                )
 
             if partition_list_str is not None:
                 try:
@@ -174,6 +195,13 @@ class KVPoolWorker:
                 if remaining_layers := num_hidden_layers % prefill_pp_size:
                     for i in range(2, remaining_layers + 2):
                         partitions[-i] += 1
+
+            if self.kv_role in {"kv_producer", "kv_both"} and prefill_pp_size != self.pp_size:
+                raise ValueError(
+                    f"On the P side, prefill_pp_size ({prefill_pp_size}) must equal the local "
+                    f"pipeline_parallel_size ({self.pp_size}). Set prefill_pp_size correctly "
+                    f"in kv_connector_extra_config or remove the override."
+                )
 
         self.metadata: list[KeyMetadata] = []
         for group_id in range(self.num_kv_cache_groups):
@@ -463,6 +491,8 @@ class KVPoolWorker:
                     ready_event_sending,
                     self.group_uses_align_state,
                     self.enable_kv_events,
+                    pp_size=self.pp_size,
+                    pp_rank=self.pp_rank,
                 )
                 self.kv_send_thread.start()
             if self.load_async:
