@@ -343,6 +343,58 @@ class TestAscendStoreConnector(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIsInstance(result, AscendStoreKVEvents)
 
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ascend_store_connector.KVPoolScheduler")
+    def test_set_xfer_handshake_metadata(self, mock_scheduler_cls):
+        config = self._make_vllm_config()
+        from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorRole
+
+        connector = AscendStoreConnector(
+            vllm_config=config,
+            role=KVConnectorRole.SCHEDULER,
+            kv_cache_config=None,
+        )
+        meta = {0: MagicMock(), 1: MagicMock()}
+        connector.set_xfer_handshake_metadata(meta)
+        self.assertEqual(connector._xfer_handshake_metadata, meta)
+
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ascend_store_connector.KVPoolScheduler")
+    def test_set_xfer_handshake_metadata_pp_aware_accepts_pp_ranks(self, mock_scheduler_cls):
+        """PP-aware override must accept pp_rank > 0 without raising and flatten
+        (pp_rank, tp_rank) -> pp_rank * tp_size + tp_rank."""
+        config = self._make_vllm_config()
+        from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorRole
+
+        connector = AscendStoreConnector(
+            vllm_config=config,
+            role=KVConnectorRole.SCHEDULER,
+            kv_cache_config=None,
+        )
+        m00, m01, m10, m11 = (MagicMock() for _ in range(4))
+        # 2 PP stages x 2 TP shards
+        metadata = {(0, 0): m00, (0, 1): m01, (1, 0): m10, (1, 1): m11}
+        # Must NOT raise (base default rejects pp_rank > 0).
+        connector.set_xfer_handshake_metadata_pp_aware(metadata)
+        # tp_size = 2 -> flattened global ranks 0,1,2,3
+        self.assertEqual(
+            connector._xfer_handshake_metadata,
+            {0: m00, 1: m01, 2: m10, 3: m11},
+        )
+
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ascend_store_connector.KVPoolScheduler")
+    def test_set_xfer_handshake_metadata_pp_aware_single_pp(self, mock_scheduler_cls):
+        """pp_size == 1 collapses to the tp_rank index (backward compatible)."""
+        config = self._make_vllm_config()
+        from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorRole
+
+        connector = AscendStoreConnector(
+            vllm_config=config,
+            role=KVConnectorRole.SCHEDULER,
+            kv_cache_config=None,
+        )
+        m0, m1 = MagicMock(), MagicMock()
+        connector.set_xfer_handshake_metadata_pp_aware({(0, 0): m0, (0, 1): m1})
+        self.assertEqual(connector._xfer_handshake_metadata, {0: m0, 1: m1})
+
 
 if __name__ == "__main__":
     unittest.main()

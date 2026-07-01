@@ -12,6 +12,7 @@ from vllm.distributed.kv_events import (
 )
 from vllm.distributed.kv_transfer.kv_connector.v1.base import (
     KVConnectorBase_V1,
+    KVConnectorHandshakeMetadata,
     KVConnectorMetadata,
     KVConnectorRole,
     SupportsHMA,
@@ -100,6 +101,13 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
 
         self.sended_but_unfinished_reqs: set[str] = set()
 
+        # Handshake metadata gathered from all producer shards, keyed by the
+        # flattened global rank ``pp_rank * tp_size + tp_rank``. AscendStore
+        # addresses KV by pool key (which already encodes pp_rank/tp_rank), so
+        # this is retained for completeness rather than used as a transport
+        # address like point-to-point connectors.
+        self._xfer_handshake_metadata: dict[int, KVConnectorHandshakeMetadata] = {}
+
         if role == KVConnectorRole.SCHEDULER:
             self.connector_scheduler = KVPoolScheduler(vllm_config, self.use_layerwise, kv_cache_config)
         else:
@@ -116,6 +124,34 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
     ############################################################
     # Scheduler Side Methods
     ############################################################
+
+    def set_xfer_handshake_metadata(self, metadata: dict[int, KVConnectorHandshakeMetadata]) -> None:
+        """Store handshake metadata keyed by flattened global rank.
+
+        AscendStore is a key-addressed shared pool: KV is stored/retrieved by
+        pool key (which already encodes ``@pp_rank``/tp_rank), so this metadata
+        is retained for completeness and is not needed as a per-shard transport
+        address.
+        """
+        self._xfer_handshake_metadata = metadata
+
+    def set_xfer_handshake_metadata_pp_aware(
+        self, metadata: dict[tuple[int, int], KVConnectorHandshakeMetadata]
+    ) -> None:
+        """Consume handshake metadata from all ``(pp_rank, tp_rank)`` producer shards.
+
+        The base-class default rejects ``pp_rank > 0`` (raising
+        ``does not support PP-disaggregated KV transfer``). AscendStore reaches
+        every PP stage through the shared pool keyed by ``@pp_rank``, so it can
+        accept all shards. Following the in-tree Mooncake convention, the
+        ``(pp_rank, tp_rank)`` key is flattened to a single global rank
+        ``pp_rank * tp_size + tp_rank`` so the pp dimension is preserved.
+        """
+        tp_size = max((tp_rank for (_, tp_rank) in metadata), default=0) + 1
+        flat_metadata: dict[int, KVConnectorHandshakeMetadata] = {
+            pp_rank * tp_size + tp_rank: meta for (pp_rank, tp_rank), meta in metadata.items()
+        }
+        self.set_xfer_handshake_metadata(flat_metadata)
 
     def get_num_new_matched_tokens(self, request: "Request", num_computed_tokens: int) -> tuple[int, bool]:
         assert self.connector_scheduler is not None
