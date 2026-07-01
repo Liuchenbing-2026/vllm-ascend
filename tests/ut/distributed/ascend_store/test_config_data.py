@@ -113,6 +113,21 @@ class TestLayerPoolKey(unittest.TestCase):
         self.assertIn("model", s)
         self.assertTrue(s.endswith("@h1"))
 
+    def test_to_string_contains_pp_rank(self):
+        # Layerwise keys must carry @pp_rank so PP stages don't collide and so
+        # lookup_scheduler's "@pp_rank:0" -> "@pp_rank:{i}" expansion works.
+        meta = KeyMetadata("model", 0, 0, 0, 2)
+        s = LayerPoolKey(meta, "h1", 0).to_string()
+        self.assertIn("@pp_rank:2", s)
+
+    def test_hash_differs_by_pp_rank(self):
+        # Same layer on different PP stages must hash differently, otherwise
+        # stage-1's layer 0 aliases stage-0's layer 0 in the pool.
+        k_pp0 = LayerPoolKey(KeyMetadata("model", 0, 0, 0, 0), "h1", 0)
+        k_pp1 = LayerPoolKey(KeyMetadata("model", 0, 0, 0, 1), "h1", 0)
+        self.assertNotEqual(hash(k_pp0), hash(k_pp1))
+        self.assertNotEqual(k_pp0.to_string(), k_pp1.to_string())
+
 
 class TestChunkedTokenDatabase(unittest.TestCase):
     def setUp(self):
