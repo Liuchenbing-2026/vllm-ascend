@@ -449,33 +449,40 @@ class FusedMC2CommImpl(MoECommMethod):
         hidden = int(fused_experts_input.hidden_states.shape[-1])
         intermediate_hidden = _infer_intermediate_hidden(weight1[0], weight2[0], hidden)
         # The sym buffer is allocated by get_symm_buffer_for_mega_moe, a
-        # collective handshake over the EP (mc2) group. Its shape params —
-        # especially num_max_tokens_per_rank — MUST be identical on every EP
-        # rank, otherwise ranks allocate mismatched buffers / at different
-        # times and HCCL aborts (SUSPECT REMOTE ERROR 507057). So this value
-        # must be derived ONLY from rank-invariant, compile-time config,
-        # NEVER from the current forward's per-rank token count.
-        if self.token_dispatcher.global_bs > 0:
-            # global_bs = num_tokens_per_tp_rank * ep_world_size (compile-time).
-            num_max_tokens_per_rank = max(
-                1,
-                int(self.token_dispatcher.global_bs // self.token_dispatcher.ep_world_size),
-            )
-        else:
-            # Prefill-capable, rank-invariant cap (covers chunked prefill so
-            # A2 P-side prefill fits; clamped to the op's per-rank hard limit).
-            # Set once in TokenDispatcherWithMC2.__init__ from scheduler config.
-            rank_invariant_cap = getattr(self.token_dispatcher, "megamoe_max_tokens_per_rank", 0) or getattr(
-                self.token_dispatcher, "max_num_tokens_per_rank", 0
-            )
-            assert rank_invariant_cap and int(rank_invariant_cap) > 0, (
-                "CANN MegaMoe sym buffer needs a rank-invariant token cap "
-                "(token_dispatcher.megamoe_max_tokens_per_rank). Falling back to a "
-                "per-forward token count would desync the EP-group collective "
-                "(HCCL 507057). Got: "
-                f"{rank_invariant_cap!r}"
-            )
-            num_max_tokens_per_rank = max(1, int(rank_invariant_cap))
+        # collective handshake over the EP (mc2) group. num_max_tokens_per_rank
+        # is BOTH the collective's shape param (must be identical on every EP
+        # rank, else HCCL 507057) AND the op's hard per-rank capacity: the op
+        # requires 1 <= num_tokens <= num_max_tokens_per_rank, so the buffer
+        # must be sized for the LARGEST per-rank token count that will ever be
+        # fed.
+        #
+        # The critical case is determine_available_memory's profile/dummy run:
+        # it feeds a PREFILL-sized (max_num_batched_tokens) dummy batch on BOTH
+        # the P (kv_producer) and D (kv_consumer) instances, regardless of the
+        # instance's serving role. So both sides must size this buffer for the
+        # prefill max, not the decode max.
+        #
+        # Previously the D side took the global_bs>0 branch and sized this from
+        # global_bs//ep_world = the DECODE per-rank token count (<=~128). During
+        # the D-side profile run the prefill-sized dummy batch far exceeds that
+        # decode cap -> the op writes past the sym buffer -> "corrupted size vs.
+        # prev_size" heap corruption at EngineCore init (D-side only; P was fine
+        # because its global_bs==0 branch already used the prefill cap). Unify
+        # BOTH sides on the rank-invariant, prefill-capable, SoC-clamped cap.
+        # global_bs is still used elsewhere to pick the mega_moe dispatch mode
+        # (real-global_bs vs uniform+mc2_mask); it just no longer sizes the buffer.
+        rank_invariant_cap = getattr(self.token_dispatcher, "megamoe_max_tokens_per_rank", 0) or getattr(
+            self.token_dispatcher, "max_num_tokens_per_rank", 0
+        )
+        assert rank_invariant_cap and int(rank_invariant_cap) > 0, (
+            "CANN MegaMoe sym buffer needs a rank-invariant token cap "
+            "(token_dispatcher.megamoe_max_tokens_per_rank). Sizing it from the "
+            "decode global_bs underflows the profile/prefill dummy batch and "
+            "overflows the sym buffer (heap corruption at init); sizing it from a "
+            "per-forward token count would desync the EP-group collective "
+            f"(HCCL 507057). Got: {rank_invariant_cap!r}"
+        )
+        num_max_tokens_per_rank = max(1, int(rank_invariant_cap))
         num_topk = int(topk_ids.shape[-1])
         redundant_experts = int(fused_experts_input.routing.global_redundant_expert_num)
         if fused_experts_input.routing.expert_map is not None:
