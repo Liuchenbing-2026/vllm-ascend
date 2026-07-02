@@ -80,7 +80,34 @@ def _cann_megamoe_supported_by_config(vllm_config: VllmConfig, quant_type: Any) 
     if quant_type is None:
         return True
     quant_name = str(getattr(quant_type, "name", quant_type)).lower()
-    return quant_name in _CANN_MEGAMOE_SUPPORTED_QUANT_NAMES
+    if quant_name not in _CANN_MEGAMOE_SUPPORTED_QUANT_NAMES:
+        return False
+    # A8W4-INT extra gate: CANN mega_moe on A2/A3 only supports a PER-CHANNEL
+    # weight scale (l1_weights_sf/l2_weights_sf dtype UINT64, shape
+    # (2*intermediate,) / (hidden,)). Per-GROUP weight scale requires the
+    # FLOAT8_E8M0 scale format, which the interface doc marks as unsupported on
+    # A2/A3 (superscript 1). If a per-group W4A8 model is routed to MegaMoe, its
+    # 2-D per-group scale is silently misread as a 1-D per-channel scale -> the
+    # op starts and captures graphs fine but produces garbage output. So route
+    # per-group W4A8 back to MC2/ALLGATHER (the grouped_matmul path handles
+    # per-group scale correctly). group_size==0 means per-channel.
+    if "w4a8" in quant_name:
+        quant_config = getattr(vllm_config, "quant_config", None)
+        quant_description = getattr(quant_config, "quant_description", None) or {}
+        group_size = quant_description.get("group_size", 256)
+        try:
+            is_per_channel = int(group_size) == 0
+        except (TypeError, ValueError):
+            is_per_channel = False
+        if not is_per_channel:
+            logger.info(
+                "CANN MegaMoe disabled for per-group W4A8 (group_size=%s): the op "
+                "only supports per-channel UINT64 weight scale on A2/A3; routing "
+                "this MoE back to MC2/ALLGATHER to avoid silent accuracy loss.",
+                group_size,
+            )
+            return False
+    return True
 
 
 @contextmanager
