@@ -161,26 +161,18 @@ def _normalize_cann_activation(activation) -> str:
     )
 
 
-def _get_cann_mega_moe_quant_settings(quant_type: QuantType) -> tuple[int, object, int | None]:
-    # dispatch_quant_out_dtype is the dtype the dispatched (activation-quantized)
-    # tokens are stored as before the EP all-to-all. The CANN mega_moe interface
-    # doc — and crucially its own runnable appendix example — pass a real
-    # torch.dtype here (``dispatch_quant_out_dtype=torch.float8_e5m2``), NOT an
-    # ACL enum int. A previous integration passed the ACL enum ints
-    # (_CANN_ACL_INT8=258, ...) on the belief that "the wrapper still accepts
-    # enum ints"; the wrapper does not reject them, but for A8W4-INT decode the
-    # activation was then quantized against the wrong dtype -> mega_moe produced
-    # garbage output while the older dispatch_ffn_combine path (which does its
-    # own int8 activation quant and never touches this argument) stayed correct.
-    # So pass torch dtypes exactly as the doc example does.
+def _get_cann_mega_moe_quant_settings(quant_type: QuantType) -> tuple[int, int | None, int | None]:
+    # CANN 9.1 docs name this argument dispatch_quant_out_dtype and show
+    # torch.int8, while the installed Python wrapper still accepts ACL dtype
+    # enum ints. Keep the enum values until the wrapper schema changes.
     if quant_type == QuantType.W8A8:
-        return (_CANN_MEGA_MOE_QUANT_MODE_INT8, torch.int8, _CANN_ACL_INT8)
+        return (_CANN_MEGA_MOE_QUANT_MODE_INT8, _CANN_ACL_INT8, _CANN_ACL_INT8)
     if quant_type == QuantType.W4A8:
-        return (_CANN_MEGA_MOE_QUANT_MODE_INT8, torch.int8, _CANN_ACL_INT4)
+        return (_CANN_MEGA_MOE_QUANT_MODE_INT8, _CANN_ACL_INT8, _CANN_ACL_INT4)
     if quant_type == QuantType.MXFP8:
-        return (_CANN_MEGA_MOE_QUANT_MODE_MX, torch.float8_e4m3fn, None)
+        return (_CANN_MEGA_MOE_QUANT_MODE_MX, _CANN_TORCH_FLOAT8_E4M3FN, None)
     if quant_type == QuantType.W4A8MXFP:
-        return (_CANN_MEGA_MOE_QUANT_MODE_MX, torch.float8_e4m3fn, None)
+        return (_CANN_MEGA_MOE_QUANT_MODE_MX, _CANN_TORCH_FLOAT8_E4M3FN, None)
     raise RuntimeError(
         "CANN 9.1 MegaMoe integration supports W8A8/W4A8 INT on A2/A3 and MXFP on FP8-capable "
         "MegaMoe platforms. "
