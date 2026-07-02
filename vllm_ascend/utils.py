@@ -127,6 +127,29 @@ def is_950():
     return get_ascend_device_type() == AscendDeviceType.A5
 
 
+def get_megamoe_max_tokens_per_rank(vllm_config) -> int:
+    """Rank-invariant per-rank token cap for the CANN MegaMoe sym buffer.
+
+    Unlike ``mc2_tokens_capacity`` (decode-only, capped at 512), this cap is
+    sized to also cover a chunked **prefill** step so that A2 P-side prefill
+    can go through MegaMoe. It is derived purely from rank-invariant config
+    (``max_num_batched_tokens`` / ``tensor_parallel_size``) so every EP rank
+    computes an identical value — required because the sym-buffer allocation
+    is a collective handshake (mega_moe doc: all ranks' num_max_tokens_per_rank
+    and sym-buffer size must match).
+
+    The result is clamped to the op's hard per-rank limit (mega_moe doc:
+    ``1 <= num_max_tokens_per_rank <= 4096`` on A2/A3, ``<= 512`` on 950/A5).
+    A prefill chunk whose per-rank token count exceeds this cap must NOT be
+    routed to MegaMoe (caller falls back to ALLGATHER).
+    """
+    tp_size = max(1, vllm_config.parallel_config.tensor_parallel_size)
+    max_num_batched_tokens = int(vllm_config.scheduler_config.max_num_batched_tokens)
+    per_rank = (max_num_batched_tokens + tp_size - 1) // tp_size
+    soc_cap = 512 if get_ascend_device_type() == AscendDeviceType.A5 else 4096
+    return max(1, min(per_rank, soc_cap))
+
+
 def _mark_op_side_effectful(op: Any) -> None:
     torch.fx.node.has_side_effect(op)
     default_overload = getattr(op, "default", None)

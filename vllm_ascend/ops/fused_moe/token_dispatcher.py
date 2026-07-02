@@ -44,6 +44,7 @@ from vllm_ascend.quantization.quant_type import QuantType
 from vllm_ascend.utils import (
     AscendDeviceType,
     get_ascend_device_type,
+    get_megamoe_max_tokens_per_rank,
     is_hierarchical_communication_enabled,
     should_skip_allreduce_across_dp_group,
 )
@@ -137,6 +138,12 @@ class TokenDispatcherWithMC2(MoETokenDispatcher[MoEMC2CombineMetadata]):
         # this, MegaMoe falls back to hidden_states.shape[0] which jitters
         # under eager mode and forces sym-buffer rebuilds every step.
         self.max_num_tokens_per_rank = num_tokens_per_tp_rank
+        # Prefill-capable per-rank token cap for the CANN MegaMoe sym buffer.
+        # Kept SEPARATE from max_num_tokens_per_rank / _max_global_bs so the
+        # decode MC2 path and DP mc2_mask logic are untouched. Rank-invariant
+        # and clamped to the op's per-rank hard limit (A2/A3 4096, 950 512),
+        # so A2 P-side prefill can allocate a big-enough sym buffer.
+        self.megamoe_max_tokens_per_rank = get_megamoe_max_tokens_per_rank(vllm_config)
         _max_global_bs = num_tokens_per_tp_rank * self.ep_world_size
 
         # When allreduce across DP is not skipped, tokens are uniform across ranks:

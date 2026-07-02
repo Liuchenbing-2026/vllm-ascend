@@ -450,12 +450,15 @@ class FusedMC2CommImpl(MoECommMethod):
                 int(self.token_dispatcher.global_bs // self.token_dispatcher.ep_world_size),
             )
         else:
-            # num_tokens_per_tp_rank, set once in TokenDispatcherWithMC2.__init__
-            # from scheduler/graph config — rank-invariant.
-            rank_invariant_cap = getattr(self.token_dispatcher, "max_num_tokens_per_rank", 0)
+            # Prefill-capable, rank-invariant cap (covers chunked prefill so
+            # A2 P-side prefill fits; clamped to the op's per-rank hard limit).
+            # Set once in TokenDispatcherWithMC2.__init__ from scheduler config.
+            rank_invariant_cap = getattr(self.token_dispatcher, "megamoe_max_tokens_per_rank", 0) or getattr(
+                self.token_dispatcher, "max_num_tokens_per_rank", 0
+            )
             assert rank_invariant_cap and int(rank_invariant_cap) > 0, (
                 "CANN MegaMoe sym buffer needs a rank-invariant token cap "
-                "(token_dispatcher.max_num_tokens_per_rank). Falling back to a "
+                "(token_dispatcher.megamoe_max_tokens_per_rank). Falling back to a "
                 "per-forward token count would desync the EP-group collective "
                 "(HCCL 507057). Got: "
                 f"{rank_invariant_cap!r}"

@@ -17,6 +17,7 @@ from vllm_ascend.utils import (
     enable_sp,
     flashcomm2_enable,
     get_ascend_device_type,
+    get_megamoe_max_tokens_per_rank,
     has_layer_idx,
     is_drafter_moe_model,
     is_moe_model,
@@ -314,9 +315,12 @@ def select_moe_comm_method(
     elif soc_version in {AscendDeviceType.A2}:
         # A2 historically lacked the dispatch_ffn_combine fused op
         # (enable_fused_mc2 == 1, A3 only). CANN 9.1 MegaMoe
-        # (enable_fused_mc2 == 2) is the first fused MC2 path validated on A2,
-        # so opt-in here for the decode-shaped batch only. Prefill on A2 keeps
-        # the existing ALLGATHER path until MegaMoe is validated for large M.
+        # (enable_fused_mc2 == 2) is the first fused MC2 path validated on A2.
+        # Force BOTH P (prefill) and D (decode) through MegaMoe when enabled:
+        # a chunked prefill step (num_tokens <= mega_moe_capacity) also uses
+        # MegaMoe. Only when the per-step token count exceeds the op's hard
+        # per-rank limit (mega_moe doc: <= 4096 on A2) do we fall back to
+        # ALLGATHER, since the sym buffer cannot cover it.
         fused_mc2_enable = get_ascend_config().enable_fused_mc2
         fused_decode_guard = get_ep_group().world_size <= 32 and (not is_draft_model)
         num_experts = vllm_config.model_config.get_num_experts()
@@ -325,13 +329,19 @@ def select_moe_comm_method(
         )
         num_experts_per_device = num_experts // ep_world_size
 
+        # Prefill-capable capacity: per-rank MegaMoe cap * tp, so both decode
+        # and chunked prefill within the op limit route to MegaMoe. Rank-invariant.
+        mega_moe_capacity = (
+            get_megamoe_max_tokens_per_rank(vllm_config) * vllm_config.parallel_config.tensor_parallel_size
+        )
+
         fused_mc2_eligible = (
             fused_mc2_enable == 2 and fused_decode_guard and _cann_megamoe_supported_by_config(vllm_config, quant_type)
         )
         if in_profile_run and fused_mc2_eligible:
             fused_mc2_eligible = False
 
-        if fused_mc2_eligible and num_tokens <= mc2_tokens_capacity:
+        if fused_mc2_eligible and num_tokens <= mega_moe_capacity:
             moe_comm_type = MoECommType.FUSED_MC2
         elif num_experts_per_device <= 24 and ep_world_size >= 16 and num_tokens <= mc2_tokens_capacity:
             moe_comm_type = MoECommType.MC2
