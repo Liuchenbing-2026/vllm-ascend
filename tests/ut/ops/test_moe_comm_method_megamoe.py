@@ -130,26 +130,28 @@ class TestGetCANNMegaMoeQuantSettings:
     def test_w8a8(self):
         mode, dispatch_dtype, weight_type = _get_cann_mega_moe_quant_settings(QuantType.W8A8)
         assert mode == _CANN_MEGA_MOE_QUANT_MODE_INT8
-        assert dispatch_dtype == _CANN_ACL_INT8
+        # dispatch_quant_out_dtype must be a real torch.dtype (doc example),
+        # not the ACL enum int.
+        assert dispatch_dtype == torch.int8
         assert weight_type == _CANN_ACL_INT8
 
     def test_w4a8(self):
         """W4A8 dispatches int8 across rank but the weight tile is int4."""
         mode, dispatch_dtype, weight_type = _get_cann_mega_moe_quant_settings(QuantType.W4A8)
         assert mode == _CANN_MEGA_MOE_QUANT_MODE_INT8
-        assert dispatch_dtype == _CANN_ACL_INT8
+        assert dispatch_dtype == torch.int8
         assert weight_type == _CANN_ACL_INT4
 
     def test_mxfp8(self):
         mode, dispatch_dtype, weight_type = _get_cann_mega_moe_quant_settings(QuantType.MXFP8)
         assert mode == _CANN_MEGA_MOE_QUANT_MODE_MX
-        assert dispatch_dtype == _CANN_TORCH_FLOAT8_E4M3FN
+        assert dispatch_dtype == torch.float8_e4m3fn
         assert weight_type is None
 
     def test_w4a8mxfp(self):
         mode, dispatch_dtype, weight_type = _get_cann_mega_moe_quant_settings(QuantType.W4A8MXFP)
         assert mode == _CANN_MEGA_MOE_QUANT_MODE_MX
-        assert dispatch_dtype == _CANN_TORCH_FLOAT8_E4M3FN
+        assert dispatch_dtype == torch.float8_e4m3fn
         assert weight_type is None
 
     def test_unsupported_raises(self):
