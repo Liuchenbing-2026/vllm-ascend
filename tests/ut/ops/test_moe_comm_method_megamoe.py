@@ -36,10 +36,8 @@ import torch
 
 from vllm_ascend.ascend_forward_context import _cann_megamoe_supported_by_config
 from vllm_ascend.ops.fused_moe.moe_comm_method import (
-    _CANN_ACL_INT8,
     _CANN_MEGA_MOE_QUANT_MODE_INT8,
     _CANN_MEGA_MOE_QUANT_MODE_MX,
-    _CANN_TORCH_FLOAT8_E4M3FN,
     _get_cann_mega_moe_quant_settings,
     _normalize_cann_activation,
     _pick_mega_moe_bias,
@@ -133,23 +131,23 @@ class TestGetCANNMegaMoeQuantSettings:
     def test_w8a8(self):
         mode, dispatch_dtype = _get_cann_mega_moe_quant_settings(QuantType.W8A8)
         assert mode == _CANN_MEGA_MOE_QUANT_MODE_INT8
-        assert dispatch_dtype == _CANN_ACL_INT8
+        assert dispatch_dtype == torch.int8
 
     def test_w4a8(self):
         """W4A8 dispatches int8 across rank; the weight tile is int4 (inferred by the op)."""
         mode, dispatch_dtype = _get_cann_mega_moe_quant_settings(QuantType.W4A8)
         assert mode == _CANN_MEGA_MOE_QUANT_MODE_INT8
-        assert dispatch_dtype == _CANN_ACL_INT8
+        assert dispatch_dtype == torch.int8
 
     def test_mxfp8(self):
         mode, dispatch_dtype = _get_cann_mega_moe_quant_settings(QuantType.MXFP8)
         assert mode == _CANN_MEGA_MOE_QUANT_MODE_MX
-        assert dispatch_dtype == _CANN_TORCH_FLOAT8_E4M3FN
+        assert dispatch_dtype == torch.float8_e4m3fn
 
     def test_w4a8mxfp(self):
         mode, dispatch_dtype = _get_cann_mega_moe_quant_settings(QuantType.W4A8MXFP)
         assert mode == _CANN_MEGA_MOE_QUANT_MODE_MX
-        assert dispatch_dtype == _CANN_TORCH_FLOAT8_E4M3FN
+        assert dispatch_dtype == torch.float8_e4m3fn
 
     def test_unsupported_raises(self):
         """Unsupported QuantType must fail loud, not silently mismap."""
