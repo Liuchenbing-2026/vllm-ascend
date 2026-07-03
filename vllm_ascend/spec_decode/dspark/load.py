@@ -34,6 +34,8 @@ def load_dspark_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Mo
     if getattr(parallel_cfg, "decode_context_parallel_size", 1) > 1:
         raise NotImplementedError("DSpark does not support decode context parallelism (DCP > 1).")
 
+    _alias_dspark_quant_description(vllm_config, draft_model_config)
+
     draft_model = get_model(vllm_config=vllm_config, model_config=draft_model_config)
 
     # Self-contained dense DSpark drafts (e.g. Qwen3 variant) ship their own
@@ -64,3 +66,47 @@ def load_dspark_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Mo
 
     logger.info_once("DSpark draft aliased target embed_tokens + lm_head.")
     return draft_model
+
+
+def _alias_dspark_quant_description(vllm_config: VllmConfig, draft_model_config) -> None:
+    """Alias ``mtp.*`` quant-description keys to DSpark runtime module names.
+
+    The checkpoint's ``quant_model_description.json`` keys the DSpark draft
+    weights under the ``mtp.*`` namespace, but the runtime modules are named
+    ``model.*`` / ``model.layers.<num_hidden_layers+i>.*`` (see
+    ``DSparkDeepseekV4ForCausalLM._remap_dspark_name``). The Ascend modelslim
+    quant path looks up ``quant_description[prefix + ".weight"]`` at MODULE
+    CONSTRUCTION time (before weight loading), so without aliasing it raises
+    ``KeyError: model.main_proj.weight`` etc. We add the runtime-named aliases
+    (pointing at the same quant type) without removing the originals — the target
+    model still resolves its own ``model.layers.0..N`` keys unchanged.
+    """
+    from vllm_ascend.models.deepseek_v4_dspark import DSparkDeepseekV4ForCausalLM
+
+    quant_config = getattr(vllm_config, "quant_config", None)
+    quant_desc = getattr(quant_config, "quant_description", None)
+    if not isinstance(quant_desc, dict):
+        return
+    remap = DSparkDeepseekV4ForCausalLM._remap_dspark_name
+    layer_offset = int(getattr(draft_model_config.hf_config, "num_hidden_layers", 0) or 0)
+    added = 0
+    for key in list(quant_desc.keys()):
+        if not key.startswith("mtp."):
+            continue
+        runtime = remap(key, layer_offset)
+        if runtime is None:
+            continue
+        variants = {runtime}
+        # Mirror the loader's shared-expert shard renames so the fused module
+        # prefixes resolve too.
+        if ".shared_experts.w2." in runtime:
+            variants.add(runtime.replace(".shared_experts.w2.", ".shared_experts.down_proj."))
+        if ".shared_experts.w1." in runtime:
+            variants.add(runtime.replace(".shared_experts.w1.", ".shared_experts.gate_up_proj."))
+        if ".shared_experts.w3." in runtime:
+            variants.add(runtime.replace(".shared_experts.w3.", ".shared_experts.gate_up_proj."))
+        for variant in variants:
+            if variant not in quant_desc:
+                quant_desc[variant] = quant_desc[key]
+                added += 1
+    logger.info_once("DSpark aliased %d quant-description keys (mtp.* -> model.*).", added)

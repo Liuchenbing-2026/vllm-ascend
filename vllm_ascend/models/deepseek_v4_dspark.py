@@ -350,27 +350,15 @@ class DSparkDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
         head_start = n_local_head * tp_rank
         head_end = n_local_head * (tp_rank + 1)
 
+        # Draft decoder layers live at layers.{num_hidden_layers + i}; _remap
+        # applies that offset + the structural sub-name conversion so keys land
+        # on the actually-constructed modules (not layers.0..N-1).
+        layer_offset = self.model.num_hidden_layers
         for name, loaded_weight in weights:
-            mapped = self._remap_dspark_name(name)
+            mapped = self._remap_dspark_name(name, layer_offset)
             if mapped is None:
                 continue
             name = mapped
-
-            # Convert the checkpoint's raw DSv4 sub-names to the base
-            # DeepseekV2DecoderLayer module names (mirror deepseek_v4_mtp.py).
-            # Decoder-body only — the head stack (model.norm / model.markov_head
-            # / model.confidence_head / model.hc_head_* / model.main_*) keeps its
-            # names. Without this the entire attention + MoE body stays
-            # unloaded (silent NaN drafts).
-            if name.startswith("model.layers."):
-                if ".attn_norm." in name:
-                    name = name.replace(".attn_norm.", ".input_layernorm.")
-                if ".ffn_norm." in name:
-                    name = name.replace(".ffn_norm.", ".post_attention_layernorm.")
-                if ".attn." in name and ".self_attn." not in name:
-                    name = name.replace(".attn.", ".self_attn.")
-                if ".ffn." in name:
-                    name = name.replace(".ffn.", ".mlp.")
 
             if name.endswith(".scale"):
                 suffix = expert_scale_suffix if _EXPERT_SCALE_RE.search(name) else ".weight_scale_inv"
@@ -437,12 +425,21 @@ class DSparkDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
         return loaded
 
     @staticmethod
-    def _remap_dspark_name(name: str) -> str | None:
-        """``mtp.<i>.<rest>`` → this model's parameter path.
+    def _remap_dspark_name(name: str, layer_offset: int = 0) -> str | None:
+        """``mtp.<i>.<rest>`` → this model's parameter/module path.
 
         Returns None for non-mtp weights (owned by the target model). Head
-        stack params live at ``model.<rest>``; everything else is per-stage
-        at ``model.layers.<i>.<rest>``.
+        stack params live at ``model.<rest>``; per-stage decoder weights live at
+        ``model.layers.<layer_offset + i>.<rest>`` and get the structural
+        sub-name conversion to the base ``DeepseekV2DecoderLayer`` names
+        (attn.→self_attn., ffn.→mlp., attn_norm.→input_layernorm.,
+        ffn_norm.→post_attention_layernorm.).
+
+        ``layer_offset`` MUST equal the model's ``num_hidden_layers`` — the draft
+        decoder layers are built at ``layers.{num_hidden_layers + i}`` so their
+        attention layer names do not collide with the target's ``layers.0..N``
+        in the shared forward-context registry. This is the single source of
+        truth for both weight loading and quant-description aliasing.
         """
         m = re.match(r"mtp\.(\d+)\.(.*)", name)
         if m is None:
@@ -459,4 +456,13 @@ class DSparkDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
         )
         if rest.startswith(("main_proj.", "main_norm.")) or rest.startswith(head_prefixes):
             return f"model.{rest}"
-        return f"model.layers.{stage}.{rest}"
+        mapped = f"model.layers.{layer_offset + stage}.{rest}"
+        if ".attn_norm." in mapped:
+            mapped = mapped.replace(".attn_norm.", ".input_layernorm.")
+        if ".ffn_norm." in mapped:
+            mapped = mapped.replace(".ffn_norm.", ".post_attention_layernorm.")
+        if ".attn." in mapped and ".self_attn." not in mapped:
+            mapped = mapped.replace(".attn.", ".self_attn.")
+        if ".ffn." in mapped:
+            mapped = mapped.replace(".ffn.", ".mlp.")
+        return mapped

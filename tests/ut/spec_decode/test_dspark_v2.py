@@ -95,15 +95,24 @@ class TestDSparkRemapName(unittest.TestCase):
         for src, want in cases.items():
             self.assertEqual(self._remap(src), want, msg=src)
 
-    def test_layer_params_land_at_layer_slot(self):
-        # Non-head params go into model.layers.<stage>.<rest>.
+    def test_layer_params_land_at_offset_slot_with_structural_rename(self):
+        # Non-head params go to model.layers.<offset+stage>.<rest> with the
+        # DeepseekV2DecoderLayer structural sub-name conversion applied.
+        off = 43
         cases = {
-            "mtp.0.attn.wkv.weight": "model.layers.0.attn.wkv.weight",
-            "mtp.1.attn.attn_sink": "model.layers.1.attn.attn_sink",
-            "mtp.2.ffn.experts.0.w1.weight": "model.layers.2.ffn.experts.0.w1.weight",
+            "mtp.0.attn.wkv.weight": "model.layers.43.self_attn.wkv.weight",
+            "mtp.1.attn.attn_sink": "model.layers.44.self_attn.attn_sink",
+            "mtp.2.ffn.experts.0.w1.weight": "model.layers.45.mlp.experts.0.w1.weight",
+            "mtp.1.attn_norm.weight": "model.layers.44.input_layernorm.weight",
+            "mtp.2.ffn_norm.weight": "model.layers.45.post_attention_layernorm.weight",
         }
         for src, want in cases.items():
-            self.assertEqual(self._remap(src), want, msg=src)
+            self.assertEqual(self._remap(src, off), want, msg=src)
+
+    def test_layer_offset_defaults_to_zero(self):
+        # Default offset keeps stage index (head params are offset-independent).
+        self.assertEqual(self._remap("mtp.0.attn.wkv.weight"), "model.layers.0.self_attn.wkv.weight")
+        self.assertEqual(self._remap("mtp.0.main_proj.weight", 43), "model.main_proj.weight")
 
     def test_non_mtp_returns_none(self):
         # Target-owned weights — must be skipped by the draft loader.
