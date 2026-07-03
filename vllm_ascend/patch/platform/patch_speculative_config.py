@@ -171,13 +171,37 @@ def hf_config_override(hf_config: PretrainedConfig) -> PretrainedConfig:
         n_predict = (
             getattr(hf_config, "n_mtp_layers", None) or getattr(hf_config, "num_nextn_predict_layers", None) or 3
         )
-        hf_config.update(
-            {
-                "model_type": "deepseek_v4_dspark",
-                "n_predict": n_predict,
-                "architectures": ["DSparkDeepseekV4ForCausalLM"],
-            }
+        updates = {
+            "model_type": "deepseek_v4_dspark",
+            "n_predict": n_predict,
+            "architectures": ["DSparkDeepseekV4ForCausalLM"],
+        }
+        # Parallel drafting (dspark uses it) requires the draft config to carry a
+        # mask/placeholder token id. The upstream EagleProposer that the parent
+        # GPUModelRunner throwaway-constructs (use_eagle()==True) asserts one of
+        # pard_token / ptd_token_id / dflash_config.mask_token_id before
+        # vllm-ascend installs AscendDsparkSpeculator via _set_up_drafter. The
+        # token is inert on the dspark generic drafting path (the speculator
+        # overrides drafting), so any in-vocab id works. zhaoyue's hand-built
+        # draft config carries dflash_config.mask_token_id; the raw checkpoint
+        # config (served directly) does not, so inject one.
+        dfc = getattr(hf_config, "dflash_config", None)
+        dfc_mask = dfc.get("mask_token_id") if isinstance(dfc, dict) else getattr(dfc, "mask_token_id", None)
+        has_mask = (
+            getattr(hf_config, "pard_token", None) is not None
+            or getattr(hf_config, "ptd_token_id", None) is not None
+            or dfc_mask is not None
         )
+        if not has_mask:
+            eos = getattr(hf_config, "eos_token_id", None)
+            if isinstance(eos, (list, tuple)) and eos:
+                mask_tok = int(eos[0])
+            elif isinstance(eos, int):
+                mask_tok = eos
+            else:
+                mask_tok = max(int(getattr(hf_config, "vocab_size", 1)) - 1, 0)
+            updates["ptd_token_id"] = mask_tok
+        hf_config.update(updates)
         return hf_config
     if hf_config.model_type in ("deepseek_v3", "deepseek_v32", "deepseek_v4", "glm_moe_dsa"):
         target_model_type = hf_config.model_type
