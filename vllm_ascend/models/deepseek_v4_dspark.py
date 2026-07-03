@@ -350,10 +350,13 @@ class DSparkDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
         head_start = n_local_head * tp_rank
         head_end = n_local_head * (tp_rank + 1)
 
-        # Draft decoder layers live at layers.{num_hidden_layers + i}; _remap
-        # applies that offset + the structural sub-name conversion so keys land
-        # on the actually-constructed modules (not layers.0..N-1).
-        layer_offset = self.model.num_hidden_layers
+        # named_parameters() keys the draft decoder layers by their ModuleList
+        # INDEX (layers.0..n-1) — NOT the layers.{num_hidden_layers+i} prefix
+        # that was passed to each layer for quant/compile lookups. So weight
+        # loading maps to the local index (offset 0). (The quant-description
+        # aliasing in dspark/load.py uses the prefix offset instead — a separate
+        # mechanism that keys off the constructor prefix, not named_parameters.)
+        layer_offset = 0
         for name, loaded_weight in weights:
             mapped = self._remap_dspark_name(name, layer_offset)
             if mapped is None:
