@@ -140,6 +140,27 @@ def _is_glm_model(model_config) -> bool:
     model_type = getattr(hf_text_config, "model_type", "") or ""
     return "glm" in str(model_type).lower()
 
+def schedule_prefix_lengths(conf_logits, tau=0.5, sps_budget=None):
+    """DSPARK_SCHED_V1: Algorithm-1 confidence scheduler (phase-1 per-request).
+    conf_logits [B, gamma] RAW confidence logits (Eq.7, pre-sigmoid). Returns
+    ell [B] = admitted speculative prefix length per request. a_{r,j}=prod(sigmoid c)
+    is monotonically non-increasing => admit = (a>=theta) is a leading-True prefix =>
+    ell = count of leading Trues (causal barrier, lossless early-stop). SPS(B) global
+    budget reallocation is phase-3 (sps_budget hook)."""
+    import torch as _t
+    c = _t.sigmoid(conf_logits.float())
+    a = _t.cumprod(c, dim=1)
+    theta = tau
+    ell = (a >= theta).int().sum(dim=1)
+    if sps_budget is not None:
+        # phase-3: greedily cap total admitted tokens to the batch compute budget,
+        # dropping lowest-a tail positions first. (stub: honor per-req ell for now.)
+        while int(ell.sum()) > sps_budget and int(ell.max()) > 0:
+            _j = a.gather(1, (ell.clamp_min(1) - 1).unsqueeze(1)).squeeze(1)
+            _j = _j.masked_fill(ell == 0, float('inf'))
+            ell[int(_j.argmin())] -= 1
+    return ell
+
 
 class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
     _runnable: ACLGraphWrapper | Callable
@@ -613,6 +634,8 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 slot_mapping=self.runner.input_batch.block_table[self.kv_cache_gid].slot_mapping.gpu,
                 slot_mapping_cpu=self.runner.input_batch.block_table[self.kv_cache_gid].slot_mapping.cpu,
                 positions=self.runner.positions,
+                # MTP graph-mode fix: DSA build_decode_metadata indexes positions_cpu;
+                # mirror main model (model_runner_v1.py) so drafter graph capture doesn't hit None.
                 positions_cpu=self.runner._dsa_positions_cpu_buf if self.use_compress else None,
                 attn_state=self.runner.attn_state,
                 decode_token_per_req=self.runner.decode_token_per_req,
@@ -757,16 +780,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         if token_indices_to_sample is None:
             token_indices_to_sample = common_attn_metadata.query_start_loc[1:] - 1
 
-        if self.method in ("eagle3", "dflash"):
-            assert isinstance(
-                self.get_model(),
-                (
-                    Eagle3LlamaForCausalLM,
-                    DFlashQwen3ForCausalLM,
-                    Eagle3VwnLlamaForCausalLM,
-                    Eagle3DeepseekV2ForCausalLM,
-                ),
-            )
+        if self.method in ("eagle3", "dflash", "dspark"):
+            if self.method != "dspark":
+                assert isinstance(
+                    self.get_model(),
+                    (
+                        Eagle3LlamaForCausalLM,
+                        DFlashQwen3ForCausalLM,
+                        Eagle3VwnLlamaForCausalLM,
+                        Eagle3DeepseekV2ForCausalLM,
+                    ),
+                )
             target_hidden_states = self.model.combine_hidden_states(target_hidden_states)
             assert target_hidden_states.shape[-1] == self.hidden_size
 
@@ -840,7 +864,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             common_attn_metadata.block_table_tensor = self._adjust_tensor(
                 common_attn_metadata.block_table_tensor, slicing_length
             )
-            if self.method == "dflash":
+            if self.method in ("dflash", "dspark"):
                 common_attn_metadata.seq_lens = self._adjust_tensor(common_attn_metadata.seq_lens, num_reqs_padded)
             else:
                 common_attn_metadata.seq_lens = self._adjust_tensor(self.runner.seq_lens, num_reqs_padded)
@@ -1107,8 +1131,14 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         model_input_ids = self.input_ids[:num_input_tokens]
         model_positions = self._get_positions(num_input_tokens)
 
-        if self.method == "dflash":
+        if self.method in ("dflash", "dspark"):
             model_kwargs = self.build_model_inputs_first_pass(num_input_tokens)
+            if self.method == "dspark" and self.pass_hidden_states_to_model:
+                # DSpark: seed the draft first pass with the projected target hidden
+                # (main_x = combine_hidden_states output, stored in self.hidden_states
+                # by set_inputs_first_pass). The dflash first-pass builder omits it, so
+                # the draft would start blind and collapse to a constant token.
+                model_kwargs["hidden_states"] = self.hidden_states[:num_input_tokens]
         else:
             model_kwargs = {
                 "input_ids": model_input_ids,
@@ -1140,7 +1170,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         if self._share_mtp_indices and draft_model is not None and hasattr(draft_model, "set_skip_topk"):
             draft_model.set_skip_topk(True)
 
-        if self.method != "dflash":
+        if self.method not in ("dflash", "dspark"):
             last_hidden_states, model_positions, hidden_states = self.maybe_all_gather_and_unpad(
                 last_hidden_states, model_positions, hidden_states
             )
@@ -1190,8 +1220,49 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             )
 
         sample_hidden_states = last_hidden_states[token_indices_to_sample]
+        import os as _mkv
+        if (self.method == "dspark" and _mkv.environ.get("DSPARK_MARKOV")
+                and hasattr(self.model, "compute_block")):
+            _nq = self.num_speculative_tokens
+            _raw_tidx = token_indices_to_sample[:num_indices]   # strip lmhead_tp padding (Codex)
+            _tidx = _raw_tidx.view(-1, _nq)
+            if _mkv.environ.get("DSPARK_SHIFT"):
+                # DSpark samples the ANCHOR row (q0, input=real bonus token) as the
+                # first prediction (ref forward_head row0), NOT the mask rows q1..qS.
+                _sidx = (_tidx - 1).reshape(-1).long()
+                _anchor = self.input_ids[(_tidx[:, 0] - 1).long()].contiguous()
+                _sh = last_hidden_states.index_select(0, _sidx)
+            else:
+                _anchor = self.input_ids[(_tidx[:, 0] - 1).long()].contiguous()
+                _sh = last_hidden_states.index_select(0, _raw_tidx.long())
+            _mout, _mconf = self.model.compute_block(_sh, _anchor, 0.0)
+            import os as _sch, sys as _schs
+            if _sch.environ.get("DSPARK_SCHED") and _mconf is not None:
+                try:
+                    _tau = float(_sch.environ.get("DSPARK_SCHED_TAU", "0.5"))
+                    _ell = schedule_prefix_lengths(_mconf.view(_mout.shape[0], -1), tau=_tau)
+                    _cprob = __import__("torch").sigmoid(_mconf.float()).view(_mout.shape[0], -1)
+                    print("DSPARK_SCHED tau=%.2f B=%d ell=%s meanEll=%.2f conf0=%s" % (
+                        _tau, _mout.shape[0], _ell[:8].tolist(), float(_ell.float().mean()),
+                        [round(float(x),3) for x in _cprob[0].tolist()]), file=_schs.stderr, flush=True)
+                except Exception as _sce:
+                    print("DSPARK_SCHED ERR %r" % (_sce,), file=_schs.stderr, flush=True)
+            if _mkv.environ.get("DSPARK_DBG"):
+                import sys as _ms
+                _base = self.model.compute_logits(_sh).argmax(-1).view(-1, _nq)
+                print("DSPARK_CMP shift=%s anchor=%s base=%s block=%s" % (bool(_mkv.environ.get("DSPARK_SHIFT")), _anchor[:2].tolist(), _base[0].tolist(), _mout[0, 1:].tolist()), file=_ms.stderr, flush=True)
+            return _mout[:, 1:].contiguous()
 
-        if get_ascend_config().enable_reduce_sample:
+        if self.method == "dspark":
+            # DSpark semi-AR Markov sampling: base U_k + markov_bias(prev token),
+            # sequential, seeded with the per-request anchor (bonus) token. This is
+            # the essential DSpark head; base logits alone are near-unconditional.
+            _bs = sample_hidden_states.shape[0] // self.num_speculative_tokens
+            _nqpr = 1 + self.num_speculative_tokens
+            _anchor = self.input_ids[torch.arange(_bs, device=sample_hidden_states.device, dtype=torch.long) * _nqpr]
+            _out_ids, _conf = self.model.compute_block(sample_hidden_states, _anchor, 0.0)
+            draft_token_ids = _out_ids[:, 1:].reshape(-1)
+        elif get_ascend_config().enable_reduce_sample:
             if self.method in ("eagle3", "dflash", "mtp"):
                 draft_token_ids = self.compute_draft_token_ids(sample_hidden_states)
                 if lmhead_tp_enable():
@@ -1610,7 +1681,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             hf_config = getattr(draft_model_config, "hf_config", None)
             architectures = getattr(hf_config, "architectures", []) or []
             return "DeepSeekMTPModel" in architectures
-        return self.method not in ("mtp", "draft_model", "dflash")
+        return self.method not in ("mtp", "draft_model", "dflash", "dspark")
 
     def attn_update_stack_num_spec_norm(
         self,

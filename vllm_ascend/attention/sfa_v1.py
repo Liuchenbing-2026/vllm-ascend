@@ -1602,7 +1602,10 @@ class AscendSFAImpl(MLAAttentionImpl):
         if self.enable_dsa_cp and attn_metadata.dsa_cp_context is not None:
             topk_num_tokens = attn_metadata.dsa_cp_context.local_end_with_pad - attn_metadata.dsa_cp_context.local_start
         else:
-            topk_num_tokens = num_input_tokens or hidden_states.shape[0]
+            # Use per-rank q_pe length, not the global padded num_input_tokens:
+            # on PD-disagg + TP>1 they differ and the global count breaks SFA
+            # sparse_indices tiling ([N*tp,1,topk] vs expected [N,1,topk]).
+            topk_num_tokens = q_pe.shape[0]
         if self.skip_topk:
             topk_indices = self._get_indexcache_topk_indices(topk_num_tokens)
         else:

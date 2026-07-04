@@ -565,6 +565,22 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
             self.num_decodes, self.num_prefills, self.num_decode_tokens, self.num_prefill_tokens = (
                 split_decodes_and_prefills(common_attn_metadata, decode_threshold=self.decode_threshold)
             )
+            # DSpark: force the draft gamma block (1+S mask queries, q_len == decode
+            # threshold) to PREFILL. It is uniquely identified by ChunkedPrefill +
+            # causal=False (set by AscendDflashProposer.set_inputs_first_pass) with
+            # ALL reqs classified as decode. Without this the masks never cross-read
+            # the precompute-written context KV -> draft output collapses to a constant.
+            if (self.speculative_config is not None
+                    and getattr(common_attn_metadata, "attn_state", None) == AscendAttentionState.ChunkedPrefill
+                    and getattr(common_attn_metadata, "causal", True) is False
+                    and self.num_decodes == num_reqs and num_reqs > 0):
+                self.num_prefills = self.num_decodes
+                self.num_prefill_tokens = self.num_decode_tokens
+                self.num_decodes = 0
+                self.num_decode_tokens = 0
+                import os as _osp, sys as _syp
+                if _osp.environ.get("DSPARK_DBG"):
+                    print("DSPARK_FORCEPREFILL fired num_prefills=%d num_reqs=%d" % (self.num_prefills, num_reqs), file=_syp.stderr, flush=True)
             self.common_ratio_to_sas_metadata["num_decodes"] = self.num_decodes
             self.common_ratio_to_sas_metadata["num_prefills"] = self.num_prefills
             self.common_ratio_to_sas_metadata["num_decode_tokens"] = self.num_decode_tokens
@@ -1295,6 +1311,17 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
         self.spec_sas_metadata[draft_index - 1][:1024].copy_(decode_sas_metadata[:1024])
         decode_sas_metadata = self.spec_sas_metadata[draft_index - 1]
 
+        # MTP FullGraph fix (P0): sas_metadata must live at a per-draft-step FIXED
+        # address — mirror step-0 (build_decode_metadata binds self.decode_sas_metadata,
+        # refreshed in-place). The raw metadata_op output above is freshly allocated each
+        # iteration, so under FULL cudagraph the captured attn op reads a stale descriptor
+        # at replay. Give each draft_step its own persistent buffer, refreshed in-place.
+        if not hasattr(self, "decode_sas_metadata_draft"):
+            self.decode_sas_metadata_draft: dict[int, torch.Tensor] = {}
+        if draft_step not in self.decode_sas_metadata_draft:
+            self.decode_sas_metadata_draft[draft_step] = torch.empty_like(self.decode_sas_metadata)
+        self.decode_sas_metadata_draft[draft_step][:1024] = decode_sas_metadata
+
         decode_metadata = AscendDSADecodeMetadata(
             input_positions=None,
             block_table=block_table[:num_decodes, ...],
@@ -1313,7 +1340,7 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
             cp_seq_len=None,
             batch_seq_mask=None,
             start_pos=None,
-            sas_metadata=decode_sas_metadata,
+            sas_metadata=self.decode_sas_metadata_draft[draft_step],
             qli_metadata=None,
         )
         return decode_metadata
@@ -1355,6 +1382,22 @@ class AscendDSAImpl(DSAAttentionImpl):
     NOTE: Please read the comment at the top of the file before trying to
     understand this class
     """
+
+    @staticmethod
+    def update_graph_params(
+        update_stream,
+        forward_context,
+        num_tokens,
+        vllm_config=None,
+        speculative_config=None,
+        num_dcp_pcp_tokens=None,
+        draft_attn_metadatas=None,
+    ):
+        # MTP graph-mode fix: DSA does not need per-step graph param updates
+        # (same as SFA). The generic full-graph drafter path calls
+        # impl_cls.update_graph_params(...), so this no-op must exist or it
+        # raises AttributeError under FULL_DECODE_ONLY + MTP.
+        pass
 
     def __init__(
         self,
@@ -1930,13 +1973,137 @@ class AscendDSAImpl(DSAAttentionImpl):
             )
 
             # swa exec kv
-            DeviceOperator.dsa_kv_compress_scatter(swa_kv_cache, kv, swa_prefill_metadata.slot_mapping)
+            import os as _osk, sys as _ssk
+            if ("mtp." in layer_name) and _osk.environ.get("DSPARK_DBG"):
+                try: print("DSPARK_SELFKV layer=%s selfkv_slot[:8]=%s kvshape=%s" % (layer_name, swa_prefill_metadata.slot_mapping.flatten()[:8].tolist(), tuple(kv.shape)), file=_ssk.stderr, flush=True)
+                except Exception as _eee: print("DSPARK_SELFKV ERR", _eee, file=_ssk.stderr, flush=True)
+            if ("mtp." in layer_name) and _osk.environ.get("DSPARK_NO_SELFKV", "1") == "1":
+                pass  # DSpark: skip block self-KV scatter so precompute context-KV is not clobbered (slot collision)
+            else:
+                DeviceOperator.dsa_kv_compress_scatter(swa_kv_cache, kv, swa_prefill_metadata.slot_mapping)
 
         attn_op = DeviceOperator.get_dsa_sparse_attn_op()
         extra_attn_kwargs: dict = DeviceOperator.get_dsa_sparse_attn_base_kwargs()
         DeviceOperator.add_dsa_sparse_attn_extra_kwargs(extra_attn_kwargs, cu_seqlens_ori_kv=actual_seq_lengths_query)
 
         if self.compress_ratio <= 1:
+            import os as _ob1, sys as _ob1s
+            if ("mtp." in layer_name) and _ob1.environ.get("DSPARK_OPTB"):
+                try:
+                    _T = q.shape[0]; _N = self.n_local_heads; _H = self.head_dim
+                    _B = int(actual_seq_lengths_key.shape[0]) if hasattr(actual_seq_lengths_key, 'shape') else len(actual_seq_lengths_key)
+                    _S = _T // _B
+                    _q4 = q.view(_B, _S, _N, _H).contiguous()
+                    _kv = swa_kv_cache.reshape(swa_kv_cache.shape[0], 1, swa_kv_cache.shape[1], swa_kv_cache.shape[3])
+                    _win = int(getattr(self, "window_size", 0)) or int(actual_seq_lengths_key.max().item())
+                    import os as _cw
+                    _ctxmode = _cw.environ.get("DSPARK_CTXLEN", "full")
+                    if _ctxmode == "ring":
+                        # DSPARK_RING_V1: reference-faithful context = LAST min(win,klen)
+                        # positions (inference_model.py ring cache), not first-N (clamp)
+                        # nor full-length (full). Gather via block table into contiguous KV.
+                        _bs_c = int(swa_kv_cache.shape[1])
+                        _kvflat = swa_kv_cache.reshape(-1, swa_kv_cache.shape[-1])
+                        _kl64 = actual_seq_lengths_key.reshape(-1).to(torch.int64)
+                        _ctxn = torch.clamp(_kl64, max=_win)
+                        _pos0 = _kl64 - _ctxn
+                        _ar = torch.arange(_win, device=_q4.device).view(1, -1)
+                        _pos = _pos0.view(-1, 1) + _ar
+                        _bt64 = swa_prefill_metadata.block_table.to(torch.int64)
+                        _pgi = torch.div(_pos, _bs_c, rounding_mode="floor").clamp(min=0, max=_bt64.shape[1]-1)
+                        _pg = torch.gather(_bt64[: _pos.shape[0]], 1, _pgi)
+                        _slot = (_pg * _bs_c + (_pos % _bs_c)).reshape(-1).clamp(min=0, max=_kvflat.shape[0]-1)
+                        _ctxkv = _kvflat.index_select(0, _slot).view(_B, _win, 1, _H)
+                        _oc, _lc = torch.ops.npu.npu_fused_infer_attention_score(
+                            _q4, _ctxkv, _ctxkv, num_heads=_N, num_key_value_heads=1, input_layout='BSND',
+                            scale=self.softmax_scale, sparse_mode=0, atten_mask=None, softmax_lse_flag=True,
+                            actual_seq_lengths_kv=_ctxn.to(actual_seq_lengths_key.dtype))
+                        _ctx_kv_len = _ctxn  # DIAG2 compat
+                    else:
+                        if _ctxmode == "clamp":
+                            _ctx_kv_len = torch.clamp(actual_seq_lengths_key, max=_win).to(actual_seq_lengths_key.dtype)
+                        else:
+                            _ctx_kv_len = actual_seq_lengths_key.to(actual_seq_lengths_key.dtype)  # full: include recent positions
+                        _oc, _lc = torch.ops.npu.npu_fused_infer_attention_score(
+                            _q4, _kv, _kv, num_heads=_N, num_key_value_heads=1, input_layout='BSND',
+                            scale=self.softmax_scale, sparse_mode=0, atten_mask=None, softmax_lse_flag=True,
+                            block_table=swa_prefill_metadata.block_table, block_size=swa_kv_cache.shape[1],
+                            actual_seq_lengths_kv=_ctx_kv_len)
+                    _bk = kv.reshape(_B, _S, 1, _H).contiguous()
+                    _ob, _lb = torch.ops.npu.npu_fused_infer_attention_score(
+                        _q4, _bk, _bk, num_heads=_N, num_key_value_heads=1, input_layout='BSND',
+                        scale=self.softmax_scale, sparse_mode=0, atten_mask=None, softmax_lse_flag=True)
+                    _lc = _lc.transpose(1, 2).float(); _lb = _lb.transpose(1, 2).float()
+                    _msink = None
+                    try:
+                        _as = getattr(self, "attn_sink", None)
+                        if _as is not None:
+                            _msink = _as.reshape(-1)[:_N].float().view(1, 1, _N, 1)
+                    except Exception:
+                        _msink = None
+                    _m = torch.maximum(_lc, _lb)
+                    if _msink is not None:
+                        _m = torch.maximum(_m, _msink)
+                    _wc = torch.exp(_lc - _m); _wb = torch.exp(_lb - _m)
+                    _ws = torch.exp(_msink - _m) if _msink is not None else torch.zeros_like(_wc)
+                    _den = _wc + _wb + _ws + 1e-9
+                    _merged = (_oc.float() * _wc + _ob.float() * _wb) / _den
+                    try:
+                        _cnt = getattr(_ob1, "_DSPARK_CNT", 0) + 1; _ob1._DSPARK_CNT = _cnt
+                        if _cnt % 50 == 1:
+                            import sys as _ds
+                            print("DSPARK_DIAG2 cnt=%d win=%d klen=%s ctxlen=%s sink=%s wc=%.4f wb=%.4f ws=%.4f wb_over_wc=%.3f" % (
+                                _cnt, _win, int(actual_seq_lengths_key.reshape(-1)[0]), int(_ctx_kv_len.reshape(-1)[0]),
+                                (_msink is not None), float(_wc.mean()), float(_wb.mean()), float(_ws.mean()), float((_wb/(_wc+1e-9)).mean())), file=_ds.stderr, flush=True)
+                    except Exception as _de:
+                        import sys as _ds2
+                        print("DSPARK_DIAG2 ERR %r"%(_de,), file=_ds2.stderr, flush=True)
+                    return _merged.to(q.dtype).reshape(_T, _N, _H)
+                except Exception as _obe:
+                    print("DSPARK_OPTB1 FIA ERR: %r" % (_obe,), file=_ob1s.stderr, flush=True)
+                    raise
+            import os as _rtos, sys as _rtsys
+            if (_rtos.environ.get("DSPARK_READ_TRACE") and "mtp." in layer_name
+                    and hasattr(self, "_dspark_last_ctx_pos") and hasattr(self, "_dspark_last_ctx_slot")):
+                try:
+                    bt = swa_prefill_metadata.block_table.to(torch.int64)
+                    cache_bs = int(swa_kv_cache.shape[1])
+                    pos = self._dspark_last_ctx_pos.to(bt.device)
+                    wslot = self._dspark_last_ctx_slot.to(bt.device)
+                    try:
+                        _kvf = swa_kv_cache.reshape(-1, swa_kv_cache.shape[-1])
+                        _wsl = wslot.clamp(min=0, max=_kvf.shape[0]-1)
+                        _sv = _kvf.index_select(0, _wsl)
+                        _wp = int(getattr(self, "_dspark_write_cache_ptr", -1))
+                        _rp = int(swa_kv_cache.data_ptr())
+                        print("DSPARK_CACHECHK layer=%s rptr=%d wptr=%d same=%s ctxval min=%.3f max=%.3f mean=%.3f" % (layer_name, _rp, _wp, _rp==_wp, float(_sv.min()), float(_sv.max()), float(_sv.mean())), file=_rtsys.stderr, flush=True)
+                    except Exception as _ce:
+                        print("DSPARK_CACHECHK ERR %r"%(_ce,), file=_rtsys.stderr, flush=True)
+                    nreq = int(bt.shape[0])
+                    per = pos.numel() // max(nreq, 1)
+                    if per > 0 and per * nreq == pos.numel():
+                        pos2 = pos.view(nreq, per); wslot2 = wslot.view(nreq, per)
+                        bidx = torch.div(pos2, cache_bs, rounding_mode="floor")
+                        off = pos2 % cache_bs
+                        bidx_c = bidx.clamp(min=0, max=bt.shape[1]-1)
+                        rblock = torch.gather(bt[:nreq], 1, bidx_c)
+                        rslot2 = rblock * cache_bs + off
+                        qlens = (actual_seq_lengths_query[1:] - actual_seq_lengths_query[:-1]).to(torch.int64)
+                        klen = actual_seq_lengths_key.to(torch.int64)
+                        q0_logical = klen - qlens
+                        win_left = int(self.window_size - 1)
+                        lo = (q0_logical - win_left).clamp_min(0); hi = klen - 1
+                        inwin = (pos2 >= lo[:, None]) & (pos2 <= hi[:, None])
+                        match = (rslot2 == wslot2)
+                        print("DSPARK_READ_TRACE layer=%s cache_bs=%s nreq=%s per=%s qlens=%s klen=%s lo=%s hi=%s pos0=%s write0=%s read0=%s match0=%s inwin0=%s bt0=%s" % (
+                            layer_name, cache_bs, nreq, per,
+                            qlens[:4].cpu().tolist(), klen[:4].cpu().tolist(), lo[:4].cpu().tolist(), hi[:4].cpu().tolist(),
+                            pos2[0, :min(per,8)].cpu().tolist(), wslot2[0, :min(per,8)].cpu().tolist(),
+                            rslot2[0, :min(per,8)].cpu().tolist(), match[0, :min(per,8)].cpu().tolist(),
+                            inwin[0, :min(per,8)].cpu().tolist(), bt[0, :min(bt.shape[1],8)].cpu().tolist()),
+                            file=_rtsys.stderr, flush=True)
+                except Exception as _rte:
+                    print("DSPARK_READ_TRACE_ERR layer=%s err=%r" % (layer_name, _rte), file=_rtsys.stderr, flush=True)
             return attn_op(
                 q,
                 ori_kv=swa_kv_cache,

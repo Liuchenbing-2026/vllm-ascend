@@ -602,7 +602,7 @@ class KVCacheRecvingThread(threading.Thread):
                     continue
                 self._submit_request(request_data)
             except Exception as e:
-                logger.error("Error in KVCacheTransferThread. error=%s. ", e)
+                logger.exception("Error in KVCacheTransferThread (full tb). error=%s. ", e)
 
     def _submit_request(self, request_data: dict[str, Any]) -> None:
         peer_key = (request_data["remote_host"], request_data["remote_handshake_port"])
