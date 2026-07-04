@@ -634,6 +634,11 @@ class NPUModelRunner(GPUModelRunner):
                 elif self.speculative_config.method == "extract_hidden_states":
                     assert isinstance(self.drafter, AscendExtractHiddenStatesProposer)
                     self.use_aux_hidden_state_outputs = True
+                elif self.speculative_config.method in ("dspark", "dflash"):
+                    # DSpark/DFlash consume concat(aux[target_layer_ids]) via
+                    # combine_hidden_states(main_proj); the target must tap those
+                    # layers, so aux-hidden-state outputs are mandatory here too.
+                    self.use_aux_hidden_state_outputs = True
                 self.rejection_sampler = AscendRejectionSampler(self.sampler)
         self.discard_request_indices = self._make_buffer(self.max_num_reqs, dtype=torch.int64)
         self.num_discarded_requests = 0

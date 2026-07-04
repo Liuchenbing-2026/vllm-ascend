@@ -1315,12 +1315,12 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
         # address — mirror step-0 (build_decode_metadata binds self.decode_sas_metadata,
         # refreshed in-place). The raw metadata_op output above is freshly allocated each
         # iteration, so under FULL cudagraph the captured attn op reads a stale descriptor
-        # at replay. Give each draft_step its own persistent buffer, refreshed in-place.
+        # at replay. Give each draft_index its own persistent buffer, refreshed in-place.
         if not hasattr(self, "decode_sas_metadata_draft"):
             self.decode_sas_metadata_draft: dict[int, torch.Tensor] = {}
-        if draft_step not in self.decode_sas_metadata_draft:
-            self.decode_sas_metadata_draft[draft_step] = torch.empty_like(self.decode_sas_metadata)
-        self.decode_sas_metadata_draft[draft_step][:1024] = decode_sas_metadata
+        if draft_index not in self.decode_sas_metadata_draft:
+            self.decode_sas_metadata_draft[draft_index] = torch.empty_like(self.decode_sas_metadata)
+        self.decode_sas_metadata_draft[draft_index][:1024] = decode_sas_metadata
 
         decode_metadata = AscendDSADecodeMetadata(
             input_positions=None,
@@ -1340,7 +1340,7 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
             cp_seq_len=None,
             batch_seq_mask=None,
             start_pos=None,
-            sas_metadata=self.decode_sas_metadata_draft[draft_step],
+            sas_metadata=self.decode_sas_metadata_draft[draft_index],
             qli_metadata=None,
         )
         return decode_metadata
@@ -1901,7 +1901,12 @@ class AscendDSAImpl(DSAAttentionImpl):
         actual_seq_lengths_query = common_prefill_metadata.query_start_loc
         actual_seq_lengths_key = common_prefill_metadata.seq_lens
 
-        if self.multistream_dsv4_dsa_overlap:
+        import os as _msos
+        # DSpark draft OPTB needs the raw inline `kv` tensor for the block
+        # self-attention (_bk); the multistream prolog scatters kv into the
+        # cache without returning it, so force the inline-kv path for draft layers.
+        _dspark_optb_layer = ("mtp." in layer_name) and bool(_msos.environ.get("DSPARK_OPTB"))
+        if self.multistream_dsv4_dsa_overlap and not _dspark_optb_layer:
             # mla prolog: q + kv dual-stream parallel
             q, qr, _ = self._mla_prolog_multistream(
                 hidden_states, cos, sin, swa_kv_cache, swa_prefill_metadata.slot_mapping, is_prefill=True
