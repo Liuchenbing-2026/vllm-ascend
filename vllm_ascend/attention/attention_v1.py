@@ -70,6 +70,29 @@ SWA_INT_MAX = 2147483647
 _ATTN_KEYS_BUFFER = None
 
 
+def _filter_full_graph_attn_keys(attn_keys, attn_metadata):
+    """Keep only self-attention (FIA / paged) layer keys for full-graph replay.
+
+    Hybrid models such as Qwen3.5-27B interleave GatedDeltaNet linear-attention
+    layers (``GDNAttentionMetadata``, which lacks ``seq_lens_list`` /
+    ``actual_seq_lengths_q`` / ``block_tables``) with a minority of full-attention
+    layers (``AscendMetadata``). Only the full-attention layers register into
+    ``graph_params.attn_params`` during capture (via ``full_graph_fia`` /
+    ``full_graph_pa``); the GDN forward never appends a graph param. Therefore the
+    update loop must iterate exactly the full-attention keys.
+
+    The GDN keys are filtered *before* the ``zip`` so the
+    ``(key, param, handle, event)`` tuples stay aligned 1:1 with the captured
+    params. Filtering mid-loop (e.g. ``continue`` inside the zip body) desyncs the
+    graph update count against what the captured graph expects and hangs the NPU
+    with ``rtDeviceSynchronizeWithTimeout task timeout``.
+
+    ``seq_lens_list`` is present on every Ascend self-attention metadata and
+    absent on ``GDNAttentionMetadata``, so it is used as the discriminator.
+    """
+    return [key for key in attn_keys if hasattr(attn_metadata[key], "seq_lens_list")]
+
+
 @register_backend(AttentionBackendEnum.CUSTOM, "ASCEND")
 class AscendAttentionBackend(AttentionBackend):
     accept_output_buffer: bool = True
@@ -416,9 +439,15 @@ class AscendAttentionBackendImpl(AttentionImpl):
                     graph_params = get_draft_graph_params()
             else:
                 graph_params = get_graph_params()
+            # Hybrid models (e.g. Qwen3.5-27B) mix GDN linear-attention layers into
+            # attn_metadata; those layers never register a paged-attention graph
+            # param, so filter them out before zip to keep the tuples aligned.
+            pa_attn_keys = _filter_full_graph_attn_keys(
+                list(forward_context.attn_metadata), forward_context.attn_metadata
+            )
             with torch.npu.stream(update_stream):
                 for key, param, handle, event in zip(
-                    forward_context.attn_metadata,
+                    pa_attn_keys,
                     graph_params.attn_params[num_tokens],
                     graph_params.handles[num_tokens],
                     graph_params.events[num_tokens],
@@ -467,15 +496,16 @@ class AscendAttentionBackendImpl(AttentionImpl):
             if _EXTRA_CTX.is_draft_model:
                 graph_params = get_draft_graph_params()
                 attn_metadata = draft_attn_metadatas
-                attn_keys = list(attn_metadata[0].keys())
+                attn_keys = _filter_full_graph_attn_keys(list(attn_metadata[0].keys()), attn_metadata[0])
             else:
                 graph_params = get_graph_params()
                 attn_metadata = forward_context.attn_metadata
-                attn_keys = list(attn_metadata.keys())
-            # For Qwen3-next, since the kv_cache_config has already categorized
-            # linear_attn and self_attn, the attn_metadata is first arranged with
-            # self_attn followed by linear_attn. Therefore, using zip directly
-            # filters out the update operations for linear_attn.
+                attn_keys = _filter_full_graph_attn_keys(list(attn_metadata.keys()), attn_metadata)
+            # For Qwen3-next / Qwen3.5, the kv_cache_config has categorized
+            # linear_attn and self_attn. The GDN (linear_attn) layers use
+            # GDNAttentionMetadata and never register a graph param during capture,
+            # so `_filter_full_graph_attn_keys` drops them above; the remaining
+            # self_attn keys align 1:1 with graph_params.attn_params.
             # TODO: We use a new variable `attn_keys` to ensure the loop count is
             # correct after get by `zip` because of the new structure of the attn_metadata
             # when running with the merged full eagle-graph. Should check it with Qwen3-next.
@@ -549,11 +579,15 @@ class AscendAttentionBackendImpl(AttentionImpl):
                 else:
                     graph_params = get_draft_graph_params()
                 attn_metadata = draft_attn_metadatas
-                attn_keys = list(attn_metadata[0].keys())
+                attn_keys = _filter_full_graph_attn_keys(list(attn_metadata[0].keys()), attn_metadata[0])
             else:
                 graph_params = get_graph_params()
                 attn_metadata = forward_context.attn_metadata
-                attn_keys = list(attn_metadata.keys())
+                # Drop GDN linear-attention keys (Qwen3.5 hybrid) before the DFlash
+                # reorder below: those layers register no graph param and sorting a
+                # mixed key list by layer index would otherwise surface a GDN key in
+                # the first `attn_keys_length` slots and desync / crash the update.
+                attn_keys = _filter_full_graph_attn_keys(list(attn_metadata.keys()), attn_metadata)
                 # In some speculative methods (such as DFlash), the order of attn_keys in the Target model
                 # will be disrupted instead of increasing by layer index, so need regular expressions to
                 # reorder the attn_keys and stor the results in _ATTN_KEYS_BUFFER.
