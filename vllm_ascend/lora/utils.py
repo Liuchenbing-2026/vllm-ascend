@@ -10,7 +10,6 @@ from vllm.lora.layers import (
     RowParallelLinearWithLoRA,
     VocabParallelEmbeddingWithLoRA,
 )
-from vllm.lora.layers.utils import _not_fully_sharded_can_replace
 
 from vllm_ascend.ops.linear import (
     AscendColumnParallelLinear,
@@ -71,7 +70,15 @@ class AscendVocabParallelEmbeddingWithLoRA(VocabParallelEmbeddingWithLoRA):
 
 class AscendQKVParallelLinearWithLoRA(QKVParallelLinearWithLoRA):
     @classmethod
-    @_not_fully_sharded_can_replace
+    # NOTE: no @_not_fully_sharded_can_replace here, on purpose. The dense
+    # Ascend wrappers (Column/MergedColumn/Row) above already omit it, so they
+    # match in both plain and fully-sharded modes. Keeping the decorator only
+    # on QKV made it the odd one out: under --fully-sharded-loras the decorator
+    # forces can_replace_layer to return False, and since there is no
+    # AscendQKVParallelLinearWithShardedLoRA to pick the layer up, qkv_proj
+    # silently loses its LoRA delta while the MLP still gets it. Dropping the
+    # decorator lets qkv_proj be wrapped in fully-sharded mode too (using the
+    # non-sharded impl, numerically correct).
     def can_replace_layer(
         cls,
         source_layer: nn.Module,
@@ -84,7 +91,8 @@ class AscendQKVParallelLinearWithLoRA(QKVParallelLinearWithLoRA):
 
 class AscendMergedQKVParallelLinearWithLoRA(MergedQKVParallelLinearWithLoRA):
     @classmethod
-    @_not_fully_sharded_can_replace
+    # See AscendQKVParallelLinearWithLoRA above: decorator intentionally
+    # dropped so merged qkv_proj is also wrapped under --fully-sharded-loras.
     def can_replace_layer(
         cls,
         source_layer: nn.Module,
