@@ -1,0 +1,83 @@
+diff --git a/vllm/config/speculative.py b/vllm/config/speculative.py
+index a4d5b13..9656d35 100644
+--- a/vllm/config/speculative.py
++++ b/vllm/config/speculative.py
+@@ -54,7 +54,7 @@ MTPModelTypes = Literal[
+ NgramGPUTypes = Literal["ngram_gpu"]
+ DFlashModelTypes = Literal["dflash"]
+ EagleModelTypes = Literal[
+-    "eagle", "eagle3", "extract_hidden_states", MTPModelTypes, DFlashModelTypes
++    "eagle", "eagle3", "extract_hidden_states", MTPModelTypes, DFlashModelTypes, "dspark"
+ ]
+ SpeculativeMethod = Literal[
+     "ngram",
+@@ -280,6 +280,7 @@ class SpeculativeConfig:
+             "eagle3",
+             "extract_hidden_states",
+             "dflash",
++            "dspark",
+         )
+         factors.append(uses_aux_hidden_states)
+ 
+@@ -694,7 +695,7 @@ class SpeculativeConfig:
+                 )
+ 
+                 # Automatically detect the method
+-                if self.method in ("eagle", "eagle3", "dflash"):
++                if self.method in ("eagle", "eagle3", "dflash", "dspark"):
+                     pass
+                 # examples:
+                 # yuhuili/EAGLE-LLaMA3-Instruct-8B
+@@ -704,6 +705,8 @@ class SpeculativeConfig:
+                     self.method = "eagle"
+                 elif "eagle3" in self.draft_model_config.model.lower():
+                     self.method = "eagle3"
++                elif "dspark" in self.draft_model_config.model.lower():
++                    self.method = "dspark"
+                 elif "dflash" in self.draft_model_config.model.lower():
+                     self.method = "dflash"
+                 elif self.draft_model_config.hf_config.model_type == "medusa":
+@@ -752,9 +755,17 @@ class SpeculativeConfig:
+                         self.draft_model_config.hf_config = eagle_config
+                         self.update_arch_()
+ 
+-                if self.method == "dflash":
++                if self.method in ("dflash", "dspark"):
+                     self.parallel_drafting = True
+ 
++                # DSpark: explicitly force the draft architecture + model_type.
++                # hf_config_override converts any deepseek_v4 draft to DeepSeekV4MTPModel
++                # (standard MTP predictor w/ per-stage shared_head.head the DSpark ckpt
++                # lacks -> mtp.0.head.weight KeyError). Override it back to DSpark class.
++                if self.method == "dspark":
++                    self.draft_model_config.hf_config.architectures = ["DeepSeekV4DSpark"]
++                    self.draft_model_config.hf_config.model_type = "deepseek_v4"
++
+                 if self.num_speculative_tokens is not None and hasattr(
+                     self.draft_model_config.hf_config, "num_lookahead_tokens"
+                 ):
+@@ -1068,7 +1079,7 @@ class SpeculativeConfig:
+         )
+ 
+     def use_eagle(self) -> bool:
+-        return self.method in ("eagle", "eagle3", "mtp", "dflash")
++        return self.method in ("eagle", "eagle3", "mtp", "dflash", "dspark")
+ 
+     def use_dflash(self) -> bool:
+         return self.method == "dflash"
+diff --git a/vllm/v1/spec_decode/llm_base_proposer.py b/vllm/v1/spec_decode/llm_base_proposer.py
+index cf9b70a..ab72986 100644
+--- a/vllm/v1/spec_decode/llm_base_proposer.py
++++ b/vllm/v1/spec_decode/llm_base_proposer.py
+@@ -90,7 +90,10 @@ class SpecDecodeBaseProposer:
+         draft_hf_config = self.draft_model_config.hf_config
+         if hasattr(draft_hf_config, "compress_ratios") and hasattr(
+             draft_hf_config, "hc_mult"
+-        ):
++        ) and self.method != "dspark":
++            # DSpark: combine_hidden_states (main_proj) already reduces
++            # concat(aux[target_layer_ids]) -> hidden, so hidden_size must stay
++            # at the draft hidden size, NOT hc_mult*hidden.
+             self.hidden_size = self.hidden_size * draft_hf_config.hc_mult
+ 
+         # Unifying eagle, draft model, and parallel drafting support.
