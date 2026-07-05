@@ -21,12 +21,24 @@ import torch.distributed as dist
 import torch.nn.functional as F
 import torch_npu
 from vllm.config import VllmConfig
-from vllm.distributed import (
-    get_dcp_group,
-    get_decode_context_model_parallel_rank,
-    get_decode_context_model_parallel_world_size,
-    get_pcp_group,
-)
+from vllm.distributed import get_dcp_group, get_pcp_group
+
+try:
+    from vllm.distributed import (
+        get_decode_context_model_parallel_rank,
+        get_decode_context_model_parallel_world_size,
+    )
+except ImportError:
+    # vLLM 0.23 dropped get_decode_context_model_parallel_{rank,world_size}
+    # from vllm.distributed. Derive the equivalents from the DCP group. This
+    # import-local fallback works even in the model-registry subprocess, which
+    # imports this module directly without running vllm_ascend/__init__.py.
+    def get_decode_context_model_parallel_world_size():
+        return get_dcp_group().world_size
+
+    def get_decode_context_model_parallel_rank():
+        dcp_group = get_dcp_group()
+        return dcp_group.rank_in_group if dcp_group.world_size > 1 else 0
 from vllm.v1.attention.backend import AttentionCGSupport
 from vllm.v1.kv_cache_interface import AttentionSpec
 
