@@ -10,10 +10,10 @@ from vllm.v1.core.kv_cache_utils import (
     BlockHashListWithBlockSize,
     KVCacheBlock,
 )
+import vllm.v1.core.single_type_kv_cache_manager as single_type_kv_cache_manager
 from vllm.v1.core.single_type_kv_cache_manager import (
     FullAttentionManager,
     SingleTypeKVCacheManager,
-    spec_manager_map,
 )
 from vllm.v1.kv_cache_interface import (
     ChunkedLocalAttentionSpec,
@@ -233,6 +233,20 @@ class CompressAttentionManager(FullAttentionManager):
         return computed_blocks
 
 
+def _get_registered_manager_class(kv_cache_spec: KVCacheSpec) -> type[SingleTypeKVCacheManager]:
+    # vLLM 0.23+ dropped the module-level ``spec_manager_map`` and moved the
+    # KVCacheSpec -> Manager mapping into ``KVCacheSpecRegistry``. Guard so this
+    # module imports/dispatches on both old and new vLLM.
+    spec_manager_map = getattr(single_type_kv_cache_manager, "spec_manager_map", None)
+    if spec_manager_map is not None:
+        return spec_manager_map[type(kv_cache_spec)]
+    from vllm.v1.kv_cache_spec_registry import KVCacheSpecRegistry
+    manager_class = KVCacheSpecRegistry.get_manager_class(kv_cache_spec)
+    if manager_class is None:
+        raise KeyError(type(kv_cache_spec))
+    return manager_class
+
+
 def get_manager_for_kv_cache_spec(
     kv_cache_spec: KVCacheSpec,
     max_num_batched_tokens: int | None = None,
@@ -256,7 +270,7 @@ def get_manager_for_kv_cache_spec(
     this value matches the pool sizer and makes admission consistent with the
     block budget actually held.
     """
-    manager_class = spec_manager_map[type(kv_cache_spec)]
+    manager_class = _get_registered_manager_class(kv_cache_spec)
     if isinstance(kv_cache_spec, MLAAttentionSpec) and kv_cache_spec.compress_ratio > 1:
         manager_class = CompressAttentionManager
         if max_model_len is not None:

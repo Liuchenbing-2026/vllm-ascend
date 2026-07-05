@@ -66,11 +66,26 @@ def register_ascend_mla_spec_in_manager():
     import sys as _sys
 
     from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager
+    from vllm.v1.kv_cache_interface import FullAttentionSpec
     from vllm.v1.kv_cache_interface import MLAAttentionSpec as AscendMLAAttentionSpec
 
     _stm = _sys.modules.get("vllm.v1.core.single_type_kv_cache_manager")
-    if _stm is not None and AscendMLAAttentionSpec not in _stm.spec_manager_map:
-        _stm.spec_manager_map[AscendMLAAttentionSpec] = FullAttentionManager
+    spec_manager_map = getattr(_stm, "spec_manager_map", None)
+    if spec_manager_map is not None:
+        if AscendMLAAttentionSpec not in spec_manager_map:
+            spec_manager_map[AscendMLAAttentionSpec] = FullAttentionManager
+        return
+    # vLLM 0.23+: KVCacheSpec -> Manager moved to KVCacheSpecRegistry.
+    try:
+        from vllm.v1.kv_cache_spec_registry import KVCacheSpecRegistry
+        KVCacheSpecRegistry.register(
+            AscendMLAAttentionSpec,
+            FullAttentionManager,
+            uniform_type_base_spec=FullAttentionSpec,
+        )
+    except Exception as e:  # noqa: BLE001 - best-effort compat, never fatal
+        logger.warning("AscendMLAAttentionSpec register skipped (%s); "
+                       "relying on upstream KVCacheSpecRegistry state.", e)
 
 
 @dataclass
