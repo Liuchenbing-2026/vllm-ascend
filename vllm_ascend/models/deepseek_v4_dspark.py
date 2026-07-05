@@ -410,7 +410,14 @@ class DSparkDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
                 # attention sinks (sharded by head).
                 if "attn_sink" in name and name in params_dict:
                     narrow = loaded_weight[head_start:head_end]
-                    params_dict[name][: narrow.shape[0]].copy_(narrow)
+                    # attn_sink is a leaf Parameter (requires_grad=True); an
+                    # in-place copy_ into a view of it raises "a view of a leaf
+                    # Variable that requires grad is being used in an in-place
+                    # operation". Weight loading must not build autograd graph —
+                    # do the slice-copy under no_grad (matches vLLM loaders).
+                    param = params_dict[name]
+                    with torch.no_grad():
+                        param[: narrow.shape[0]].copy_(narrow)
                     loaded.add(name)
                     continue
                 if ".shared_experts.w2" in name:
