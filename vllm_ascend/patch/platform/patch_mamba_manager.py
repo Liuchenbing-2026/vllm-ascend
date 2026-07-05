@@ -5,6 +5,7 @@
 # This file is a part of the vllm-ascend project.
 #
 import vllm.v1.core.single_type_kv_cache_manager as single_type_kv_cache_manager
+from vllm.logger import logger
 from vllm.v1.core.single_type_kv_cache_manager import (
     BlockHashList,
     BlockPool,
@@ -50,4 +51,26 @@ class AscendMambaManager(MambaManager):
 
 
 single_type_kv_cache_manager.MambaManager = AscendMambaManager
-single_type_kv_cache_manager.spec_manager_map[MambaSpec] = AscendMambaManager
+# vLLM 0.23+ dropped the module-level ``spec_manager_map`` and moved the
+# KVCacheSpec -> Manager mapping into ``KVCacheSpecRegistry``. Without this guard
+# the ascend platform plugin dies at import time on newer vLLM
+# (AttributeError: ... has no attribute 'spec_manager_map') before the model is
+# built. The module-global override above already redirects the lazy
+# ``register_all_kvcache_specs()`` path to AscendMambaManager; on new vLLM we
+# also try an explicit registry.register in case the registry is already
+# populated. Guard it: the registry API/signature may vary across 0.23.x and we
+# must never crash plugin load.
+if hasattr(single_type_kv_cache_manager, "spec_manager_map"):
+    single_type_kv_cache_manager.spec_manager_map[MambaSpec] = AscendMambaManager
+else:
+    try:
+        from vllm.v1.kv_cache_spec_registry import KVCacheSpecRegistry
+        KVCacheSpecRegistry.register(
+            MambaSpec,
+            AscendMambaManager,
+            uniform_type_base_spec=MambaSpec,
+        )
+    except Exception as e:  # noqa: BLE001 - best-effort compat, never fatal
+        logger.warning(
+            "AscendMambaManager KVCacheSpecRegistry.register skipped (%s); "
+            "relying on module-global MambaManager override.", e)
