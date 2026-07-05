@@ -17,6 +17,41 @@
 
 import vllm_ascend.logger  # noqa: F401
 
+
+def _ensure_decode_context_world_size_alias():
+    """Restore the ``get_decode_context_model_parallel_world_size`` symbol.
+
+    vLLM 0.23 dropped ``get_decode_context_model_parallel_world_size`` from
+    ``vllm.distributed`` (only ``get_dcp_group`` / ``get_pcp_group`` remain).
+    Several vllm-ascend modules still ``from vllm.distributed import`` the old
+    name at module import time, so the ascend plugin dies before the model is
+    built. Injecting the alias here (executed via ``vllm_ascend/__init__.py``
+    at plugin load, before those imports run) covers all of them with one
+    compat shim. Never fatal: on older vLLM the symbol exists (no-op); if the
+    dcp group accessor is missing we skip rather than crash plugin load.
+    """
+    try:
+        import vllm.distributed as distributed
+
+        if hasattr(distributed, "get_decode_context_model_parallel_world_size"):
+            return
+
+        from vllm.distributed import get_dcp_group
+
+        def get_decode_context_model_parallel_world_size():
+            return get_dcp_group().world_size
+
+        distributed.get_decode_context_model_parallel_world_size = (
+            get_decode_context_model_parallel_world_size)
+    except Exception as e:  # noqa: BLE001 - best-effort compat, never fatal
+        from vllm.logger import init_logger
+        init_logger(__name__).warning(
+            "get_decode_context_model_parallel_world_size alias skipped (%s); "
+            "relying on native vllm.distributed exports.", e)
+
+
+_ensure_decode_context_world_size_alias()
+
 _GLOBAL_PATCH_APPLIED = False
 
 
