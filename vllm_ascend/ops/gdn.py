@@ -183,48 +183,61 @@ def update_conv1d_graph_params(
                 run_mode,
                 branch,
                 layer_prefix,
-                _,
-                _,
-                _,
+                cap_qsl_host,
+                cap_cidx_host,
+                cap_nat_host,
                 q_per_seq,
             ) = param
 
-            new_query_start_loc: tuple[int, ...] = ()
-            new_cache_indices: tuple[int, ...] = ()
-            new_num_accepted: tuple[int, ...] = ()
+            # Default to the capture-time host args (slots 10/11/12). They were
+            # used to assemble the op during capture and always satisfy the
+            # conv1d tiling check (qsl[last] == cap_x_dim0), so falling back to
+            # them guarantees every conv1d task is re-assembled and its event is
+            # recorded below -- never skipped. See NOTE below on why skipping is
+            # fatal.
+            new_query_start_loc: tuple[int, ...] = cap_qsl_host
+            new_cache_indices: tuple[int, ...] = cap_cidx_host
+            new_num_accepted: tuple[int, ...] = cap_nat_host if branch == "spec" else ()
 
             if run_mode == 1 and attn_metadata is not None:
                 # get gdn metadata by captured layer_prefix
                 meta = attn_metadata
                 if isinstance(meta, dict):
                     meta = meta.get(layer_prefix, None)
-                    assert isinstance(meta, GDNAttentionMetadata)
 
-                if meta is None:
-                    continue
-
-                cap_x_dim0 = int(mixed_qkv.size(0))
-                if branch == "spec" and meta.spec_sequence_masks is not None:
-                    qsl_host, cidx_host, num_accepted_host = get_spec_causal_conv1d_update_host_args(meta)
-                    new_query_start_loc, new_cache_indices, new_num_accepted = _pad_conv1d_host_args_to_capture(
-                        qsl_host,
-                        cidx_host,
-                        num_accepted_host,
-                        cap_x_dim0=cap_x_dim0,
-                        q_per_seq=q_per_seq,
-                        with_num_accepted=True,
-                    )
-                elif branch == "non_spec_decode":
-                    non_sdq_host, non_sd_cidx_host = get_causal_conv1d_update_host_args(meta)
-                    new_query_start_loc, new_cache_indices, _ = _pad_conv1d_host_args_to_capture(
-                        non_sdq_host,
-                        non_sd_cidx_host,
-                        (),
-                        cap_x_dim0=cap_x_dim0,
-                        q_per_seq=q_per_seq,
-                        with_num_accepted=False,
-                    )
-                    new_num_accepted = ()
+                # NOTE: do NOT `continue` (nor `assert`) when meta is missing or
+                # the runtime branch does not match the captured one. A mid-loop
+                # continue consumes (param, handle, event) from the zip but skips
+                # the graph_task_update + event.record below, leaving the
+                # captured event.wait unsignaled forever -> NPU hangs with
+                # rtDeviceSynchronizeWithTimeout (107020). Likewise feeding empty
+                # host args stalls the conv1d tiling. Both are avoided by keeping
+                # the capture-time fallback above and always falling through to
+                # graph_task_update. (Same 107020 anti-pattern 1f963e81 fixed on
+                # the FIA loop; the conv1d loop had the identical bug.)
+                if isinstance(meta, GDNAttentionMetadata):
+                    cap_x_dim0 = int(mixed_qkv.size(0))
+                    if branch == "spec" and meta.spec_sequence_masks is not None:
+                        qsl_host, cidx_host, num_accepted_host = get_spec_causal_conv1d_update_host_args(meta)
+                        new_query_start_loc, new_cache_indices, new_num_accepted = _pad_conv1d_host_args_to_capture(
+                            qsl_host,
+                            cidx_host,
+                            num_accepted_host,
+                            cap_x_dim0=cap_x_dim0,
+                            q_per_seq=q_per_seq,
+                            with_num_accepted=True,
+                        )
+                    elif branch == "non_spec_decode":
+                        non_sdq_host, non_sd_cidx_host = get_causal_conv1d_update_host_args(meta)
+                        new_query_start_loc, new_cache_indices, _ = _pad_conv1d_host_args_to_capture(
+                            non_sdq_host,
+                            non_sd_cidx_host,
+                            (),
+                            cap_x_dim0=cap_x_dim0,
+                            q_per_seq=q_per_seq,
+                            with_num_accepted=False,
+                        )
+                        new_num_accepted = ()
 
             torch.npu.graph_task_update_begin(update_stream, handle)
             torch.ops._C_ascend.npu_causal_conv1d_custom(
