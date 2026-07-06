@@ -61,6 +61,8 @@ import vllm_ascend.patch.worker.patch_draft_quarot  # noqa
 import vllm_ascend.patch.worker.patch_cudagraph  # noqa
 import vllm_ascend.patch.worker.patch_deepseek_mtp  # noqa
 import vllm_ascend.patch.worker.patch_gqa_c8  # noqa
+# DIAGNOSTIC ONLY: no-op unless VLLM_ASCEND_LORA_PROBE=1 (Qwen3.5 LoRA ⑤o probe).
+import vllm_ascend.patch.worker.patch_lora_probe  # noqa
 
 if _V2_MODEL_RUNNER_SUPPORTED:
     import vllm_ascend.patch.worker.patch_v2.patch_uva  # noqa
