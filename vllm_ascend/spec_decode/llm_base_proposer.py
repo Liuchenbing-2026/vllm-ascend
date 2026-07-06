@@ -10,14 +10,33 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from vllm.config import CompilationMode, CUDAGraphMode, VllmConfig, get_layers_from_vllm_config
+import vllm.distributed.parallel_state as _parallel_state
 from vllm.distributed.parallel_state import (
     get_pcp_group,
     get_pp_group,
     get_tp_group,
     get_world_group,
     init_model_parallel_group,
-    patch_tensor_parallel_group,
 )
+
+try:
+    from vllm.distributed.parallel_state import patch_tensor_parallel_group
+except ImportError:
+    # vLLM 0.23 dropped patch_tensor_parallel_group from parallel_state, but
+    # kept the underlying _TP / _TP_STATE_PATCHED / get_tp_group() it toggled.
+    # Re-implement the equivalent context manager so the top-level import (and
+    # thus WorkerProc startup) survives. Only used when draft TP degree differs
+    # from target TP; the TP=8/TP=8 main path takes nullcontext() anyway.
+    @contextmanager
+    def patch_tensor_parallel_group(tp_group):
+        old_tp_group = _parallel_state.get_tp_group()
+        _parallel_state._TP_STATE_PATCHED = True
+        _parallel_state._TP = tp_group
+        try:
+            yield
+        finally:
+            _parallel_state._TP_STATE_PATCHED = False
+            _parallel_state._TP = old_tp_group
 from vllm.forward_context import BatchDescriptor, ForwardContext, get_forward_context
 from vllm.logger import logger
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
