@@ -651,7 +651,26 @@ def register_ascend_customop(vllm_config: VllmConfig | None = None):
         AscendSiluAndMul,
         AscendSiluAndMulWithClamp,
     )
-    from vllm_ascend.ops.bailing_moe_linear_attn import AscendBailingMoELinearAttention
+    try:
+        from vllm_ascend.ops.bailing_moe_linear_attn import (
+            AscendBailingMoELinearAttention,
+        )
+    except ModuleNotFoundError as e:
+        # BailingMoE linear-attn is an OOT custom op that top-level imports
+        # vllm.model_executor.layers.mamba.linear_attn /
+        # vllm.model_executor.models.bailing_moe_linear, both relocated in
+        # vLLM 0.23. DeepSeek-V4 / DSpark does not use it, so skip only when
+        # that specific optional dependency is missing; re-raise anything else.
+        optional_missing = (
+            "vllm.model_executor.layers.mamba.linear_attn",
+            "vllm.model_executor.models.bailing_moe_linear",
+        )
+        if e.name not in optional_missing:
+            raise
+        AscendBailingMoELinearAttention = None
+        logger.warning(
+            "AscendBailingMoELinearAttention skipped because optional "
+            "dependency %s is missing.", e.name)
     from vllm_ascend.ops.conv import AscendConv3dLayer
     from vllm_ascend.ops.fused_moe.fused_moe import AscendFusedMoE
     from vllm_ascend.ops.gdn import AscendGatedDeltaNetAttention
@@ -708,8 +727,10 @@ def register_ascend_customop(vllm_config: VllmConfig | None = None):
         "RelPosAttention": AscendRelPosAttention,
         "CustomQwen2Decoder": AscendCustomQwen2Decoder,
         "GatedDeltaNetAttention": AscendGatedDeltaNetAttention,
-        "BailingMoELinearAttention": AscendBailingMoELinearAttention,
     }
+    if AscendBailingMoELinearAttention is not None:
+        REGISTERED_ASCEND_OPS[
+            "BailingMoELinearAttention"] = AscendBailingMoELinearAttention
 
     if vllm_config is None:
         try:
