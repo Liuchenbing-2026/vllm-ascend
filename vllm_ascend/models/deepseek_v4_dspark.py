@@ -46,10 +46,15 @@ def _draft_quant_config(vllm_config: VllmConfig) -> QuantizationConfig | None:
     """Quantization config for the draft submodules.
 
     The DSpark draft weights (attention projections, ``main_proj``) are stored
-    W8A8 inside the quantized target checkpoint. Returning the target's
-    ``quant_config`` keeps those projections quantized instead of silently
-    reading them as bf16, which corrupts the draft output.
+    W8A8 inside the quantized target checkpoint, so we keep them quantized
+    rather than silently reading them as bf16 (which corrupts the draft output).
+
+    Exception: an rbf16 draft has been dequantized to bf16, so its projections
+    must be built unquantized regardless of the target's quantization.
     """
+    draft_hf_config = vllm_config.model_config.hf_config
+    if getattr(draft_hf_config, "dspark_mtp_dequantized_to_bf16", False):
+        return None
     return vllm_config.quant_config
 
 

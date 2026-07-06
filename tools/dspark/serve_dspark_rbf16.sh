@@ -4,39 +4,30 @@
 # Serve DeepSeek-V4-Flash DSpark with the rbf16 (dequantized, rotated) draft.
 # Topology: single node, 8x W8A8. Target enters the ACL graph; the DSpark draft
 # runs eager (the reference design). Steady-state AL ~3.3 on math/coding traffic.
+#
+# The DSpark checkpoint is detected by the plugin (DeepSeekV4DSpark architecture)
+# and routed to the semi-autoregressive DSpark proposer. method is "mtp" because
+# vLLM v0.23.0 core has no dspark method literal; the plugin's config patch
+# rewrites the arch and enables parallel drafting.
 set -euo pipefail
+
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+[ -f /usr/local/Ascend/nnal/atb/set_env.sh ] && source /usr/local/Ascend/nnal/atb/set_env.sh
+
+export VLLM_VERSION="${VLLM_VERSION:-0.23.0}" OMP_NUM_THREADS="${OMP_NUM_THREADS:-10}"
+export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True HCCL_BUFFSIZE=1024
+export VLLM_ASCEND_APPLY_DSV4_PATCH=1 VLLM_ASCEND_ENABLE_FLASHCOMM1=0 VLLM_ASCEND_ENABLE_FUSED_MC2=0
 
 TARGET="${TARGET:-/data1/DeepSeek-V4-Flash-DSpark-w8a8}"
 DRAFT="${DRAFT:-/data1/DeepSeek-V4-Flash-DSpark-rbf16-draft}"
 PORT="${PORT:-8902}"
-NUM_SPEC="${NUM_SPEC:-5}"        # DSV4 DSpark checkpoints are trained block-5
-TP="${TP:-8}"
-MAX_NUM_SEQS="${MAX_NUM_SEQS:-8}"
-BLOCK_SIZE="${BLOCK_SIZE:-128}"
+NUM_SPEC="${NUM_SPEC:-5}"
 
-# bug#1: append :$PYTHONPATH so the CANN acl module path added by set_env is
-# preserved instead of being clobbered by our export.
-if [[ -f "${ASCEND_HOME:-/usr/local/Ascend}/ascend-toolkit/set_env.sh" ]]; then
-    # shellcheck disable=SC1091
-    source "${ASCEND_HOME:-/usr/local/Ascend}/ascend-toolkit/set_env.sh"
-fi
-export PYTHONPATH="${EXTRA_PYTHONPATH:-}:${PYTHONPATH:-}"
+SPEC="{\"method\":\"mtp\",\"num_speculative_tokens\":${NUM_SPEC},\"model\":\"${DRAFT}\"}"
 
-# Route to the DSpark proposer: the draft is the target checkpoint (self-draft),
-# so no separate `model` is needed. method=mtp because v0.23.0 has no dspark
-# method literal; the plugin detects the DeepSeekV4DSpark architecture and
-# routes to the semi-autoregressive DSpark proposer.
-SPEC=$(cat <<JSON
-{"method": "mtp", "num_speculative_tokens": ${NUM_SPEC}, "model": "${DRAFT}"}
-JSON
-)
-
-export VLLM_USE_V2_MODEL_RUNNER="${VLLM_USE_V2_MODEL_RUNNER:-0}"
-
+cd /data1
 exec vllm serve "${TARGET}" \
-    --port "${PORT}" \
-    --tensor-parallel-size "${TP}" \
-    --max-num-seqs "${MAX_NUM_SEQS}" \
-    --block-size "${BLOCK_SIZE}" \
-    --trust-remote-code \
-    --speculative-config "${SPEC}"
+  --max_model_len 8192 --max-num-batched-tokens 4096 --served-model-name dsv4-dspark-w8a8 \
+  --gpu-memory-utilization 0.9 --max-num-seqs 8 --tensor-parallel-size 8 --enable-expert-parallel \
+  --tokenizer-mode deepseek_v4 --safetensors-load-strategy prefetch --quantization ascend \
+  --port "${PORT}" --speculative-config "${SPEC}" --api-server-count 1 --block-size 128 --enforce-eager
