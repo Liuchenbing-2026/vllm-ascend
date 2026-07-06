@@ -758,6 +758,10 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             token_indices_to_sample = common_attn_metadata.query_start_loc[1:] - 1
 
         if self.method in ("eagle3", "dflash"):
+            from vllm_ascend.models.deepseek_v4_dspark import (
+                DSparkDeepseekV4ForCausalLM,
+            )
+
             assert isinstance(
                 self.get_model(),
                 (
@@ -765,6 +769,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                     DFlashQwen3ForCausalLM,
                     Eagle3VwnLlamaForCausalLM,
                     Eagle3DeepseekV2ForCausalLM,
+                    DSparkDeepseekV4ForCausalLM,
                 ),
             )
             target_hidden_states = self.model.combine_hidden_states(target_hidden_states)

@@ -847,6 +847,36 @@ class AscendModelSlimConfig(QuantizationConfig):
         weight_packed mappings.
         """
         if "hc_head_fn" in self.quant_description:
+            # bug#3: DSpark checkpoints describe draft weights under the
+            # ``mtp.{i}.*`` namespace, but the DSpark draft module exposes them
+            # as ``model.layers.{i}.*`` (per-layer decoder block) and
+            # ``model.*`` (head/combiner). Clone the quant entries under the
+            # module-parameter names so get_linear_quant_type resolves them.
+            head_level_suffixes = (
+                "main_proj",
+                "main_norm",
+                "norm",
+                "markov_head",
+                "markov_w1",
+                "markov_w2",
+            )
+            extra_quant_dict = {}
+            for name in self.quant_description:
+                if not name.startswith("mtp."):
+                    continue
+                parts = name.split(".", 2)
+                if len(parts) < 3:
+                    continue
+                stage, rest = parts[1], parts[2]
+                rest = rest.replace("markov_w1", "markov_head.w1")
+                rest = rest.replace("markov_w2", "markov_head.w2")
+                if rest.startswith(head_level_suffixes):
+                    mapped = f"model.{rest}"
+                else:
+                    mapped = f"model.layers.{stage}.{rest}"
+                extra_quant_dict[mapped] = self.quant_description[name]
+            self.quant_description.update(extra_quant_dict)
+
             # TODO
             extra_quant_dict = {}
             for name in self.quant_description:
