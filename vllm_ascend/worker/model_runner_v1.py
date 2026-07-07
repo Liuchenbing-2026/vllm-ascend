@@ -127,7 +127,7 @@ from vllm_ascend.ops.rotary_embedding import set_cos_and_sin, update_cos_sin
 from vllm_ascend.patch.worker.patch_draft_quarot import patch_load_weights
 from vllm_ascend.quantization.utils import enable_fa_quant
 from vllm_ascend.sample.sampler import AscendSampler
-from vllm_ascend.spec_decode import get_spec_decode_method
+from vllm_ascend.spec_decode import _draft_is_dspark, get_spec_decode_method
 from vllm_ascend.spec_decode.dflash_proposer import AscendDflashProposer
 from vllm_ascend.spec_decode.draft_proposer import AscendDraftModelProposer
 from vllm_ascend.spec_decode.eagle_proposer import AscendEagleProposer
@@ -637,12 +637,26 @@ class NPUModelRunner(GPUModelRunner):
                 elif self.speculative_config.method == "extract_hidden_states":
                     assert isinstance(self.drafter, AscendExtractHiddenStatesProposer)
                     self.use_aux_hidden_state_outputs = True
+                elif _draft_is_dspark(self.speculative_config):
+                    # DSpark (routed as mtp) consumes aux hidden from the target's
+                    # dspark_target_layer_ids, not the pre-hc MTP residual.
+                    self.use_aux_hidden_state_outputs = True
                 self.rejection_sampler = AscendRejectionSampler(self.sampler)
         self.discard_request_indices = self._make_buffer(self.max_num_reqs, dtype=torch.int64)
         self.num_discarded_requests = 0
 
     def _get_drafter(self):
         return get_spec_decode_method(self.speculative_config.method, self.vllm_config, self.device, self)
+
+    def _get_eagle3_aux_layers_from_config(self):
+        # DSpark configures aux layers via dspark_target_layer_ids (used verbatim,
+        # no +1 offset — matches the draft model's target_layer_ids semantics).
+        if self.speculative_config is not None and _draft_is_dspark(self.speculative_config):
+            draft_cfg = self.speculative_config.draft_model_config
+            layers = getattr(draft_cfg.hf_config, "dspark_target_layer_ids", None)
+            if layers:
+                return tuple(layers)
+        return super()._get_eagle3_aux_layers_from_config()
 
     def _eagle3_uses_aux_hidden_state(self) -> bool:
         if self.speculative_config is None or self.speculative_config.method != "eagle3":

@@ -27,6 +27,23 @@ class AscendDsparkProposer(AscendDflashProposer):
         # Internally the backbone is identical to DFlash; reuse every base-class
         # branch keyed on "dflash". External routing keeps method == "dspark".
         self.method = "dflash"
+
+        # The base inflates hidden_size by hc_mult (for MTP's pre-hc residual).
+        # DSpark consumes aux (12288) and combines it to main_x (hidden=4096),
+        # which is what the context-KV buffers carry, so restore the true width
+        # and rebuild the affected buffers.
+        draft_hidden = (
+            vllm_config.speculative_config.draft_model_config.hf_config.hidden_size
+        )
+        if self.hidden_size != draft_hidden:
+            self.hidden_size = draft_hidden
+            self.hidden_states = torch.zeros(
+                (self.max_num_tokens, draft_hidden), dtype=self.dtype, device=device
+            )
+            self._dflash_hidden_states = torch.zeros(
+                (self.max_num_tokens, draft_hidden), dtype=self.dtype, device=device
+            )
+
         # Per-request seed for the Markov recurrence (the bonus / last accepted
         # token, in target-vocab ids). Captured each step in set_inputs_first_pass.
         self._dspark_anchor_ids: torch.Tensor | None = None
