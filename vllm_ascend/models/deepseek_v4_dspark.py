@@ -50,9 +50,10 @@ def _draft_quant_config(vllm_config: VllmConfig) -> QuantizationConfig | None:
     rather than silently reading them as bf16 (which corrupts the draft output).
 
     Exception: an rbf16 draft has been dequantized to bf16, so its projections
-    must be built unquantized regardless of the target's quantization.
+    must be built unquantized regardless of the target's quantization. The flag
+    lives on the draft's own hf_config, not the (shared) target model_config.
     """
-    draft_hf_config = vllm_config.model_config.hf_config
+    draft_hf_config = vllm_config.speculative_config.draft_model_config.hf_config
     if getattr(draft_hf_config, "dspark_mtp_dequantized_to_bf16", False):
         return None
     return vllm_config.quant_config
@@ -100,14 +101,16 @@ class DSparkMarkovHead(nn.Module):
         draft_vocab_size: int,
         rank: int,
         prefix: str,
-        quant_config: QuantizationConfig | None = None,
     ) -> None:
         super().__init__()
+        # The Markov head is a small low-rank correction stored bf16 in every
+        # checkpoint variant (it is absent from the quant description), so both
+        # projections are built unquantized.
         self.w1 = VocabParallelEmbedding(vocab_size, rank)
         self.w2 = ParallelLMHead(
             draft_vocab_size,
             rank,
-            quant_config=quant_config,
+            quant_config=None,
             prefix=maybe_prefix(prefix, "w2"),
         )
         self.bias_processor = LogitsProcessor(draft_vocab_size)
@@ -182,7 +185,6 @@ class DSparkDeepseekV4Model(nn.Module):
             self.draft_vocab_size,
             getattr(config, "dspark_markov_rank", 256),
             maybe_prefix(prefix, "markov_head"),
-            quant_config=quant_config,
         )
 
         # bug#5: the W8A8 checkpoint is QuaRot-rotated (target hidden + draft
