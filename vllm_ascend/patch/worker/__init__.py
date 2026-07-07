@@ -66,6 +66,8 @@ import vllm_ascend.patch.worker.patch_gqa_c8  # noqa
 import vllm_ascend.patch.worker.patch_lora_vlm_prefix  # noqa
 # DIAGNOSTIC: pinpoint FDO sample_tokens hang (⑰) via SIGUSR1 stack dump.
 import vllm_ascend.patch.worker.patch_hang_dump  # noqa
+# DIAGNOSTIC: auto-capture the intermittent FDO hang (⑰/㉙) via a watchdog.
+import vllm_ascend.patch.worker.patch_hang_watchdog  # noqa
 
 if _V2_MODEL_RUNNER_SUPPORTED:
     import vllm_ascend.patch.worker.patch_v2.patch_uva  # noqa
