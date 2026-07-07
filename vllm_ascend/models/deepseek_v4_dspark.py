@@ -22,8 +22,11 @@ import torch.nn as nn
 from safetensors.torch import load_file
 from transformers import PretrainedConfig
 from vllm.config import VllmConfig
-
-logger = logging.getLogger(__name__)
+from vllm.distributed import (
+    get_tensor_model_parallel_rank,
+    get_tensor_model_parallel_world_size,
+)
+from vllm.model_executor.layers.fused_moe import FusedMoE
 from vllm.model_executor.layers.layernorm import RMSNorm
 from vllm.model_executor.layers.linear import ReplicatedLinear
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
@@ -38,6 +41,10 @@ from vllm.model_executor.model_loader.weight_utils import (
 )
 from vllm.model_executor.models.interfaces import SupportsPP
 from vllm.model_executor.models.utils import maybe_prefix
+
+from vllm_ascend.utils import enable_dsa_cp
+
+logger = logging.getLogger(__name__)
 
 from .deepseek_v4 import DeepseekV2DecoderLayer, DeepseekV2MixtureOfExperts
 
@@ -430,13 +437,26 @@ class DSparkDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
         return f"model.layers.{stage}.{rest}"
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        config = self.config
+        tp_rank = get_tensor_model_parallel_rank()
+        tp_size = get_tensor_model_parallel_world_size()
+        heads_per_rank = config.num_attention_heads // tp_size
+        head_start = tp_rank * heads_per_rank
+
+        # gate/up are fused into gate_up_proj for the dense (shared-expert) MLPs;
+        # routed experts are handled separately via expert_params_mapping.
         stacked_params_mapping = [
             ("gate_up_proj", "gate_proj", 0),
             ("gate_up_proj", "up_proj", 1),
-            (".w1.", ".gate_proj.", None),
-            (".w2.", ".down_proj.", None),
-            (".w3.", ".up_proj.", None),
         ]
+        expert_params_mapping = FusedMoE.make_expert_params_mapping(
+            model=self,
+            ckpt_gate_proj_name="gate_proj",
+            ckpt_down_proj_name="down_proj",
+            ckpt_up_proj_name="up_proj",
+            num_experts=config.n_routed_experts,
+            num_redundant_experts=0,
+        )
         params_dict = dict(self.named_parameters())
         loaded: set[str] = set()
         for name, weight in weights:
@@ -447,34 +467,65 @@ class DSparkDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
                 continue
             name = mapped
 
-            # bug#3 companion: normalize checkpoint substrings to param names.
-            for src, dst in ((".attn.", ".self_attn."), (".ffn.", ".mlp.")):
-                if src in name and ".self_attn." not in name:
-                    name = name.replace(src, dst)
+            # Normalize checkpoint substrings to the module's parameter names.
+            if ".attn." in name and ".self_attn." not in name:
+                name = name.replace(".attn.", ".self_attn.")
+            if ".ffn." in name:
+                name = name.replace(".ffn.", ".mlp.")
+            for src, dst in ((".w1.", ".gate_proj."), (".w2.", ".down_proj."), (".w3.", ".up_proj.")):
+                name = name.replace(src, dst)
             if name.endswith(".scale"):
                 name = name.replace(".scale", ".weight_scale")
             if ".gate.bias" in name:
                 name = name.replace(".gate.bias", ".gate.e_score_correction_bias")
 
-            # Only per-layer decoder blocks take the fused/stacked mapping;
-            # head params (e.g. markov_head.w1) must never hit the w1 rule.
+            # attn_sink is a per-head plain parameter; slice it to this rank's
+            # head range (unless DSA context parallel keeps all heads local).
+            if "attn_sink" in name:
+                if name not in params_dict:
+                    continue
+                param = params_dict[name]
+                sliced = weight if enable_dsa_cp() else weight.narrow(0, head_start, heads_per_rank)
+                param.data.copy_(sliced)
+                loaded.add(name)
+                continue
+
+            # Fused gate_up for non-expert (dense / shared-expert) MLPs.
             handled = False
-            if name.startswith("model.layers."):
+            if name.startswith("model.layers.") and "mlp.experts." not in name:
                 for param_name, weight_name, shard_id in stacked_params_mapping:
                     if weight_name not in name:
                         continue
                     candidate = name.replace(weight_name, param_name)
                     if candidate not in params_dict:
                         continue
-                    param = params_dict[candidate]
-                    if shard_id is None:
-                        param.weight_loader(param, weight)
-                    else:
-                        param.weight_loader(param, weight, shard_id)
+                    params_dict[candidate].weight_loader(params_dict[candidate], weight, shard_id)
                     loaded.add(candidate)
                     handled = True
                     break
             if handled:
+                continue
+
+            # Routed MoE experts.
+            is_expert = False
+            for param_name, weight_name, expert_id, shard_id in expert_params_mapping:
+                if weight_name not in name:
+                    continue
+                is_expert = True
+                candidate = name.replace(weight_name, param_name)
+                if candidate not in params_dict:
+                    continue
+                params_dict[candidate].weight_loader(
+                    params_dict[candidate],
+                    weight,
+                    candidate,
+                    shard_id=shard_id,
+                    expert_id=expert_id,
+                    return_success=False,
+                )
+                loaded.add(candidate)
+                break
+            if is_expert:
                 continue
 
             name = maybe_remap_kv_scale_name(name, params_dict)
