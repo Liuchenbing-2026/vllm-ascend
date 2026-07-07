@@ -72,6 +72,24 @@ SWA_INT_MAX = 2147483647
 _ATTN_KEYS_BUFFER = None
 
 
+def _drop_non_fia_attn_keys(attn_keys, metadata):
+    """Filter out GDN / linear-attention layers from the FIA replay key list.
+
+    Port of 1f963e81 (v0.21.0rc1) to vllm-ascend 0.23.0. Hybrid models such as
+    Qwen3.5-27B mix self-attention layers (FIA / npu_fused_infer_attention_score)
+    with GatedDeltaNet linear-attention layers. Only the self-attention layers are
+    captured into `graph_params.attn_params`; GDN layers use a separate conv1d
+    update path. Their metadata is a `GDNAttentionMetadata`, which has no
+    `seq_lens_list`, so letting a GDN key reach the FIA replay loop raises
+    ``AttributeError: 'GDNAttentionMetadata' object has no attribute
+    'seq_lens_list'`` (bug.md Bug1). The 0.23.0 "self_attn first + zip truncation"
+    scheme fails on the layer-aware replay path (``index % num_layers`` cycles the
+    full key set, including GDN). Dropping non-FIA keys here keeps `attn_keys`
+    aligned with the FIA-only captured params for every downstream path.
+    """
+    return [key for key in attn_keys if hasattr(metadata[key], "seq_lens_list")]
+
+
 @register_backend(AttentionBackendEnum.CUSTOM, "ASCEND")
 class AscendAttentionBackend(AttentionBackend):
     accept_output_buffer: bool = True
@@ -520,10 +538,14 @@ class AscendAttentionBackendImpl(AttentionImpl):
                 graph_params = get_draft_graph_params()
                 attn_metadata = draft_attn_metadatas
                 attn_keys = list(attn_metadata[0].keys())
+                # Drop GDN / linear-attn layers (no seq_lens_list); 1f963e81 port.
+                attn_keys = _drop_non_fia_attn_keys(attn_keys, attn_metadata[0])
             else:
                 graph_params = get_graph_params()
                 attn_metadata = forward_context.attn_metadata
                 attn_keys = list(attn_metadata.keys())
+                # Drop GDN / linear-attn layers (no seq_lens_list); 1f963e81 port.
+                attn_keys = _drop_non_fia_attn_keys(attn_keys, attn_metadata)
             # For Qwen3-next, since the kv_cache_config has already categorized
             # linear_attn and self_attn, the attn_metadata is first arranged with
             # self_attn followed by linear_attn. Therefore, using zip directly
@@ -615,10 +637,14 @@ class AscendAttentionBackendImpl(AttentionImpl):
                     graph_params = get_draft_graph_params()
                 attn_metadata = draft_attn_metadatas
                 attn_keys = list(attn_metadata[0].keys())
+                # Drop GDN / linear-attn layers (no seq_lens_list); 1f963e81 port.
+                attn_keys = _drop_non_fia_attn_keys(attn_keys, attn_metadata[0])
             else:
                 graph_params = get_graph_params()
                 attn_metadata = forward_context.attn_metadata
                 attn_keys = list(attn_metadata.keys())
+                # Drop GDN / linear-attn layers (no seq_lens_list); 1f963e81 port.
+                attn_keys = _drop_non_fia_attn_keys(attn_keys, attn_metadata)
                 if not use_layer_aware_replay:
                     # Keep the original speculative-decoding ordering for
                     # other models so EAGLE/DFlash graph replay keeps the
