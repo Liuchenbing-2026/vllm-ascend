@@ -68,6 +68,8 @@ import vllm_ascend.patch.worker.patch_lora_vlm_prefix  # noqa
 import vllm_ascend.patch.worker.patch_hang_dump  # noqa
 # DIAGNOSTIC: auto-capture the intermittent FDO hang (⑰/㉙) via a watchdog.
 import vllm_ascend.patch.worker.patch_hang_watchdog  # noqa
+# DIAGNOSTIC: confirm/kill graph-replay resource accumulation (⑰/㉚); off unless VLLM_ASCEND_EVPROBE=1.
+import vllm_ascend.patch.worker.patch_events_growth_probe  # noqa
 
 if _V2_MODEL_RUNNER_SUPPORTED:
     import vllm_ascend.patch.worker.patch_v2.patch_uva  # noqa
