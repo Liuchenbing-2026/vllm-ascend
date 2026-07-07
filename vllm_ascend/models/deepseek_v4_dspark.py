@@ -124,7 +124,6 @@ class DSparkDeepseekV4Model(nn.Module):
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
-        target_config = vllm_config.model_config.hf_config
         config: PretrainedConfig = (
             vllm_config.speculative_config.draft_model_config.hf_config
         )
@@ -156,15 +155,17 @@ class DSparkDeepseekV4Model(nn.Module):
         )
         self.main_norm = RMSNorm(self.hidden_size, eps=self.rms_norm_eps)
 
-        # Reuse the target's DSV4 decoder block for the draft layers. They are
-        # appended after the target stack, so their config layer indices start
-        # at ``num_hidden_layers`` (see get_dsv4_spec_layer_idx_from_weight_name).
-        start_idx = target_config.num_hidden_layers
+        # Reuse the target's DSV4 decoder block for the draft layers. The
+        # construction prefix stays in the checkpoint's native ``mtp.{i}``
+        # namespace so quant-description lookups hit the checkpoint's own keys
+        # and extract_dsv4_layer_index offsets the config-array index past the
+        # target stack. The nn module path comes from the ModuleDict key, so the
+        # parameters live at ``model.layers.{i}.*`` (matching _remap_dspark_name).
         self.layers = nn.ModuleDict(
             {
                 str(i): DeepseekV2DecoderLayer(
                     vllm_config,
-                    maybe_prefix(prefix, f"layers.{start_idx + i}"),
+                    f"mtp.{i}",
                     config=config,
                     is_draft_layer=True,
                 )
