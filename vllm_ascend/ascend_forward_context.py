@@ -270,6 +270,13 @@ def set_mc2_tokens_capacity(vllm_config, max_num_reqs, uniform_decode_query_len)
         # NOTE: To save memory, we cap the max number of tokens to 512.
         max_num_tokens = min(max_num_reqs * uniform_decode_query_len, 512)
     tp_size = vllm_config.parallel_config.tensor_parallel_size
+    # Keep the PR11200 runtime behavior: when MegaMoe fused MC2 is enabled,
+    # size the MC2 routing capacity for chunked prefill as well as decode.
+    try:
+        if get_ascend_config().enable_fused_mc2 == 2:
+            max_num_tokens = min(max(max_num_tokens, int(vllm_config.scheduler_config.max_num_batched_tokens)), 512)
+    except Exception:
+        pass
     # Use integer arithmetic for ceiling division.
     num_tokens_per_tp_rank = (max_num_tokens + tp_size - 1) // tp_size
     _mc2_tokens_capacity = num_tokens_per_tp_rank * tp_size
@@ -365,8 +372,10 @@ def select_moe_comm_method(
         fused_mc2_eligible = (
             fused_mc2_enable == 2 and fused_decode_guard and _cann_megamoe_supported_by_config(vllm_config, quant_type)
         )
-        if in_profile_run and fused_mc2_eligible:
-            fused_mc2_eligible = False
+        # Keep PR11200 all-route behavior: profile, prefill, and decode should
+        # exercise the MegaMoe path when enabled. Sym-buffer sizing below is
+        # already prefill-capable via get_megamoe_max_tokens_per_rank().
+        _ = in_profile_run
 
         if fused_mc2_eligible and num_tokens <= mega_moe_capacity:
             moe_comm_type = MoECommType.FUSED_MC2
@@ -389,8 +398,6 @@ def select_moe_comm_method(
                     and fused_decode_guard
                     and _cann_megamoe_supported_by_config(vllm_config, quant_type)
                 )
-                if in_profile_run and fused_decode_enable:
-                    fused_decode_enable = False
             moe_comm_type = MoECommType.FUSED_MC2 if fused_decode_enable else MoECommType.MC2
         else:
             fused_prefill_enable = fused_mc2_enable

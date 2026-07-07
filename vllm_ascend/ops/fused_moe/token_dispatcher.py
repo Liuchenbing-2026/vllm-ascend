@@ -132,6 +132,10 @@ class TokenDispatcherWithMC2(MoETokenDispatcher[MoEMC2CombineMetadata]):
             max_num_tokens = compilation_config.max_cudagraph_capture_size
         else:
             max_num_tokens = min(max_num_reqs * uniform_decode_query_len, 512)
+        # PR11200 all-route behavior: when MegaMoe fused MC2 is enabled, route
+        # chunked prefill and decode through the same capacity calculation.
+        if get_ascend_config().enable_fused_mc2 == 2:
+            max_num_tokens = min(max(max_num_tokens, int(scheduler_config.max_num_batched_tokens)), 512)
         num_tokens_per_tp_rank = (max_num_tokens + tp_size - 1) // tp_size
         # Surface the per-rank capacity for CANN MegaMoe's get_symm_buffer
         # sizing (used by FusedMC2CommImpl._get_cann_symm_buffer). Without
