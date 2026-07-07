@@ -64,6 +64,8 @@ import vllm_ascend.patch.worker.patch_deepseek_mtp  # noqa
 import vllm_ascend.patch.worker.patch_gqa_c8  # noqa
 # FIX: VLM-wrapped dense LoRA name mismatch (Qwen3.5-27B/35B, bug.md ⑤u); on by default.
 import vllm_ascend.patch.worker.patch_lora_vlm_prefix  # noqa
+# DIAGNOSTIC: pinpoint FDO sample_tokens hang (⑰) via SIGUSR1 stack dump.
+import vllm_ascend.patch.worker.patch_hang_dump  # noqa
 
 if _V2_MODEL_RUNNER_SUPPORTED:
     import vllm_ascend.patch.worker.patch_v2.patch_uva  # noqa
