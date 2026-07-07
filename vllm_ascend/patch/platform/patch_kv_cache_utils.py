@@ -169,19 +169,32 @@ def _get_kv_cache_groups_uniform_groups(
         # See `_get_kv_cache_groups_uniform_page_size` for more details.
         num_tuple_groups = cdiv(num_layers_per_size, num_layer_tuples)
         layer_tuples = list(zip(*layers_per_size.values()))
-        for i in range(num_tuple_groups):
-            group_layer_tuples = layer_tuples[i::num_tuple_groups]
-            # Flatten tuples and build dict for from_specs
-            group_layer_names = [name for layer_tuple in group_layer_tuples for name in layer_tuple]
-            group_layer_specs = {name: sm_spec.kv_cache_specs[name] for name in group_layer_names}
+
+        def _emit(group_layer_tuples):
+            group_layer_names = [name for lt in group_layer_tuples for name in lt]
+            if not group_layer_names:
+                return
+            group_layer_specs = {n: sm_spec.kv_cache_specs[n] for n in group_layer_names}
             sub_sm_spec = UniformTypeKVCacheSpecs.from_specs(group_layer_specs)
             assert sub_sm_spec is not None
             swa_mla_groups.append(
-                KVCacheGroupSpec(
-                    layer_names=group_layer_names,
-                    kv_cache_spec=sub_sm_spec,
-                )
+                KVCacheGroupSpec(layer_names=group_layer_names, kv_cache_spec=sub_sm_spec)
             )
+
+        # The round-robin split (layer_tuples[i::num_tuple_groups]) would scatter
+        # a multi-stage draft's SWA layers across groups; the spec-decode proposer
+        # requires all drafting layers in one kv-cache group (shared metadata).
+        # Peel the draft (mtp.*) layers into a single dedicated group and
+        # round-robin only the target layers.
+        draft_tuples = [lt for lt in layer_tuples if any(n.startswith("mtp.") for n in lt)]
+        if draft_tuples:
+            target_tuples = [lt for lt in layer_tuples if lt not in draft_tuples]
+            for i in range(num_tuple_groups):
+                _emit(target_tuples[i::num_tuple_groups])
+            _emit(draft_tuples)
+        else:
+            for i in range(num_tuple_groups):
+                _emit(layer_tuples[i::num_tuple_groups])
 
     return [full_mla_group, full_mla_c128_group, *swa_mla_groups]
 
