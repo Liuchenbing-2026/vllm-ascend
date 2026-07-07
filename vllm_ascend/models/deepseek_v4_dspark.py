@@ -468,6 +468,10 @@ class DSparkDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
             name = mapped
 
             # Normalize checkpoint substrings to the module's parameter names.
+            if ".attn_norm." in name:
+                name = name.replace(".attn_norm.", ".input_layernorm.")
+            if ".ffn_norm." in name:
+                name = name.replace(".ffn_norm.", ".post_attention_layernorm.")
             if ".attn." in name and ".self_attn." not in name:
                 name = name.replace(".attn.", ".self_attn.")
             if ".ffn." in name:
