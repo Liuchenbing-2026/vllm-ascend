@@ -81,12 +81,35 @@ def _wrap(fn, name):
 
 
 if _SEC > 0:
-    from vllm_ascend.worker.worker import NPUWorker
+    import sys as _sys
 
-    NPUWorker.execute_model = _wrap(NPUWorker.execute_model, "execute_model")
-    NPUWorker.sample_tokens = _wrap(NPUWorker.sample_tokens, "sample_tokens")
-    logger.warning(
-        "[hang-watchdog] armed on NPUWorker.execute_model/sample_tokens "
-        "(threshold=%.0fs, pid=%d). A hang beyond threshold auto-dumps all "
-        "thread stacks; set VLLM_ASCEND_WATCHDOG_SEC=0 to disable.",
-        _SEC, os.getpid())
+    # adapt_patch() (which imports this module) is invoked from inside
+    # vllm_ascend.worker.worker, so a top-level `from vllm_ascend.worker.worker
+    # import NPUWorker` can hit a partially-initialised module -> circular
+    # ImportError (bug.md ㉜). Fetch the already-loaded module object from
+    # sys.modules WITHOUT triggering the import machinery; only fall back to a
+    # real import if it is genuinely absent.
+    _NPUWorker = None
+    _mod = _sys.modules.get("vllm_ascend.worker.worker")
+    if _mod is not None:
+        _NPUWorker = getattr(_mod, "NPUWorker", None)
+    if _NPUWorker is None:
+        try:
+            from vllm_ascend.worker.worker import NPUWorker as _NPUWorker
+        except Exception as _e:  # noqa: BLE001
+            _NPUWorker = None
+            logger.warning(
+                "[hang-watchdog] NPUWorker not importable yet (%s); "
+                "watchdog NOT armed. Re-run; or use patch_hang_dump SIGUSR1.",
+                _e)
+
+    if _NPUWorker is not None:
+        _NPUWorker.execute_model = _wrap(_NPUWorker.execute_model,
+                                         "execute_model")
+        _NPUWorker.sample_tokens = _wrap(_NPUWorker.sample_tokens,
+                                         "sample_tokens")
+        logger.warning(
+            "[hang-watchdog] armed on NPUWorker.execute_model/sample_tokens "
+            "(threshold=%.0fs, pid=%d). A hang beyond threshold auto-dumps all "
+            "thread stacks; set VLLM_ASCEND_WATCHDOG_SEC=0 to disable.",
+            _SEC, os.getpid())
