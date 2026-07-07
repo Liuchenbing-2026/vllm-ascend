@@ -565,6 +565,21 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
             self.num_decodes, self.num_prefills, self.num_decode_tokens, self.num_prefill_tokens = (
                 split_decodes_and_prefills(common_attn_metadata, decode_threshold=self.decode_threshold)
             )
+            # DSpark draft: the non-causal gamma block is short (q_len <=
+            # decode_threshold) so split_decodes_and_prefills misclassifies it as
+            # decode, which skips the sliding-window cross-read of the
+            # precomputed context KV. Force it to the prefill path (draft-only:
+            # causal is False and every request is "decode"). Does not affect the
+            # target verify pass (which is causal).
+            if (
+                getattr(common_attn_metadata, "causal", True) is False
+                and self.num_prefills == 0
+                and self.num_decodes == num_reqs
+            ):
+                self.num_prefills = self.num_decodes
+                self.num_prefill_tokens = self.num_decode_tokens
+                self.num_decodes = 0
+                self.num_decode_tokens = 0
             self.common_ratio_to_sas_metadata["num_decodes"] = self.num_decodes
             self.common_ratio_to_sas_metadata["num_prefills"] = self.num_prefills
             self.common_ratio_to_sas_metadata["num_decode_tokens"] = self.num_decode_tokens
@@ -1930,7 +1945,12 @@ class AscendDSAImpl(DSAAttentionImpl):
             )
 
             # swa exec kv
-            DeviceOperator.dsa_kv_compress_scatter(swa_kv_cache, kv, swa_prefill_metadata.slot_mapping)
+            # DSpark draft: the context KV is pre-written by the proposer's
+            # precompute into this same sliding-window cache; scattering the
+            # mask-derived block self-KV here would overwrite it at the same
+            # slots, leaving the draft with no target signal. Skip for draft.
+            if "mtp." not in layer_name:
+                DeviceOperator.dsa_kv_compress_scatter(swa_kv_cache, kv, swa_prefill_metadata.slot_mapping)
 
         attn_op = DeviceOperator.get_dsa_sparse_attn_op()
         extra_attn_kwargs: dict = DeviceOperator.get_dsa_sparse_attn_base_kwargs()
@@ -2247,7 +2267,10 @@ class AscendDSAImpl(DSAAttentionImpl):
             )
 
             # swa exec kv
-            DeviceOperator.dsa_kv_compress_scatter(swa_kv_cache, kv, swa_decode_metadata.slot_mapping)
+            # DSpark draft: preserve the pre-written context KV (see prefill
+            # branch) — skip the block self-KV scatter for draft layers.
+            if "mtp." not in layer_name:
+                DeviceOperator.dsa_kv_compress_scatter(swa_kv_cache, kv, swa_decode_metadata.slot_mapping)
 
         if self.compress_ratio > 1:
             compressor_decode_metadata = _require_decode_metadata(compressor_attn_metadata)
