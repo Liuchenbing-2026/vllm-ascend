@@ -9,10 +9,13 @@
 # and routed to the semi-autoregressive DSpark proposer. method is "mtp" because
 # vLLM v0.23.0 core has no dspark method literal; the plugin's config patch
 # rewrites the arch and enables parallel drafting.
-set -euo pipefail
-
+set -e
+# Ascend env scripts reference unbound vars (e.g. ZSH_VERSION); disable nounset
+# while sourcing so `set -u` does not abort startup before the model loads.
+set +u
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 [ -f /usr/local/Ascend/nnal/atb/set_env.sh ] && source /usr/local/Ascend/nnal/atb/set_env.sh
+set -u
 
 export VLLM_VERSION="${VLLM_VERSION:-0.23.0}" OMP_NUM_THREADS="${OMP_NUM_THREADS:-10}"
 export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True HCCL_BUFFSIZE=1024
