@@ -100,6 +100,52 @@ env_variables: dict[str, Callable[[], Any]] = {
     # `dispatch_gmm_combine_decode` can be used only for **decode node** moe layer
     # with W8A8. And MTP layer must be W8A8.
     "VLLM_ASCEND_ENABLE_FUSED_MC2": lambda: int(os.getenv("VLLM_ASCEND_ENABLE_FUSED_MC2", "0")),
+    # Select the MoE-LoRA implementation kernel used by PunicaWrapperNPU.add_lora_fused_moe.
+    # "bgmv"            (default): combined-index two-call bgmv path. ~30-50x faster
+    #                              than torch reference. Production default.
+    # "bgmv_per_expert"          : per-expert loop calling bgmv for each (expert) bucket.
+    #                              ~5-10x vs torch. Easier to read than combined-index;
+    #                              kept as an intermediate tier for stepwise A/B and as
+    #                              a more intuitive debugging baseline above torch.
+    # "torch"                    : torch.matmul double-loop reference implementation.
+    #                              Slow (Python loop + per-bucket host sync) but
+    #                              numerically identical; use for ground-truth A/B.
+    # "ascendc"                  : reserved for a future fused AscendC kernel (v2).
+    #                              Currently raises NotImplementedError.
+    "VLLM_ASCEND_MOE_LORA_KERNEL": lambda: os.getenv("VLLM_ASCEND_MOE_LORA_KERNEL", "bgmv").lower(),
+    # Allow LoRA on Ascend models that trip the _C_ascend.sgmv_expand
+    # layout bug. The op interprets stacked lora_b's (hidden, rank) shape
+    # as (in=hidden, out=rank) and raises
+    # "hidden in should be smaller than hidden out" on Qwen3-Next-style
+    # hybrid (GDN) models and on models with shared experts
+    # (Qwen3.5-35B-A3B, DeepSeek-V3). vllm's torch_ops fallback also
+    # crashes on the same path (einsum shape mismatch on padded
+    # lora_b_stacked, bug.md 现象 4), so we cannot just route to torch_ops.
+    #
+    # When set to 1:
+    #   1. AscendFusedMoEWithLoRA skips the shared_experts assert and
+    #      exposes base_layer._shared_experts on the wrapper (so vllm's
+    #      replace_submodule can resolve shared_expert.{gate_up_proj,
+    #      down_proj} parents).
+    #   2. PunicaWrapperNPU._expand_slice_prefill / _expand_slice_decode
+    #      bypass _C_ascend.sgmv/bgmv_expand_slice entirely and compute
+    #      the LoRA expand via a per-token gather + torch.bmm instead.
+    #      Shrink, embedding, and logits paths are NOT changed — those
+    #      ops are not the broken ones.
+    #
+    # Expect ~30-40% throughput drop (per-token gather + bmm vs the fused
+    # NPU op). Leave the env off if you are running Qwen3-30B-A3B
+    # (no GDN, no shared experts) — that path stays on _C_ascend and is
+    # unaffected.
+    "VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS", "0"))
+    ),
+    # Debug logging for the PunicaWrapperNPU bmm fallback. When set to 1,
+    # _bmm_expand_slice logs the shapes and dtypes of its operands
+    # before every matmul so users can diagnose aclnnMatmul / 161002
+    # failures (see bug.md 现象 5). Off by default; only useful while
+    # debugging shared experts / GDN LoRA paths.
+    "VLLM_ASCEND_LORA_DEBUG": lambda: bool(int(os.getenv("VLLM_ASCEND_LORA_DEBUG", "0"))),
     # DEPRECATED: VLLM_ASCEND_BALANCE_SCHEDULING env var will be removed in a future release.
     # Use --additional-config '{"enable_balance_scheduling": true}' instead.
     "VLLM_ASCEND_BALANCE_SCHEDULING": lambda: bool(int(os.getenv("VLLM_ASCEND_BALANCE_SCHEDULING", "0"))),

@@ -72,6 +72,15 @@ SWA_INT_MAX = 2147483647
 _ATTN_KEYS_BUFFER = None
 
 
+def _filter_fia_attn_keys(attn_keys: list[str], attn_metadata: dict) -> list[str]:
+    return [
+        key
+        for key in attn_keys
+        if hasattr(attn_metadata[key], "seq_lens_list")
+        and hasattr(attn_metadata[key], "actual_seq_lengths_q")
+    ]
+
+
 @register_backend(AttentionBackendEnum.CUSTOM, "ASCEND")
 class AscendAttentionBackend(AttentionBackend):
     accept_output_buffer: bool = True
@@ -520,10 +529,12 @@ class AscendAttentionBackendImpl(AttentionImpl):
                 graph_params = get_draft_graph_params()
                 attn_metadata = draft_attn_metadatas
                 attn_keys = list(attn_metadata[0].keys())
+                attn_keys = _filter_fia_attn_keys(attn_keys, attn_metadata[0])
             else:
                 graph_params = get_graph_params()
                 attn_metadata = forward_context.attn_metadata
                 attn_keys = list(attn_metadata.keys())
+                attn_keys = _filter_fia_attn_keys(attn_keys, attn_metadata)
             # For Qwen3-next, since the kv_cache_config has already categorized
             # linear_attn and self_attn, the attn_metadata is first arranged with
             # self_attn followed by linear_attn. Therefore, using zip directly
@@ -615,10 +626,12 @@ class AscendAttentionBackendImpl(AttentionImpl):
                     graph_params = get_draft_graph_params()
                 attn_metadata = draft_attn_metadatas
                 attn_keys = list(attn_metadata[0].keys())
+                attn_keys = _filter_fia_attn_keys(attn_keys, attn_metadata[0])
             else:
                 graph_params = get_graph_params()
                 attn_metadata = forward_context.attn_metadata
                 attn_keys = list(attn_metadata.keys())
+                attn_keys = _filter_fia_attn_keys(attn_keys, attn_metadata)
                 if not use_layer_aware_replay:
                     # Keep the original speculative-decoding ordering for
                     # other models so EAGLE/DFlash graph replay keeps the
