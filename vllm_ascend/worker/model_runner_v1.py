@@ -4160,8 +4160,11 @@ class NPUModelRunner(GPUModelRunner):
                     # and rope head dim.
                     current_kv_cache_spec = layer_kv_cache_spec[layer_name]
                     assert isinstance(current_kv_cache_spec, AttentionSpec)
+                    use_sparse_kv_spec = self.use_sparse and isinstance(
+                        current_kv_cache_spec, AscendMLAAttentionSpec
+                    )
 
-                    if self.use_sparse:
+                    if use_sparse_kv_spec:
                         # for deepseek v3.2, we split the kv cache according to the corresponding ratio
                         kv_cache_spec = layer_kv_cache_spec[layer_name]
                         current_sparse_c8 = kv_cache_spec_uses_sparse_c8(kv_cache_spec)
@@ -4201,9 +4204,9 @@ class NPUModelRunner(GPUModelRunner):
                     dsa_k_tensor_size = None
                     dsa_k_scale_tensor_size = None
                     #### for deepseek sparse attention
-                    if self.use_sparse:
+                    if use_sparse_kv_spec:
                         dsa_k_tensor_size = int(kv_cache_tensor.size // dsa_k_tensor_split_factor)
-                    if self.use_sparse and current_sparse_c8:
+                    if use_sparse_kv_spec and current_sparse_c8:
                         dsa_k_scale_tensor_size = int(kv_cache_tensor.size // dsa_k_scale_tensor_split_factor)
 
                     # Allocate raw int8 tensors. Even bf16/fp16 KV cache entries
@@ -4222,7 +4225,7 @@ class NPUModelRunner(GPUModelRunner):
                             alignment,
                         )
 
-                    if self.use_sparse:
+                    if use_sparse_kv_spec:
                         assert dsa_k_tensor_size is not None
 
                         if current_sparse_c8:
@@ -4246,7 +4249,7 @@ class NPUModelRunner(GPUModelRunner):
                     for layer_name_inner in kv_cache_tensor.shared_by:
                         # shared the attn kvcache for all shared layers
                         if "attn" in layer_name_inner and "linear_attn" not in layer_name_inner:
-                            if self.use_sparse:
+                            if use_sparse_kv_spec:
                                 if current_sparse_c8:
                                     if get_ascend_device_type() == AscendDeviceType.A5:
                                         kv_cache_raw_tensors[layer_name_inner] = (
@@ -4387,12 +4390,16 @@ class NPUModelRunner(GPUModelRunner):
 
                     kv_caches[layer_name] = kv_cache
                 elif isinstance(current_kv_cache_spec, AttentionSpec):
+                    use_sparse_kv_spec = self.use_sparse and isinstance(
+                        current_kv_cache_spec, AscendMLAAttentionSpec
+                    )
+                    current_sparse_c8 = False
                     # cache_only_layers (extract_hidden_states) are allocated
                     # as a single tensor by the branch at the top of
                     # _allocate_kv_cache_tensors; route them to the dedicated
                     # elif branch below before the sparse branch tries to
                     # unpack them as a (k, v, dsa_k[, scale]) tuple.
-                    if self.use_sparse and "cache_only_layers" not in layer_name:
+                    if use_sparse_kv_spec and "cache_only_layers" not in layer_name:
                         current_sparse_c8 = kv_cache_spec_uses_sparse_c8(current_kv_cache_spec)
                         if current_sparse_c8:
                             if get_ascend_device_type() == AscendDeviceType.A5:
@@ -4542,7 +4549,7 @@ class NPUModelRunner(GPUModelRunner):
                             num_kv_heads,
                             k_dim,
                         )
-                        if self.use_sparse and current_sparse_c8 and get_ascend_device_type() == AscendDeviceType.A5:
+                        if use_sparse_kv_spec and current_sparse_c8 and get_ascend_device_type() == AscendDeviceType.A5:
                             # A5 sparse C8: CKV tensor = kv_lora(fp8) + k_rope(bf16→fp8) + quant_scale_metadata
                             #   kv_lora_rank                    : fp8, 1 byte/elem
                             #   qk_rope_head_dim * 2            : bf16→fp8 ratio (2/1 bytes)
@@ -4568,16 +4575,16 @@ class NPUModelRunner(GPUModelRunner):
                         )
                     
                     # A5 sparse C8: ckv uses float8_e4m3fn
-                    if self.use_sparse and current_sparse_c8 and get_ascend_device_type() == AscendDeviceType.A5:
+                    if use_sparse_kv_spec and current_sparse_c8 and get_ascend_device_type() == AscendDeviceType.A5:
                         k_cache_dtype = self.c8_k_cache_dtype
                     
                     k_cache = raw_k_tensor.view(k_cache_dtype).view(k_shape)
-                    if self.use_sparse and current_sparse_c8 and get_ascend_device_type() == AscendDeviceType.A5:
+                    if use_sparse_kv_spec and current_sparse_c8 and get_ascend_device_type() == AscendDeviceType.A5:
                         v_cache = None
                     else:
                         v_cache = raw_v_tensor.view(v_cache_dtype).view(v_shape)
 
-                    if self.use_sparse:
+                    if use_sparse_kv_spec:
                         dsa_k_cache_shape = (
                             num_blocks,
                             current_kv_cache_spec.block_size,

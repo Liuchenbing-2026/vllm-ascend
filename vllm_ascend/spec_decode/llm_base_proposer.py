@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import copy
+import os
 from collections.abc import Callable
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from functools import partial
@@ -291,6 +292,92 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 "disable_padded_drafter_batch in the speculative_config."
             )
 
+    def _maybe_unrotate_dspark_aux_hidden(self, target_hidden_states: torch.Tensor) -> torch.Tensor:
+        mode = os.getenv("DSPARK_AUX_UNROTATE", "0").lower()
+        if mode not in ("1", "true", "yes", "on", "qt", "q_t", "transpose", "q"):
+            return target_hidden_states
+
+        hidden_size = self.hidden_size
+        if target_hidden_states.shape[-1] % hidden_size != 0:
+            logger.warning_once(
+                "[spec_decode/dspark] skip aux unrotate: hidden shape %s is not "
+                "a multiple of hidden_size=%d",
+                tuple(target_hidden_states.shape),
+                hidden_size,
+            )
+            return target_hidden_states
+
+        rotation = getattr(self, "_dspark_aux_rotation", None)
+        if rotation is None:
+            rotation_path = os.getenv("DSPARK_AUX_ROTATION_PATH", "")
+            if not rotation_path:
+                model_path = getattr(self.vllm_config.model_config, "model", "")
+                rotation_path = os.path.join(
+                    model_path,
+                    "optional",
+                    "quarot.safetensors",
+                )
+            try:
+                from safetensors.torch import load_file
+
+                rotation_state = load_file(rotation_path)
+                if "global_rotation" in rotation_state:
+                    rotation = rotation_state["global_rotation"]
+                elif "rot.weight" in rotation_state:
+                    rotation = rotation_state["rot.weight"]
+                else:
+                    raise KeyError(
+                        "rotation file must contain 'global_rotation' or 'rot.weight'; "
+                        f"found keys={list(rotation_state.keys())}"
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "[spec_decode/dspark] failed to load aux rotation from %s: %r",
+                    rotation_path,
+                    exc,
+                )
+                return target_hidden_states
+            if tuple(rotation.shape) != (hidden_size, hidden_size):
+                logger.warning(
+                    "[spec_decode/dspark] skip aux unrotate: rotation shape %s "
+                    "does not match hidden_size=%d",
+                    tuple(rotation.shape),
+                    hidden_size,
+                )
+                return target_hidden_states
+            rotation = rotation.to(
+                device=target_hidden_states.device,
+                dtype=target_hidden_states.dtype,
+            )
+            self._dspark_aux_rotation = rotation
+
+        # F.linear(x, Q) computes x @ Q.T. This matches the existing Eagle
+        # QuaRot patch's fc.weight @ Q transformation, but keep x @ Q as a
+        # diagnostic switch in case a checkpoint uses the opposite convention.
+        weight = rotation.t() if mode == "q" else rotation
+        num_features = target_hidden_states.shape[-1] // hidden_size
+        original_shape = target_hidden_states.shape
+        chunks = target_hidden_states.reshape(-1, num_features, hidden_size)
+        unrotated = torch.stack(
+            [F.linear(chunks[:, i, :], weight) for i in range(num_features)],
+            dim=1,
+        ).reshape(original_shape)
+
+        debug_count = getattr(self, "_dspark_aux_unrotate_debug_count", 0)
+        if debug_count < 4:
+            self._dspark_aux_unrotate_debug_count = debug_count + 1
+            logger.warning(
+                "[spec_decode/dspark] aux unrotate debug #%d: mode=%s shape=%s "
+                "features=%d before_abs_mean=%.6f after_abs_mean=%.6f",
+                debug_count + 1,
+                mode,
+                tuple(target_hidden_states.shape),
+                num_features,
+                float(target_hidden_states.detach().float().abs().mean().cpu().item()),
+                float(unrotated.detach().float().abs().mean().cpu().item()),
+            )
+        return unrotated
+
     def _get_model(self) -> nn.Module:
         """
         Default method to call get_model(). Can be overridden by subclasses which
@@ -468,16 +555,34 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             # target lm_head ([target_vocab_size, hidden]) makes the draft emit
             # logits over the wrong vocabulary, so the verifier rejects almost
             # every speculative token. Keep the draft's own lm_head in that case.
+            draft_model = self.get_model()
+            draft_is_dspark = callable(getattr(draft_model, "compute_dspark_draft_tokens", None))
+            share_dspark_target_lm_head = (
+                draft_is_dspark
+                and os.getenv("DSPARK_SHARE_TARGET_LM_HEAD", "0").lower()
+                in ("1", "true", "yes", "on")
+            )
             draft_has_own_lm_head = (
                 self.method == "dflash" and getattr(self.model, "draft_id_to_target_id", None) is not None
-            )
+            ) or (draft_is_dspark and not share_dspark_target_lm_head)
             if draft_has_own_lm_head:
-                logger.info(
-                    "[spec_decode/base] DFlash draft uses d2t vocab remapping;"
-                    " keeping the draft's own lm_head instead of sharing the target"
-                    " lm_head."
-                )
+                if draft_is_dspark:
+                    logger.info(
+                        "[spec_decode/base] DSpark draft provides its own lm_head;"
+                        " keeping it instead of sharing the target lm_head."
+                    )
+                else:
+                    logger.info(
+                        "[spec_decode/base] DFlash draft uses d2t vocab remapping;"
+                        " keeping the draft's own lm_head instead of sharing the target"
+                        " lm_head."
+                    )
             else:
+                if share_dspark_target_lm_head:
+                    logger.warning(
+                        "[spec_decode/base] DSPARK_SHARE_TARGET_LM_HEAD=1;"
+                        " sharing target lm_head with DSpark draft for debug."
+                    )
                 logger.info("[spec_decode/base] Loading EAGLE/DFLASH LM head weights from the target model.")
                 if hasattr(model, "lm_head"):
                     self.model.lm_head = model.lm_head
@@ -533,6 +638,15 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         if isinstance(self.model, ACLGraphWrapper):
             return self.model.unwrap()
         return self.model
+
+    def _get_dspark_draft_model(self) -> nn.Module | None:
+        draft_model = self.get_model()
+        if callable(getattr(draft_model, "compute_dspark_draft_tokens", None)):
+            return draft_model
+        nested_model = getattr(draft_model, "model", None)
+        if callable(getattr(nested_model, "compute_dspark_draft_tokens", None)):
+            return nested_model
+        return None
 
     def shallow_copy_metadata(self, attn_metadata):
         # Currently, new objects will be assigned to the lists in attn_metadata
@@ -758,16 +872,43 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             token_indices_to_sample = common_attn_metadata.query_start_loc[1:] - 1
 
         if self.method in ("eagle3", "dflash"):
+            draft_model = self.get_model()
             assert isinstance(
-                self.get_model(),
+                draft_model,
                 (
                     Eagle3LlamaForCausalLM,
                     DFlashQwen3ForCausalLM,
                     Eagle3VwnLlamaForCausalLM,
                     Eagle3DeepseekV2ForCausalLM,
                 ),
-            )
+            ) or callable(getattr(draft_model, "compute_dspark_draft_tokens", None))
+            if callable(getattr(draft_model, "compute_dspark_draft_tokens", None)):
+                target_hidden_states = self._maybe_unrotate_dspark_aux_hidden(target_hidden_states)
+                debug_count = getattr(self, "_dspark_hidden_input_debug_count", 0)
+                if debug_count < 4:
+                    self._dspark_hidden_input_debug_count = debug_count + 1
+                    draft_inner = getattr(draft_model, "model", None)
+                    fc = getattr(draft_inner, "fc", None)
+                    fc_weight = getattr(fc, "weight", None)
+                    logger.warning(
+                        "[spec_decode/dspark] hidden input debug #%d: "
+                        "target_hidden_shape=%s draft_use_aux=%s fc_weight_shape=%s",
+                        debug_count + 1,
+                        tuple(target_hidden_states.shape),
+                        getattr(draft_inner, "use_aux_hidden_state", None),
+                        tuple(fc_weight.shape) if fc_weight is not None else None,
+                    )
             target_hidden_states = self.model.combine_hidden_states(target_hidden_states)
+            if callable(getattr(draft_model, "compute_dspark_draft_tokens", None)):
+                debug_count = getattr(self, "_dspark_hidden_output_debug_count", 0)
+                if debug_count < 4:
+                    self._dspark_hidden_output_debug_count = debug_count + 1
+                    logger.warning(
+                        "[spec_decode/dspark] hidden output debug #%d: "
+                        "combined_hidden_shape=%s",
+                        debug_count + 1,
+                        tuple(target_hidden_states.shape),
+                    )
             assert target_hidden_states.shape[-1] == self.hidden_size
 
         num_tokens, token_indices_to_sample, common_attn_metadata, long_seq_args = self.set_inputs_first_pass(
@@ -1033,6 +1174,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                     multi_steps_attn_metadata.append(per_layer_attn_metadata)
 
         token_indices_to_sample_len = token_indices_to_sample.shape[0]
+        self._token_indices_to_sample_len = token_indices_to_sample_len
         self.token_indices_to_sample[:token_indices_to_sample_len].copy_(token_indices_to_sample)
         self.token_indices_to_sample[token_indices_to_sample_len:].fill_(0)
 
@@ -1076,6 +1218,97 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         return draft_token_ids
 
     def compute_draft_token_ids(self, hidden_states: torch.Tensor):
+        draft_model = self._get_dspark_draft_model()
+        compute_dspark_draft_tokens = getattr(draft_model, "compute_dspark_draft_tokens", None)
+        if callable(compute_dspark_draft_tokens) and self.num_speculative_tokens > 0:
+            num_rows = hidden_states.shape[0]
+            num_valid_rows = getattr(self, "_token_indices_to_sample_len", num_rows)
+            if num_valid_rows > num_rows:
+                num_valid_rows = num_rows
+            if num_valid_rows % self.num_speculative_tokens == 0:
+                hidden_states = hidden_states[:num_valid_rows]
+                batch_size = num_valid_rows // self.num_speculative_tokens
+                sample_indices = self.token_indices_to_sample[:num_valid_rows].long()
+                sample_input_ids = torch.index_select(
+                    self.input_ids,
+                    dim=0,
+                    index=sample_indices,
+                ).view(batch_size, self.num_speculative_tokens)
+                anchor_indices = sample_indices.view(
+                    batch_size, self.num_speculative_tokens
+                )[:, 0] - 1
+                anchor_indices = torch.where(
+                    anchor_indices >= 0,
+                    anchor_indices,
+                    torch.zeros_like(anchor_indices),
+                )
+                anchor_token_ids = torch.index_select(
+                    self.input_ids,
+                    dim=0,
+                    index=anchor_indices,
+                )
+                proposal_hidden_states = hidden_states.view(
+                    batch_size,
+                    self.num_speculative_tokens,
+                    hidden_states.shape[-1],
+                )
+                draft_token_ids = compute_dspark_draft_tokens(
+                    anchor_token_ids,
+                    proposal_hidden_states,
+                )
+                debug_limit = int(os.getenv("DSPARK_DEBUG_PROPOSER", "4") or "0")
+                debug_count = getattr(self, "_dspark_debug_proposer_count", 0)
+                if debug_count < debug_limit and batch_size > 0:
+                    sample_positions = torch.index_select(
+                        self.positions,
+                        dim=0,
+                        index=sample_indices,
+                    ).view(batch_size, self.num_speculative_tokens)
+                    is_dummy_sample = bool(
+                        torch.all(sample_input_ids[0] == 0).detach().cpu().item()
+                        and torch.all(sample_positions[0] == 0).detach().cpu().item()
+                    )
+                    if is_dummy_sample:
+                        return draft_token_ids.reshape(-1)
+                    self._dspark_debug_proposer_count = debug_count + 1
+                    confidence_logits = getattr(
+                        draft_model,
+                        "last_confidence_logits",
+                        None,
+                    )
+                    confidence_first = None
+                    if confidence_logits is not None and confidence_logits.numel() > 0:
+                        confidence_first = (
+                            confidence_logits[0]
+                            .detach()
+                            .float()
+                            .sigmoid()
+                            .cpu()
+                            .view(-1)
+                            .tolist()
+                        )
+                    logger.warning(
+                        "[spec_decode/dspark] proposal debug #%d: "
+                        "anchor_index_first=%d sample_indices_first=%s "
+                        "sample_input_ids_first=%s "
+                        "sample_positions_first=%s anchor_first=%s draft_first=%s "
+                        "hidden_shape=%s hidden_abs_mean=%.6f confidence_first=%s",
+                        debug_count + 1,
+                        int(anchor_indices[0].detach().cpu().item()),
+                        sample_indices[: self.num_speculative_tokens]
+                        .detach()
+                        .cpu()
+                        .tolist(),
+                        sample_input_ids[0].detach().cpu().tolist(),
+                        sample_positions[0].detach().cpu().tolist(),
+                        int(anchor_token_ids[0].detach().cpu().item()),
+                        draft_token_ids[0].detach().cpu().tolist(),
+                        tuple(proposal_hidden_states.shape),
+                        float(proposal_hidden_states.detach().float().abs().mean().cpu().item()),
+                        confidence_first,
+                    )
+                return draft_token_ids.reshape(-1)
+
         if self.method in ("eagle3", "dflash"):
             logits = self.model.logits_processor(self.model.lm_head, hidden_states)
             if not hasattr(self.model, "draft_id_to_target_id") or self.model.draft_id_to_target_id is None:
@@ -1191,7 +1424,8 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
 
         sample_hidden_states = last_hidden_states[token_indices_to_sample]
 
-        if get_ascend_config().enable_reduce_sample:
+        use_dspark_draft = self._get_dspark_draft_model() is not None
+        if get_ascend_config().enable_reduce_sample or use_dspark_draft:
             if self.method in ("eagle3", "dflash", "mtp"):
                 draft_token_ids = self.compute_draft_token_ids(sample_hidden_states)
                 if lmhead_tp_enable():
@@ -1353,7 +1587,8 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 )
 
             sample_hidden_states = last_hidden_states[token_indices_to_sample]
-            if get_ascend_config().enable_reduce_sample:
+            use_dspark_draft = self._get_dspark_draft_model() is not None
+            if get_ascend_config().enable_reduce_sample or use_dspark_draft:
                 if self.method in ("eagle3", "dflash", "mtp"):
                     draft_token_ids = self.compute_draft_token_ids(sample_hidden_states)
                     if lmhead_tp_enable() and num_indices < draft_token_ids.shape[0]:
