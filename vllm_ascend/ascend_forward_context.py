@@ -1,4 +1,5 @@
 import math
+import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from enum import Enum
@@ -259,6 +260,14 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
     """
     if not is_moe_model(vllm_config):
         return None
+    disable_mc2 = os.getenv("VLLM_ASCEND_DISABLE_MC2", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    if disable_mc2:
+        if not vllm_config.parallel_config.enable_expert_parallel or get_ep_group().world_size == 1:
+            return MoECommType.ALLGATHER
+        return MoECommType.ALLTOALL
+
     mc2_tokens_capacity = get_mc2_tokens_capacity()
     soc_version = get_ascend_device_type()
     quant_type = getattr(

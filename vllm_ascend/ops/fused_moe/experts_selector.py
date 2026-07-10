@@ -14,17 +14,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import ctypes
+import os
 from collections.abc import Callable
+from functools import lru_cache
 
 import torch
 import torch.nn.functional as F
 from vllm.distributed import get_tp_group
 from vllm.forward_context import get_forward_context
+from vllm.logger import logger
 
 from vllm_ascend.ascend_forward_context import MoECommType
 from vllm_ascend.device.device_op import DeviceOperator
 from vllm_ascend.distributed.utils import split_tensor_along_first_dim
 from vllm_ascend.utils import get_weight_prefetch_method
+
+
+@lru_cache(maxsize=1)
+def _moe_gating_top_k_hash_available() -> bool:
+    override = os.getenv("VLLM_ASCEND_ENABLE_MOE_GATING_TOP_K_HASH")
+    if override is not None:
+        return override.strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        libopapi = ctypes.CDLL("libopapi.so")
+    except OSError as err:
+        logger.warning_once("Disable moe_gating_top_k_hash: cannot load libopapi.so (%s).", err)
+        return False
+    for symbol in ("aclnnMoeGatingTopKHash", "aclnnMoeGatingTopKHashGetWorkspaceSize"):
+        try:
+            getattr(libopapi, symbol)
+        except AttributeError:
+            logger.warning_once("Disable moe_gating_top_k_hash: %s not found in libopapi.so.", symbol)
+            return False
+    return True
 
 
 def select_experts(
@@ -251,6 +274,19 @@ def _select_experts_with_fusion_ops(
     num_expert_group = num_expert_group if num_expert_group is not None else 1
     renorm = int(renormalize)
     if scoring_func == "sqrtsoftplus":
+        if not _moe_gating_top_k_hash_available():
+            return _native_select_experts(
+                hidden_states=hidden_states,
+                router_logits=router_logits,
+                top_k=top_k,
+                use_grouped_topk=use_grouped_topk,
+                renormalize=renormalize,
+                topk_group=topk_group,
+                num_expert_group=num_expert_group,
+                scoring_func=scoring_func,
+                routed_scaling_factor=routed_scaling_factor,
+                e_score_correction_bias=e_score_correction_bias,
+            )
         if tid2eid is not None:
             forward_context = get_forward_context()
             input_ids = forward_context.input_ids.to(torch.int64)

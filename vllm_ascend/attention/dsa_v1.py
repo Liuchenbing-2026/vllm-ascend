@@ -1,4 +1,5 @@
 import math
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, TypeAlias
 
@@ -115,6 +116,40 @@ def _is_w8a8_dynamic(linear) -> bool:
         return False
     inner = getattr(qm, "quant_method", None)
     return isinstance(inner, AscendW8A8DynamicLinearMethod)
+
+
+def _rms_norm_dynamic_quant(x: torch.Tensor, q_norm, eps: float):
+    if os.getenv("VLLM_ASCEND_DISABLE_RMS_NORM_DYNAMIC_QUANT", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return torch_npu.npu_dynamic_quant(q_norm(x))
+    return torch.ops._C_ascend.npu_rms_norm_dynamic_quant(x, q_norm.weight, epsilon=eps)
+
+
+def _inplace_partial_rotary_mul(
+    x: torch.Tensor,
+    cos: torch.Tensor,
+    sin: torch.Tensor,
+    *,
+    rotary_mode: str,
+    partial_slice: list[int],
+):
+    if os.getenv("VLLM_ASCEND_DISABLE_INPLACE_PARTIAL_ROTARY_MUL", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        start, end = partial_slice
+        rotated = torch_npu.npu_rotary_mul(x[..., start:end], cos, sin, rotary_mode=rotary_mode)
+        x[..., start:end].copy_(rotated)
+        return x
+    return torch.ops._C_ascend.inplace_partial_rotary_mul(
+        x, cos, sin, rotary_mode=rotary_mode, partial_slice=partial_slice
+    )
 
 
 def pad_to_blocks(x: torch.Tensor, length_list: torch.Tensor, block_size: int = 128):
@@ -1686,7 +1721,7 @@ class AscendDSAImpl(DSAAttentionImpl):
         sin = attn_metadata[0].sin[layer_name]
         num_tokens = o_proj_input.shape[0]
 
-        torch.ops._C_ascend.inplace_partial_rotary_mul(
+        _inplace_partial_rotary_mul(
             o_proj_input.unsqueeze(1),
             cos,
             -sin,
@@ -1775,9 +1810,7 @@ class AscendDSAImpl(DSAAttentionImpl):
             q_b_quant, q_b_scale = self.cv_wq_b.quantize(qr)
             qr_pertoken_scale = None
         elif is_w8a8:
-            qr, qr_pertoken_scale = torch.ops._C_ascend.npu_rms_norm_dynamic_quant(
-                wq_a_result, self.q_norm.weight, epsilon=self.eps
-            )
+            qr, qr_pertoken_scale = _rms_norm_dynamic_quant(wq_a_result, self.q_norm, self.eps)
             q_b_quant, q_b_scale = qr, qr_pertoken_scale
         else:
             qr = self.q_norm(wq_a_result)
@@ -1794,7 +1827,7 @@ class AscendDSAImpl(DSAAttentionImpl):
             kv = self.kv_norm(kv)
             assert self.rope_head_dim is not None
             kv = kv.view(-1, 1, self.nope_head_dim + self.rope_head_dim)
-            torch.ops._C_ascend.inplace_partial_rotary_mul(
+            _inplace_partial_rotary_mul(
                 kv.unsqueeze(1),
                 cos,
                 sin,
@@ -1821,7 +1854,7 @@ class AscendDSAImpl(DSAAttentionImpl):
         main_stream.wait_stream(aux_stream)
 
         q = DeviceOperator.apply_dsa_q_rms(q, self.eps, self.q_norm_without_weight)
-        torch.ops._C_ascend.inplace_partial_rotary_mul(
+        _inplace_partial_rotary_mul(
             q.unsqueeze(1),
             cos,
             sin,
@@ -1888,7 +1921,7 @@ class AscendDSAImpl(DSAAttentionImpl):
         main_stream.wait_stream(aux_stream)
 
         # === Tail: q_rope + kv_rope + scatter (main stream, serial) ===
-        torch.ops._C_ascend.inplace_partial_rotary_mul(
+        _inplace_partial_rotary_mul(
             q.unsqueeze(1),
             cos,
             sin,
@@ -1898,7 +1931,7 @@ class AscendDSAImpl(DSAAttentionImpl):
 
         assert self.rope_head_dim is not None
         kv = kv.view(-1, 1, self.nope_head_dim + self.rope_head_dim)
-        torch.ops._C_ascend.inplace_partial_rotary_mul(
+        _inplace_partial_rotary_mul(
             kv.unsqueeze(1),
             cos,
             sin,
@@ -1978,9 +2011,7 @@ class AscendDSAImpl(DSAAttentionImpl):
 
             # q
             if _is_w8a8_dynamic(self.wq_b):
-                qr, qr_pertoken_scale = torch.ops._C_ascend.npu_rms_norm_dynamic_quant(
-                    q_a, self.q_norm.weight, epsilon=self.eps
-                )
+                qr, qr_pertoken_scale = _rms_norm_dynamic_quant(q_a, self.q_norm, self.eps)
                 q = torch_npu.npu_quant_matmul(
                     qr,
                     self.wq_b.weight,
@@ -1995,7 +2026,7 @@ class AscendDSAImpl(DSAAttentionImpl):
                 qr_pertoken_scale = None
             q = DeviceOperator.apply_dsa_q_rms(q, self.eps, self.q_norm_without_weight)
 
-            torch.ops._C_ascend.inplace_partial_rotary_mul(
+            _inplace_partial_rotary_mul(
                 q.unsqueeze(1),
                 cos,
                 sin,
@@ -2018,7 +2049,7 @@ class AscendDSAImpl(DSAAttentionImpl):
             assert self.rope_head_dim is not None
             kv = kv.view(-1, 1, self.nope_head_dim + self.rope_head_dim)
 
-            torch.ops._C_ascend.inplace_partial_rotary_mul(
+            _inplace_partial_rotary_mul(
                 kv.unsqueeze(1),
                 cos,
                 sin,
@@ -2417,9 +2448,7 @@ class AscendDSAImpl(DSAAttentionImpl):
                     )
                 else:
                     q_a = self.wq_a(hidden_states)
-                qr, qr_pertoken_scale = torch.ops._C_ascend.npu_rms_norm_dynamic_quant(
-                    q_a, self.q_norm.weight, epsilon=self.eps
-                )
+                qr, qr_pertoken_scale = _rms_norm_dynamic_quant(q_a, self.q_norm, self.eps)
                 q = torch_npu.npu_quant_matmul(
                     qr,
                     self.wq_b.weight,
@@ -2446,7 +2475,7 @@ class AscendDSAImpl(DSAAttentionImpl):
 
             q = DeviceOperator.apply_dsa_q_rms(q, self.eps, self.q_norm_without_weight)
 
-            torch.ops._C_ascend.inplace_partial_rotary_mul(
+            _inplace_partial_rotary_mul(
                 q.unsqueeze(1),
                 cos,
                 sin,
@@ -2474,7 +2503,7 @@ class AscendDSAImpl(DSAAttentionImpl):
                 assert self.rope_head_dim is not None
                 kv = kv.view(-1, 1, self.nope_head_dim + self.rope_head_dim)
 
-                torch.ops._C_ascend.inplace_partial_rotary_mul(
+                _inplace_partial_rotary_mul(
                     kv.unsqueeze(1),
                     cos,
                     sin,
@@ -2718,7 +2747,7 @@ class AscendDSAImpl(DSAAttentionImpl):
             q = self.inderxer_wq_b(qr)
         q = q.view(-1, self.indexer_heads, self.indexcom_head_dim)  # [T, N, D]
 
-        torch.ops._C_ascend.inplace_partial_rotary_mul(
+        _inplace_partial_rotary_mul(
             q.unsqueeze(1),
             cos,
             sin,
@@ -3022,7 +3051,7 @@ class AscendDSAImpl(DSAAttentionImpl):
         q = q.view(-1, self.indexer_heads, self.indexcom_head_dim)
 
         # ===== Part2: rope[V] (main only) =====
-        torch.ops._C_ascend.inplace_partial_rotary_mul(  # rope
+        _inplace_partial_rotary_mul(  # rope
             q.unsqueeze(1),
             cos,
             sin,

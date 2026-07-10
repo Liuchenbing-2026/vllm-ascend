@@ -686,13 +686,24 @@ class AscendModelSlimConfig(QuantizationConfig):
         """
         from vllm_ascend.quantization.utils import get_model_file
 
-        # If quant_description is already populated (e.g. from from_config()),
-        # there is nothing to do.
+        # If quant_description is already populated with real layer entries
+        # (e.g. from from_config()), there is nothing to do. Some checkpoints
+        # put only a wrapper in config.json:
+        # {"quant_model_desc": "quant_model_description.json", ...}. In that
+        # case, load the referenced ModelSlim description before layer lookup.
+        quant_desc_filename = MODELSLIM_CONFIG_FILENAME
         if self.quant_description:
-            return
+            has_layer_entries = any(key.endswith(".weight") for key in self.quant_description)
+            if has_layer_entries:
+                return
+            configured_desc = self.quant_description.get("quant_model_desc")
+            if isinstance(configured_desc, str) and configured_desc:
+                quant_desc_filename = configured_desc
+            else:
+                return
 
         # Try to get the config file (local or remote)
-        config_path = get_model_file(model_name, MODELSLIM_CONFIG_FILENAME, revision=revision)
+        config_path = get_model_file(model_name, quant_desc_filename, revision=revision)
 
         if config_path is not None:
             with open(config_path) as f:

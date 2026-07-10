@@ -15,6 +15,7 @@
 # limitations under the License.
 # This file is a part of the vllm-ascend project.
 #
+import os
 from typing import Any
 
 import torch
@@ -523,9 +524,76 @@ class BaseDeviceAdaptor:
     # ===== SWA / Compressor KV Scatter =====
 
     @staticmethod
+    def _scatter_nd_update_v2(cache, slot_mapping, x):
+        if os.getenv("VLLM_ASCEND_DISABLE_SCATTER_ND_UPDATE_V2", "0") != "1":
+            torch.ops._C_ascend.npu_scatter_nd_update_v2(cache, slot_mapping, x)
+            return
+
+        if slot_mapping.numel() == 0:
+            return
+
+        if slot_mapping.ndim >= 2 and slot_mapping.shape[-1] == 2:
+            # DSA metadata stores KV cache slots as [block_idx, block_offset].
+            # npu_scatter_nd_update_v2 accepts the 2-D indices directly; the
+            # fallback must convert them to the same flattened physical slot.
+            slot_pairs = slot_mapping.reshape(-1, 2).to(torch.int64)
+            valid = (slot_pairs[:, 0] >= 0) & (slot_pairs[:, 1] >= 0)
+            indices = slot_pairs[:, 0] * cache.shape[1] + slot_pairs[:, 1]
+        else:
+            indices = slot_mapping.reshape(-1).to(torch.int64)
+            valid = indices >= 0
+
+        num_indices = indices.numel()
+        if num_indices == 0:
+            return
+
+        slot_shape = tuple(cache.shape[2:]) if cache.ndim >= 2 else tuple(cache.shape[1:])
+        cache_view = cache.reshape(-1, *slot_shape)
+        cache_width = int(cache_view[0].numel()) if cache_view.numel() else 0
+        if cache_width == 0:
+            return
+
+        if x.numel() % cache_width == 0:
+            updates = x.reshape(-1, cache_width)
+        elif x.numel() == 1:
+            updates = x.reshape(1, 1).expand(num_indices, cache_width)
+        else:
+            raise RuntimeError(
+                "DSA scatter fallback update width mismatch: "
+                f"cache_shape={tuple(cache.shape)}, slot_mapping_shape={tuple(slot_mapping.shape)}, "
+                f"x_shape={tuple(x.shape)}, cache_width={cache_width}"
+            )
+
+        num_updates = updates.shape[0]
+        if num_updates != num_indices:
+            if num_indices > 0 and num_updates % num_indices == 0:
+                repeat = num_updates // num_indices
+                extra_offsets = torch.arange(repeat, device=indices.device, dtype=indices.dtype)
+                indices = (indices.unsqueeze(1) + extra_offsets.unsqueeze(0)).reshape(-1)
+                valid = valid.unsqueeze(1).expand(-1, repeat).reshape(-1)
+            elif num_updates == 1:
+                updates = updates.expand(num_indices, cache_width)
+                num_updates = num_indices
+            else:
+                raise RuntimeError(
+                    "DSA scatter fallback row mismatch: "
+                    f"cache_shape={tuple(cache.shape)}, slot_mapping_shape={tuple(slot_mapping.shape)}, "
+                    f"x_shape={tuple(x.shape)}, num_updates={num_updates}, num_indices={num_indices}"
+                )
+        updates = updates.reshape(indices.numel(), *slot_shape)
+
+        if not bool(valid.all().item()):
+            indices = indices[valid]
+            updates = updates[valid]
+            if indices.numel() == 0:
+                return
+
+        cache_view.index_copy_(0, indices, updates)
+
+    @staticmethod
     def dsa_kv_compress_scatter(cache, x, slot_mapping):
         """Scatter KV into cache. Non-A5: simple scatter of pre-quantized tensor."""
-        torch.ops._C_ascend.npu_scatter_nd_update_v2(cache, slot_mapping, x)
+        BaseDeviceAdaptor._scatter_nd_update_v2(cache, slot_mapping, x)
 
     # ===== Indexer Quant + Scatter =====
 
@@ -551,8 +619,8 @@ class BaseDeviceAdaptor:
             kv_scale_out = kv_scale_out.unsqueeze(-1).to(torch.float16)
             if kv_scale_out.ndim < 4:
                 kv_scale_out = kv_scale_out.unsqueeze(-1)
-            torch.ops._C_ascend.npu_scatter_nd_update_v2(indexer_k_cache, slot_mapping, kv_out)
-            torch.ops._C_ascend.npu_scatter_nd_update_v2(indexer_scale_cache, slot_mapping, kv_scale_out)
+            BaseDeviceAdaptor._scatter_nd_update_v2(indexer_k_cache, slot_mapping, kv_out)
+            BaseDeviceAdaptor._scatter_nd_update_v2(indexer_scale_cache, slot_mapping, kv_scale_out)
 
         return q, q_scale, kv_out, kv_scale_out
 
@@ -565,7 +633,7 @@ class BaseDeviceAdaptor:
             return None, None
         kv_out, kv_scale = torch_npu.npu_dynamic_quant(kv, dst_type=torch.int8)
         kv_scale = kv_scale.unsqueeze(-1)
-        torch.ops._C_ascend.npu_scatter_nd_update_v2(indexer_k_cache, slot_mapping, kv_out)
+        BaseDeviceAdaptor._scatter_nd_update_v2(indexer_k_cache, slot_mapping, kv_out)
         return kv_out, kv_scale
 
     @staticmethod
@@ -575,7 +643,7 @@ class BaseDeviceAdaptor:
         kv_scale = kv_scale.to(torch.float16)
         if kv_scale.ndim < 4:
             kv_scale = kv_scale.unsqueeze(-1)
-        torch.ops._C_ascend.npu_scatter_nd_update_v2(indexer_scale_cache, slot_mapping, kv_scale)
+        BaseDeviceAdaptor._scatter_nd_update_v2(indexer_scale_cache, slot_mapping, kv_scale)
 
     @staticmethod
     def warmup_indexer_quant_scatter(hidden_states, slot_mapping):
@@ -588,8 +656,8 @@ class BaseDeviceAdaptor:
         dummy_shape = (1, 1, 1, kv_dummy.shape[-1])
         indexer_k_cache = torch.zeros(dummy_shape, dtype=kv_dummy.dtype, device=hidden_states.device)
         indexer_scale_cache = torch.zeros(dummy_shape, dtype=torch.float16, device=hidden_states.device)
-        torch.ops._C_ascend.npu_scatter_nd_update_v2(indexer_k_cache, slot_mapping, kv_dummy)
-        torch.ops._C_ascend.npu_scatter_nd_update_v2(indexer_scale_cache, slot_mapping, kv_scale_dummy)
+        BaseDeviceAdaptor._scatter_nd_update_v2(indexer_k_cache, slot_mapping, kv_dummy)
+        BaseDeviceAdaptor._scatter_nd_update_v2(indexer_scale_cache, slot_mapping, kv_scale_dummy)
 
     # ===== Lightning Indexer Dtype Prep =====
 

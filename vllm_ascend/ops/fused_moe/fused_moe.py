@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
@@ -750,7 +751,14 @@ class AscendFusedMoE(FusedMoE):
             has_quantized_shared = hasattr(self._shared_experts.gate_up_proj, "weight_scale") and hasattr(
                 self._shared_experts.down_proj, "weight_scale"
             )
-            if has_quantized_shared and self.quant_type in (QuantType.W8A8, QuantType.W4A8):
+            disable_fused_shared_swiglu = os.getenv(
+                "VLLM_ASCEND_DISABLE_SHARED_EXPERT_FUSED_SWIGLU", ""
+            ).strip().lower() in {"1", "true", "yes", "on"}
+            if (
+                has_quantized_shared
+                and self.quant_type in (QuantType.W8A8, QuantType.W4A8)
+                and not disable_fused_shared_swiglu
+            ):
                 original_dtype = hidden_states.dtype
                 # Execute dynamic quant concurrently with MoE gate.
                 torch.npu.current_stream().wait_event(fused_moe_evts.before_routed_experts)
