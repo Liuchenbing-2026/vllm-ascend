@@ -299,6 +299,9 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         from vllm.compilation.backends import set_model_tag
 
         draft_vllm_config = self._create_draft_vllm_config()
+        if self.speculative_config.enforce_eager:
+            draft_vllm_config.model_config.enforce_eager = True
+            draft_vllm_config.compilation_config.mode = CompilationMode.NONE
         draft_load_config = self.speculative_config.draft_load_config
         logger.info(
             "[spec_decode/base] Loading draft model: method=%s, load_format=%s, model=%s",
@@ -460,7 +463,10 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
     def _maybe_share_lm_head(self, model: nn.Module) -> None:
         # some model definition do not define lm_head explicitly
         # and reuse embed_tokens for lm_head, e.g., CohereForCausalLM
-        if self.method in ("eagle", "dflash"):
+        share_target_lm_head = (
+            self.method in ("eagle", "dflash") or getattr(self.model, "has_own_lm_head", True) is False
+        )
+        if share_target_lm_head:
             # For DFlash drafters trained with a reduced draft vocabulary, the
             # draft model ships its own lm_head of shape [draft_vocab_size,
             # hidden] whose rows map to a trained subset of the target vocab via
