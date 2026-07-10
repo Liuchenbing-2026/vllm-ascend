@@ -7,6 +7,7 @@ from vllm_ascend.models.dspark_quarot import (
     resolve_quarot_rotation_path,
     transform_fc_weight_for_quarot,
 )
+from vllm_ascend.models.qwen3_dspark import DSparkQwen3ForCausalLM
 
 
 def test_transform_fc_weight_matches_runtime_unrotate():
@@ -54,3 +55,12 @@ def test_resolve_quarot_rotation_path(tmp_path):
 def test_transform_fc_weight_rejects_mismatched_width():
     with pytest.raises(ValueError, match="multiple"):
         transform_fc_weight_for_quarot(torch.randn(3, 10), torch.eye(4))
+
+
+def test_dspark_quarot_load_requires_fc_weight(tmp_path):
+    model = object.__new__(DSparkQwen3ForCausalLM)
+    torch.nn.Module.__init__(model)
+    model._quarot_rotation_path = tmp_path / "quarot.safetensors"
+
+    with pytest.raises(ValueError, match="did not provide fc.weight"):
+        model.load_weights([])

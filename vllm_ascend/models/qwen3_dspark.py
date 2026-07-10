@@ -955,6 +955,7 @@ class DSparkQwen3ForCausalLM(DFlashQwen3ForCausalLM):
         includes_draft_id_mapping = False
         includes_embed_tokens = False
         rotation = None
+        transformed_quarot_fc = False
         for name, loaded_weight in weights:
             assert "mask_hidden" not in name, (
                 "DSpark should use mask_token_id to embed the padding hidden state"
@@ -967,6 +968,7 @@ class DSparkQwen3ForCausalLM(DFlashQwen3ForCausalLM):
                     rotation,
                     target_device=self.model.fc.weight.device,
                 )
+                transformed_quarot_fc = True
                 logger.info(
                     "[spec_decode/dspark] transformed fc.weight for QuaRot: "
                     "rotation=%s fc_shape=%s blocks=%d device=%s",
@@ -988,6 +990,12 @@ class DSparkQwen3ForCausalLM(DFlashQwen3ForCausalLM):
                 includes_embed_tokens = True
             model_weights[name] = loaded_weight
             process_eagle_weight(self, name)
+
+        if self._quarot_rotation_path is not None and not transformed_quarot_fc:
+            raise ValueError(
+                "Target model uses QuaRot, but the DSpark checkpoint did not "
+                "provide fc.weight for the required load-time transformation"
+            )
 
         skip_substrs = []
         if not includes_draft_id_mapping:
