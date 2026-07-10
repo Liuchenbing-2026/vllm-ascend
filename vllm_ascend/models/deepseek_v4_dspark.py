@@ -412,7 +412,27 @@ class DeepSeekV4DSparkModel(nn.Module):
         # residual (replace, not add) so input_layernorm renormalizes it to std~1 and
         # the target signal drives the prediction (additive main_x std~0.09 was swamped
         # by the mask embedding). For pos0 this is exactly MTP-1's hnorm(last_hidden).
-        x = base.unsqueeze(-2).repeat(1, self.hc_mult, 1)   # [T, hc_mult, hidden]
+        # Diagnostic direct-feed path: the proposer passes main_x through
+        # hidden_states. Without using it the draft starts from mask embeddings only
+        # and the verifier rejects every proposed token. Keep it env-gated while the
+        # accept-rate fix is being validated on 54.
+        if hidden_states is not None and _os.environ.get("DSPARK_DIRECT_FEED"):
+            seed = hidden_states.to(device=base.device, dtype=base.dtype)
+            if (_os.environ.get("DSPARK_DIRECT_ADD")
+                    or _os.path.exists("/data1/DSPARK_DIRECT_ADD_FLAG")):
+                seed = base + seed
+            x = seed.unsqueeze(-2).repeat(1, self.hc_mult, 1)
+            if _os.environ.get("DSPARK_DBG"):
+                import sys as _sdf
+                try:
+                    print("DSPARK_DIRECT feed=%s add=%s seed.std=%.4f seed.shape=%s" % (
+                        True, bool(_os.environ.get("DSPARK_DIRECT_ADD") or _os.path.exists("/data1/DSPARK_DIRECT_ADD_FLAG")),
+                        float(seed.float().std()), tuple(seed.shape)),
+                        file=_sdf.stderr, flush=True)
+                except Exception as _dfe:
+                    print("DSPARK_DIRECT ERR %r" % (_dfe,), file=_sdf.stderr, flush=True)
+        else:
+            x = base.unsqueeze(-2).repeat(1, self.hc_mult, 1)
         residual = None
         if _os.environ.get("DSPARK_CAPTURE"):
             self._cap_stageinit = x.detach().cpu().float(); self._cap_inputids = input_ids.detach().cpu()
@@ -479,7 +499,8 @@ class DeepSeekV4DSparkModel(nn.Module):
         output_ids = anchor_ids.new_empty(B, self.block_size + 1)
         output_ids[:, 0] = anchor_ids
         import os as _mb, sys as _mbs
-        _nobias = _mb.environ.get("DSPARK_MK_NOBIAS")
+        _nobias = (_mb.environ.get("DSPARK_MK_NOBIAS")
+                   or _mb.path.exists("/data1/DSPARK_MK_NOBIAS_FLAG"))
         if _mb.environ.get("DSPARK_DBG"):
             print("DSPARK_CB anchor=%s noise=%s U0arg=%s" % (output_ids[:, 0].tolist()[:4], getattr(self, "noise_token_id", "NA"), U[:, 0].argmax(-1).tolist()[:4]), file=_mbs.stderr, flush=True)
         embeds = []

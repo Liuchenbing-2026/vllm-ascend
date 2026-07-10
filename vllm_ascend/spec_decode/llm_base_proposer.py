@@ -1053,11 +1053,11 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
 
         if self.method in ("dflash", "dspark"):
             model_kwargs = self.build_model_inputs_first_pass(num_input_tokens)
-            if self.method == "dspark" and self.pass_hidden_states_to_model:
-                # DSpark: seed the draft first pass with the projected target hidden
-                # (main_x = combine_hidden_states output, stored in self.hidden_states
-                # by set_inputs_first_pass). The dflash first-pass builder omits it, so
-                # the draft would start blind and collapse to a constant token.
+            if (self.method == "dspark" and self.pass_hidden_states_to_model
+                    and "hidden_states" not in model_kwargs):
+                # DSpark DFlash first-pass builder already creates the per-request
+                # main_x seed from the last accepted context token. Only fall back to
+                # the generic buffer if a future builder does not provide it.
                 model_kwargs["hidden_states"] = self.hidden_states[:num_input_tokens]
         else:
             model_kwargs = {
@@ -1122,7 +1122,8 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             _nq = self.num_speculative_tokens
             _raw_tidx = token_indices_to_sample[:num_indices]   # strip lmhead_tp padding (Codex)
             _tidx = _raw_tidx.view(-1, _nq)
-            if _mkv.environ.get("DSPARK_SHIFT"):
+            if (_mkv.environ.get("DSPARK_SHIFT")
+                    and not _mkv.path.exists("/data1/DSPARK_SHIFT_OFF_FLAG")):
                 # DSpark samples the ANCHOR row (q0, input=real bonus token) as the
                 # first prediction (ref forward_head row0), NOT the mask rows q1..qS.
                 _sidx = (_tidx - 1).reshape(-1).long()
