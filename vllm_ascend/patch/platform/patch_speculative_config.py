@@ -72,6 +72,20 @@ def _patch_dspark_post_init() -> None:
             if is_dspark:
                 self.method = "dspark"
                 self.parallel_drafting = True
+                draft_hf_config = getattr(
+                    getattr(self, "draft_model_config", None), "hf_config", None
+                )
+                target_layer_ids = list(
+                    getattr(draft_hf_config, "dspark_target_layer_ids", None) or []
+                )
+                if draft_hf_config is not None and target_layer_ids:
+                    draft_hf_config.update(
+                        {
+                            "model_type": "deepseek_v4_dspark",
+                            "n_predict": len(target_layer_ids),
+                            "architectures": ["DeepSeekV4DSpark"],
+                        }
+                    )
         return result
 
     _patched_post_init._vllm_ascend_dspark_patched = True  # type: ignore[attr-defined]
@@ -150,16 +164,10 @@ def _is_dspark_v4_checkpoint(hf_config: PretrainedConfig) -> bool:
 def hf_config_override(hf_config: PretrainedConfig) -> PretrainedConfig:
     initial_architecture = hf_config.architectures[0]
     if hf_config.model_type == "deepseek_v4" and _is_dspark_v4_checkpoint(hf_config):
-        target_layer_ids = list(getattr(hf_config, "dspark_target_layer_ids", None) or [])
-        n_predict = (
-            getattr(hf_config, "n_mtp_layers", None)
-            or len(target_layer_ids)
-            or getattr(hf_config, "num_nextn_predict_layers", None)
-            or 3
-        )
+        validation_n_predict = getattr(hf_config, "num_nextn_predict_layers", None) or 1
         updates = {
             "model_type": "deepseek_v4_dspark",
-            "n_predict": n_predict,
+            "n_predict": validation_n_predict,
             "architectures": ["DeepSeekV4DSpark"],
         }
         dflash_config = getattr(hf_config, "dflash_config", None)
