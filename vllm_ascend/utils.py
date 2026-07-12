@@ -590,7 +590,11 @@ def vllm_version_is(target_vllm_version: str):
 
         vllm_version = vllm.__version__
     try:
-        return Version(vllm_version) == Version(target_vllm_version)
+        # Local build metadata such as ``+empty`` does not change the vLLM
+        # Python API. Keep pre/dev releases distinct while ignoring only the
+        # local suffix used by source installs.
+        installed_version = Version(vllm_version)
+        return Version(installed_version.public) == Version(target_vllm_version)
     except InvalidVersion:
         raise ValueError(
             f"Invalid vllm version {vllm_version} found. A dev version of vllm "
