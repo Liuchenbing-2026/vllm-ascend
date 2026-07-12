@@ -356,6 +356,78 @@ class NPUPlatform(Platform):
             )
 
     @classmethod
+    def _validate_and_update_dflash_config(cls, vllm_config: VllmConfig) -> None:
+        speculative_config = vllm_config.speculative_config
+        if speculative_config is None or speculative_config.method != "dflash":
+            return
+
+        parallel_config = vllm_config.parallel_config
+        if parallel_config.pipeline_parallel_size > 1:
+            raise ValueError(
+                "DFlash with pipeline parallel is not supported on "
+                "vLLM-Ascend v0.23.0. Set pipeline_parallel_size=1."
+            )
+        if (
+            parallel_config.prefill_context_parallel_size > 1
+            or parallel_config.decode_context_parallel_size > 1
+        ):
+            raise ValueError(
+                "DFlash with prefill/decode context parallelism is not "
+                "supported on vLLM-Ascend v0.23.0. Set both context "
+                "parallel sizes to 1."
+            )
+
+        if speculative_config.num_speculative_tokens + 1 > 16:
+            raise ValueError(
+                "Ascend DFlash supports at most 15 speculative tokens because "
+                "the FIA query window includes one additional bonus token."
+            )
+
+        draft_model_config = speculative_config.draft_model_config
+        if draft_model_config is not None:
+            draft_hf_config = draft_model_config.hf_config
+            layer_types = getattr(draft_hf_config, "layer_types", None)
+            if layer_types:
+                invalid_layer_types = set(layer_types) - {
+                    "full_attention",
+                    "sliding_attention",
+                }
+                if invalid_layer_types:
+                    raise ValueError(
+                        "Unsupported DFlash draft layer types on Ascend: "
+                        f"{sorted(invalid_layer_types)}"
+                    )
+                if "sliding_attention" in layer_types:
+                    sliding_window = getattr(
+                        draft_hf_config, "sliding_window", None
+                    )
+                    if not sliding_window:
+                        raise ValueError(
+                            "DFlash sliding_attention layers require a positive "
+                            "sliding_window."
+                        )
+                    if vllm_config.model_config.max_model_len > sliding_window:
+                        logger.warning(
+                            "Enabling experimental long-context mixed-SWA "
+                            "DFlash: "
+                            "max_model_len=%d, sliding_window=%d. Sliding "
+                            "layers retain full KV allocation while FIA "
+                            "applies the per-layer window during attention. "
+                            "Validate this length on device before production "
+                            "use.",
+                            vllm_config.model_config.max_model_len,
+                            sliding_window,
+                        )
+
+        if vllm_config.cache_config.enable_prefix_caching:
+            logger.warning(
+                "Prefix caching is disabled for DFlash on vLLM-Ascend "
+                "v0.23.0 because cache-hit tokens can leave the draft KV "
+                "context incomplete."
+            )
+            vllm_config.cache_config.enable_prefix_caching = False
+
+    @classmethod
     def _validate_draft_decode_context_parallel_config(
         cls,
         vllm_config: VllmConfig,
@@ -463,6 +535,7 @@ class NPUPlatform(Platform):
         maybe_auto_detect_quantization(vllm_config)
 
         cls._validate_layer_sharding_config(vllm_config)
+        cls._validate_and_update_dflash_config(vllm_config)
         cls._validate_draft_decode_context_parallel_config(vllm_config)
         cls._validate_parallel_config(vllm_config)
         cls._validate_pd_pp_mtp_config(vllm_config)

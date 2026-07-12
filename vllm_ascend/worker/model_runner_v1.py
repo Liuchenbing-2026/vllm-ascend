@@ -633,6 +633,9 @@ class NPUModelRunner(GPUModelRunner):
                 if self.speculative_config.method == "eagle3":
                     assert isinstance(self.drafter, AscendEagleProposer)
                     self.use_aux_hidden_state_outputs = self.drafter.eagle3_use_aux_hidden_state
+                elif self.speculative_config.method == "dflash":
+                    assert isinstance(self.drafter, AscendDflashProposer)
+                    self.use_aux_hidden_state_outputs = self.drafter.eagle3_use_aux_hidden_state
                 elif self.speculative_config.method == "extract_hidden_states":
                     assert isinstance(self.drafter, AscendExtractHiddenStatesProposer)
                     self.use_aux_hidden_state_outputs = True
@@ -2481,6 +2484,11 @@ class NPUModelRunner(GPUModelRunner):
             assert self.sampling_done_event is not None
             self.sampling_done_event.record()
 
+        # Clear per-step draft state before deciding whether the current
+        # sequence window is still safe for the drafter. In particular, do not
+        # let a near-max-model-len request reuse drafts from the previous step.
+        self._draft_token_ids = None
+        self._draft_token_req_ids = None
         self.valid_sampled_token_count_gpu: torch.Tensor | None = None # type: ignore[no-redef]
 
         def propose_draft_token_ids(sampled_token_ids):
@@ -2518,6 +2526,13 @@ class NPUModelRunner(GPUModelRunner):
 
         with record_function_or_nullcontext("draft_token"):
             if self.speculative_config:
+                # Reuse the vLLM runtime contract here. DFlash needs K + 1
+                # query positions per request (one bonus token and K masks),
+                # whereas the Ascend sample_tokens override previously invoked
+                # the proposer unconditionally and bypassed this bound check.
+                input_fits_in_drafter = self._input_fits_in_drafter(
+                    spec_decode_common_attn_metadata
+                )
                 use_padded_batch = (
                     self.speculative_config
                     and (
@@ -2528,14 +2543,24 @@ class NPUModelRunner(GPUModelRunner):
                     )
                     and not self.speculative_config.disable_padded_drafter_batch
                 )
-                if use_padded_batch:
+                if input_fits_in_drafter and use_padded_batch:
                     # EAGLE speculative decoding can use the GPU sampled tokens
                     # as inputs, and does not need to wait for bookkeeping to finish.
                     propose_draft_token_ids(sampler_output.sampled_token_ids)
-                if self.speculative_config and not use_padded_batch:
+                elif input_fits_in_drafter and not use_padded_batch:
                     # ngram and other speculative decoding methods use the sampled
                     # tokens on the CPU, so they are run after bookkeeping.
                     propose_draft_token_ids(valid_sampled_token_ids)
+                else:
+                    # Publish an all-zero draft tensor, matching the core vLLM
+                    # fallback. This prevents the scheduler from consuming stale
+                    # draft IDs while the target model finishes autoregressively.
+                    self._draft_token_ids = torch.zeros(
+                        1, device=self.device, dtype=torch.int32
+                    ).expand(len(self.input_batch.req_ids), self.num_spec_tokens)
+                    self._copy_draft_token_ids_to_cpu(
+                        scheduler_output, zeros_only=True
+                    )
 
             # vLLM v0.18 defers KV connector finalization during target-model
             # forward when speculative decoding is enabled. Finalize here after
@@ -3280,6 +3305,10 @@ class NPUModelRunner(GPUModelRunner):
         decode_ratio_to_sas_metadata: dict[Any, Any] = {}
         common_ratio_to_sas_metadata: dict[Any, Any] = {}
         spec_decode_common_attn_metadata = None
+        if self.speculative_config and isinstance(
+            self.drafter, AscendDflashProposer
+        ):
+            self.drafter.clear_per_group_attn_metadata()
         for kv_cache_gid, kv_cache_group in enumerate(self.kv_cache_config.kv_cache_groups):
             cm = copy(cm_base)  # shallow copy
             # Basically only the encoder seq_lens, block_table and slot_mapping change
@@ -3311,8 +3340,19 @@ class NPUModelRunner(GPUModelRunner):
                 # build per-step attention metadata for the active MTP layer.
                 self.drafter.set_per_group_attn_metadata(
                     kv_cache_gid, cm.block_table_tensor, cm.slot_mapping)
+            elif self.speculative_config and isinstance(
+                self.drafter, AscendDflashProposer
+            ):
+                self.drafter.set_per_group_attn_metadata(
+                    kv_cache_gid,
+                    cm.block_table_tensor,
+                    cm.slot_mapping,
+                )
             if self.speculative_config and spec_decode_common_attn_metadata is None:
-                if isinstance(self.drafter, AscendEagleProposer | AscendDraftModelProposer | AscendDflashProposer):
+                if isinstance(self.drafter, AscendDflashProposer):
+                    if kv_cache_gid == self.drafter.kv_cache_gid:
+                        spec_decode_common_attn_metadata = cm
+                elif isinstance(self.drafter, AscendEagleProposer | AscendDraftModelProposer):
                     if self.drafter.attn_layer_names[0] in kv_cache_group.layer_names:
                         spec_decode_common_attn_metadata = cm
                 else:
@@ -3879,9 +3919,15 @@ class NPUModelRunner(GPUModelRunner):
                 self.drafter,
                 AscendEagleProposer | AscendDflashProposer | AscendDraftModelProposer,
             )
-            block_size = (self.kernel_block_sizes[0] if isinstance(
-                self.kernel_block_sizes, list) else self.kernel_block_sizes)
-            self.drafter.initialize_attn_backend(kv_cache_config, block_size)
+            block_sizes = (
+                [
+                    int(sizes[0] if isinstance(sizes, list) else sizes)
+                    for sizes in self.kernel_block_sizes
+                ]
+                if isinstance(self.kernel_block_sizes, list)
+                else [int(self.kernel_block_sizes)]
+            )
+            self.drafter.initialize_attn_backend(kv_cache_config, block_sizes)
 
         if has_kv_transfer_group():
             get_kv_transfer_group().register_kv_caches(kv_caches)

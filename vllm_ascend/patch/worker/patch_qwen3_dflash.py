@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 import torch
 import torch.nn.functional as F
 from vllm.model_executor.models.qwen3_dflash import DFlashQwen3Model
@@ -7,7 +9,7 @@ def precompute_and_store_context_kv(
     self,
     context_states: torch.Tensor,
     context_positions: torch.Tensor,
-    context_slot_mapping: torch.Tensor | None = None,
+    context_slot_mapping: torch.Tensor | Mapping[str, torch.Tensor] | None = None,
 ) -> None:
     if not hasattr(self, "_num_attn_layers"):
         self._build_fused_kv_buffers()
@@ -40,7 +42,13 @@ def precompute_and_store_context_kv(
     all_k_flat = all_k_normed.view(L * num_ctx, kv)
     positions_repeated = context_positions.repeat(L)
     tmpv = all_k_flat.clone()
-    self.layers[0].self_attn.rotary_emb(positions_repeated, all_k_flat, tmpv)
+    rope_output = self.layers[0].self_attn.rotary_emb(
+        positions_repeated,
+        all_k_flat,
+        tmpv,
+    )
+    if rope_output is not None:
+        all_k_flat = rope_output[0].reshape_as(all_k_flat)
 
     if context_slot_mapping is None:
         return
@@ -49,13 +57,18 @@ def precompute_and_store_context_kv(
     all_k_final = all_k_flat.view(L, num_ctx, nkv, hd)
     for i in range(L):
         attn = self._attn_layers[i]
+        layer_slot_mapping = (
+            context_slot_mapping[attn.layer_name]
+            if isinstance(context_slot_mapping, Mapping)
+            else context_slot_mapping
+        )
         kv_cache = attn.kv_cache
         attn.impl.do_kv_cache_update(
             attn,
             all_k_final[i],
             all_v[i],
             kv_cache,
-            context_slot_mapping,
+            layer_slot_mapping,
         )
 
 

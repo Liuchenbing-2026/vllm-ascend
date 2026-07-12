@@ -125,7 +125,10 @@ def copy_and_expand_dflash_inputs_kernel_single_grid(
             tl.store(out_query_positions_ptr + query_out_idx, query_pos)
 
             query_cache_pos = effective_seq_len + q_idx
-            block_num_q = query_cache_pos // block_size
+            block_num_q = tl.minimum(
+                query_cache_pos // block_size,
+                block_table_stride - 1,
+            )
             block_id_q = tl.load(block_table_ptr + req_idx * block_table_stride + block_num_q).to(tl.int64)
             slot_q = block_id_q * block_size + (query_cache_pos % block_size)
             tl.store(out_query_slot_mapping_ptr + query_out_idx, slot_q)

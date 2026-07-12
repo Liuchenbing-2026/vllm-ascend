@@ -841,7 +841,11 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 common_attn_metadata.block_table_tensor, slicing_length
             )
             if self.method == "dflash":
-                common_attn_metadata.seq_lens = self._adjust_tensor(common_attn_metadata.seq_lens, num_reqs_padded)
+                common_attn_metadata.seq_lens = self._adjust_tensor(
+                    common_attn_metadata.seq_lens,
+                    num_reqs_padded,
+                    pad_value=1,
+                )
             else:
                 common_attn_metadata.seq_lens = self._adjust_tensor(self.runner.seq_lens, num_reqs_padded)
                 common_attn_metadata.seq_lens_cpu = self._adjust_tensor(
@@ -911,32 +915,46 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         common_attn_metadata.num_input_tokens = num_input_tokens
         # FIXME(woosuk): The below two ops cause synchronization. Optimize.
         assert len(self.draft_attn_groups) > 0
-        builder = self.draft_attn_groups[0].get_metadata_builder()
-        extra_attn_metadata_args: dict = {}
-        if self.use_compress:
-            extra_attn_metadata_args = dict(
-                prefill_ratio_to_sas_metadata=dict(),
-                decode_ratio_to_sas_metadata=dict(),
-                common_ratio_to_sas_metadata=dict(),
-                block_size=self.draft_attn_groups[0].kv_cache_spec.block_size,
+        if self.method == "dflash":
+            _, per_layer_attn_metadata = (
+                self.build_per_group_and_layer_attn_metadata(
+                    common_attn_metadata,
+                    draft_index=0,
+                )
             )
-        attn_metadata = builder.build(0, common_attn_metadata, self.runner.get_model(), **extra_attn_metadata_args)
+            multi_steps_attn_metadata = [per_layer_attn_metadata]
+            attn_metadata_i = per_layer_attn_metadata[self.attn_layer_names[0]]
+        else:
+            builder = self.draft_attn_groups[0].get_metadata_builder()
+            extra_attn_metadata_args: dict = {}
+            if self.use_compress:
+                extra_attn_metadata_args = dict(
+                    prefill_ratio_to_sas_metadata=dict(),
+                    decode_ratio_to_sas_metadata=dict(),
+                    common_ratio_to_sas_metadata=dict(),
+                    block_size=self.draft_attn_groups[0].kv_cache_spec.block_size,
+                )
+            attn_metadata = builder.build(
+                0,
+                common_attn_metadata,
+                self.runner.get_model(),
+                **extra_attn_metadata_args,
+            )
 
-        if hasattr(attn_metadata, "causal") and not attn_metadata.causal:
-            attn_metadata.attn_mask = None
+            if hasattr(attn_metadata, "causal") and not attn_metadata.causal:
+                attn_metadata.attn_mask = None
+
+            per_layer_attn_metadata = dict()
+            # The first step of speculative.
+            for layer_name in self.attn_layer_names:
+                per_layer_attn_metadata[layer_name] = attn_metadata
+            multi_steps_attn_metadata = [per_layer_attn_metadata]
+            attn_metadata_i = per_layer_attn_metadata[self.attn_layer_names[0]]
 
         if self.uses_mrope:
             used_update_positions = self.mrope_positions[:, token_indices_to_sample]
         else:
             used_update_positions = self.positions[token_indices_to_sample]
-        per_layer_attn_metadata = dict()
-        # The first step of speculative.
-        for layer_name in self.attn_layer_names:
-            per_layer_attn_metadata[layer_name] = attn_metadata
-        multi_steps_attn_metadata = [per_layer_attn_metadata]
-
-        # Copy the old attn_metadata and update
-        attn_metadata_i = per_layer_attn_metadata[self.attn_layer_names[0]]
 
         # Clone the data so that when calculating the data at position 2 and position 3
         # in the merged graph, it does not affect position 1
@@ -1050,6 +1068,13 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 self.runner.eplb_heat_collection_status if self.runner.dynamic_eplb else False
             ),
         ):
+            # The Ascend rotary embedding used by DFlash context-KV
+            # precomputation reads ``_EXTRA_CTX``.  Keep the precompute inside
+            # the same forward context as the draft pass; calling it before
+            # this context is established crashes on the first real request.
+            if self.method == "dflash":
+                self.precompute_context_kv()
+
             # Reset MOE layer index for forward pass
             forward_context = get_forward_context()
             if forward_context is not None:
@@ -2205,11 +2230,11 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         )
 
     # adjusting tensor into desired size
-    def _adjust_tensor(self, tensor, desired_size):
+    def _adjust_tensor(self, tensor, desired_size, pad_value=0):
         pad_size = desired_size - tensor.shape[0]
         if pad_size > 0:
             pad = [0] * (2 * tensor.dim() - 1) + [pad_size]
-            tensor = F.pad(tensor, pad, mode="constant", value=0)
+            tensor = F.pad(tensor, pad, mode="constant", value=pad_value)
         else:
             tensor = tensor[:desired_size]
         return tensor
