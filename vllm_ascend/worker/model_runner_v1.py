@@ -481,8 +481,10 @@ class NPUModelRunner(GPUModelRunner):
         # AscendMLABackend, and DSV4 compressed attention metadata) need
         # ``optimistic_seq_lens_cpu`` to match the corrected GPU seq_lens
         # in async spec decode mode; others (SFA, GDN, etc.) do not.
-        self._needs_seq_lens_cpu_sync = self.use_compress or issubclass(
-            self.attn_backend, (AscendAttentionBackend, AscendMLABackend)
+        self._needs_seq_lens_cpu_sync = (
+            self.use_compress
+            or issubclass(self.attn_backend, (AscendAttentionBackend, AscendMLABackend))
+            or bool(getattr(self.drafter, "uses_markov_head", False))
         )
 
         # kv role
@@ -1685,6 +1687,31 @@ class NPUModelRunner(GPUModelRunner):
             self.valid_sampled_token_count_gpu = valid_sampled_tokens_count # type: ignore[no-redef]
         self.input_batch.prev_sampled_token_ids = next_token_ids.unsqueeze(1)
 
+    def _get_current_num_rejected_tokens_cpu(
+        self,
+        spec_decode_metadata: SpecDecodeMetadata,
+        num_reqs: int,
+    ) -> torch.Tensor | None:
+        """Return current-step rejected-token counts using the existing D2H copy."""
+        valid_counts = self._get_valid_sampled_token_count()
+        num_draft_tokens = spec_decode_metadata.num_draft_tokens
+        if len(valid_counts) != num_reqs or len(num_draft_tokens) != num_reqs:
+            return None
+
+        rejected_counts: list[int] = []
+        for num_draft, num_valid in zip(num_draft_tokens, valid_counts):
+            num_draft = int(num_draft)
+            num_valid = int(num_valid)
+            if num_draft <= 0:
+                rejected_counts.append(0)
+                continue
+            if num_valid < 0 or num_valid > num_draft + 1:
+                # A stale or misaligned copy must never make the CPU mirror
+                # authoritative. The caller will retain the device fallback.
+                return None
+            rejected_counts.append(num_draft + 1 - num_valid)
+        return torch.tensor(rejected_counts, dtype=torch.int64)
+
     # TODO: Once the PCP features are complete, it will fully inherit the classes from the VLLM community.
     def propose_draft_token_ids(
         self,
@@ -1865,6 +1892,7 @@ class NPUModelRunner(GPUModelRunner):
                 hidden_states = mtp_hidden_states
 
             num_rejected_tokens_gpu = None
+            num_rejected_tokens_cpu = None
             if spec_decode_metadata is None:
                 # update pcp related params
                 if self.pcp_size > 1:
@@ -1919,6 +1947,19 @@ class NPUModelRunner(GPUModelRunner):
                     else:
                         target_hidden_states = hidden_states[token_indices]
             assert self.drafter is not None
+            if (
+                getattr(self.drafter, "uses_markov_head", False)
+                and spec_decode_metadata is not None
+                and num_rejected_tokens_gpu is not None
+            ):
+                # The copy was launched immediately after target sampling.
+                # Waiting here lets intervening padded-input preparation and
+                # gather enqueues overlap with the D2H transfer, while still
+                # producing an exact host mirror before draft attention builds.
+                num_rejected_tokens_cpu = self._get_current_num_rejected_tokens_cpu(
+                    spec_decode_metadata,
+                    common_attn_metadata.num_reqs,
+                )
             draft_token_ids = self.drafter._propose(
                 target_token_ids=target_token_ids,
                 target_positions=target_positions,
@@ -1935,6 +1976,7 @@ class NPUModelRunner(GPUModelRunner):
                 scheduler_output=scheduler_output,
                 num_scheduled_tokens=num_scheduled_tokens,
                 num_rejected_tokens_gpu=num_rejected_tokens_gpu,
+                num_rejected_tokens_cpu=num_rejected_tokens_cpu,
             )
         else:
             raise ValueError(f"Unknown speculative decoding method: {self.speculative_config.method}")

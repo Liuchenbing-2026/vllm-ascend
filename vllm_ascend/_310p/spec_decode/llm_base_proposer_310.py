@@ -39,6 +39,7 @@ class AscendSpecDecodeBaseProposer310(AscendSpecDecodeBaseProposer):
         long_seq_metadata=None,
         num_prefill_reqs=0,
         num_decode_reqs=0,
+        num_rejected_tokens_cpu: torch.Tensor | None = None,
     ) -> tuple[int, torch.Tensor, CommonAttentionMetadata, tuple[Any, Any] | None]:
         if not self.needs_extra_input_slots:
             # 310P workaround for MTP:
@@ -81,6 +82,7 @@ class AscendSpecDecodeBaseProposer310(AscendSpecDecodeBaseProposer):
             token_indices_to_sample,
             cad,
             num_rejected_tokens_gpu,
+            num_rejected_tokens_cpu=num_rejected_tokens_cpu,
             req_scheduled_tokens=req_scheduled_tokens,
             long_seq_metadata=long_seq_metadata,
             num_prefill_reqs=num_prefill_reqs,

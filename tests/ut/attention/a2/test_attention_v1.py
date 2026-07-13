@@ -168,6 +168,64 @@ class TestAscendAttentionMetadataBuilder(TestBase):
 
         self.builder.build(1, common_attn_metadata, mock_model)
 
+    def test_parallel_drafting_exact_cpu_mirror_avoids_device_tolist(self):
+        self.builder.speculative_config = SimpleNamespace(parallel_drafting=True)
+        device_seq_lens = MagicMock()
+        device_seq_lens.tolist.side_effect = AssertionError("device seq_lens.tolist() must not be called")
+        exact_seq_lens_cpu = torch.tensor([108, 212], dtype=torch.int64)
+        common_attn_metadata = AscendCommonAttentionMetadata(
+            query_start_loc=torch.tensor([0, 5, 10]),
+            query_start_loc_cpu=torch.tensor([0, 5, 10]),
+            seq_lens=device_seq_lens,
+            _seq_lens_cpu=exact_seq_lens_cpu,
+            seq_lens_cpu=None,
+            parallel_drafting_seq_lens_cpu_valid=True,
+            num_reqs=2,
+            num_actual_tokens=10,
+            max_query_len=5,
+            block_table_tensor=torch.zeros((2, 2), dtype=torch.int32),
+            slot_mapping=torch.arange(10, dtype=torch.int32),
+            causal=False,
+            attn_state=AscendAttentionState.ChunkedPrefill,
+            max_seq_len=212,
+        )
+
+        with patch.object(self.builder.attn_mask_builder, "get_attention_mask", return_value=None):
+            metadata = self.builder.build(0, common_attn_metadata)
+
+        device_seq_lens.tolist.assert_not_called()
+        self.assertIs(metadata.seq_lens, device_seq_lens)
+        self.assertIs(metadata.seq_lens_cpu, exact_seq_lens_cpu)
+        self.assertEqual(metadata.seq_lens_list, [108, 212])
+
+    def test_parallel_drafting_without_valid_mirror_keeps_device_fallback(self):
+        self.builder.speculative_config = SimpleNamespace(parallel_drafting=True)
+        device_seq_lens = MagicMock()
+        device_seq_lens.tolist.return_value = [110, 214]
+        common_attn_metadata = AscendCommonAttentionMetadata(
+            query_start_loc=torch.tensor([0, 5, 10]),
+            query_start_loc_cpu=torch.tensor([0, 5, 10]),
+            seq_lens=device_seq_lens,
+            _seq_lens_cpu=torch.tensor([108, 212], dtype=torch.int64),
+            seq_lens_cpu=None,
+            parallel_drafting_seq_lens_cpu_valid=False,
+            num_reqs=2,
+            num_actual_tokens=10,
+            max_query_len=5,
+            block_table_tensor=torch.zeros((2, 2), dtype=torch.int32),
+            slot_mapping=torch.arange(10, dtype=torch.int32),
+            causal=False,
+            attn_state=AscendAttentionState.ChunkedPrefill,
+            max_seq_len=214,
+        )
+
+        with patch.object(self.builder.attn_mask_builder, "get_attention_mask", return_value=None):
+            metadata = self.builder.build(0, common_attn_metadata)
+
+        device_seq_lens.tolist.assert_called_once_with()
+        self.assertIs(metadata.seq_lens_cpu, device_seq_lens)
+        self.assertEqual(metadata.seq_lens_list, [110, 214])
+
 
 class TestAscendAttentionBackendImpl(TestBase):
     def setUp(self):

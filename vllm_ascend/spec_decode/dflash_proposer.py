@@ -74,6 +74,7 @@ class AscendDflashProposer(AscendEagleProposer):
         long_seq_metadata=None,
         num_prefill_reqs=0,
         num_decode_reqs=0,
+        num_rejected_tokens_cpu: torch.Tensor | None = None,
     ) -> tuple[int, torch.Tensor, CommonAttentionMetadata, tuple[Any, Any] | None]:
         # DFlash cross-attention: context K/V from target hidden states,
         # Q from query embeddings (bonus + mask tokens).
@@ -131,6 +132,12 @@ class AscendDflashProposer(AscendEagleProposer):
 
         cad.query_start_loc = new_query_start_loc
         cad.seq_lens = effective_seq_lens + num_query_per_req
+        self._update_markov_seq_lens_cpu(
+            cad,
+            num_query_per_req=num_query_per_req,
+            num_rejected_tokens_gpu=num_rejected_tokens_gpu,
+            num_rejected_tokens_cpu=num_rejected_tokens_cpu,
+        )
         cad.query_start_loc_cpu = (
             torch.from_numpy(self.token_arange_np[: batch_size + 1]).clone() * num_query_per_req
         ).to(torch.int32)
@@ -153,6 +160,46 @@ class AscendDflashProposer(AscendEagleProposer):
         cad.attn_state = AscendAttentionState.ChunkedPrefill
 
         return num_query_total, token_indices_to_sample, cad, None
+
+    def _update_markov_seq_lens_cpu(
+        self,
+        cad: CommonAttentionMetadata,
+        num_query_per_req: int,
+        num_rejected_tokens_gpu: torch.Tensor | None,
+        num_rejected_tokens_cpu: torch.Tensor | None,
+    ) -> None:
+        """Build an exact host mirror for DSpark's parallel draft attention."""
+        if not self.uses_markov_head:
+            return
+
+        cad.parallel_drafting_seq_lens_cpu_valid = False
+        seq_lens_cpu = cad._seq_lens_cpu
+        if seq_lens_cpu is None:
+            seq_lens_cpu = cad.seq_lens_cpu
+        if seq_lens_cpu is None:
+            return
+
+        batch_size = cad.num_reqs
+        if seq_lens_cpu.shape[0] < batch_size:
+            return
+        updated_seq_lens_cpu = seq_lens_cpu[:batch_size]
+        if num_rejected_tokens_gpu is not None:
+            if num_rejected_tokens_cpu is None or num_rejected_tokens_cpu.shape[0] != batch_size:
+                return
+            # The canonical CPU mirror is corrected for the previous async
+            # step, but still includes every token scheduled in the current
+            # target step. Subtract the current rejection exactly once.
+            updated_seq_lens_cpu = updated_seq_lens_cpu - num_rejected_tokens_cpu.to(dtype=updated_seq_lens_cpu.dtype)
+        updated_seq_lens_cpu = updated_seq_lens_cpu + num_query_per_req
+
+        cad._seq_lens_cpu = updated_seq_lens_cpu
+        if cad.seq_lens_cpu is not None:
+            cad.seq_lens_cpu = updated_seq_lens_cpu
+        if cad.seq_lens_cpu_upper_bound is not None:
+            # Keep this field conservative: it is allowed to overestimate
+            # current rejections and is used as a sizing upper bound.
+            cad.seq_lens_cpu_upper_bound = cad.seq_lens_cpu_upper_bound[:batch_size] + num_query_per_req
+        cad.parallel_drafting_seq_lens_cpu_valid = True
 
     @torch.inference_mode()
     def dummy_run(

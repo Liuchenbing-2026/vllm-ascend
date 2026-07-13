@@ -305,37 +305,13 @@ class AscendDsparkProposer(AscendDflashProposer):
         enable_draft_aclgraph = self.use_cuda_graph and self._dspark_enable_draft_aclgraph
         if enable_draft_aclgraph:
             # The base loader wraps the complete merged draft flow. DSpark must
-            # keep context-KV precompute eager while capturing the backbone and
-            # sampler tail independently, so suppress that generic wrapper here.
+            # keep context-KV precompute eager while capturing the fixed-shape
+            # backbone and sampler tail, so suppress that generic wrapper here.
             self.use_cuda_graph = False
         try:
             super().load_model(model)
         finally:
             self.use_cuda_graph = enable_draft_aclgraph
-
-        if enable_draft_aclgraph:
-            logger.info(
-                "DSpark draft ACLGraph is enabled for the backbone forward; context-KV precompute remains eager."
-            )
-            self.update_stream = torch.npu.Stream()
-            self._dspark_backbone_runnable: ACLGraphWrapper | Callable = ACLGraphWrapper(
-                self._run_dspark_model_from_graph_buffers,
-                self.vllm_config,
-                runtime_mode=CUDAGraphMode.FULL,
-                # This is a split backbone graph, not the merged EAGLE graph
-                # whose wrapper may safely skip the replay ordering barrier.
-                use_eagle=False,
-                enable_enpu=self.enable_enpu,
-                # _run_merged_draft synchronizes before graph-task update, so
-                # the wrapper must not repeat the same host barrier after the
-                # update.  ExternalEvent waits captured in the backbone graph
-                # still order replay behind the update stream.
-                caller_orders_graph_update=True,
-            )
-            self._dspark_graph_runnable_uses_buffers = True
-        else:
-            self._dspark_backbone_runnable = self._run_dspark_model
-            self._dspark_graph_runnable_uses_buffers = False
 
         draft_backbone = getattr(getattr(self, "model", None), "model", None)
         self._dspark_use_local_vocab_argmax = all(
@@ -353,30 +329,47 @@ class AscendDsparkProposer(AscendDflashProposer):
             logger.info(
                 "DSpark local-vocab argmax is enabled; full-vocab TP gathers for the base and Markov heads are skipped."
             )
-        if enable_draft_aclgraph and self._dspark_use_local_vocab_argmax:
-            self._dspark_sampler_tail_runnable: ACLGraphWrapper | Callable = ACLGraphWrapper(
-                self._run_dspark_sampler_tail,
+
+        if enable_draft_aclgraph:
+            logger.info(
+                "DSpark draft ACLGraph is enabled for the backbone forward; context-KV precompute remains eager."
+            )
+            self.update_stream = torch.npu.Stream()
+            graph_runnable = (
+                self._run_dspark_model_and_sampler_tail_from_graph_buffers
+                if self._dspark_use_local_vocab_argmax
+                else self._run_dspark_model_from_graph_buffers
+            )
+            self._dspark_backbone_runnable: ACLGraphWrapper | Callable = ACLGraphWrapper(
+                graph_runnable,
                 self.vllm_config,
                 runtime_mode=CUDAGraphMode.FULL,
+                # This is not the merged EAGLE graph whose wrapper may safely
+                # skip the replay ordering barrier.
                 use_eagle=False,
                 enable_enpu=self.enable_enpu,
-                # The orchestrator synchronizes before updating graph tasks.
-                # The tail follows the backbone on the same current stream
-                # and must not add another host barrier before replay.
+                # _run_merged_draft synchronizes before graph-task update, so
+                # the wrapper must not repeat the same host barrier after the
+                # update.  ExternalEvent waits captured in the backbone graph
+                # still order replay behind the update stream.
                 caller_orders_graph_update=True,
             )
-            self._dspark_sampler_tail_graph_enabled = True
-            logger.info(
-                "DSpark sampler-tail ACLGraph is enabled; local logits and "
-                "sequential Markov sampling use fixed graph shapes."
-            )
+            self._dspark_graph_runnable_uses_buffers = True
+            self._dspark_sampler_tail_graph_enabled = self._dspark_use_local_vocab_argmax
         else:
-            self._dspark_sampler_tail_runnable = self._sample_parallel_draft_tokens
+            self._dspark_backbone_runnable = self._run_dspark_model
+            self._dspark_graph_runnable_uses_buffers = False
             self._dspark_sampler_tail_graph_enabled = False
-            if enable_draft_aclgraph:
-                logger.warning(
-                    "DSpark sampler-tail ACLGraph requires the local-vocab argmax path; keeping Markov sampling eager."
-                )
+
+        if self._dspark_sampler_tail_graph_enabled:
+            logger.info(
+                "DSpark sampler-tail ACLGraph is enabled inside the fused backbone graph; "
+                "local logits and sequential Markov sampling use fixed graph shapes."
+            )
+        elif enable_draft_aclgraph:
+            logger.warning(
+                "DSpark sampler-tail ACLGraph requires the local-vocab argmax path; keeping Markov sampling eager."
+            )
         if draft_backbone is not None:
             global_rank = dist.get_rank() if dist.is_initialized() else 0
             tp_size = self.vllm_config.parallel_config.tensor_parallel_size
@@ -484,8 +477,8 @@ class AscendDsparkProposer(AscendDflashProposer):
     def _synchronize_before_dspark_graph_update(self) -> None:
         if not self.enable_enpu:
             # graph_task_update mutates the captured attention handles on a
-            # side stream. Wait for the previous split-backbone replay and its
-            # sampler tail before allowing the next update to start.
+            # side stream. Wait for the previous backbone replay (including a
+            # fused sampler tail) before allowing the next update to start.
             torch.npu.current_stream().synchronize()
 
     def _run_dspark_model(self, **model_inputs: Any) -> torch.Tensor:
@@ -496,6 +489,15 @@ class AscendDsparkProposer(AscendDflashProposer):
         if model_inputs is None:
             raise RuntimeError("DSpark draft ACLGraph inputs were not prepared before capture/replay")
         return self._run_dspark_model(**model_inputs)
+
+    def _run_dspark_model_and_sampler_tail_from_graph_buffers(self) -> torch.Tensor:
+        """Run the fixed-shape backbone and local sampler tail in one graph."""
+        hidden_states = self._run_dspark_model_from_graph_buffers()
+        if self.model_returns_tuple():
+            last_hidden_states, _ = hidden_states
+        else:
+            last_hidden_states = hidden_states
+        return self._run_dspark_sampler_tail(last_hidden_states)
 
     def _run_prepared_dspark_model(
         self,
@@ -519,12 +521,26 @@ class AscendDsparkProposer(AscendDflashProposer):
                     batch_descriptor,
                 )
                 self._dspark_logged_capture_keys.add(batch_descriptor)
+                if self._dspark_sampler_tail_graph_enabled:
+                    # Preserve the deployment gate marker while both stages are
+                    # owned by this single graph entry and capture.
+                    logger.info(
+                        "Captured DSpark sampler-tail ACLGraph for %s",
+                        batch_descriptor,
+                    )
+                    self._dspark_logged_tail_capture_keys.add(batch_descriptor)
             elif had_graph and batch_descriptor not in self._dspark_logged_replay_keys:
                 logger.info(
                     "Replayed DSpark draft backbone ACLGraph for %s",
                     batch_descriptor,
                 )
                 self._dspark_logged_replay_keys.add(batch_descriptor)
+                if self._dspark_sampler_tail_graph_enabled:
+                    logger.info(
+                        "Replayed DSpark sampler-tail ACLGraph for %s",
+                        batch_descriptor,
+                    )
+                    self._dspark_logged_tail_replay_keys.add(batch_descriptor)
             return output
         return run_model(**model_inputs)
 
@@ -541,37 +557,6 @@ class AscendDsparkProposer(AscendDflashProposer):
         num_sample_rows = int(graph_num_reqs) * self.num_speculative_tokens
         sample_hidden_states = last_hidden_states[self.token_indices_to_sample[:num_sample_rows]]
         return self._sample_parallel_draft_tokens(sample_hidden_states)
-
-    def _run_prepared_dspark_sampler_tail(
-        self,
-        last_hidden_states: torch.Tensor,
-    ) -> torch.Tensor:
-        run_tail = self._dspark_sampler_tail_runnable
-        if not self._dspark_sampler_tail_graph_enabled:
-            return run_tail(last_hidden_states)
-
-        forward_context = get_forward_context()
-        batch_descriptor = getattr(forward_context, "batch_descriptor", None)
-        graph_entries = getattr(run_tail, "concrete_aclgraph_entries", {})
-        graph_entry = graph_entries.get(batch_descriptor)
-        had_graph = graph_entry is not None and graph_entry.aclgraph is not None
-        output = run_tail(last_hidden_states)
-        graph_entries = getattr(run_tail, "concrete_aclgraph_entries", {})
-        graph_entry = graph_entries.get(batch_descriptor)
-        has_graph = graph_entry is not None and graph_entry.aclgraph is not None
-        if has_graph and not had_graph and batch_descriptor not in self._dspark_logged_tail_capture_keys:
-            logger.info(
-                "Captured DSpark sampler-tail ACLGraph for %s",
-                batch_descriptor,
-            )
-            self._dspark_logged_tail_capture_keys.add(batch_descriptor)
-        elif had_graph and batch_descriptor not in self._dspark_logged_tail_replay_keys:
-            logger.info(
-                "Replayed DSpark sampler-tail ACLGraph for %s",
-                batch_descriptor,
-            )
-            self._dspark_logged_tail_replay_keys.add(batch_descriptor)
-        return output
 
     def _update_full_graph_params_if_needed(
         self,
@@ -637,15 +622,6 @@ class AscendDsparkProposer(AscendDflashProposer):
             num_input_tokens,
             multi_steps_attn_metadata,
         )
-        hidden_states = self._run_prepared_dspark_model(
-            self._dspark_backbone_runnable,
-            model_inputs,
-        )
-        if self.model_returns_tuple():
-            last_hidden_states, _ = hidden_states
-        else:
-            last_hidden_states = hidden_states
-
         if self._dspark_sampler_tail_graph_enabled:
             expected_sample_rows = batch_size * self.num_speculative_tokens
             if token_indices_to_sample.shape[0] != expected_sample_rows:
@@ -654,10 +630,22 @@ class AscendDsparkProposer(AscendDflashProposer):
                     f"batch: rows={token_indices_to_sample.shape[0]}, "
                     f"expected={expected_sample_rows}"
                 )
-            draft_tokens = self._run_prepared_dspark_sampler_tail(last_hidden_states)
+            draft_tokens = self._run_prepared_dspark_model(
+                self._dspark_backbone_runnable,
+                model_inputs,
+            )
             # The tail graph uses the descriptor's fixed DP-uniform request
             # count. Only locally real requests are returned to verification.
             return draft_tokens[:batch_size]
+
+        hidden_states = self._run_prepared_dspark_model(
+            self._dspark_backbone_runnable,
+            model_inputs,
+        )
+        if self.model_returns_tuple():
+            last_hidden_states, _ = hidden_states
+        else:
+            last_hidden_states = hidden_states
 
         sample_hidden_states = last_hidden_states[token_indices_to_sample]
         return self._sample_parallel_draft_tokens(sample_hidden_states)

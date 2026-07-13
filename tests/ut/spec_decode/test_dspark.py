@@ -108,12 +108,12 @@ class TestDraftAclGraphBoundary:
         assert reason == "DSpark draft ACLGraph does not yet support LoRA"
         proposer.vllm_config.lora_config = None
 
-    def test_split_graph_wrappers_declare_caller_owned_update_order(
+    def test_fused_graph_wrapper_declares_caller_owned_update_order(
         self,
         monkeypatch,
     ):
         wrapper_calls = []
-        wrapper_sentinels = [object(), object()]
+        wrapper_sentinel = object()
 
         def make_wrapper(runnable, vllm_config, runtime_mode, **kwargs):
             wrapper_calls.append(
@@ -124,7 +124,7 @@ class TestDraftAclGraphBoundary:
                     **kwargs,
                 )
             )
-            return wrapper_sentinels[len(wrapper_calls) - 1]
+            return wrapper_sentinel
 
         monkeypatch.setattr(
             dspark_proposer_module.AscendDflashProposer,
@@ -147,17 +147,17 @@ class TestDraftAclGraphBoundary:
 
         AscendDsparkProposer.load_model(proposer, object())
 
-        assert proposer._dspark_backbone_runnable is wrapper_sentinels[0]
-        assert proposer._dspark_sampler_tail_runnable is wrapper_sentinels[1]
+        assert proposer._dspark_backbone_runnable is wrapper_sentinel
         assert proposer._dspark_sampler_tail_graph_enabled is True
-        assert len(wrapper_calls) == 2
-        assert wrapper_calls[0]["runnable"].__func__ is AscendDsparkProposer._run_dspark_model_from_graph_buffers
-        assert wrapper_calls[1]["runnable"].__func__ is AscendDsparkProposer._run_dspark_sampler_tail
-        for wrapper_call in wrapper_calls:
-            assert wrapper_call["runtime_mode"] == dspark_proposer_module.CUDAGraphMode.FULL
-            assert wrapper_call["use_eagle"] is False
-            assert wrapper_call["enable_enpu"] is False
-            assert wrapper_call["caller_orders_graph_update"] is True
+        assert len(wrapper_calls) == 1
+        assert (
+            wrapper_calls[0]["runnable"].__func__
+            is AscendDsparkProposer._run_dspark_model_and_sampler_tail_from_graph_buffers
+        )
+        assert wrapper_calls[0]["runtime_mode"] == dspark_proposer_module.CUDAGraphMode.FULL
+        assert wrapper_calls[0]["use_eagle"] is False
+        assert wrapper_calls[0]["enable_enpu"] is False
+        assert wrapper_calls[0]["caller_orders_graph_update"] is True
         assert proposer.use_cuda_graph is True
 
     def test_sampler_tail_graph_falls_back_without_local_vocab_capability(
@@ -188,8 +188,8 @@ class TestDraftAclGraphBoundary:
         AscendDsparkProposer.load_model(proposer, object())
 
         assert len(wrapper_calls) == 1
+        assert wrapper_calls[0][0].__func__ is AscendDsparkProposer._run_dspark_model_from_graph_buffers
         assert proposer._dspark_sampler_tail_graph_enabled is False
-        assert proposer._dspark_sampler_tail_runnable.__func__ is AscendDsparkProposer._sample_parallel_draft_tokens
 
     def test_capture_sizes_use_anchor_plus_num_speculative_tokens(
         self,
@@ -467,28 +467,82 @@ class TestDraftAclGraphBoundary:
         )
         assert persistent_indices.tolist() == [1, 4, 7, 9, 0, 0, 11, 10]
 
-    def test_sampler_tail_marker_reports_capture_then_replay_once(
+    def test_fused_graph_callable_runs_backbone_then_sampler_tail(self):
+        events = []
+        model_inputs = {"input_ids": torch.tensor([1, 2])}
+        last_hidden_states = torch.tensor([[3.0], [4.0]])
+
+        def run_model(**kwargs):
+            events.append(("backbone", kwargs))
+            return last_hidden_states, torch.tensor([99.0])
+
+        def run_sampler_tail(hidden_states):
+            events.append(("sampler_tail", hidden_states))
+            return torch.tensor([[7, 8]], dtype=torch.int64)
+
+        proposer = SimpleNamespace(
+            _dspark_graph_model_inputs=model_inputs,
+            _run_dspark_model=run_model,
+            model_returns_tuple=lambda: True,
+            _run_dspark_sampler_tail=run_sampler_tail,
+        )
+
+        output = AscendDsparkProposer._run_dspark_model_and_sampler_tail_from_graph_buffers(proposer)
+
+        assert events[0][0] == "backbone"
+        assert events[0][1] is model_inputs
+        assert events[1][0] == "sampler_tail"
+        torch.testing.assert_close(events[1][1], last_hidden_states)
+        torch.testing.assert_close(output, torch.tensor([[7, 8]], dtype=torch.int64))
+
+    def test_fused_graph_callable_accepts_non_tuple_backbone_output(self):
+        model_inputs = {"input_ids": torch.tensor([1, 2])}
+        last_hidden_states = torch.tensor([[3.0], [4.0]])
+        sampled_hidden_states = []
+
+        def run_sampler_tail(hidden_states):
+            sampled_hidden_states.append(hidden_states)
+            return torch.tensor([[7, 8]], dtype=torch.int64)
+
+        proposer = SimpleNamespace(
+            _dspark_graph_model_inputs=model_inputs,
+            _run_dspark_model=lambda **kwargs: last_hidden_states,
+            model_returns_tuple=lambda: False,
+            _run_dspark_sampler_tail=run_sampler_tail,
+        )
+
+        output = AscendDsparkProposer._run_dspark_model_and_sampler_tail_from_graph_buffers(proposer)
+
+        assert len(sampled_hidden_states) == 1
+        assert sampled_hidden_states[0] is last_hidden_states
+        torch.testing.assert_close(output, torch.tensor([[7, 8]], dtype=torch.int64))
+
+    def test_fused_graph_markers_report_once_across_graph_entry_reset(
         self,
         monkeypatch,
     ):
         descriptor = object()
         log_messages = []
 
-        class FakeTailWrapper:
+        class FakeFusedWrapper:
             def __init__(self):
                 self.calls = 0
                 self.concrete_aclgraph_entries = {}
 
-            def __call__(self, hidden_states):
+            def __call__(self):
                 self.calls += 1
-                if self.calls == 1:
+                if descriptor not in self.concrete_aclgraph_entries:
                     self.concrete_aclgraph_entries[descriptor] = SimpleNamespace(aclgraph=object())
-                return hidden_states + self.calls
+                return torch.tensor([self.calls], dtype=torch.float32)
 
-        wrapper = FakeTailWrapper()
+        wrapper = FakeFusedWrapper()
         proposer = SimpleNamespace(
-            _dspark_sampler_tail_runnable=wrapper,
+            _dspark_graph_runnable_uses_buffers=True,
+            _dspark_backbone_runnable=wrapper,
+            _dspark_graph_model_inputs=None,
             _dspark_sampler_tail_graph_enabled=True,
+            _dspark_logged_capture_keys=set(),
+            _dspark_logged_replay_keys=set(),
             _dspark_logged_tail_capture_keys=set(),
             _dspark_logged_tail_replay_keys=set(),
         )
@@ -503,31 +557,47 @@ class TestDraftAclGraphBoundary:
             lambda message, *args: log_messages.append(message % args),
         )
 
-        hidden_states = torch.tensor([1.0])
-        first = AscendDsparkProposer._run_prepared_dspark_sampler_tail(
+        first = AscendDsparkProposer._run_prepared_dspark_model(
             proposer,
-            hidden_states,
+            wrapper,
+            {},
         )
-        second = AscendDsparkProposer._run_prepared_dspark_sampler_tail(
+        second = AscendDsparkProposer._run_prepared_dspark_model(
             proposer,
-            hidden_states,
+            wrapper,
+            {},
         )
-        third = AscendDsparkProposer._run_prepared_dspark_sampler_tail(
+        third = AscendDsparkProposer._run_prepared_dspark_model(
             proposer,
-            hidden_states,
+            wrapper,
+            {},
+        )
+        # Graph eviction may force the same descriptor to be captured again.
+        # Marker sets are intentionally per proposer/key, so this lifecycle
+        # must not spam a second pair of "Captured" deployment-gate markers.
+        wrapper.concrete_aclgraph_entries.clear()
+        fourth = AscendDsparkProposer._run_prepared_dspark_model(
+            proposer,
+            wrapper,
+            {},
         )
 
-        torch.testing.assert_close(first, torch.tensor([2.0]))
-        torch.testing.assert_close(second, torch.tensor([3.0]))
-        torch.testing.assert_close(third, torch.tensor([4.0]))
+        torch.testing.assert_close(first, torch.tensor([1.0]))
+        torch.testing.assert_close(second, torch.tensor([2.0]))
+        torch.testing.assert_close(third, torch.tensor([3.0]))
+        torch.testing.assert_close(fourth, torch.tensor([4.0]))
         assert log_messages == [
+            f"Captured DSpark draft backbone ACLGraph for {descriptor}",
             f"Captured DSpark sampler-tail ACLGraph for {descriptor}",
+            f"Replayed DSpark draft backbone ACLGraph for {descriptor}",
             f"Replayed DSpark sampler-tail ACLGraph for {descriptor}",
         ]
+        assert proposer._dspark_logged_capture_keys == {descriptor}
+        assert proposer._dspark_logged_replay_keys == {descriptor}
         assert proposer._dspark_logged_tail_capture_keys == {descriptor}
         assert proposer._dspark_logged_tail_replay_keys == {descriptor}
 
-    def test_full_orchestrator_runs_sampler_tail_graph_and_crops_padding(
+    def test_full_orchestrator_runs_fused_graph_and_crops_padding(
         self,
         monkeypatch,
     ):
@@ -536,7 +606,7 @@ class TestDraftAclGraphBoundary:
             "input_ids": torch.tensor([7, 8, 9, 10]),
             "positions": torch.tensor([3, 4, 5, 6], dtype=torch.int32),
         }
-        model_output = torch.arange(16, dtype=torch.float32).view(8, 2)
+        graph_output = torch.tensor([[101, 102], [901, 902]], dtype=torch.int64)
         graph_runner = object()
 
         def pad_query_buffers(num_actual_tokens, num_input_tokens):
@@ -551,7 +621,7 @@ class TestDraftAclGraphBoundary:
 
         def run_prepared(run_model, prepared_inputs):
             events.append(("model", run_model, prepared_inputs))
-            return model_output
+            return graph_output
 
         def update_graph_params(forward_context, num_input_tokens, metadata):
             events.append(
@@ -562,12 +632,6 @@ class TestDraftAclGraphBoundary:
                     metadata,
                 )
             )
-
-        def run_sampler_tail(last_hidden_states):
-            events.append(("sampler_tail", last_hidden_states.clone()))
-            # The second row belongs to a DP-padding request and must not be
-            # returned to verification on this rank.
-            return torch.tensor([[101, 102], [901, 902]], dtype=torch.int64)
 
         proposer = SimpleNamespace(
             use_cuda_graph=True,
@@ -580,8 +644,6 @@ class TestDraftAclGraphBoundary:
             build_model_inputs_first_pass=build_model_inputs,
             _update_full_graph_params=update_graph_params,
             _run_prepared_dspark_model=run_prepared,
-            model_returns_tuple=lambda: False,
-            _run_prepared_dspark_sampler_tail=run_sampler_tail,
         )
         monkeypatch.setattr(
             dspark_proposer_module,
@@ -609,7 +671,6 @@ class TestDraftAclGraphBoundary:
             "context_kv",
             "graph_update",
             "model",
-            "sampler_tail",
         ]
         assert events[2] == ("context_kv", 8)
         assert events[3] == (
@@ -619,11 +680,122 @@ class TestDraftAclGraphBoundary:
             [],
         )
         assert events[4] == ("model", graph_runner, model_inputs)
-        torch.testing.assert_close(events[5][1], model_output)
         torch.testing.assert_close(
             draft_tokens,
             torch.tensor([[101, 102]], dtype=torch.int64),
         )
+
+    def test_fused_orchestrator_replay_reads_mutated_persistent_indices(
+        self,
+        monkeypatch,
+    ):
+        descriptor = SimpleNamespace(num_reqs=2)
+        hidden_states = torch.arange(6, dtype=torch.float32).view(6, 1)
+        persistent_indices = torch.tensor([1, 2, 0, 0], dtype=torch.int64)
+        persistent_indices_ptr = persistent_indices.data_ptr()
+        real_indices = torch.tensor([1, 2], dtype=torch.int64)
+        graph_runner = object()
+        replay_calls = []
+        replay_descriptors = []
+
+        proposer = SimpleNamespace(
+            use_cuda_graph=True,
+            _dspark_enable_draft_aclgraph=True,
+            _dspark_backbone_runnable=graph_runner,
+            _dspark_sampler_tail_graph_enabled=True,
+            num_speculative_tokens=2,
+            token_indices_to_sample=persistent_indices,
+            _pad_dspark_query_buffers=lambda num_actual_tokens, num_input_tokens: None,
+            _synchronize_before_dspark_graph_update=lambda: None,
+            build_model_inputs_first_pass=lambda num_input_tokens: {},
+            _update_full_graph_params=lambda forward_context, num_input_tokens, metadata: None,
+            _sample_parallel_draft_tokens=lambda selected: selected.to(torch.int64).view(2, 2),
+        )
+
+        def run_prepared(run_model, prepared_inputs):
+            replay_calls.append((run_model, prepared_inputs))
+            replay_descriptors.append(dspark_proposer_module.get_forward_context().batch_descriptor)
+            return AscendDsparkProposer._run_dspark_sampler_tail(proposer, hidden_states)
+
+        proposer._run_prepared_dspark_model = run_prepared
+        forward_context = SimpleNamespace(
+            batch_descriptor=descriptor,
+            cudagraph_runtime_mode=dspark_proposer_module.CUDAGraphMode.FULL,
+        )
+        monkeypatch.setattr(
+            dspark_proposer_module,
+            "get_forward_context",
+            lambda: forward_context,
+        )
+        monkeypatch.setattr(dspark_proposer_module, "lmhead_tp_enable", lambda: False)
+
+        def run_once():
+            return AscendDsparkProposer._run_merged_draft(
+                proposer,
+                num_input_tokens=6,
+                batch_size=1,
+                token_indices_to_sample=real_indices,
+                target_positions=torch.empty(0, dtype=torch.int32),
+                inputs_embeds=None,
+                multi_steps_attn_metadata=[],
+                num_tokens=3,
+            )
+
+        first = run_once()
+        persistent_indices.copy_(torch.tensor([3, 4, 0, 0], dtype=torch.int64))
+        assert persistent_indices.data_ptr() == persistent_indices_ptr
+        second = run_once()
+
+        assert replay_calls == [(graph_runner, {}), (graph_runner, {})]
+        assert len(replay_descriptors) == 2
+        assert all(replayed is descriptor for replayed in replay_descriptors)
+        torch.testing.assert_close(first, torch.tensor([[1, 2]], dtype=torch.int64))
+        torch.testing.assert_close(second, torch.tensor([[3, 4]], dtype=torch.int64))
+
+    def test_fused_orchestrator_zero_real_batch_crops_all_dp_padding(
+        self,
+        monkeypatch,
+    ):
+        graph_runner = object()
+        graph_calls = []
+
+        def run_prepared(run_model, prepared_inputs):
+            graph_calls.append((run_model, prepared_inputs))
+            return torch.tensor([[901, 902], [903, 904]], dtype=torch.int64)
+
+        proposer = SimpleNamespace(
+            use_cuda_graph=True,
+            _dspark_enable_draft_aclgraph=True,
+            _dspark_backbone_runnable=graph_runner,
+            _dspark_sampler_tail_graph_enabled=True,
+            num_speculative_tokens=2,
+            _pad_dspark_query_buffers=lambda num_actual_tokens, num_input_tokens: None,
+            _synchronize_before_dspark_graph_update=lambda: None,
+            build_model_inputs_first_pass=lambda num_input_tokens: {},
+            _update_full_graph_params=lambda forward_context, num_input_tokens, metadata: None,
+            _run_prepared_dspark_model=run_prepared,
+        )
+        monkeypatch.setattr(
+            dspark_proposer_module,
+            "get_forward_context",
+            lambda: SimpleNamespace(cudagraph_runtime_mode=dspark_proposer_module.CUDAGraphMode.FULL),
+        )
+        monkeypatch.setattr(dspark_proposer_module, "lmhead_tp_enable", lambda: False)
+
+        draft_tokens = AscendDsparkProposer._run_merged_draft(
+            proposer,
+            num_input_tokens=6,
+            batch_size=0,
+            token_indices_to_sample=torch.empty(0, dtype=torch.int64),
+            target_positions=torch.empty(0, dtype=torch.int32),
+            inputs_embeds=None,
+            multi_steps_attn_metadata=[],
+            num_tokens=0,
+        )
+
+        assert graph_calls == [(graph_runner, {})]
+        assert draft_tokens.shape == (0, 2)
+        assert draft_tokens.dtype == torch.int64
 
     def test_full_orchestrator_keeps_sampler_eager_without_tail_graph(
         self,

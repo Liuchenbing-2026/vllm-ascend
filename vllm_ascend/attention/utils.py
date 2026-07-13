@@ -238,6 +238,12 @@ class AscendCommonAttentionMetadata(CommonAttentionMetadata):
     prefill_context_parallel_metadata: AscendPrefillContextParallelMetadata | None = None
     kvcomp_metadata: KVCompMetaData | None = None
 
+    # True only when a parallel drafter has made the CPU sequence lengths
+    # exactly match its device-side sequence lengths.  The attention builder
+    # uses this to avoid a blocking device ``tolist()`` while preserving the
+    # legacy device-authoritative fallback for other parallel drafters.
+    parallel_drafting_seq_lens_cpu_valid: bool = False
+
     # TODO: Remove it when vLLM no longer uses this function.
     def unpadded(self, num_actual_tokens: int, num_actual_reqs: int) -> "AscendCommonAttentionMetadata":
         # This only use to eagle now. It will be use to enforce_eager in future.
@@ -250,6 +256,7 @@ class AscendCommonAttentionMetadata(CommonAttentionMetadata):
             query_start_loc_cpu=self.query_start_loc_cpu[: num_actual_reqs + 1],
             seq_lens=self.seq_lens[:num_actual_reqs],
             seq_lens_cpu=_slice_reqs(self.seq_lens_cpu),
+            parallel_drafting_seq_lens_cpu_valid=self.parallel_drafting_seq_lens_cpu_valid,
             num_computed_tokens_cpu=_slice_reqs(self.num_computed_tokens_cpu),
             num_reqs=num_actual_reqs,
             num_actual_tokens=num_actual_tokens,

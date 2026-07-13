@@ -509,12 +509,9 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 # Mirrors the embed_tokens sharing logic: keep the draft's own
                 # trained lm_head unless it is identical to the target's
                 # (identical weights are aliased to save memory).
-                draft_lm_head_differs = not torch.equal(
-                    model.lm_head.weight.cpu(), self.model.lm_head.weight.cpu()
-                )
+                draft_lm_head_differs = not torch.equal(model.lm_head.weight.cpu(), self.model.lm_head.weight.cpu())
             draft_has_own_lm_head = self.method == "dflash" and (
-                getattr(self.model, "draft_id_to_target_id", None) is not None
-                or draft_lm_head_differs
+                getattr(self.model, "draft_id_to_target_id", None) is not None or draft_lm_head_differs
             )
             if draft_has_own_lm_head:
                 logger.info(
@@ -796,6 +793,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         scheduler_output: SchedulerOutput = None,
         num_scheduled_tokens: int = 0,
         num_rejected_tokens_gpu: torch.Tensor | None = None,
+        num_rejected_tokens_cpu: torch.Tensor | None = None,
     ) -> torch.Tensor:
         batch_size = common_attn_metadata.batch_size()
 
@@ -823,6 +821,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             token_indices_to_sample=token_indices_to_sample,
             cad=common_attn_metadata,
             num_rejected_tokens_gpu=num_rejected_tokens_gpu,
+            num_rejected_tokens_cpu=num_rejected_tokens_cpu,
             req_scheduled_tokens=req_scheduled_tokens,
             long_seq_metadata=long_seq_metadata,
             num_prefill_reqs=num_prefill_reqs,
@@ -1271,9 +1270,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             # DSpark: sequential Markov-head correction over the parallel
             # draft block; returns [batch, num_speculative_tokens].
             if lmhead_tp_enable():
-                raise NotImplementedError(
-                    "DSpark drafting does not support lmhead tensor parallel yet."
-                )
+                raise NotImplementedError("DSpark drafting does not support lmhead tensor parallel yet.")
             return self._sample_parallel_draft_tokens(sample_hidden_states)
 
         if get_ascend_config().enable_reduce_sample:
@@ -1482,6 +1479,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         long_seq_metadata=None,
         num_prefill_reqs=0,
         num_decode_reqs=0,
+        num_rejected_tokens_cpu: torch.Tensor | None = None,
     ) -> tuple[int, torch.Tensor, CommonAttentionMetadata, tuple[Any, Any] | None]:
         if not self.needs_extra_input_slots:
             # Default EAGLE pathway: no reshaping of input tensors needed.

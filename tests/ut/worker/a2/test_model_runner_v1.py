@@ -313,6 +313,34 @@ class TestCorrectOptimisticSeqLensCpu(unittest.TestCase):
         with self.assertRaises(AssertionError):
             runner._correct_optimistic_seq_lens_cpu(1)
 
+    def test_current_rejections_use_current_valid_counts(self):
+        runner = NPUModelRunner.__new__(NPUModelRunner)
+        runner._get_valid_sampled_token_count = MagicMock(return_value=[2, 1, 1])
+        metadata = SimpleNamespace(num_draft_tokens=[2, 3, 0])
+
+        rejected = runner._get_current_num_rejected_tokens_cpu(metadata, num_reqs=3)
+
+        runner._get_valid_sampled_token_count.assert_called_once_with()
+        self.assertEqual(rejected.tolist(), [1, 3, 0])
+
+    def test_current_rejections_mismatch_falls_back(self):
+        runner = NPUModelRunner.__new__(NPUModelRunner)
+        runner._get_valid_sampled_token_count = MagicMock(return_value=[2])
+        metadata = SimpleNamespace(num_draft_tokens=[2, 3])
+
+        rejected = runner._get_current_num_rejected_tokens_cpu(metadata, num_reqs=2)
+
+        self.assertIsNone(rejected)
+
+    def test_current_rejections_invalid_count_falls_back(self):
+        runner = NPUModelRunner.__new__(NPUModelRunner)
+        runner._get_valid_sampled_token_count = MagicMock(return_value=[4])
+        metadata = SimpleNamespace(num_draft_tokens=[2])
+
+        rejected = runner._get_current_num_rejected_tokens_cpu(metadata, num_reqs=1)
+
+        self.assertIsNone(rejected)
+
 
 if __name__ == "__main__":
     unittest.main()
