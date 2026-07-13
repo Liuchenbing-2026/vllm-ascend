@@ -338,7 +338,12 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
         getattr(vllm_config.model_config.hf_text_config, "quantize", None),
     )
 
-    if not vllm_config.parallel_config.enable_expert_parallel or get_ep_group().world_size == 1:
+    ascend_config = get_ascend_config()
+    force_a2_moe_allgather = getattr(ascend_config, "force_a2_moe_allgather", False)
+
+    if (not vllm_config.parallel_config.enable_expert_parallel
+            or get_ep_group().world_size == 1
+            or (soc_version == AscendDeviceType.A2 and force_a2_moe_allgather)):
         moe_comm_type = MoECommType.ALLGATHER
     elif soc_version == AscendDeviceType.A2:
         moe_comm_type = _select_a2_moe_comm_method(num_tokens, vllm_config, mc2_tokens_capacity)
@@ -348,7 +353,7 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
             vllm_config,
             quant_type,
             mc2_tokens_capacity,
-            get_ascend_config().enable_fused_mc2,
+            ascend_config.enable_fused_mc2,
         )
     elif soc_version == AscendDeviceType.A5:
         moe_comm_type = _select_a5_moe_comm_method(num_tokens, vllm_config, mc2_tokens_capacity)

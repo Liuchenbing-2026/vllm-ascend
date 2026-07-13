@@ -12,7 +12,11 @@ def reset_mc2_tokens_capacity(monkeypatch):
     monkeypatch.setattr(
         afc,
         "get_ascend_config",
-        lambda: SimpleNamespace(enable_prefill_mc2=False, enable_fused_mc2=0),
+        lambda: SimpleNamespace(
+            enable_prefill_mc2=False,
+            enable_fused_mc2=0,
+            force_a2_moe_allgather=False,
+        ),
     )
 
 
@@ -66,6 +70,7 @@ def _patch_select_moe_comm_method_deps(
     capacity: int = 128,
     ep_world_size: int = 8,
     enable_fused_mc2: int = 0,
+    force_a2_moe_allgather: bool = False,
     is_moe: bool = True,
     spec_decode_enabled: bool = False,
 ):
@@ -73,7 +78,14 @@ def _patch_select_moe_comm_method_deps(
     monkeypatch.setattr(afc, "get_mc2_tokens_capacity", lambda: capacity)
     monkeypatch.setattr(afc, "get_ascend_device_type", lambda: device_type)
     monkeypatch.setattr(afc, "get_ep_group", lambda: SimpleNamespace(world_size=ep_world_size))
-    monkeypatch.setattr(afc, "get_ascend_config", lambda: SimpleNamespace(enable_fused_mc2=enable_fused_mc2))
+    monkeypatch.setattr(
+        afc,
+        "get_ascend_config",
+        lambda: SimpleNamespace(
+            enable_fused_mc2=enable_fused_mc2,
+            force_a2_moe_allgather=force_a2_moe_allgather,
+        ),
+    )
     monkeypatch.setattr(
         afc,
         "speculative_enable_dispatch_gmm_combine_decode",
@@ -163,6 +175,31 @@ def test_select_moe_comm_method_a2_uses_mc2_within_capacity(monkeypatch, num_tok
     vllm_config = _make_vllm_config(world_size=16, num_experts=128)
 
     assert afc.select_moe_comm_method(num_tokens, vllm_config) == expected
+
+
+def test_select_moe_comm_method_a2_force_allgather_bypasses_mc2(monkeypatch):
+    _patch_select_moe_comm_method_deps(
+        monkeypatch,
+        device_type=afc.AscendDeviceType.A2,
+        capacity=128,
+        ep_world_size=16,
+        force_a2_moe_allgather=True,
+    )
+    vllm_config = _make_vllm_config(world_size=16, num_experts=128)
+
+    assert afc.select_moe_comm_method(128, vllm_config) == MoECommType.ALLGATHER
+
+
+def test_force_a2_moe_allgather_does_not_change_a3_selection(monkeypatch):
+    _patch_select_moe_comm_method_deps(
+        monkeypatch,
+        device_type=afc.AscendDeviceType.A3,
+        capacity=128,
+        ep_world_size=16,
+        force_a2_moe_allgather=True,
+    )
+
+    assert afc.select_moe_comm_method(128, _make_vllm_config()) == MoECommType.MC2
 
 
 @pytest.mark.parametrize(

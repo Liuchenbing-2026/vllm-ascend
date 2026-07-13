@@ -289,6 +289,16 @@ class AscendConfig:
         # Enable dispatch/combine op inter-node communication by ROCE
         self.enable_mc2_hierarchy_comm = additional_config.get("enable_mc2_hierarchy_comm", False)
 
+        # Force A2 MoE communication to use ALLGATHER instead of the automatic
+        # MC2 selection. This is an opt-in compatibility fallback for A2
+        # multi-node topologies where flat MC2 cannot make forward progress.
+        self.force_a2_moe_allgather = additional_config.get("force_a2_moe_allgather", False)
+        if self.force_a2_moe_allgather:
+            logger.warning(
+                "Forcing A2 MoE communication method to ALLGATHER; "
+                "automatic MC2 selection is disabled by force_a2_moe_allgather."
+            )
+
         # Per-rank token capacity after dispatch in the mega moe (dispatch_ffn_combine) fused operator.
         # When load imbalance causes a rank to receive more tokens than this limit, the excess tokens
         # are dropped and skipped from computation, degrading accuracy.
