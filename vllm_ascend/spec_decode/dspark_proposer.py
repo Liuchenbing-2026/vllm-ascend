@@ -58,12 +58,7 @@ def _dspark_vocab_parallel_argmax(
     gathered = group.all_gather(local_pairs, dim=-1)
     gathered = gathered.view(local_logits.shape[0], group.world_size, 2)
     winning_rank = gathered[:, :, 0].argmax(dim=-1, keepdim=True)
-    return (
-        gathered[:, :, 1]
-        .gather(dim=-1, index=winning_rank)
-        .squeeze(-1)
-        .to(torch.int64)
-    )
+    return gathered[:, :, 1].gather(dim=-1, index=winning_rank).squeeze(-1).to(torch.int64)
 
 
 def _rank_for_token_ids(logits: torch.Tensor, token_ids: torch.Tensor) -> torch.Tensor:
@@ -95,9 +90,9 @@ def _build_logit_debug_record(
         device=base_logits.device,
         dtype=torch.long,
     )
-    valid_mask = torch.arange(
-        max_spec_len, device=base_logits.device
-    ).unsqueeze(0) < num_draft_tokens_tensor.unsqueeze(1)
+    valid_mask = torch.arange(max_spec_len, device=base_logits.device).unsqueeze(0) < num_draft_tokens_tensor.unsqueeze(
+        1
+    )
     base_rows = base_logits[valid_mask].float()
     markov_rows = markov_bias[valid_mask].float()
     final_rows = final_logits[valid_mask].float()
@@ -140,10 +135,7 @@ def _build_logit_debug_record(
         "target_top_ids": torch.topk(target_rows, top_k, dim=-1).indices,
     }
     cpu_values = {name: value.detach().cpu().tolist() for name, value in tensors.items()}
-    rows = [
-        {name: values[row_index] for name, values in cpu_values.items()}
-        for row_index in range(num_tokens)
-    ]
+    rows = [{name: values[row_index] for name, values in cpu_values.items()} for row_index in range(num_tokens)]
     return {
         "record": record_index,
         "num_draft_tokens": num_draft_tokens_tensor.cpu().tolist(),
@@ -173,10 +165,7 @@ class AscendDsparkProposer(AscendDflashProposer):
             return "reference-attention diagnostics perform Python/CPU work"
         if envs.VLLM_ASCEND_DSPARK_CAUSAL_DIAG:
             return "causal-attention diagnostics are enabled"
-        if (
-            envs.VLLM_ASCEND_DSPARK_LOGIT_DEBUG_PATH
-            and envs.VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS > 0
-        ):
+        if envs.VLLM_ASCEND_DSPARK_LOGIT_DEBUG_PATH and envs.VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS > 0:
             return "logit/backbone diagnostics perform CPU snapshots and file I/O"
         if not self.vllm_config.compilation_config.cudagraph_mode.has_full_cudagraphs():
             return "DSpark requires a cudagraph mode containing FULL graphs"
@@ -197,9 +186,9 @@ class AscendDsparkProposer(AscendDflashProposer):
         super().__init__(vllm_config, device, runner=runner)
         # The anchor (bonus) token sits at query offset 0 of each request in
         # the expanded input_ids layout ([batch, 1 + num_speculative_tokens]).
-        self._anchor_indices = torch.arange(
-            self.max_batch_size, device=device, dtype=torch.int64
-        ) * (1 + self.num_speculative_tokens)
+        self._anchor_indices = torch.arange(self.max_batch_size, device=device, dtype=torch.int64) * (
+            1 + self.num_speculative_tokens
+        )
         self._markov_scale = envs.VLLM_ASCEND_DSPARK_MARKOV_SCALE
         self._last_logit_debug: dict[str, torch.Tensor | float] | None = None
         self._last_backbone_debug: dict[str, Any] | None = None
@@ -210,14 +199,15 @@ class AscendDsparkProposer(AscendDflashProposer):
         self._dspark_draft_capture_sizes: list[int] = []
         self._dspark_logged_capture_keys: set[Any] = set()
         self._dspark_logged_replay_keys: set[Any] = set()
+        self._dspark_logged_tail_capture_keys: set[Any] = set()
+        self._dspark_logged_tail_replay_keys: set[Any] = set()
         self._dspark_use_local_vocab_argmax = False
+        self._dspark_sampler_tail_graph_enabled = False
 
     def initialize_cudagraph_keys(self, cudagraph_mode: CUDAGraphMode) -> None:
         query_len = 1 + self.num_speculative_tokens
         graph_enabled = (
-            self.use_cuda_graph
-            and self._dspark_enable_draft_aclgraph
-            and cudagraph_mode.has_full_cudagraphs()
+            self.use_cuda_graph and self._dspark_enable_draft_aclgraph and cudagraph_mode.has_full_cudagraphs()
         )
 
         draft_compilation_config = copy(self.vllm_config.compilation_config)
@@ -237,12 +227,9 @@ class AscendDsparkProposer(AscendDflashProposer):
                 # do not leave a key that would lazily capture during serving.
                 graph_enabled = False
                 logger.warning(
-                    "DSpark draft ACLGraph found no uniform target FULL "
-                    "capture descriptors; keeping the drafter eager."
+                    "DSpark draft ACLGraph found no uniform target FULL capture descriptors; keeping the drafter eager."
                 )
-        dispatcher_mode = (
-            CUDAGraphMode.FULL_DECODE_ONLY if graph_enabled else CUDAGraphMode.NONE
-        )
+        dispatcher_mode = CUDAGraphMode.FULL_DECODE_ONLY if graph_enabled else CUDAGraphMode.NONE
 
         draft_vllm_config = replace(
             self.vllm_config,
@@ -254,17 +241,16 @@ class AscendDsparkProposer(AscendDflashProposer):
             dispatcher_mode,
             query_len,
         )
-        self._dspark_draft_capture_sizes = sorted({
-            descriptor.num_tokens
-            for _, descriptors in self.cudagraph_dispatcher.get_capture_descs()
-            for descriptor in descriptors
-        })
+        self._dspark_draft_capture_sizes = sorted(
+            {
+                descriptor.num_tokens
+                for _, descriptors in self.cudagraph_dispatcher.get_capture_descs()
+                for descriptor in descriptors
+            }
+        )
 
         if self.use_cuda_graph and not graph_enabled:
-            logger.warning(
-                "DSpark draft ACLGraph requires resolved FULL graph support; "
-                "keeping the drafter eager."
-            )
+            logger.warning("DSpark draft ACLGraph requires resolved FULL graph support; keeping the drafter eager.")
             self.use_cuda_graph = False
             self._dspark_enable_draft_aclgraph = False
 
@@ -319,8 +305,8 @@ class AscendDsparkProposer(AscendDflashProposer):
         enable_draft_aclgraph = self.use_cuda_graph and self._dspark_enable_draft_aclgraph
         if enable_draft_aclgraph:
             # The base loader wraps the complete merged draft flow. DSpark must
-            # keep context-KV precompute and sequential Markov sampling outside
-            # capture, so suppress that generic wrapper here.
+            # keep context-KV precompute eager while capturing the backbone and
+            # sampler tail independently, so suppress that generic wrapper here.
             self.use_cuda_graph = False
         try:
             super().load_model(model)
@@ -329,8 +315,7 @@ class AscendDsparkProposer(AscendDflashProposer):
 
         if enable_draft_aclgraph:
             logger.info(
-                "DSpark draft ACLGraph is enabled for the backbone forward; "
-                "context-KV precompute and Markov sampling remain eager."
+                "DSpark draft ACLGraph is enabled for the backbone forward; context-KV precompute remains eager."
             )
             self.update_stream = torch.npu.Stream()
             self._dspark_backbone_runnable: ACLGraphWrapper | Callable = ACLGraphWrapper(
@@ -354,8 +339,7 @@ class AscendDsparkProposer(AscendDflashProposer):
 
         draft_backbone = getattr(getattr(self, "model", None), "model", None)
         self._dspark_use_local_vocab_argmax = all(
-            callable(getattr(self.model, name, None))
-            for name in ("compute_draft_local_logits", "markov_local_bias")
+            callable(getattr(self.model, name, None)) for name in ("compute_draft_local_logits", "markov_local_bias")
         )
         supports_local_argmax = getattr(
             self.model,
@@ -363,15 +347,36 @@ class AscendDsparkProposer(AscendDflashProposer):
             None,
         )
         self._dspark_use_local_vocab_argmax = bool(
-            self._dspark_use_local_vocab_argmax
-            and callable(supports_local_argmax)
-            and supports_local_argmax()
+            self._dspark_use_local_vocab_argmax and callable(supports_local_argmax) and supports_local_argmax()
         )
         if self._dspark_use_local_vocab_argmax:
             logger.info(
-                "DSpark local-vocab argmax is enabled; full-vocab TP gathers "
-                "for the base and Markov heads are skipped."
+                "DSpark local-vocab argmax is enabled; full-vocab TP gathers for the base and Markov heads are skipped."
             )
+        if enable_draft_aclgraph and self._dspark_use_local_vocab_argmax:
+            self._dspark_sampler_tail_runnable: ACLGraphWrapper | Callable = ACLGraphWrapper(
+                self._run_dspark_sampler_tail,
+                self.vllm_config,
+                runtime_mode=CUDAGraphMode.FULL,
+                use_eagle=False,
+                enable_enpu=self.enable_enpu,
+                # The orchestrator synchronizes before updating graph tasks.
+                # The tail follows the backbone on the same current stream
+                # and must not add another host barrier before replay.
+                caller_orders_graph_update=True,
+            )
+            self._dspark_sampler_tail_graph_enabled = True
+            logger.info(
+                "DSpark sampler-tail ACLGraph is enabled; local logits and "
+                "sequential Markov sampling use fixed graph shapes."
+            )
+        else:
+            self._dspark_sampler_tail_runnable = self._sample_parallel_draft_tokens
+            self._dspark_sampler_tail_graph_enabled = False
+            if enable_draft_aclgraph:
+                logger.warning(
+                    "DSpark sampler-tail ACLGraph requires the local-vocab argmax path; keeping Markov sampling eager."
+                )
         if draft_backbone is not None:
             global_rank = dist.get_rank() if dist.is_initialized() else 0
             tp_size = self.vllm_config.parallel_config.tensor_parallel_size
@@ -472,19 +477,15 @@ class AscendDsparkProposer(AscendDflashProposer):
     ) -> None:
         if num_input_tokens <= num_actual_tokens:
             return
-        self.input_ids[num_actual_tokens:num_input_tokens].fill_(
-            self.parallel_drafting_token_id
-        )
+        self.input_ids[num_actual_tokens:num_input_tokens].fill_(self.parallel_drafting_token_id)
         self.positions[num_actual_tokens:num_input_tokens].zero_()
-        self._slot_mapping_buffer[num_actual_tokens:num_input_tokens].fill_(
-            PADDING_SLOT_ID
-        )
+        self._slot_mapping_buffer[num_actual_tokens:num_input_tokens].fill_(PADDING_SLOT_ID)
 
     def _synchronize_before_dspark_graph_update(self) -> None:
         if not self.enable_enpu:
             # graph_task_update mutates the captured attention handles on a
-            # side stream. Wait for the previous split-backbone replay (and
-            # its eager Markov tail) before allowing the next update to start.
+            # side stream. Wait for the previous split-backbone replay and its
+            # sampler tail before allowing the next update to start.
             torch.npu.current_stream().synchronize()
 
     def _run_dspark_model(self, **model_inputs: Any) -> torch.Tensor:
@@ -493,9 +494,7 @@ class AscendDsparkProposer(AscendDflashProposer):
     def _run_dspark_model_from_graph_buffers(self) -> torch.Tensor:
         model_inputs = self._dspark_graph_model_inputs
         if model_inputs is None:
-            raise RuntimeError(
-                "DSpark draft ACLGraph inputs were not prepared before capture/replay"
-            )
+            raise RuntimeError("DSpark draft ACLGraph inputs were not prepared before capture/replay")
         return self._run_dspark_model(**model_inputs)
 
     def _run_prepared_dspark_model(
@@ -503,10 +502,7 @@ class AscendDsparkProposer(AscendDflashProposer):
         run_model: Callable[..., torch.Tensor],
         model_inputs: dict[str, Any],
     ) -> torch.Tensor:
-        if (
-            self._dspark_graph_runnable_uses_buffers
-            and run_model is self._dspark_backbone_runnable
-        ):
+        if self._dspark_graph_runnable_uses_buffers and run_model is self._dspark_backbone_runnable:
             self._dspark_graph_model_inputs = model_inputs
             forward_context = get_forward_context()
             batch_descriptor = getattr(forward_context, "batch_descriptor", None)
@@ -532,6 +528,51 @@ class AscendDsparkProposer(AscendDflashProposer):
             return output
         return run_model(**model_inputs)
 
+    def _run_dspark_sampler_tail(
+        self,
+        last_hidden_states: torch.Tensor,
+    ) -> torch.Tensor:
+        """Run the fixed-shape local-logits and Markov sampling tail."""
+        forward_context = get_forward_context()
+        batch_descriptor = getattr(forward_context, "batch_descriptor", None)
+        graph_num_reqs = getattr(batch_descriptor, "num_reqs", None)
+        if graph_num_reqs is None:
+            raise RuntimeError("DSpark sampler-tail ACLGraph requires a fixed request count")
+        num_sample_rows = int(graph_num_reqs) * self.num_speculative_tokens
+        sample_hidden_states = last_hidden_states[self.token_indices_to_sample[:num_sample_rows]]
+        return self._sample_parallel_draft_tokens(sample_hidden_states)
+
+    def _run_prepared_dspark_sampler_tail(
+        self,
+        last_hidden_states: torch.Tensor,
+    ) -> torch.Tensor:
+        run_tail = self._dspark_sampler_tail_runnable
+        if not self._dspark_sampler_tail_graph_enabled:
+            return run_tail(last_hidden_states)
+
+        forward_context = get_forward_context()
+        batch_descriptor = getattr(forward_context, "batch_descriptor", None)
+        graph_entries = getattr(run_tail, "concrete_aclgraph_entries", {})
+        graph_entry = graph_entries.get(batch_descriptor)
+        had_graph = graph_entry is not None and graph_entry.aclgraph is not None
+        output = run_tail(last_hidden_states)
+        graph_entries = getattr(run_tail, "concrete_aclgraph_entries", {})
+        graph_entry = graph_entries.get(batch_descriptor)
+        has_graph = graph_entry is not None and graph_entry.aclgraph is not None
+        if has_graph and not had_graph and batch_descriptor not in self._dspark_logged_tail_capture_keys:
+            logger.info(
+                "Captured DSpark sampler-tail ACLGraph for %s",
+                batch_descriptor,
+            )
+            self._dspark_logged_tail_capture_keys.add(batch_descriptor)
+        elif had_graph and batch_descriptor not in self._dspark_logged_tail_replay_keys:
+            logger.info(
+                "Replayed DSpark sampler-tail ACLGraph for %s",
+                batch_descriptor,
+            )
+            self._dspark_logged_tail_replay_keys.add(batch_descriptor)
+        return output
+
     def _update_full_graph_params_if_needed(
         self,
         forward_context,
@@ -545,7 +586,7 @@ class AscendDsparkProposer(AscendDflashProposer):
         ):
             # The DSpark orchestrator updates graph tasks immediately before
             # backbone replay. Base's normal post-runnable update would happen
-            # after eager Markov kernels have already been enqueued.
+            # after sampler-tail kernels have already been enqueued.
             return
         return super()._update_full_graph_params_if_needed(
             forward_context,
@@ -584,9 +625,7 @@ class AscendDsparkProposer(AscendDflashProposer):
             )
 
         if lmhead_tp_enable():
-            raise NotImplementedError(
-                "DSpark drafting does not support LM-head tensor parallel yet."
-            )
+            raise NotImplementedError("DSpark drafting does not support LM-head tensor parallel yet.")
 
         self._pad_dspark_query_buffers(num_tokens, num_input_tokens)
         self._synchronize_before_dspark_graph_update()
@@ -606,6 +645,19 @@ class AscendDsparkProposer(AscendDflashProposer):
             last_hidden_states, _ = hidden_states
         else:
             last_hidden_states = hidden_states
+
+        if self._dspark_sampler_tail_graph_enabled:
+            expected_sample_rows = batch_size * self.num_speculative_tokens
+            if token_indices_to_sample.shape[0] != expected_sample_rows:
+                raise RuntimeError(
+                    "DSpark sampling indices do not match the real request "
+                    f"batch: rows={token_indices_to_sample.shape[0]}, "
+                    f"expected={expected_sample_rows}"
+                )
+            draft_tokens = self._run_prepared_dspark_sampler_tail(last_hidden_states)
+            # The tail graph uses the descriptor's fixed DP-uniform request
+            # count. Only locally real requests are returned to verification.
+            return draft_tokens[:batch_size]
 
         sample_hidden_states = last_hidden_states[token_indices_to_sample]
         return self._sample_parallel_draft_tokens(sample_hidden_states)
@@ -627,18 +679,14 @@ class AscendDsparkProposer(AscendDflashProposer):
         debug_path = envs.VLLM_ASCEND_DSPARK_LOGIT_DEBUG_PATH
         max_records = max(0, envs.VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS)
         if draft_backbone is not None:
-            draft_backbone._dspark_backbone_debug_enabled = (
-                bool(debug_path) and self._logit_debug_records < max_records
-            )
+            draft_backbone._dspark_backbone_debug_enabled = bool(debug_path) and self._logit_debug_records < max_records
         if not debug_path or captured is None or self._logit_debug_records >= max_records:
             return
 
         record_index = self._logit_debug_records
         self._logit_debug_records += 1
         if draft_backbone is not None:
-            draft_backbone._dspark_backbone_debug_enabled = (
-                self._logit_debug_records < max_records
-            )
+            draft_backbone._dspark_backbone_debug_enabled = self._logit_debug_records < max_records
         try:
             global_rank = dist.get_rank() if dist.is_initialized() else 0
             tp_size = self.vllm_config.parallel_config.tensor_parallel_size
@@ -667,9 +715,7 @@ class AscendDsparkProposer(AscendDflashProposer):
         except Exception:
             logger.exception("Failed to write DSpark logit debug record")
 
-    def _sample_parallel_draft_tokens(
-        self, sample_hidden_states: torch.Tensor
-    ) -> torch.Tensor:
+    def _sample_parallel_draft_tokens(self, sample_hidden_states: torch.Tensor) -> torch.Tensor:
         """Sequential Markov sampling over the parallel draft block.
 
         Args:
@@ -689,16 +735,10 @@ class AscendDsparkProposer(AscendDflashProposer):
         )
         capture_debug = (
             force_full_vocab
-            and self._logit_debug_records
-            < max(0, envs.VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS)
-            and bool(
-                getattr(draft_backbone, "_dspark_backbone_debug_enabled", False)
-            )
+            and self._logit_debug_records < max(0, envs.VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS)
+            and bool(getattr(draft_backbone, "_dspark_backbone_debug_enabled", False))
         )
-        use_local_vocab_argmax = (
-            getattr(self, "_dspark_use_local_vocab_argmax", False)
-            and not force_full_vocab
-        )
+        use_local_vocab_argmax = getattr(self, "_dspark_use_local_vocab_argmax", False) and not force_full_vocab
 
         # One GEMM for all block positions, in draft-vocab space; the Markov
         # bias is added per step before the argmax.  In the normal greedy path,
@@ -713,15 +753,11 @@ class AscendDsparkProposer(AscendDflashProposer):
         markov_debug = torch.empty_like(base_logits) if capture_debug else None
         final_debug = torch.empty_like(base_logits) if capture_debug else None
         prev_debug = (
-            torch.empty((batch_size, num_spec), dtype=torch.int64, device=base_logits.device)
-            if capture_debug
-            else None
+            torch.empty((batch_size, num_spec), dtype=torch.int64, device=base_logits.device) if capture_debug else None
         )
 
         prev_tokens = self.input_ids[self._anchor_indices[:batch_size]]
-        draft_tokens = base_logits.new_empty(
-            (batch_size, num_spec), dtype=torch.int64
-        )
+        draft_tokens = base_logits.new_empty((batch_size, num_spec), dtype=torch.int64)
         for step in range(num_spec):
             markov_embed = model.markov_embed(prev_tokens)
             if use_local_vocab_argmax:
