@@ -147,6 +147,11 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
     # DSpark-style proposers replace the parallel argmax with a sequential
     # Markov-head sampling loop (see AscendDsparkProposer).
     uses_markov_head = False
+    # GLM draft graph support must be explicitly opted into by a proposer.
+    # Most GLM speculative paths still rely on Python-side mutable state that
+    # is unsafe to capture. Qwen3 DSpark provides its own graph boundary and
+    # overrides this flag.
+    supports_glm_draft_aclgraph = False
 
     def __init__(self, vllm_config: VllmConfig, device: torch.device, pass_hidden_states_to_model: bool, runner=None):
         super().__init__(vllm_config, device, pass_hidden_states_to_model, runner=runner)
@@ -217,16 +222,11 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             self.tp_group_context = nullcontext()
 
         self.use_cuda_graph = self.runner._use_aclgraph() and not self.speculative_config.enforce_eager
-        self._raise_if_padded_drafter_batch_disabled_and_full_graph_enabled()
 
-        # GLM series models: speculative decoding does not yet support running
-        # the draft model in graph mode. Force the draft model to always use
-        # eager mode. This is equivalent to the user adding
-        # `"enforce_eager": true` to the `--speculative-config`, and keeps
-        # the target model's graph-mode setting untouched.
-        # TODO(lilinsiman): Remove this code segment after future versions of the GLM
-        # series models support graph input for speculative inference.
-        if _is_glm_model(self.vllm_config.model_config):
+        # GLM draft graph support is opt-in. Proposers without an explicit,
+        # graph-safe capture boundary remain eager while the target model's
+        # graph setting stays untouched.
+        if _is_glm_model(self.vllm_config.model_config) and not self.supports_glm_draft_aclgraph:
             if self.use_cuda_graph:
                 logger.warning(
                     "GLM series models with speculative decoding currently do "
@@ -236,6 +236,18 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                     "speculative decoding will be added in a future release. "
                 )
             self.use_cuda_graph = False
+
+        if self.use_cuda_graph:
+            disabled_reason = self._draft_aclgraph_disabled_reason()
+            if disabled_reason is not None:
+                logger.warning(
+                    "Draft ACLGraph has been disabled for %s: %s",
+                    type(self).__name__,
+                    disabled_reason,
+                )
+                self.use_cuda_graph = False
+
+        self._raise_if_padded_drafter_batch_disabled_and_full_graph_enabled()
 
         # TODO: Remove it when the bug of fx-graph is solved
         self.maybe_eager_context: AbstractContextManager[Any] = nullcontext()
@@ -294,6 +306,26 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
                 "supports padded drafter batch. Please unset "
                 "disable_padded_drafter_batch in the speculative_config."
             )
+
+    def _draft_aclgraph_disabled_reason(self) -> str | None:
+        """Return a proposer-specific reason to keep the drafter eager."""
+        return None
+
+    def _draft_cudagraph_dispatcher(self):
+        """Return the dispatcher used for merged draft FULL graphs.
+
+        Existing EAGLE/DFlash paths share the target dispatcher's graph keys.
+        Proposers with a different fixed query width, such as DSpark, override
+        this hook with a dedicated dispatcher.
+        """
+        return self.runner.cudagraph_dispatcher
+
+    def _draft_uniform_decode(self, target_model_batch_desc: BatchDescriptor) -> bool:
+        return target_model_batch_desc.uniform
+
+    def _sync_draft_cudagraph_mode_across_dp(self) -> bool:
+        """Whether DP ranks must agree on the draft graph runtime mode."""
+        return False
 
     def _get_model(self) -> nn.Module:
         """
@@ -801,28 +833,59 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             query_lens_d, ori_token_indices_to_sample = long_seq_args
         assert self.runner is not None
 
-        has_lora = len(self.runner.input_batch.lora_id_to_lora_request) > 0
-        uniform_decode = target_model_batch_desc.uniform
+        num_active_loras = len(self.runner.input_batch.lora_id_to_lora_request)
+        has_lora = num_active_loras > 0
+        uniform_decode = self._draft_uniform_decode(target_model_batch_desc)
+        draft_cudagraph_dispatcher = self._draft_cudagraph_dispatcher()
+        initial_aclgraph_runtime_mode = CUDAGraphMode.NONE
 
         if self.use_cuda_graph:
-            _, batch_descriptor = self.runner.cudagraph_dispatcher.dispatch(
-                num_tokens=num_tokens, uniform_decode=uniform_decode, has_lora=has_lora
+            initial_aclgraph_runtime_mode, batch_descriptor = draft_cudagraph_dispatcher.dispatch(
+                num_tokens=num_tokens,
+                uniform_decode=uniform_decode,
+                has_lora=has_lora,
+                num_active_loras=num_active_loras,
             )
             num_input_tokens = batch_descriptor.num_tokens
         else:
             num_input_tokens = num_tokens
 
-        (
-            num_input_tokens,
-            num_tokens_across_dp,
-            _,
-        ) = self.runner._sync_metadata_across_dp(num_input_tokens, is_draft_model=True)
+        sync_draft_cudagraph_mode = self._sync_draft_cudagraph_mode_across_dp()
+        if sync_draft_cudagraph_mode:
+            (
+                num_input_tokens,
+                num_tokens_across_dp,
+                synced_cudagraph_mode,
+            ) = self.runner._sync_metadata_across_dp(
+                num_input_tokens,
+                is_draft_model=True,
+                cudagraph_mode=initial_aclgraph_runtime_mode,
+                allow_dp_padding=self.use_cuda_graph,
+            )
+        else:
+            (
+                num_input_tokens,
+                num_tokens_across_dp,
+                synced_cudagraph_mode,
+            ) = self.runner._sync_metadata_across_dp(num_input_tokens, is_draft_model=True)
 
         if self.use_cuda_graph:
-            aclgraph_runtime_mode, batch_descriptor = self.runner.cudagraph_dispatcher.dispatch(
-                num_tokens=num_input_tokens, uniform_decode=uniform_decode, has_lora=has_lora
+            dispatch_kwargs: dict[str, Any] = {}
+            if sync_draft_cudagraph_mode:
+                dispatch_kwargs["valid_modes"] = {synced_cudagraph_mode}
+            aclgraph_runtime_mode, batch_descriptor = draft_cudagraph_dispatcher.dispatch(
+                num_tokens=num_input_tokens,
+                uniform_decode=uniform_decode,
+                has_lora=has_lora,
+                num_active_loras=num_active_loras,
+                **dispatch_kwargs,
             )
             num_input_tokens = batch_descriptor.num_tokens
+            if sync_draft_cudagraph_mode and num_tokens_across_dp is not None:
+                # DSpark uses one shared FULL graph key across DP ranks. The
+                # second dispatch may round the synchronized maximum up again,
+                # so every element must reflect that final graph size.
+                num_tokens_across_dp.fill_(num_input_tokens)
         else:
             aclgraph_runtime_mode = CUDAGraphMode.NONE
             batch_descriptor = None

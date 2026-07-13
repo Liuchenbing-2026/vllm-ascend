@@ -16,11 +16,13 @@
 #
 """Unit tests for DSpark speculators support (GLM-5.2 DSpark)."""
 
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 import torch
 import torch.nn as nn
 
+import vllm_ascend.spec_decode.dspark_proposer as dspark_proposer_module
 from vllm_ascend import envs
 from vllm_ascend.patch.platform.patch_speculators_dspark import update_dspark
 from vllm_ascend.patch.worker.patch_qwen3_dflash import (
@@ -45,6 +47,389 @@ GLM52_SPECULATOR_CONFIG = {
     "confidence_head_with_markov": True,
     "target_hidden_size": None,
 }
+
+
+class TestDraftAclGraphBoundary:
+    @staticmethod
+    def _graph_policy_proposer():
+        return SimpleNamespace(
+            vllm_config=SimpleNamespace(
+                compilation_config=SimpleNamespace(
+                    cudagraph_mode=SimpleNamespace(
+                        has_full_cudagraphs=lambda: True,
+                    ),
+                ),
+                lora_config=None,
+            ),
+            pcp_size=1,
+            dcp_size=1,
+        )
+
+    def test_diagnostics_report_why_draft_aclgraph_is_disabled(
+        self,
+        monkeypatch,
+    ):
+        proposer = self._graph_policy_proposer()
+        monkeypatch.setattr(dspark_proposer_module, "lmhead_tp_enable", lambda: False)
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_REFERENCE_ATTENTION", "0")
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_CAUSAL_DIAG", "0")
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_LOGIT_DEBUG_PATH", "")
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS", "8")
+
+        assert AscendDsparkProposer._draft_aclgraph_disabled_reason(proposer) is None
+
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_REFERENCE_ATTENTION", "1")
+        reason = AscendDsparkProposer._draft_aclgraph_disabled_reason(proposer)
+        assert reason == "reference-attention diagnostics perform Python/CPU work"
+
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_REFERENCE_ATTENTION", "0")
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_CAUSAL_DIAG", "1")
+        reason = AscendDsparkProposer._draft_aclgraph_disabled_reason(proposer)
+        assert reason == "causal-attention diagnostics are enabled"
+
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_CAUSAL_DIAG", "0")
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_LOGIT_DEBUG_PATH", "capture")
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS", "1")
+        reason = AscendDsparkProposer._draft_aclgraph_disabled_reason(proposer)
+        assert reason == "logit/backbone diagnostics perform CPU snapshots and file I/O"
+
+        # A path with a zero record budget performs no diagnostic capture and
+        # therefore must not disable the production graph boundary.
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS", "0")
+        assert AscendDsparkProposer._draft_aclgraph_disabled_reason(proposer) is None
+
+        proposer.vllm_config.lora_config = object()
+        reason = AscendDsparkProposer._draft_aclgraph_disabled_reason(proposer)
+        assert reason == "DSpark draft ACLGraph does not yet support LoRA"
+        proposer.vllm_config.lora_config = None
+
+    def test_capture_sizes_use_anchor_plus_num_speculative_tokens(
+        self,
+        monkeypatch,
+    ):
+        class FakeCompilationConfig:
+            def __init__(self):
+                self.cudagraph_capture_sizes = [16, 32]
+                self.max_cudagraph_capture_size = 32
+
+            def adjust_cudagraph_sizes_for_spec_decode(self, *args):
+                raise AssertionError(
+                    "target FULL descriptors should define DSpark capture sizes"
+                )
+
+        @dataclass
+        class FakeVllmConfig:
+            compilation_config: FakeCompilationConfig
+            parallel_config: SimpleNamespace
+
+        target_dispatcher = SimpleNamespace(
+            get_capture_descs=lambda: [
+                (
+                    dspark_proposer_module.CUDAGraphMode.FULL,
+                    [
+                        SimpleNamespace(num_reqs=3, uniform=True),
+                        SimpleNamespace(num_reqs=1, uniform=True),
+                        SimpleNamespace(num_reqs=None, uniform=True),
+                        SimpleNamespace(num_reqs=7, uniform=False),
+                    ],
+                ),
+                (
+                    dspark_proposer_module.CUDAGraphMode.PIECEWISE,
+                    [SimpleNamespace(num_reqs=9, uniform=True)],
+                ),
+            ],
+        )
+        draft_dispatchers = []
+
+        class FakeDraftDispatcher:
+            def __init__(self, vllm_config):
+                self.vllm_config = vllm_config
+                self.uniform_decode_query_len = None
+                self.initialize_args = None
+                draft_dispatchers.append(self)
+
+            def initialize_cudagraph_keys(self, mode, query_len):
+                self.initialize_args = (mode, query_len)
+
+            def get_capture_descs(self):
+                descriptors = [
+                    SimpleNamespace(num_tokens=size)
+                    for size in self.vllm_config.compilation_config.cudagraph_capture_sizes
+                ]
+                return [(dspark_proposer_module.CUDAGraphMode.FULL, descriptors)]
+
+        monkeypatch.setattr(
+            dspark_proposer_module,
+            "CudagraphDispatcher",
+            FakeDraftDispatcher,
+        )
+        original_compilation_config = FakeCompilationConfig()
+        proposer = SimpleNamespace(
+            num_speculative_tokens=7,
+            runner=SimpleNamespace(cudagraph_dispatcher=target_dispatcher),
+            use_cuda_graph=True,
+            _dspark_enable_draft_aclgraph=True,
+            _dspark_draft_capture_sizes=[],
+            vllm_config=FakeVllmConfig(
+                compilation_config=original_compilation_config,
+                parallel_config=SimpleNamespace(tensor_parallel_size=8),
+            ),
+        )
+        proposer._derive_draft_cudagraph_capture_sizes = (
+            lambda query_len: AscendDsparkProposer._derive_draft_cudagraph_capture_sizes(
+                proposer,
+                query_len,
+            )
+        )
+
+        AscendDsparkProposer.initialize_cudagraph_keys(
+            proposer,
+            dspark_proposer_module.CUDAGraphMode.FULL,
+        )
+
+        query_len = 1 + proposer.num_speculative_tokens
+        capture_sizes = AscendDsparkProposer.get_cudagraph_capture_sizes(proposer)
+        assert query_len == 8
+        assert capture_sizes == [8, 24]
+        assert all(size % query_len == 0 for size in capture_sizes)
+        assert original_compilation_config.cudagraph_capture_sizes == [16, 32]
+        assert draft_dispatchers[0].uniform_decode_query_len == query_len
+        assert draft_dispatchers[0].initialize_args == (
+            dspark_proposer_module.CUDAGraphMode.FULL_DECODE_ONLY,
+            query_len,
+        )
+        assert (
+            draft_dispatchers[0].vllm_config.compilation_config.max_cudagraph_capture_size
+            == 24
+        )
+
+    def test_padding_only_overwrites_the_selected_graph_tail(self):
+        proposer = SimpleNamespace(
+            input_ids=torch.arange(12, dtype=torch.int64),
+            positions=torch.arange(100, 112, dtype=torch.int32),
+            _slot_mapping_buffer=torch.arange(200, 212, dtype=torch.int32),
+            parallel_drafting_token_id=154856,
+        )
+        input_prefix = proposer.input_ids[:5].clone()
+        position_prefix = proposer.positions[:5].clone()
+        slot_mapping_prefix = proposer._slot_mapping_buffer[:5].clone()
+        input_suffix = proposer.input_ids[9:].clone()
+        position_suffix = proposer.positions[9:].clone()
+        slot_mapping_suffix = proposer._slot_mapping_buffer[9:].clone()
+
+        AscendDsparkProposer._pad_dspark_query_buffers(
+            proposer,
+            num_actual_tokens=5,
+            num_input_tokens=9,
+        )
+
+        torch.testing.assert_close(proposer.input_ids[:5], input_prefix)
+        torch.testing.assert_close(proposer.positions[:5], position_prefix)
+        torch.testing.assert_close(
+            proposer._slot_mapping_buffer[:5], slot_mapping_prefix
+        )
+        assert proposer.input_ids[5:9].tolist() == [154856] * 4
+        assert proposer.positions[5:9].tolist() == [0] * 4
+        assert proposer._slot_mapping_buffer[5:9].tolist() == [-1] * 4
+        torch.testing.assert_close(proposer.input_ids[9:], input_suffix)
+        torch.testing.assert_close(proposer.positions[9:], position_suffix)
+        torch.testing.assert_close(
+            proposer._slot_mapping_buffer[9:], slot_mapping_suffix
+        )
+
+    def test_dummy_second_dispatch_broadcasts_graph_size_to_all_dp_ranks(
+        self,
+        monkeypatch,
+    ):
+        dispatch_calls = []
+
+        class FakeDispatcher:
+            def dispatch(self, **kwargs):
+                dispatch_calls.append(kwargs)
+                num_tokens = 8 if len(dispatch_calls) == 1 else 12
+                return (
+                    dspark_proposer_module.CUDAGraphMode.FULL,
+                    SimpleNamespace(num_tokens=num_tokens, num_reqs=3),
+                )
+
+        final_sizes = torch.tensor([8, 8], dtype=torch.int32)
+        base_calls = []
+
+        def base_dummy_run(_self, **kwargs):
+            base_calls.append(kwargs)
+            return None
+
+        monkeypatch.setattr(
+            dspark_proposer_module.AscendDflashProposer,
+            "dummy_run",
+            base_dummy_run,
+        )
+        proposer = object.__new__(AscendDsparkProposer)
+        proposer.use_cuda_graph = True
+        proposer._dspark_enable_draft_aclgraph = True
+        proposer.num_speculative_tokens = 3
+        proposer.max_query_tokens = 32
+        proposer.cudagraph_dispatcher = FakeDispatcher()
+        proposer._slot_mapping_buffer = torch.zeros(16, dtype=torch.int32)
+        proposer._context_slot_mapping_buffer = torch.zeros(16, dtype=torch.int32)
+        proposer.runner = SimpleNamespace(
+            input_batch=SimpleNamespace(lora_id_to_lora_request={}),
+            dp_rank=1,
+            _sync_metadata_across_dp=lambda *args, **kwargs: (
+                8,
+                final_sizes,
+                dspark_proposer_module.CUDAGraphMode.FULL,
+            ),
+        )
+
+        AscendDsparkProposer.dummy_run(
+            proposer,
+            num_tokens=8,
+            num_reqs=2,
+            num_tokens_across_dp=final_sizes,
+            aclgraph_runtime_mode=dspark_proposer_module.CUDAGraphMode.FULL,
+        )
+
+        assert len(dispatch_calls) == 2
+        assert dispatch_calls[1]["num_tokens"] == 8
+        assert final_sizes.tolist() == [12, 12]
+        assert base_calls[0]["num_tokens"] == 12
+        assert base_calls[0]["num_tokens_across_dp"] is final_sizes
+        assert proposer._slot_mapping_buffer[:12].tolist() == [-1] * 12
+        assert proposer._context_slot_mapping_buffer[:12].tolist() == [-1] * 12
+
+    def test_run_prepared_graph_model_uses_no_arg_buffer_boundary(self):
+        graph_calls = []
+        eager_calls = []
+
+        def graph_runner():
+            graph_calls.append("called")
+            return torch.tensor([11])
+
+        def eager_runner(**kwargs):
+            eager_calls.append(kwargs)
+            return torch.tensor([22])
+
+        proposer = SimpleNamespace(
+            _dspark_graph_runnable_uses_buffers=True,
+            _dspark_backbone_runnable=graph_runner,
+            _dspark_graph_model_inputs=None,
+        )
+        model_inputs = {
+            "input_ids": torch.tensor([1, 2]),
+            "positions": torch.tensor([5, 6], dtype=torch.int32),
+        }
+
+        graph_output = AscendDsparkProposer._run_prepared_dspark_model(
+            proposer,
+            graph_runner,
+            model_inputs,
+        )
+        eager_output = AscendDsparkProposer._run_prepared_dspark_model(
+            proposer,
+            eager_runner,
+            model_inputs,
+        )
+
+        assert graph_calls == ["called"]
+        assert proposer._dspark_graph_model_inputs is model_inputs
+        assert eager_calls == [model_inputs]
+        torch.testing.assert_close(graph_output, torch.tensor([11]))
+        torch.testing.assert_close(eager_output, torch.tensor([22]))
+
+    def test_full_orchestrator_keeps_context_and_markov_outside_model_graph(
+        self,
+        monkeypatch,
+    ):
+        events = []
+        model_inputs = {
+            "input_ids": torch.tensor([7, 8, 9, 10]),
+            "positions": torch.tensor([3, 4, 5, 6], dtype=torch.int32),
+        }
+        model_output = torch.arange(16, dtype=torch.float32).view(8, 2)
+        graph_runner = object()
+
+        def pad_query_buffers(num_actual_tokens, num_input_tokens):
+            events.append(("pad", num_actual_tokens, num_input_tokens))
+
+        def synchronize_before_update():
+            events.append(("barrier",))
+
+        def build_model_inputs(num_input_tokens):
+            events.append(("context_kv", num_input_tokens))
+            return model_inputs
+
+        def run_prepared(run_model, prepared_inputs):
+            events.append(("model", run_model, prepared_inputs))
+            return model_output
+
+        def update_graph_params(forward_context, num_input_tokens, metadata):
+            events.append(
+                (
+                    "graph_update",
+                    forward_context.cudagraph_runtime_mode,
+                    num_input_tokens,
+                    metadata,
+                )
+            )
+
+        def sample_markov(sample_hidden_states):
+            events.append(("markov", sample_hidden_states.clone()))
+            return torch.tensor([[101, 102]], dtype=torch.int64)
+
+        proposer = SimpleNamespace(
+            use_cuda_graph=True,
+            _dspark_enable_draft_aclgraph=True,
+            _dspark_backbone_runnable=graph_runner,
+            _pad_dspark_query_buffers=pad_query_buffers,
+            _synchronize_before_dspark_graph_update=synchronize_before_update,
+            build_model_inputs_first_pass=build_model_inputs,
+            _update_full_graph_params=update_graph_params,
+            _run_prepared_dspark_model=run_prepared,
+            model_returns_tuple=lambda: False,
+            _sample_parallel_draft_tokens=sample_markov,
+        )
+        monkeypatch.setattr(
+            dspark_proposer_module,
+            "get_forward_context",
+            lambda: SimpleNamespace(
+                cudagraph_runtime_mode=dspark_proposer_module.CUDAGraphMode.FULL,
+            ),
+        )
+        monkeypatch.setattr(dspark_proposer_module, "lmhead_tp_enable", lambda: False)
+
+        draft_tokens = AscendDsparkProposer._run_merged_draft(
+            proposer,
+            num_input_tokens=8,
+            batch_size=1,
+            token_indices_to_sample=torch.tensor([1, 3], dtype=torch.int64),
+            target_positions=torch.empty(0, dtype=torch.int32),
+            inputs_embeds=None,
+            multi_steps_attn_metadata=[],
+            num_tokens=4,
+        )
+
+        assert [event[0] for event in events] == [
+            "pad",
+            "barrier",
+            "context_kv",
+            "graph_update",
+            "model",
+            "markov",
+        ]
+        assert events[2] == ("context_kv", 8)
+        assert events[3] == (
+            "graph_update",
+            dspark_proposer_module.CUDAGraphMode.FULL,
+            8,
+            [],
+        )
+        assert events[4] == ("model", graph_runner, model_inputs)
+        torch.testing.assert_close(events[5][1], model_output[[1, 3]])
+        torch.testing.assert_close(
+            draft_tokens,
+            torch.tensor([[101, 102]], dtype=torch.int64),
+        )
 
 
 class TestUpdateDspark:

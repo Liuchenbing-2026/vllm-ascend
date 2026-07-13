@@ -5002,6 +5002,7 @@ class NPUModelRunner(GPUModelRunner):
             and self.drafter is not None
             and (
                 self.speculative_config.use_eagle()
+                or isinstance(self.drafter, AscendDsparkProposer)
                 or self.speculative_config.uses_extract_hidden_states()
             )
         ):
@@ -5017,6 +5018,17 @@ class NPUModelRunner(GPUModelRunner):
             for _, descs in capture_descs
             for desc in descs
         })
+        draft_capture_sizes = capture_sizes
+        if self.speculative_config and self.drafter is not None:
+            get_draft_capture_sizes = getattr(
+                self.drafter,
+                "get_cudagraph_capture_sizes",
+                None,
+            )
+            if get_draft_capture_sizes is not None:
+                draft_capture_sizes = sorted(
+                    set(capture_sizes).union(get_draft_capture_sizes())
+                )
 
         # NOTE: Since aclgraph_batch_sizes cannot be determined until here,
         # we set the graph params right before initializing the keys.
@@ -5025,7 +5037,7 @@ class NPUModelRunner(GPUModelRunner):
         if self.use_aclgraph:
             set_graph_params(capture_sizes)
             if self.speculative_config:
-                set_draft_graph_params(capture_sizes)
+                set_draft_graph_params(draft_capture_sizes)
 
     def profile_cudagraph_memory(self) -> int:
         parent_module_name = _get_gpu_model_runner_module_name(self)
