@@ -339,3 +339,33 @@ class AscendLogitsProcessor(LogitsProcessor):
                 logits = logits[..., : lm_head.num_org_embeddings_per_partition]
 
         return logits
+
+    def get_local_logits(
+        self,
+        hidden_states: torch.Tensor,
+        lm_head: AscendParallelLMHead,
+        embedding_bias: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Return this TP rank's un-gathered, post-processed vocab shard.
+
+        This is intended for algorithms that combine multiple vocab-parallel
+        heads before selecting a token.  Gathering each head independently
+        would materialize the full vocabulary several times; callers can add
+        matching local shards and reduce only their final argmax instead.
+        """
+        if self.logits_as_input:
+            raise ValueError("local LM-head logits require logits_as_input=False")
+        logits = lm_head.quant_method.apply(
+            lm_head,
+            hidden_states,
+            bias=embedding_bias,
+        )
+        if logits is None:
+            raise RuntimeError("vocab-parallel LM head returned no local logits")
+
+        logits = logits[..., : lm_head.num_org_embeddings_per_partition]
+        if self.soft_cap is not None:
+            logits = torch.tanh(logits / self.soft_cap) * self.soft_cap
+        if self.scale != 1.0:
+            logits = logits * self.scale
+        return logits

@@ -38,6 +38,34 @@ from vllm_ascend.utils import lmhead_tp_enable
 _DSPARK_LOGIT_DEBUG_TOP_K = 5
 
 
+def _dspark_vocab_parallel_argmax(
+    local_logits: torch.Tensor,
+    lm_head: Any,
+) -> torch.Tensor:
+    """Select a global token from TP-local logits with one tiny all-gather."""
+    local_max_values, local_indices = local_logits.max(dim=-1)
+    vocab_start_index = int(lm_head.shard_indices.org_vocab_start_index)
+    global_indices = local_indices + vocab_start_index
+    group = lm_head.comm_group
+    if group.world_size == 1:
+        return global_indices.to(torch.int64)
+
+    # Float32 represents the supported (<2**24) draft vocab ids exactly.
+    local_pairs = torch.stack(
+        (local_max_values.float(), global_indices.float()),
+        dim=-1,
+    )
+    gathered = group.all_gather(local_pairs, dim=-1)
+    gathered = gathered.view(local_logits.shape[0], group.world_size, 2)
+    winning_rank = gathered[:, :, 0].argmax(dim=-1, keepdim=True)
+    return (
+        gathered[:, :, 1]
+        .gather(dim=-1, index=winning_rank)
+        .squeeze(-1)
+        .to(torch.int64)
+    )
+
+
 def _rank_for_token_ids(logits: torch.Tensor, token_ids: torch.Tensor) -> torch.Tensor:
     selected = logits.gather(1, token_ids.unsqueeze(1))
     return (logits > selected).sum(dim=1) + 1
@@ -182,6 +210,7 @@ class AscendDsparkProposer(AscendDflashProposer):
         self._dspark_draft_capture_sizes: list[int] = []
         self._dspark_logged_capture_keys: set[Any] = set()
         self._dspark_logged_replay_keys: set[Any] = set()
+        self._dspark_use_local_vocab_argmax = False
 
     def initialize_cudagraph_keys(self, cudagraph_mode: CUDAGraphMode) -> None:
         query_len = 1 + self.num_speculative_tokens
@@ -324,6 +353,25 @@ class AscendDsparkProposer(AscendDflashProposer):
             self._dspark_graph_runnable_uses_buffers = False
 
         draft_backbone = getattr(getattr(self, "model", None), "model", None)
+        self._dspark_use_local_vocab_argmax = all(
+            callable(getattr(self.model, name, None))
+            for name in ("compute_draft_local_logits", "markov_local_bias")
+        )
+        supports_local_argmax = getattr(
+            self.model,
+            "supports_local_markov_argmax",
+            None,
+        )
+        self._dspark_use_local_vocab_argmax = bool(
+            self._dspark_use_local_vocab_argmax
+            and callable(supports_local_argmax)
+            and supports_local_argmax()
+        )
+        if self._dspark_use_local_vocab_argmax:
+            logger.info(
+                "DSpark local-vocab argmax is enabled; full-vocab TP gathers "
+                "for the base and Markov heads are skipped."
+            )
         if draft_backbone is not None:
             global_rank = dist.get_rank() if dist.is_initialized() else 0
             tp_size = self.vllm_config.parallel_config.tensor_parallel_size
@@ -636,18 +684,32 @@ class AscendDsparkProposer(AscendDflashProposer):
         model = self.model
         draft_backbone = getattr(model, "model", None)
 
-        # One GEMM for all block positions, in draft-vocab space; the Markov
-        # bias is added per step before the argmax.
-        base_logits = model.compute_draft_logits(sample_hidden_states)
-        base_logits = base_logits.view(batch_size, num_spec, -1)
+        force_full_vocab = bool(envs.VLLM_ASCEND_DSPARK_LOGIT_DEBUG_PATH) and (
+            envs.VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS > 0
+        )
         capture_debug = (
-            bool(envs.VLLM_ASCEND_DSPARK_LOGIT_DEBUG_PATH)
+            force_full_vocab
             and self._logit_debug_records
             < max(0, envs.VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS)
             and bool(
                 getattr(draft_backbone, "_dspark_backbone_debug_enabled", False)
             )
         )
+        use_local_vocab_argmax = (
+            getattr(self, "_dspark_use_local_vocab_argmax", False)
+            and not force_full_vocab
+        )
+
+        # One GEMM for all block positions, in draft-vocab space; the Markov
+        # bias is added per step before the argmax.  In the normal greedy path,
+        # keep the logits sharded across TP ranks and reduce only the final
+        # per-rank maxima instead of gathering a full vocabulary for every
+        # base/Markov head invocation.
+        if use_local_vocab_argmax:
+            base_logits = model.compute_draft_local_logits(sample_hidden_states)
+        else:
+            base_logits = model.compute_draft_logits(sample_hidden_states)
+        base_logits = base_logits.view(batch_size, num_spec, -1)
         markov_debug = torch.empty_like(base_logits) if capture_debug else None
         final_debug = torch.empty_like(base_logits) if capture_debug else None
         prev_debug = (
@@ -661,7 +723,11 @@ class AscendDsparkProposer(AscendDflashProposer):
             (batch_size, num_spec), dtype=torch.int64
         )
         for step in range(num_spec):
-            markov_bias = model.markov_bias(model.markov_embed(prev_tokens))
+            markov_embed = model.markov_embed(prev_tokens)
+            if use_local_vocab_argmax:
+                markov_bias = model.markov_local_bias(markov_embed)
+            else:
+                markov_bias = model.markov_bias(markov_embed)
             applied_markov_bias = markov_bias
             markov_scale = getattr(self, "_markov_scale", 1.0)
             if markov_scale != 1.0:
@@ -674,7 +740,14 @@ class AscendDsparkProposer(AscendDflashProposer):
                 markov_debug[:, step].copy_(applied_markov_bias)
                 final_debug[:, step].copy_(step_logits)
                 prev_debug[:, step].copy_(prev_tokens)
-            prev_tokens = model.map_draft_to_target(step_logits.argmax(dim=-1))
+            if use_local_vocab_argmax:
+                sampled_ids = _dspark_vocab_parallel_argmax(
+                    step_logits,
+                    model.lm_head,
+                )
+            else:
+                sampled_ids = step_logits.argmax(dim=-1)
+            prev_tokens = model.map_draft_to_target(sampled_ids)
             draft_tokens[:, step] = prev_tokens
         if capture_debug:
             assert markov_debug is not None

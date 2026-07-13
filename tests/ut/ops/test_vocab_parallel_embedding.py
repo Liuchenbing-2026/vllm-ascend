@@ -14,6 +14,7 @@
 # Adapted from vllm/tests/lora/test_layers.py
 
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -260,3 +261,28 @@ class TestAscendLogitsProcessor(unittest.TestCase):
         hidden_state = torch.randn(1, self.org_num_embeddings)
         processor._get_logits(hidden_state, lmhead)
         self.mock_quant_method.apply.assert_called_once()
+
+    def test_get_local_logits_skips_gather_and_preserves_postprocessing(self):
+        raw_logits = torch.tensor([[0.0, 1.0, -2.0, 99.0]])
+        quant_method = MagicMock()
+        quant_method.apply.return_value = raw_logits.clone()
+        lmhead = SimpleNamespace(
+            quant_method=quant_method,
+            num_org_embeddings_per_partition=3,
+        )
+        processor = AscendLogitsProcessor(
+            vocab_size=8,
+            scale=0.5,
+            soft_cap=1.5,
+        )
+        hidden_states = torch.randn(1, 4)
+
+        actual = processor.get_local_logits(hidden_states, lmhead)
+
+        expected = torch.tanh(raw_logits[:, :3] / 1.5) * 1.5 * 0.5
+        torch.testing.assert_close(actual, expected)
+        quant_method.apply.assert_called_once_with(
+            lmhead,
+            hidden_states,
+            bias=None,
+        )

@@ -138,6 +138,42 @@ class Qwen3DSparkForCausalLM(DFlashQwen3ForCausalLM):
         """
         return self.logits_processor(self.lm_head, hidden_states)
 
+    def compute_draft_local_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Compute the local TP vocab shard without a full-vocab gather."""
+        get_local_logits = getattr(self.logits_processor, "get_local_logits", None)
+        if not callable(get_local_logits):
+            raise RuntimeError("the active logits processor has no local-logits path")
+        return get_local_logits(hidden_states, self.lm_head)
+
+    def draft_vocab_start_index(self) -> int:
+        """Global draft-vocab offset of this rank's local LM-head shard."""
+        return int(self.lm_head.shard_indices.org_vocab_start_index)
+
+    def supports_local_markov_argmax(self) -> bool:
+        """Whether both vocab-parallel heads have identical local shards."""
+        base = self.lm_head
+        markov = self.model.markov_head.markov_w2
+        base_indices = base.shard_indices
+        markov_indices = markov.shard_indices
+        base_group = getattr(base, "comm_group", None)
+        markov_group = getattr(markov, "comm_group", None)
+        return bool(
+            callable(getattr(self.logits_processor, "get_local_logits", None))
+            and base_group is not None
+            and markov_group is not None
+            and base.num_org_embeddings_per_partition
+            == markov.num_org_embeddings_per_partition
+            and base_indices.org_vocab_start_index
+            == markov_indices.org_vocab_start_index
+            and base_indices.org_vocab_end_index
+            == markov_indices.org_vocab_end_index
+            and base.num_added_embeddings_per_partition == 0
+            and markov.num_added_embeddings_per_partition == 0
+            and base_group.world_size == markov_group.world_size
+            and base_group.rank_in_group == markov_group.rank_in_group
+            and self.config.draft_vocab_size < 2**24
+        )
+
     def map_draft_to_target(self, draft_ids: torch.Tensor) -> torch.Tensor:
         """Map draft-vocab ids to target ids (identity for full-vocab drafts)."""
         if self.draft_id_to_target_id is None:
@@ -149,6 +185,21 @@ class Qwen3DSparkForCausalLM(DFlashQwen3ForCausalLM):
 
     def markov_bias(self, markov_embed: torch.Tensor) -> torch.Tensor:
         return self.model.markov_head.bias(markov_embed, self.logits_processor)
+
+    def markov_local_bias(self, markov_embed: torch.Tensor) -> torch.Tensor:
+        """Compute the Markov head's matching local TP vocab shard."""
+        get_local_logits = getattr(self.logits_processor, "get_local_logits", None)
+        if not callable(get_local_logits):
+            raise RuntimeError("the active logits processor has no local-logits path")
+        markov_w2 = self.model.markov_head.markov_w2
+        markov_start = int(markov_w2.shard_indices.org_vocab_start_index)
+        draft_start = self.draft_vocab_start_index()
+        if markov_start != draft_start:
+            raise RuntimeError(
+                "DSpark LM and Markov heads use different TP vocab partitions: "
+                f"lm_head={draft_start}, markov_w2={markov_start}"
+            )
+        return get_local_logits(markov_embed, markov_w2)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
         model_weights = {}

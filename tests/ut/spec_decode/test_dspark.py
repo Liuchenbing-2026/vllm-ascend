@@ -35,6 +35,7 @@ from vllm_ascend.patch.worker.patch_qwen3_dflash import (
 from vllm_ascend.spec_decode.dspark_proposer import (
     AscendDsparkProposer,
     _build_logit_debug_record,
+    _dspark_vocab_parallel_argmax,
 )
 
 GLM52_SPECULATOR_CONFIG = {
@@ -545,6 +546,33 @@ class _FakeDSparkModel:
         return draft_ids
 
 
+class _FakeLocalDSparkModel(_FakeDSparkModel):
+    def __init__(self, base_logits: torch.Tensor, markov_table: torch.Tensor):
+        super().__init__(base_logits, markov_table)
+        group = SimpleNamespace(world_size=1, rank_in_group=0)
+        self.lm_head = SimpleNamespace(
+            shard_indices=SimpleNamespace(org_vocab_start_index=0),
+            comm_group=group,
+        )
+        self.local_base_calls = 0
+        self.local_markov_calls = 0
+
+    def compute_draft_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        raise AssertionError("full-vocab base logits must not run")
+
+    def markov_bias(self, markov_embed: torch.Tensor) -> torch.Tensor:
+        raise AssertionError("full-vocab Markov logits must not run")
+
+    def compute_draft_local_logits(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        self.local_base_calls += 1
+        batch, num_spec, vocab = self._base_logits.shape
+        return self._base_logits.reshape(batch * num_spec, vocab)
+
+    def markov_local_bias(self, markov_embed: torch.Tensor) -> torch.Tensor:
+        self.local_markov_calls += 1
+        return self._markov_table[markov_embed]
+
+
 class TestMarkovSequentialSampling:
     def _make_proposer(self, base_logits, markov_table, anchors, num_spec):
         batch = base_logits.shape[0]
@@ -574,6 +602,78 @@ class TestMarkovSequentialSampling:
         draft = AscendDsparkProposer._sample_parallel_draft_tokens(proposer, hidden)
 
         assert draft.tolist() == [[2, 0]]
+
+    def test_local_vocab_sampling_matches_dense_path(self, monkeypatch):
+        base = torch.tensor([[[0.0, 1.0, 0.5, 0.0], [0.0, 1.0, 0.0, 0.5]]])
+        markov = torch.zeros(4, 4)
+        markov[3, 2] = 2.0
+        markov[2, 0] = 2.0
+        proposer = self._make_proposer(base, markov, torch.tensor([3]), num_spec=2)
+        proposer.model = _FakeLocalDSparkModel(base, markov)
+        proposer._dspark_use_local_vocab_argmax = True
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_LOGIT_DEBUG_PATH", "")
+
+        draft = AscendDsparkProposer._sample_parallel_draft_tokens(
+            proposer,
+            torch.zeros(2, 8),
+        )
+
+        assert draft.tolist() == [[2, 0]]
+        assert proposer.model.local_base_calls == 1
+        assert proposer.model.local_markov_calls == 2
+
+    def test_vocab_parallel_argmax_uses_one_pair_gather_and_dense_ties(self):
+        remote_pairs = torch.tensor(
+            [
+                [5.0, 1.0],
+                [7.0, 2.0],
+            ]
+        )
+        group = SimpleNamespace(world_size=2, rank_in_group=1)
+        gather_calls = []
+
+        def all_gather(local_pairs, dim):
+            gather_calls.append((local_pairs.clone(), dim))
+            return torch.cat((remote_pairs, local_pairs), dim=dim)
+
+        group.all_gather = all_gather
+        lm_head = SimpleNamespace(
+            shard_indices=SimpleNamespace(org_vocab_start_index=4),
+            comm_group=group,
+        )
+        local_logits = torch.tensor(
+            [
+                [1.0, 7.0, 2.0],
+                [0.0, 7.0, 1.0],
+            ]
+        )
+
+        actual = _dspark_vocab_parallel_argmax(local_logits, lm_head)
+
+        # Row 0 is won by global id 5 on this rank. Row 1 is a tie, so
+        # dense argmax semantics select the lower global id 2 from rank 0.
+        assert actual.tolist() == [5, 2]
+        assert len(gather_calls) == 1
+        assert gather_calls[0][1] == -1
+
+    def test_global_debug_budget_forces_full_vocab_path(self, monkeypatch):
+        base = torch.tensor([[[0.0, 1.0]]])
+        markov = torch.zeros(2, 2)
+        proposer = self._make_proposer(base, markov, torch.tensor([0]), num_spec=1)
+        proposer._dspark_use_local_vocab_argmax = True
+        proposer._logit_debug_records = 1
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_LOGIT_DEBUG_PATH", "capture")
+        monkeypatch.setenv("VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS", "1")
+
+        # The record budget is exhausted on this rank, but every TP rank must
+        # still choose the same full-vocab collective path while diagnostics
+        # are globally enabled.
+        draft = AscendDsparkProposer._sample_parallel_draft_tokens(
+            proposer,
+            torch.zeros(1, 4),
+        )
+
+        assert draft.tolist() == [[1]]
 
     def test_zero_bias_matches_parallel_argmax(self):
         # With a zero Markov table DSpark degenerates to DFlash's parallel
