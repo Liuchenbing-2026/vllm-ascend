@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: Apache-2.0
+apiversion: modelslim_v1
+
+metadata:
+  config_id: deepseek_v4_flash_dspark_w8a8
+  score: 90
+  verified_model_types:
+    - DeepSeek-V4-Flash-DSpark
+  verified_tags:
+    DeepSeek-V4-Flash-DSpark:
+      - - vLLM-Ascend
+        - Atlas_A2_Inference
+  label:
+    w_bit: 8
+    a_bit: 8
+    is_sparse: false
+    kv_cache: false
+
+default_w8a8_dynamic: &default_w8a8_dynamic
+  act:
+    scope: per_token
+    dtype: int8
+    symmetric: true
+    method: minmax
+  weight:
+    scope: per_channel
+    dtype: int8
+    symmetric: true
+    method: minmax
+
+spec:
+  process:
+    - type: quarot
+      block_size: 32
+    - type: flex_smooth_quant
+      enable_subgraph_type:
+        - norm-linear
+      include:
+        - "*"
+    # Quantize both target and DSpark draft attention linears. The listed
+    # projections are intentionally kept in their source precision.
+    - type: linear_quant
+      qconfig: *default_w8a8_dynamic
+      include:
+        - "*attn*"
+      exclude:
+        - "*wo_a"
+        - "*wo_b"
+        - "*compressor.wgate"
+        - "*compressor.wkv"
+        - "*indexer.weights_proj"
+        - "*indexer.compressor.wgate"
+        - "*indexer.compressor.wkv"
+    # Quantize target and DSpark draft MoE FFN linears, excluding routers.
+    - type: linear_quant
+      qconfig: *default_w8a8_dynamic
+      include:
+        - "*ffn*"
+      exclude:
+        - "*gate"
+    # DSpark main_proj is a large linear. Heads, norms, and hc_* parameters
+    # stay in their source precision.
+    - type: linear_quant
+      qconfig: *default_w8a8_dynamic
+      include:
+        - "*main_proj*"
+  dataset: mix_calib.jsonl
+  save:
+    - type: ascendv1_saver
+      part_file_size: 4
