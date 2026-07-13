@@ -107,6 +107,45 @@ class TestDraftAclGraphBoundary:
         assert reason == "DSpark draft ACLGraph does not yet support LoRA"
         proposer.vllm_config.lora_config = None
 
+    def test_split_backbone_wrapper_declares_caller_owned_update_order(
+        self,
+        monkeypatch,
+    ):
+        wrapper_call = {}
+        wrapper_sentinel = object()
+
+        def make_wrapper(runnable, vllm_config, runtime_mode, **kwargs):
+            wrapper_call.update(
+                runnable=runnable,
+                vllm_config=vllm_config,
+                runtime_mode=runtime_mode,
+                **kwargs,
+            )
+            return wrapper_sentinel
+
+        monkeypatch.setattr(
+            dspark_proposer_module.AscendDflashProposer,
+            "load_model",
+            lambda self, model: None,
+        )
+        monkeypatch.setattr(dspark_proposer_module, "ACLGraphWrapper", make_wrapper)
+        monkeypatch.setattr(dspark_proposer_module.torch.npu, "Stream", lambda: object())
+
+        proposer = object.__new__(AscendDsparkProposer)
+        proposer.use_cuda_graph = True
+        proposer._dspark_enable_draft_aclgraph = True
+        proposer.vllm_config = object()
+        proposer.enable_enpu = False
+        proposer.model = None
+
+        AscendDsparkProposer.load_model(proposer, object())
+
+        assert proposer._dspark_backbone_runnable is wrapper_sentinel
+        assert wrapper_call["use_eagle"] is False
+        assert wrapper_call["enable_enpu"] is False
+        assert wrapper_call["caller_orders_graph_update"] is True
+        assert proposer.use_cuda_graph is True
+
     def test_capture_sizes_use_anchor_plus_num_speculative_tokens(
         self,
         monkeypatch,

@@ -103,6 +103,7 @@ class ACLGraphWrapper:
         *,
         use_eagle: bool = False,
         enable_enpu: bool = False,
+        caller_orders_graph_update: bool = False,
     ):
         self.runnable = runnable
         self.vllm_config = vllm_config
@@ -126,6 +127,12 @@ class ACLGraphWrapper:
         self.concrete_aclgraph_entries: dict[BatchDescriptor, ACLGraphEntry] = {}
         self.enable_enpu = enable_enpu
         self.use_eagle = use_eagle
+        # FULL-graph attention handles are updated on a side stream before
+        # replay.  Most callers rely on this wrapper to keep the previous
+        # replay ahead of that update.  A caller may opt out only when it owns
+        # the update/replay sequence and has already waited for the previous
+        # replay before issuing graph_task_update.
+        self.caller_orders_graph_update = caller_orders_graph_update
         _acl_graph_wrappers.add(self)
 
         ACLGraphWrapper._all_instances.add(self)
@@ -265,10 +272,17 @@ class ACLGraphWrapper:
         # If we do not in main model and in full-graph mode when using merge-eagle-graph,
         # we do not need to synchronize.
         # When enable_enpu is on, model_runner orders update vs replay; skip here.
+        # A caller_orders_graph_update caller has already waited for the previous
+        # replay before graph-task update and keeps the captured ExternalEvent
+        # dependency from that update stream to this replay.
         # When FULL + EAGLE draft (merge path), replay does not need this barrier.
         is_draft_eagle = _EXTRA_CTX.is_draft_model and self.use_eagle
         need_sync = self.runtime_mode == CUDAGraphMode.FULL and not is_draft_eagle
-        if not self.enable_enpu and need_sync:
+        if (
+            not self.enable_enpu
+            and need_sync
+            and not self.caller_orders_graph_update
+        ):
             torch.npu.current_stream().synchronize()
         entry.aclgraph.replay()
         return entry.output

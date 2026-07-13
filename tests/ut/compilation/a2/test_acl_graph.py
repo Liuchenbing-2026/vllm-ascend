@@ -126,6 +126,7 @@ class TestACLGraphWrapper(TestBase):
         self.assertFalse(wrapper.is_debugging_mode)
         self.assertIsInstance(wrapper.aclgraph_options, CUDAGraphOptions)
         self.assertEqual(wrapper.concrete_aclgraph_entries, {})
+        self.assertFalse(wrapper.caller_orders_graph_update)
 
     @patch("vllm_ascend.compilation.acl_graph.current_platform")
     @patch("vllm_ascend.compilation.acl_graph.envs")
@@ -371,6 +372,62 @@ class TestACLGraphWrapper(TestBase):
         # Both calls should return the weak ref output
         self.assertEqual(first_result, "test_output")  # Original output
         self.assertEqual(second_result, "weak_ref_output")  # Weak ref output
+
+    def test_replay_sync_contract(self):
+        """Only an explicit caller-owned update sequence may skip the barrier."""
+        self.mock_forward_context.cudagraph_runtime_mode = CUDAGraphMode.FULL
+        self.mock_forward_context.is_draft_model = True
+
+        cases = (
+            ("default", False, False, ["synchronize", "replay"], 1),
+            ("caller_owned_dspark", False, True, ["replay"], 0),
+            ("merged_eagle", True, False, ["replay"], 0),
+        )
+        for name, use_eagle, caller_orders_graph_update, expected_events, expected_syncs in cases:
+            with self.subTest(name=name):
+                events = []
+                stream = MagicMock()
+                stream.synchronize.side_effect = lambda events=events: events.append("synchronize")
+                graph = MagicMock()
+                graph.replay.side_effect = lambda events=events: events.append("replay")
+
+                with (
+                    patch(
+                        "vllm_ascend.compilation.acl_graph.get_forward_context",
+                        return_value=self.mock_forward_context,
+                    ),
+                    patch(
+                        "vllm_ascend.ascend_forward_context.get_forward_context",
+                        return_value=self.mock_forward_context,
+                    ),
+                    patch(
+                        "vllm_ascend.compilation.acl_graph.current_platform.get_global_graph_pool",
+                        return_value=self.mock_graph_pool,
+                    ),
+                    patch(
+                        "vllm_ascend.compilation.acl_graph.torch.npu.current_stream",
+                        return_value=stream,
+                    ),
+                ):
+                    wrapper = ACLGraphWrapper(
+                        runnable=self.mock_runnable,
+                        vllm_config=self.mock_vllm_config,
+                        runtime_mode=CUDAGraphMode.FULL,
+                        use_eagle=use_eagle,
+                        caller_orders_graph_update=caller_orders_graph_update,
+                    )
+                    wrapper.concrete_aclgraph_entries[self.mock_batch_descriptor] = ACLGraphEntry(
+                        batch_descriptor=self.mock_batch_descriptor,
+                        aclgraph=graph,
+                        output="graph_output",
+                    )
+
+                    result = wrapper()
+
+                self.assertEqual(events, expected_events)
+                self.assertEqual(stream.synchronize.call_count, expected_syncs)
+                graph.replay.assert_called_once_with()
+                self.assertEqual(result, "graph_output")
 
     @patch("vllm_ascend.compilation.acl_graph.torch")
     @patch("vllm_ascend.compilation.acl_graph.validate_cudagraph_capturing_enabled")

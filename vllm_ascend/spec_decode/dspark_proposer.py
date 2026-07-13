@@ -312,6 +312,11 @@ class AscendDsparkProposer(AscendDflashProposer):
                 # whose wrapper may safely skip the replay ordering barrier.
                 use_eagle=False,
                 enable_enpu=self.enable_enpu,
+                # _run_merged_draft synchronizes before graph-task update, so
+                # the wrapper must not repeat the same host barrier after the
+                # update.  ExternalEvent waits captured in the backbone graph
+                # still order replay behind the update stream.
+                caller_orders_graph_update=True,
             )
             self._dspark_graph_runnable_uses_buffers = True
         else:
