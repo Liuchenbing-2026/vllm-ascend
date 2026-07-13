@@ -483,6 +483,7 @@ class TestDraftAclGraphBoundary:
         proposer = SimpleNamespace(
             _dspark_graph_model_inputs=model_inputs,
             _run_dspark_model=run_model,
+            _run_dspark_model_from_graph_buffers=lambda: run_model(**model_inputs),
             model_returns_tuple=lambda: True,
             _run_dspark_sampler_tail=run_sampler_tail,
         )
@@ -490,7 +491,7 @@ class TestDraftAclGraphBoundary:
         output = AscendDsparkProposer._run_dspark_model_and_sampler_tail_from_graph_buffers(proposer)
 
         assert events[0][0] == "backbone"
-        assert events[0][1] is model_inputs
+        assert events[0][1]["input_ids"] is model_inputs["input_ids"]
         assert events[1][0] == "sampler_tail"
         torch.testing.assert_close(events[1][1], last_hidden_states)
         torch.testing.assert_close(output, torch.tensor([[7, 8]], dtype=torch.int64))
@@ -507,6 +508,7 @@ class TestDraftAclGraphBoundary:
         proposer = SimpleNamespace(
             _dspark_graph_model_inputs=model_inputs,
             _run_dspark_model=lambda **kwargs: last_hidden_states,
+            _run_dspark_model_from_graph_buffers=lambda: last_hidden_states,
             model_returns_tuple=lambda: False,
             _run_dspark_sampler_tail=run_sampler_tail,
         )
