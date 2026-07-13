@@ -195,7 +195,8 @@ class TestAscendAttentionMetadataBuilder(TestBase):
 
         device_seq_lens.tolist.assert_not_called()
         self.assertIs(metadata.seq_lens, device_seq_lens)
-        self.assertIs(metadata.seq_lens_cpu, exact_seq_lens_cpu)
+        self.assertEqual(metadata.seq_lens_cpu.data_ptr(), exact_seq_lens_cpu.data_ptr())
+        torch.testing.assert_close(metadata.seq_lens_cpu, exact_seq_lens_cpu)
         self.assertEqual(metadata.seq_lens_list, [108, 212])
 
     def test_parallel_drafting_without_valid_mirror_keeps_device_fallback(self):
