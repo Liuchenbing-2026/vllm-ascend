@@ -377,9 +377,15 @@ class TestDraftAclGraphBoundary:
         assert proposer._slot_mapping_buffer[:12].tolist() == [-1] * 12
         assert proposer._context_slot_mapping_buffer[:12].tolist() == [-1] * 12
 
-    def test_run_prepared_graph_model_uses_no_arg_buffer_boundary(self):
+    def test_run_prepared_graph_model_uses_no_arg_buffer_boundary(self, monkeypatch):
         graph_calls = []
         eager_calls = []
+
+        monkeypatch.setattr(
+            dspark_proposer_module,
+            "get_forward_context",
+            lambda: SimpleNamespace(batch_descriptor="test"),
+        )
 
         def graph_runner():
             graph_calls.append("called")
