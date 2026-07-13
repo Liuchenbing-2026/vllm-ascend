@@ -917,6 +917,10 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             )
             if self.method == "dflash":
                 common_attn_metadata.seq_lens = self._adjust_tensor(common_attn_metadata.seq_lens, num_reqs_padded)
+                self._adjust_exact_parallel_drafting_seq_lens_cpu(
+                    common_attn_metadata,
+                    num_reqs_padded,
+                )
             else:
                 common_attn_metadata.seq_lens = self._adjust_tensor(self.runner.seq_lens, num_reqs_padded)
                 common_attn_metadata.seq_lens_cpu = self._adjust_tensor(
@@ -2288,6 +2292,20 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         )
 
     # adjusting tensor into desired size
+    def _adjust_exact_parallel_drafting_seq_lens_cpu(self, metadata, desired_size):
+        """Keep an exact parallel-draft CPU mirror aligned with graph DP padding."""
+        if getattr(metadata, "parallel_drafting_seq_lens_cpu_valid", False) is not True:
+            return
+
+        for field_name in (
+            "_seq_lens_cpu",
+            "seq_lens_cpu",
+            "seq_lens_cpu_upper_bound",
+        ):
+            field = getattr(metadata, field_name, None)
+            if field is not None:
+                setattr(metadata, field_name, self._adjust_tensor(field, desired_size))
+
     def _adjust_tensor(self, tensor, desired_size):
         pad_size = desired_size - tensor.shape[0]
         if pad_size > 0:

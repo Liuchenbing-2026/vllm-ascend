@@ -77,3 +77,26 @@ def test_plain_dflash_does_not_opt_into_cpu_fast_path():
 
     assert not metadata.parallel_drafting_seq_lens_cpu_valid
     assert metadata._seq_lens_cpu is original
+
+
+def test_full_graph_dp_padding_aligns_exact_cpu_mirror_with_device_batch():
+    proposer = AscendDflashProposer.__new__(AscendDflashProposer)
+    internal = torch.tensor([108, 212], dtype=torch.int32)
+    public = internal.clone()
+    upper_bound = torch.tensor([110, 212], dtype=torch.int32)
+    metadata = _metadata(
+        internal_cpu=internal,
+        public_cpu=public,
+        upper_bound=upper_bound,
+    )
+    metadata.parallel_drafting_seq_lens_cpu_valid = True
+
+    proposer._adjust_exact_parallel_drafting_seq_lens_cpu(
+        metadata,
+        desired_size=3,
+    )
+
+    assert metadata._seq_lens_cpu.tolist() == [108, 212, 0]
+    assert metadata.seq_lens_cpu.tolist() == [108, 212, 0]
+    assert metadata.seq_lens_cpu_upper_bound.tolist() == [110, 212, 0]
+    assert metadata._seq_lens_cpu.dtype == torch.int32
