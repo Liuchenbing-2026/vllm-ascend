@@ -21,6 +21,7 @@ from types import SimpleNamespace
 
 import torch
 import torch.nn as nn
+from vllm.logger import logger as vllm_logger
 
 import vllm_ascend.spec_decode.dspark_proposer as dspark_proposer_module
 from vllm_ascend import envs
@@ -50,6 +51,9 @@ GLM52_SPECULATOR_CONFIG = {
 
 
 class TestDraftAclGraphBoundary:
+    def test_worker_markers_use_the_configured_vllm_logger(self):
+        assert dspark_proposer_module.logger is vllm_logger
+
     @staticmethod
     def _graph_policy_proposer():
         return SimpleNamespace(

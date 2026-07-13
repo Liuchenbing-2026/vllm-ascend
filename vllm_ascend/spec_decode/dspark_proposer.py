@@ -16,7 +16,6 @@
 #
 
 import json
-import logging
 import os
 from collections.abc import Callable, Sequence
 from copy import copy
@@ -27,6 +26,7 @@ import torch
 import torch.distributed as dist
 from vllm.config import CompilationMode, CUDAGraphMode, VllmConfig
 from vllm.forward_context import get_forward_context
+from vllm.logger import logger
 from vllm.v1.cudagraph_dispatcher import CudagraphDispatcher
 from vllm.v1.spec_decode.utils import PADDING_SLOT_ID
 
@@ -34,8 +34,6 @@ from vllm_ascend import envs
 from vllm_ascend.compilation.acl_graph import ACLGraphWrapper
 from vllm_ascend.spec_decode.dflash_proposer import AscendDflashProposer
 from vllm_ascend.utils import lmhead_tp_enable
-
-logger = logging.getLogger(__name__)
 
 _DSPARK_LOGIT_DEBUG_TOP_K = 5
 
