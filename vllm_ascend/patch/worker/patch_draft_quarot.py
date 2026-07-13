@@ -77,6 +77,42 @@ def compute_rotataion_matrix3(Q):
     return torch.block_diag(Q, Q, Q)
 
 
+def rotate_concatenated_fc_weight(
+    loaded_weight: torch.Tensor,
+    rotation: torch.Tensor,
+    compute_device: torch.device | None = None,
+) -> torch.Tensor:
+    """Rotate each target-hidden-state input block of a draft FC weight."""
+    if rotation.ndim != 2 or rotation.shape[0] != rotation.shape[1]:
+        raise ValueError(f"Expected a square rotation matrix, got {tuple(rotation.shape)}")
+    hidden_size = rotation.shape[0]
+    if loaded_weight.ndim != 2 or loaded_weight.shape[1] % hidden_size != 0:
+        raise ValueError(
+            "Draft FC input width must be a multiple of the rotation size: "
+            f"weight={tuple(loaded_weight.shape)}, rotation={tuple(rotation.shape)}"
+        )
+
+    if compute_device is None:
+        compute_device = loaded_weight.device
+    output = torch.empty(
+        loaded_weight.shape,
+        dtype=loaded_weight.dtype,
+        device=compute_device,
+    )
+    rotation_fp32 = rotation.to(device=compute_device, dtype=torch.float32)
+    with torch.no_grad():
+        for start in range(0, loaded_weight.shape[1], hidden_size):
+            end = start + hidden_size
+            rotated_chunk = (
+                loaded_weight[:, start:end].to(
+                    device=compute_device, dtype=torch.float32
+                )
+                @ rotation_fp32
+            )
+            output[:, start:end].copy_(rotated_chunk.to(dtype=loaded_weight.dtype))
+    return output
+
+
 def patch_load_weights(target_vllm_config):
     target_model_path = Path(target_vllm_config.model_config.model)
     rotation_path = get_rotation_path(target_vllm_config)
@@ -86,6 +122,44 @@ def patch_load_weights(target_vllm_config):
         return
 
     Eagle3LlamaForCausalLM.load_weights = make_load_weights(target_model_path, rotation_path)
+
+    from vllm_ascend.models.qwen3_dspark import Qwen3DSparkForCausalLM
+
+    current_load_weights = Qwen3DSparkForCausalLM.load_weights
+    original_load_weights = getattr(
+        current_load_weights, "_quarot_original_load_weights", current_load_weights
+    )
+    Qwen3DSparkForCausalLM.load_weights = make_qwen3_dspark_load_weights(
+        original_load_weights, rotation_path
+    )
+
+
+def make_qwen3_dspark_load_weights(original_load_weights, rotation_path):
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
+        rotation = None
+
+        def transformed_weights():
+            nonlocal rotation
+            for name, loaded_weight in weights:
+                if name == "fc.weight":
+                    if rotation is None:
+                        rotation = get_rotataion_matrix(rotation_path)
+                    compute_device = self.model.fc.weight.device
+                    logger.info(
+                        "Applying QuaRot basis conversion to Qwen3 DSpark "
+                        "fc.weight on %s (%d hidden-state blocks)",
+                        compute_device,
+                        loaded_weight.shape[1] // rotation.shape[0],
+                    )
+                    loaded_weight = rotate_concatenated_fc_weight(
+                        loaded_weight, rotation, compute_device
+                    )
+                yield name, loaded_weight
+
+        return original_load_weights(self, transformed_weights())
+
+    load_weights._quarot_original_load_weights = original_load_weights
+    return load_weights
 
 
 def make_load_weights(target_model_path, rotation_path):

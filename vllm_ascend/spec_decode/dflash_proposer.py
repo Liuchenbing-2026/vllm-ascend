@@ -5,6 +5,7 @@ from vllm.config import CUDAGraphMode, VllmConfig
 from vllm.forward_context import get_forward_context
 from vllm.v1.attention.backends.utils import CommonAttentionMetadata
 
+from vllm_ascend import envs
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX, set_ascend_forward_context
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.attention.utils import AscendCommonAttentionMetadata
@@ -143,7 +144,11 @@ class AscendDflashProposer(AscendEagleProposer):
         cad.max_query_len = num_query_per_req
         cad.max_seq_len = cad.max_seq_len + num_query_per_req
         cad.slot_mapping = query_slot_mapping
-        cad.causal = False
+        # Diagnostic A/B (VLLM_ASCEND_DSPARK_CAUSAL_DIAG): forcing causal keeps
+        # the builder's causal mask (see llm_base_proposer clearing the mask only
+        # when ``not causal``) so draft position 0 lands in the MTP-validated
+        # causal FIA path. Off by default; never a final fix.
+        cad.causal = bool(envs.VLLM_ASCEND_DSPARK_CAUSAL_DIAG)
         cad.attn_mask = None
         cad.attn_state = AscendAttentionState.ChunkedPrefill
 

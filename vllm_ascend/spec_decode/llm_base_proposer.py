@@ -144,6 +144,10 @@ def _is_glm_model(model_config) -> bool:
 class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
     _runnable: ACLGraphWrapper | Callable
 
+    # DSpark-style proposers replace the parallel argmax with a sequential
+    # Markov-head sampling loop (see AscendDsparkProposer).
+    uses_markov_head = False
+
     def __init__(self, vllm_config: VllmConfig, device: torch.device, pass_hidden_states_to_model: bool, runner=None):
         super().__init__(vllm_config, device, pass_hidden_states_to_model, runner=runner)
 
@@ -468,8 +472,17 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             # target lm_head ([target_vocab_size, hidden]) makes the draft emit
             # logits over the wrong vocabulary, so the verifier rejects almost
             # every speculative token. Keep the draft's own lm_head in that case.
-            draft_has_own_lm_head = (
-                self.method == "dflash" and getattr(self.model, "draft_id_to_target_id", None) is not None
+            draft_lm_head_differs = False
+            if getattr(self.model, "has_own_lm_head", False) and hasattr(model, "lm_head"):
+                # Mirrors the embed_tokens sharing logic: keep the draft's own
+                # trained lm_head unless it is identical to the target's
+                # (identical weights are aliased to save memory).
+                draft_lm_head_differs = not torch.equal(
+                    model.lm_head.weight.cpu(), self.model.lm_head.weight.cpu()
+                )
+            draft_has_own_lm_head = self.method == "dflash" and (
+                getattr(self.model, "draft_id_to_target_id", None) is not None
+                or draft_lm_head_differs
             )
             if draft_has_own_lm_head:
                 logger.info(
@@ -1190,6 +1203,15 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
             )
 
         sample_hidden_states = last_hidden_states[token_indices_to_sample]
+
+        if self.uses_markov_head:
+            # DSpark: sequential Markov-head correction over the parallel
+            # draft block; returns [batch, num_speculative_tokens].
+            if lmhead_tp_enable():
+                raise NotImplementedError(
+                    "DSpark drafting does not support lmhead tensor parallel yet."
+                )
+            return self._sample_parallel_draft_tokens(sample_hidden_states)
 
         if get_ascend_config().enable_reduce_sample:
             if self.method in ("eagle3", "dflash", "mtp"):

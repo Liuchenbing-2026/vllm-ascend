@@ -130,6 +130,7 @@ from vllm_ascend.sample.sampler import AscendSampler
 from vllm_ascend.spec_decode import get_spec_decode_method
 from vllm_ascend.spec_decode.dflash_proposer import AscendDflashProposer
 from vllm_ascend.spec_decode.draft_proposer import AscendDraftModelProposer
+from vllm_ascend.spec_decode.dspark_proposer import AscendDsparkProposer
 from vllm_ascend.spec_decode.eagle_proposer import AscendEagleProposer
 from vllm_ascend.spec_decode.extract_hidden_states_proposer import (
     AscendExtractHiddenStatesProposer,
@@ -636,6 +637,10 @@ class NPUModelRunner(GPUModelRunner):
                     self.use_aux_hidden_state_outputs = self.drafter.eagle3_use_aux_hidden_state
                 elif self.speculative_config.method == "extract_hidden_states":
                     assert isinstance(self.drafter, AscendExtractHiddenStatesProposer)
+                    self.use_aux_hidden_state_outputs = True
+                elif isinstance(self.drafter, AscendDsparkProposer):
+                    # DSpark's fc fuses multiple target aux hidden states
+                    # (eagle_aux_hidden_state_layer_ids in the draft config).
                     self.use_aux_hidden_state_outputs = True
                 self.rejection_sampler = AscendRejectionSampler(self.sampler)
         self.discard_request_indices = self._make_buffer(self.max_num_reqs, dtype=torch.int64)
@@ -2651,6 +2656,8 @@ class NPUModelRunner(GPUModelRunner):
         if self.input_batch.sampling_metadata.top_k is not None and get_ascend_config().enable_reduce_sample:
             max_topk = self.input_batch.top_k_cpu[self.input_batch.top_k_cpu < logits.shape[1]].max()
             self.rejection_sampler.prepare_sampling(max_topk)
+        if isinstance(self.drafter, AscendDsparkProposer):
+            self.drafter.record_target_logit_debug(logits, spec_decode_metadata)
         sampler_output = self.rejection_sampler(
             spec_decode_metadata,
             None,  # draft_probs
@@ -4161,7 +4168,10 @@ class NPUModelRunner(GPUModelRunner):
                     current_kv_cache_spec = layer_kv_cache_spec[layer_name]
                     assert isinstance(current_kv_cache_spec, AttentionSpec)
 
-                    if self.use_sparse:
+                    # Draft (e.g. Qwen3DSparkModel) layers use FullAttentionSpec which has no
+                    # sparse_kv_cache_ratio; decide sparsity per-layer, not by the model-global flag.
+                    layer_is_sparse = self.use_sparse and hasattr(current_kv_cache_spec, "sparse_kv_cache_ratio")
+                    if layer_is_sparse:
                         # for deepseek v3.2, we split the kv cache according to the corresponding ratio
                         kv_cache_spec = layer_kv_cache_spec[layer_name]
                         current_sparse_c8 = kv_cache_spec_uses_sparse_c8(kv_cache_spec)
@@ -4201,9 +4211,9 @@ class NPUModelRunner(GPUModelRunner):
                     dsa_k_tensor_size = None
                     dsa_k_scale_tensor_size = None
                     #### for deepseek sparse attention
-                    if self.use_sparse:
+                    if layer_is_sparse:
                         dsa_k_tensor_size = int(kv_cache_tensor.size // dsa_k_tensor_split_factor)
-                    if self.use_sparse and current_sparse_c8:
+                    if layer_is_sparse and current_sparse_c8:
                         dsa_k_scale_tensor_size = int(kv_cache_tensor.size // dsa_k_scale_tensor_split_factor)
 
                     # Allocate raw int8 tensors. Even bf16/fp16 KV cache entries
@@ -4222,7 +4232,7 @@ class NPUModelRunner(GPUModelRunner):
                             alignment,
                         )
 
-                    if self.use_sparse:
+                    if layer_is_sparse:
                         assert dsa_k_tensor_size is not None
 
                         if current_sparse_c8:
@@ -4246,7 +4256,7 @@ class NPUModelRunner(GPUModelRunner):
                     for layer_name_inner in kv_cache_tensor.shared_by:
                         # shared the attn kvcache for all shared layers
                         if "attn" in layer_name_inner and "linear_attn" not in layer_name_inner:
-                            if self.use_sparse:
+                            if layer_is_sparse:
                                 if current_sparse_c8:
                                     if get_ascend_device_type() == AscendDeviceType.A5:
                                         kv_cache_raw_tensors[layer_name_inner] = (
@@ -4387,12 +4397,16 @@ class NPUModelRunner(GPUModelRunner):
 
                     kv_caches[layer_name] = kv_cache
                 elif isinstance(current_kv_cache_spec, AttentionSpec):
+                    # Draft (Qwen3DSparkModel) layers use FullAttentionSpec (no sparse_kv_cache_ratio);
+                    # treat sparsity per-layer so draft full-attention layers take the (k, v) path.
+                    layer_is_sparse = self.use_sparse and hasattr(current_kv_cache_spec, "sparse_kv_cache_ratio")
                     # cache_only_layers (extract_hidden_states) are allocated
                     # as a single tensor by the branch at the top of
                     # _allocate_kv_cache_tensors; route them to the dedicated
                     # elif branch below before the sparse branch tries to
                     # unpack them as a (k, v, dsa_k[, scale]) tuple.
-                    if self.use_sparse and "cache_only_layers" not in layer_name:
+                    current_sparse_c8 = False
+                    if layer_is_sparse and "cache_only_layers" not in layer_name:
                         current_sparse_c8 = kv_cache_spec_uses_sparse_c8(current_kv_cache_spec)
                         if current_sparse_c8:
                             if get_ascend_device_type() == AscendDeviceType.A5:
@@ -4542,7 +4556,7 @@ class NPUModelRunner(GPUModelRunner):
                             num_kv_heads,
                             k_dim,
                         )
-                        if self.use_sparse and current_sparse_c8 and get_ascend_device_type() == AscendDeviceType.A5:
+                        if layer_is_sparse and current_sparse_c8 and get_ascend_device_type() == AscendDeviceType.A5:
                             # A5 sparse C8: CKV tensor = kv_lora(fp8) + k_rope(bf16→fp8) + quant_scale_metadata
                             #   kv_lora_rank                    : fp8, 1 byte/elem
                             #   qk_rope_head_dim * 2            : bf16→fp8 ratio (2/1 bytes)
@@ -4568,16 +4582,16 @@ class NPUModelRunner(GPUModelRunner):
                         )
                     
                     # A5 sparse C8: ckv uses float8_e4m3fn
-                    if self.use_sparse and current_sparse_c8 and get_ascend_device_type() == AscendDeviceType.A5:
+                    if layer_is_sparse and current_sparse_c8 and get_ascend_device_type() == AscendDeviceType.A5:
                         k_cache_dtype = self.c8_k_cache_dtype
                     
                     k_cache = raw_k_tensor.view(k_cache_dtype).view(k_shape)
-                    if self.use_sparse and current_sparse_c8 and get_ascend_device_type() == AscendDeviceType.A5:
+                    if layer_is_sparse and current_sparse_c8 and get_ascend_device_type() == AscendDeviceType.A5:
                         v_cache = None
                     else:
                         v_cache = raw_v_tensor.view(v_cache_dtype).view(v_shape)
 
-                    if self.use_sparse:
+                    if layer_is_sparse:
                         dsa_k_cache_shape = (
                             num_blocks,
                             current_kv_cache_spec.block_size,

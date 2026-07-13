@@ -90,6 +90,44 @@ env_variables: dict[str, Callable[[], Any]] = {
     # 1: only quant case enable nz;
     # 2: enable nz as long as possible.
     "VLLM_ASCEND_ENABLE_NZ": lambda: int(os.getenv("VLLM_ASCEND_ENABLE_NZ", 1)),
+    # Diagnostic: route Qwen3/GLM DSpark draft attention through the slow,
+    # correctness-first Torch reference (vllm_ascend/ops/qwen3_dspark_attention.py)
+    # instead of the generic paged FIA branch. Used only for NPU bring-up to
+    # establish a numerical golden for the draft-block visibility contract.
+    # 0 (default): off, use the normal attention path;
+    # 1: use the reference attention for DSpark draft layers.
+    "VLLM_ASCEND_DSPARK_REFERENCE_ATTENTION": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_DSPARK_REFERENCE_ATTENTION", "0"))
+    ),
+    # Diagnostic: force the DSpark draft block to use causal attention (keeping
+    # the builder's causal mask) instead of the non-causal maskless FIA branch.
+    # Used only for the position-0 A/B experiment: draft position 0 is
+    # semantically unchanged under causal attention (it may still see all context
+    # and itself), so a sharp position-0 recovery confirms the non-causal FIA
+    # path as the acceptance-rate root cause. Positions 1+ are expected to
+    # degrade; this must never be used as the final fix.
+    # 0 (default): off, use the normal non-causal draft path.
+    "VLLM_ASCEND_DSPARK_CAUSAL_DIAG": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_DSPARK_CAUSAL_DIAG", "0"))
+    ),
+    # Diagnostic JSONL prefix for DSpark per-position logit attribution. When
+    # non-empty, TP leaders record the real target token's rank in the draft
+    # backbone logits, applied Markov bias, and final draft logits. Empty by
+    # default, so normal inference retains no full-vocabulary diagnostic tensors.
+    "VLLM_ASCEND_DSPARK_LOGIT_DEBUG_PATH": lambda: os.getenv(
+        "VLLM_ASCEND_DSPARK_LOGIT_DEBUG_PATH", ""
+    ),
+    # Maximum target-verification records written by the DSpark logit debugger.
+    # Values <= 0 disable the entire capture pipeline, including CPU snapshots.
+    "VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS": lambda: int(
+        os.getenv("VLLM_ASCEND_DSPARK_LOGIT_DEBUG_MAX_RECORDS", "8")
+    ),
+    # Diagnostic multiplier for the DSpark Markov logit bias. The default 1.0
+    # preserves checkpoint semantics; 0.0 provides a DFlash-backbone A/B without
+    # changing target verification.
+    "VLLM_ASCEND_DSPARK_MARKOV_SCALE": lambda: float(
+        os.getenv("VLLM_ASCEND_DSPARK_MARKOV_SCALE", "1.0")
+    ),
     # Whether to anbale dynamic EPLB
     "DYNAMIC_EPLB": lambda: os.getenv("DYNAMIC_EPLB", "false").lower(),
     # Whether to enable fused MC2 (`dispatch_gmm_combine_decode` / `dispatch_ffn_combine`).
