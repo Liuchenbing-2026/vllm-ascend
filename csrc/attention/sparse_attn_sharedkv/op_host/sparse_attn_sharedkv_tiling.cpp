@@ -253,17 +253,29 @@ ge::graphStatus SASInfoParser::GetAttrParaInfo()
     OP_CHECK_IF(attrs == nullptr, OPS_REPORT_VECTOR_INNER_ERR(context_->GetNodeName(), "attrs got from ge is nullptr"),
                 return ge::GRAPH_FAILED);
     OP_LOGI(context_->GetNodeName(), "GetAttrParaInfo start");
-    opParamInfo_.softmaxScale = attrs->GetAttrPointer<float>(ATTR_SOFTMAX_SCALE_INDEX);
-    opParamInfo_.cmpRatio = attrs->GetAttrPointer<uint32_t>(ATTR_CMP_RATIO_INDEX);
-    opParamInfo_.oriMaskMode = attrs->GetAttrPointer<uint32_t>(ATTR_ORI_MASK_MODE_INDEX);
-    opParamInfo_.cmpMaskMode = attrs->GetAttrPointer<uint32_t>(ATTR_CMP_MASK_MODE_INDEX);
-    opParamInfo_.oriKvStride = attrs->GetAttrPointer<uint32_t>(ATTR_ORI_KV_STRIDE_INDEX);
-    opParamInfo_.cmpKvStride = attrs->GetAttrPointer<uint32_t>(ATTR_CMP_KV_STRIDE_INDEX);
-    opParamInfo_.oriWinLeft = attrs->GetAttrPointer<uint32_t>(ATTR_ORI_WIN_LEFT_INDEX);
-    opParamInfo_.oriWinRight = attrs->GetAttrPointer<uint32_t>(ATTR_ORI_WIN_RIGHT_INDEX);
+    opParamInfo_.softmaxScale = attrs->GetFloat(ATTR_SOFTMAX_SCALE_INDEX);
+    opParamInfo_.cmpRatio = attrs->GetInt(ATTR_CMP_RATIO_INDEX);
+    opParamInfo_.oriMaskMode = attrs->GetInt(ATTR_ORI_MASK_MODE_INDEX);
+    opParamInfo_.cmpMaskMode = attrs->GetInt(ATTR_CMP_MASK_MODE_INDEX);
+    opParamInfo_.oriKvStride = attrs->GetInt(ATTR_ORI_KV_STRIDE_INDEX);
+    opParamInfo_.cmpKvStride = attrs->GetInt(ATTR_CMP_KV_STRIDE_INDEX);
+    opParamInfo_.oriWinLeft = attrs->GetInt(ATTR_ORI_WIN_LEFT_INDEX);
+    opParamInfo_.oriWinRight = attrs->GetInt(ATTR_ORI_WIN_RIGHT_INDEX);
     opParamInfo_.layoutQ = attrs->GetStr(ATTR_LAYOUT_Q_INDEX);
     opParamInfo_.layoutKv = attrs->GetStr(ATTR_LAYOUT_KV_INDEX);
-    opParamInfo_.returnSoftmaxLse = attrs->GetAttrPointer<bool>(ATTR_RETURN_SOFTMAX_LSE);
+    opParamInfo_.returnSoftmaxLse = attrs->GetBool(ATTR_RETURN_SOFTMAX_LSE);
+
+    OP_CHECK_NULL_WITH_CONTEXT(context_, opParamInfo_.softmaxScale);
+    OP_CHECK_NULL_WITH_CONTEXT(context_, opParamInfo_.cmpRatio);
+    OP_CHECK_NULL_WITH_CONTEXT(context_, opParamInfo_.oriMaskMode);
+    OP_CHECK_NULL_WITH_CONTEXT(context_, opParamInfo_.cmpMaskMode);
+    OP_CHECK_NULL_WITH_CONTEXT(context_, opParamInfo_.oriKvStride);
+    OP_CHECK_NULL_WITH_CONTEXT(context_, opParamInfo_.cmpKvStride);
+    OP_CHECK_NULL_WITH_CONTEXT(context_, opParamInfo_.oriWinLeft);
+    OP_CHECK_NULL_WITH_CONTEXT(context_, opParamInfo_.oriWinRight);
+    OP_CHECK_NULL_WITH_CONTEXT(context_, opParamInfo_.layoutQ);
+    OP_CHECK_NULL_WITH_CONTEXT(context_, opParamInfo_.layoutKv);
+    OP_CHECK_NULL_WITH_CONTEXT(context_, opParamInfo_.returnSoftmaxLse);
 
     OP_LOGI(context_->GetNodeName(), "GetAttrParaInfo end");
     return ge::GRAPH_SUCCESS;
@@ -1268,7 +1280,7 @@ ge::graphStatus SASTilingCheck::CheckSingleParaCmpRatio() const
 {
     if (sasInfo_.perfMode == optiling::SASTemplateMode::CFA_TEMPLATE_MODE || sasInfo_.perfMode == optiling::SASTemplateMode::SCFA_TEMPLATE_MODE){
         OP_CHECK_IF(cmpRatio_ != 128 && cmpRatio_ != 4,
-                    OP_LOGE(opName_, "cmp_ratio should be 128 or 4, but got %u", cmpRatio_),
+                    OP_LOGE(opName_, "cmp_ratio should be 128 or 4, but got %ld", cmpRatio_),
                     return ge::GRAPH_FAILED);
     }
     return ge::GRAPH_SUCCESS;
@@ -1440,10 +1452,10 @@ ge::graphStatus SASTilingCheck::CheckFeatureShape() const
                 return ge::GRAPH_FAILED);
 
     OP_CHECK_IF(*opParamInfo_.oriMaskMode != 4,
-                OP_LOGE(opName_, "ori_mask_mode should be 4, but got %d", *opParamInfo_.oriMaskMode),
+                OP_LOGE(opName_, "ori_mask_mode should be 4, but got %ld", *opParamInfo_.oriMaskMode),
                 return ge::GRAPH_FAILED);
     OP_CHECK_IF(*opParamInfo_.cmpMaskMode != 3,
-                OP_LOGE(opName_, "cmp_mask_mode should be 3, but got %d", *opParamInfo_.cmpMaskMode),
+                OP_LOGE(opName_, "cmp_mask_mode should be 3, but got %ld", *opParamInfo_.cmpMaskMode),
                 return ge::GRAPH_FAILED);
     OP_CHECK_IF(oriWinLeft_ < 0,
                 OP_LOGE(opName_, "ori_win_left should be non-negative, but got %ld", oriWinLeft_),
@@ -1666,6 +1678,7 @@ ge::graphStatus SparseAttnSharedkvTiling::DoOpTiling(SASTilingInfo *tilingInfo)
         workspaceSize += 4 * 128 * 4 * (2 * aicNum); // 4:缓存有效mte2 size长度 128:份数 4:512B对齐长度 2:aiv数量
     }
     size_t *workSpaces = context_->GetWorkspaceSizes(1);
+    OP_CHECK_NULL_WITH_CONTEXT(context_, workSpaces);
     workSpaces[0] = workspaceSize;
 
     // -------------set tilingdata-----------------
@@ -1699,8 +1712,16 @@ ge::graphStatus SparseAttnSharedkvTiling::DoOpTiling(SASTilingInfo *tilingInfo)
 
     usedCoreNum_ = aicNum;
     tilingData_.baseParams.set_usedCoreNum(usedCoreNum_);
-    tilingData_.SaveToBuffer(context_->GetRawTilingData()->GetData(), context_->GetRawTilingData()->GetCapacity());
-    context_->GetRawTilingData()->SetDataSize(tilingData_.GetDataSize());
+    auto *rawTilingData = context_->GetRawTilingData();
+    OP_CHECK_NULL_WITH_CONTEXT(context_, rawTilingData);
+    OP_CHECK_NULL_WITH_CONTEXT(context_, rawTilingData->GetData());
+    const size_t tilingDataSize = tilingData_.GetDataSize();
+    OP_CHECK_IF(rawTilingData->GetCapacity() < tilingDataSize,
+                OP_LOGE(context_->GetNodeName(), "raw tiling buffer capacity(%zu) is smaller than required size(%zu).",
+                         rawTilingData->GetCapacity(), tilingDataSize),
+                return ge::GRAPH_FAILED);
+    tilingData_.SaveToBuffer(rawTilingData->GetData(), rawTilingData->GetCapacity());
+    rawTilingData->SetDataSize(tilingDataSize);
 
     // -------------set tilingkey-----------------
     // FLASH_DECODE, LAYOUT_T, KV_LAYOUT_T, TEMPLATE_MODE

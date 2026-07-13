@@ -18,12 +18,16 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
 from vllm.config import CUDAGraphMode
 
-from vllm_ascend.spec_decode.llm_base_proposer import AscendSpecDecodeBaseProposer
+from vllm_ascend.spec_decode.llm_base_proposer import (
+    AscendSpecDecodeBaseProposer,
+    _isolate_draft_runtime_config,
+)
 
 # CUDAGraphMode values whose ``has_full_cudagraphs()`` is True: FULL plus the
 # two composite modes that mix FULL with NONE / PIECEWISE.
@@ -38,6 +42,36 @@ NON_FULL_CUDAGRAPH_MODES = [
     CUDAGraphMode.NONE,
     CUDAGraphMode.PIECEWISE,
 ]
+
+
+def test_eager_draft_runtime_config_does_not_disable_target_graph():
+    @dataclass
+    class FakeModelConfig:
+        enforce_eager: bool
+
+    @dataclass
+    class FakeCompilationConfig:
+        mode: object
+
+    @dataclass
+    class FakeVllmConfig:
+        model_config: FakeModelConfig
+        compilation_config: FakeCompilationConfig
+
+    target = FakeVllmConfig(
+        model_config=FakeModelConfig(enforce_eager=False),
+        compilation_config=FakeCompilationConfig(mode="VLLM_COMPILE"),
+    )
+
+    draft = _isolate_draft_runtime_config(target)
+    draft.model_config.enforce_eager = True
+    draft.compilation_config.mode = "NONE"
+
+    assert draft is not target
+    assert draft.model_config is not target.model_config
+    assert draft.compilation_config is not target.compilation_config
+    assert target.model_config.enforce_eager is False
+    assert target.compilation_config.mode == "VLLM_COMPILE"
 
 
 class TestDisablePaddedDrafterBatchWithFullGraph:

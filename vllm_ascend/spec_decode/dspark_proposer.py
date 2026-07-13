@@ -47,6 +47,19 @@ def _dspark_greedy_sample(logits: torch.Tensor) -> torch.Tensor:
     return logits.argmax(dim=-1)
 
 
+def _validate_dspark_block_size(vllm_config: VllmConfig) -> None:
+    speculative_config = vllm_config.speculative_config
+    assert speculative_config is not None
+    draft_hf_config = speculative_config.draft_model_config.hf_config
+    checkpoint_block_size = int(getattr(draft_hf_config, "dspark_block_size", 0) or 0)
+    requested_block_size = int(getattr(speculative_config, "num_speculative_tokens", 0) or 0)
+    if requested_block_size != checkpoint_block_size:
+        raise ValueError(
+            "DSpark requires num_speculative_tokens to equal the checkpoint "
+            f"dspark_block_size, but found {requested_block_size} != {checkpoint_block_size}."
+        )
+
+
 class AscendDSparkProposer(AscendDflashProposer):
     """DSpark block proposer.
 
@@ -61,6 +74,7 @@ class AscendDSparkProposer(AscendDflashProposer):
         device: torch.device,
         runner=None,
     ):
+        _validate_dspark_block_size(vllm_config)
         super().__init__(vllm_config, device, runner=runner)
         assert vllm_config.speculative_config is not None
         draft_hf_config = vllm_config.speculative_config.draft_model_config.hf_config

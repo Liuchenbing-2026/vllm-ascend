@@ -79,6 +79,20 @@ def patch_tensor_parallel_group(tp_group):
 _PREPARE_INPUTS_BLOCK_SIZE = 4
 
 
+def _isolate_draft_runtime_config(vllm_config: VllmConfig) -> VllmConfig:
+    """Detach mutable runtime configs before applying draft-only overrides.
+
+    Upstream's draft-config builder replaces only the outer ``VllmConfig``.
+    Its ``model_config`` and ``compilation_config`` therefore still alias the
+    target. Mutating either object for an eager drafter would silently disable
+    target ACLGraph as well.
+    """
+    isolated = copy.copy(vllm_config)
+    isolated.model_config = copy.copy(vllm_config.model_config)
+    isolated.compilation_config = copy.copy(vllm_config.compilation_config)
+    return isolated
+
+
 # TODO: Remove it when the bug of fx-graph is solved
 # patch vllm_config to be in CompilationMode.NONE temporarily
 @contextmanager
@@ -299,7 +313,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
         """
         from vllm.compilation.backends import set_model_tag
 
-        draft_vllm_config = self._create_draft_vllm_config()
+        draft_vllm_config = _isolate_draft_runtime_config(self._create_draft_vllm_config())
         if self.speculative_config.enforce_eager:
             draft_vllm_config.model_config.enforce_eager = True
             draft_vllm_config.compilation_config.mode = CompilationMode.NONE

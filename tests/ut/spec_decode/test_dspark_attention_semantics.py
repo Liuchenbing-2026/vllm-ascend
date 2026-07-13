@@ -13,12 +13,15 @@ from vllm_ascend.ops.dspark_attention import (
     _dspark_sas_active_query_tokens,
     _dspark_sas_lens_match_scheduling,
     _dspark_sas_window,
+    _dspark_sparse_sas_metadata_window,
     _dspark_sparse_sas_window,
     _gather_context_kv,
+    _validate_dspark_sparse_sas_indices,
     _validate_query_block_slots,
     build_dspark_swa_indices,
     dspark_attention,
     dspark_attention_from_standard_cache,
+    dspark_attention_from_standard_cache_sas,
 )
 
 
@@ -103,17 +106,190 @@ def test_dspark_sas_window_covers_context_and_full_draft_block():
         ) == list(range(s2_size))
 
 
-def test_dspark_sparse_sas_window_is_fixed_upper_bound_only():
+def test_dspark_sparse_sas_window_uses_a2_operator_contract():
     block_size = 5
     window_size = 7
-    s2_size = window_size + block_size
 
     mask_mode, ori_win_left, ori_win_right = _dspark_sparse_sas_window(block_size, window_size)
 
     assert mask_mode == 4
-    assert ori_win_left == window_size + block_size - 1
-    assert ori_win_right == block_size - 1
-    assert _band_visible_indices(0, block_size, s2_size, ori_win_left, ori_win_right) == list(range(s2_size))
+    assert ori_win_left == 127
+    assert ori_win_right == 0
+
+
+def test_dspark_sparse_sas_metadata_window_uses_a2_compat_schedule():
+    assert _dspark_sparse_sas_metadata_window(block_size=5, window_size=128) == (4, 127, 0)
+    assert _dspark_sparse_sas_metadata_window(block_size=5, window_size=507) == (4, 127, 0)
+
+    with pytest.raises(ValueError, match="capacity=512"):
+        _dspark_sparse_sas_metadata_window(block_size=5, window_size=508)
+
+
+@pytest.mark.parametrize("index_width", [128, 256, 384, 512])
+def test_dspark_sparse_sas_index_width_accepts_compatible_shapes(index_width):
+    _validate_dspark_sparse_sas_indices(torch.empty(2, 1, index_width, dtype=torch.int32))
+
+
+@pytest.mark.parametrize("index_width", [0, 129, 640])
+def test_dspark_sparse_sas_index_width_fails_closed(index_width):
+    with pytest.raises(ValueError, match="compatibility metadata capacity"):
+        _validate_dspark_sparse_sas_indices(torch.empty(2, 1, index_width, dtype=torch.int32))
+
+
+def test_dspark_sparse_sas_index_shape_fails_closed():
+    with pytest.raises(ValueError, match="rank 3"):
+        _validate_dspark_sparse_sas_indices(torch.empty(2, 512, dtype=torch.int32))
+
+
+def test_dspark_sparse_sas_index_width_must_cover_semantic_window():
+    with pytest.raises(ValueError, match="required=133"):
+        _validate_dspark_sparse_sas_indices(
+            torch.empty(2, 1, 128, dtype=torch.int32),
+            min_width=133,
+        )
+
+
+def _standard_cache_sas_test_kwargs(index_width: int) -> dict:
+    return {
+        "q": torch.empty(1, 4, 4, device="meta"),
+        "standard_kv_cache": torch.empty(1, 4, 1, 4, device="meta"),
+        "block_table": torch.tensor([[0]], dtype=torch.int32),
+        "positions": torch.tensor([0], dtype=torch.int32),
+        "slot_mapping": torch.tensor([0], dtype=torch.int32),
+        "attn_sink": torch.zeros(4),
+        "block_size": 5,
+        "window_size": 128,
+        "cache_block_size": 4,
+        "softmax_scale": 0.125,
+        "query_start_loc": torch.tensor([0, 1], dtype=torch.int32),
+        "seq_lens": torch.tensor([1], dtype=torch.int32),
+        "dspark_swa_indices": torch.full((1, 1, index_width), -1, dtype=torch.int32),
+        "dspark_swa_lens": torch.ones(1, dtype=torch.int32),
+        "num_query_tokens": 1,
+    }
+
+
+def test_dspark_standard_cache_sas_uses_a2_window_for_metadata_and_attention(monkeypatch):
+    captured = {}
+
+    def fake_metadata_op(**kwargs):
+        captured["metadata"] = kwargs
+        return torch.empty(1024, dtype=torch.int32)
+
+    def fake_attn_op(q_block, **kwargs):
+        captured["attention"] = kwargs
+        return q_block, torch.empty(0)
+
+    monkeypatch.setattr(
+        dspark_attention_module,
+        "_get_dspark_sas_ops",
+        lambda _q: (fake_metadata_op, fake_attn_op),
+    )
+
+    out = dspark_attention_from_standard_cache_sas(**_standard_cache_sas_test_kwargs(512))
+
+    assert out is not None
+    assert captured["metadata"]["ori_win_left"] == 127
+    assert captured["metadata"]["ori_win_right"] == 0
+    assert captured["attention"]["ori_win_left"] == 127
+    assert captured["attention"]["ori_win_right"] == 0
+
+
+def test_dspark_standard_cache_sas_index_guard_falls_back_before_ops(monkeypatch):
+    calls = []
+
+    def record_call(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("SAS ops must not run for an unsupported index width")
+
+    monkeypatch.setattr(
+        dspark_attention_module,
+        "_get_dspark_sas_ops",
+        lambda _q: (record_call, record_call),
+    )
+    monkeypatch.setattr(dspark_attention_module.logger, "warning_once", lambda *args, **kwargs: None)
+
+    assert dspark_attention_from_standard_cache_sas(**_standard_cache_sas_test_kwargs(640)) is None
+    assert not calls
+
+
+def test_dspark_standard_cache_sas_graph_guard_cannot_be_skipped(monkeypatch):
+    calls = []
+
+    def record_call(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("SAS ops must not run for an unsupported index width")
+
+    monkeypatch.setattr(
+        dspark_attention_module,
+        "_get_dspark_sas_ops",
+        lambda _q: (record_call, record_call),
+    )
+    kwargs = _standard_cache_sas_test_kwargs(640)
+    kwargs.update(
+        sas_metadata=torch.empty(1024, dtype=torch.int32),
+        skip_scheduling_guard=True,
+        raise_on_error=True,
+    )
+
+    with pytest.raises(ValueError, match="width=640"):
+        dspark_attention_from_standard_cache_sas(**kwargs)
+    assert not calls
+
+
+def test_dspark_standard_cache_sas_graph_guard_rejects_too_narrow_indices(monkeypatch):
+    calls = []
+
+    def record_call(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("SAS ops must not run for an insufficient index width")
+
+    monkeypatch.setattr(
+        dspark_attention_module,
+        "_get_dspark_sas_ops",
+        lambda _q: (record_call, record_call),
+    )
+    kwargs = _standard_cache_sas_test_kwargs(128)
+    kwargs.update(
+        sas_metadata=torch.empty(1024, dtype=torch.int32),
+        skip_scheduling_guard=True,
+        raise_on_error=True,
+    )
+
+    with pytest.raises(ValueError, match="required=133"):
+        dspark_attention_from_standard_cache_sas(**kwargs)
+    assert not calls
+
+
+def test_dspark_standard_cache_sas_accepts_prebuilt_graph_metadata(monkeypatch):
+    captured = {}
+    sas_metadata = torch.empty(1024, dtype=torch.int32)
+
+    def fail_metadata_op(**kwargs):
+        raise AssertionError("prebuilt graph metadata must be reused")
+
+    def fake_attn_op(q_block, **kwargs):
+        captured.update(kwargs)
+        return q_block, torch.empty(0)
+
+    monkeypatch.setattr(
+        dspark_attention_module,
+        "_get_dspark_sas_ops",
+        lambda _q: (fail_metadata_op, fake_attn_op),
+    )
+    kwargs = _standard_cache_sas_test_kwargs(256)
+    kwargs.update(
+        sas_metadata=sas_metadata,
+        skip_scheduling_guard=True,
+        raise_on_error=True,
+    )
+
+    out = dspark_attention_from_standard_cache_sas(**kwargs)
+
+    assert out is not None
+    assert captured["metadata"] is sas_metadata
+    assert captured["ori_win_left"] == 127
+    assert captured["ori_win_right"] == 0
 
 
 def test_dspark_sas_window_rejects_plain_sliding_window_formula():
@@ -201,6 +377,44 @@ def test_dspark_swa_indices_match_upstream_noncausal_formula():
     )
 
 
+def test_dspark_swa_indices_preserve_physical_slot_prefix_contract_for_draft5_window128():
+    block_size = 5
+    window_size = 128
+    cache_block_size = 128
+    block_table = torch.tensor([[9, 3], [6, 11]], dtype=torch.int32)
+    positions = torch.tensor([128, 129, 130, 131, 132, 72, 73, 74, 75, 76, 0], dtype=torch.int32)
+    query_start_loc = torch.tensor([0, 5, 10], dtype=torch.int32)
+    seq_lens = torch.tensor([133, 77], dtype=torch.int32)
+    token_to_req_indices = torch.tensor([0] * 5 + [1] * 5 + [-1], dtype=torch.int32)
+    slot_mapping = torch.tensor([[3, i] for i in range(5)] + [[6, i] for i in range(5)] + [[-1, -1]])
+
+    indices, lens = build_dspark_swa_indices(
+        block_table,
+        positions,
+        slot_mapping,
+        block_size,
+        window_size,
+        cache_block_size,
+        query_start_loc=query_start_loc,
+        seq_lens=seq_lens,
+        token_to_req_indices=token_to_req_indices,
+    )
+
+    physical_slot_capacity = (int(block_table.max().item()) + 1) * cache_block_size
+    expected_req0 = torch.cat([torch.arange(9 * 128, 10 * 128), torch.arange(3 * 128, 3 * 128 + 5)]).to(torch.int32)
+    expected_req1 = torch.arange(6 * 128, 6 * 128 + 77, dtype=torch.int32)
+
+    torch.testing.assert_close(lens, torch.tensor([133] * 5 + [77] * 5 + [0], dtype=torch.int32))
+    for row in range(10):
+        expected = expected_req0 if row < 5 else expected_req1
+        valid_len = int(lens[row].item())
+        torch.testing.assert_close(indices[row, 0, :valid_len], expected)
+        assert torch.all(indices[row, 0, :valid_len] >= 0)
+        assert torch.all(indices[row, 0, :valid_len] < physical_slot_capacity)
+        assert torch.all(indices[row, 0, valid_len:] == -1)
+    assert torch.all(indices[-1] == -1)
+
+
 def test_dspark_swa_indices_default_width_is_operator_aligned():
     indices, lens = build_dspark_swa_indices(
         torch.tensor([[0]], dtype=torch.int32),
@@ -272,6 +486,18 @@ def test_dspark_sas_lens_guard_accepts_partial_block_padding():
         block_size=block_size,
         window_size=window_size,
         num_query_tokens=positions.numel(),
+    )
+
+
+def test_dspark_sas_lens_guard_rejects_metadata_capacity_overflow():
+    assert not _dspark_sas_lens_match_scheduling(
+        torch.tensor([1], dtype=torch.int32),
+        torch.tensor([0, 1], dtype=torch.int32),
+        torch.tensor([1], dtype=torch.int32),
+        token_to_req_indices=None,
+        block_size=5,
+        window_size=508,
+        num_query_tokens=1,
     )
 
 
@@ -517,32 +743,11 @@ def test_dspark_attention_custom_op_disabled_by_pta_ref(monkeypatch):
     assert dspark_attention_module._get_dspark_attention_custom_op(q) is None
 
 
-def test_dspark_attention_entry_uses_sas_gateway(monkeypatch):
+def test_dspark_attention_private_path_skips_incompatible_a2_sas(monkeypatch):
     q = torch.ones(2, 4, 4, dtype=torch.float32)
     draft_k = torch.arange(2 * 4 * 4, dtype=torch.float32).view(2, 4, 4)
     block_size = 2
     window_size = 3
-    calls = []
-
-    def fake_metadata_op(**kwargs):
-        assert kwargs["num_heads_q"] == 4
-        assert kwargs["num_heads_kv"] == 1
-        assert kwargs["ori_win_left"] == window_size + block_size - 1
-        assert kwargs["ori_win_right"] == block_size - 1
-        assert kwargs["layout_q"] == "TND"
-        assert kwargs["layout_kv"] == "TND"
-        assert kwargs["has_cmp_kv"] is False
-        return torch.empty(1024, dtype=torch.int32)
-
-    def fake_attn_op(q_block, **kwargs):
-        assert kwargs["ori_kv"].shape == (2, 1, 4)
-        assert kwargs["sinks"].dtype == torch.float32
-        assert kwargs["sinks"].shape == (4,)
-        assert kwargs["ori_win_left"] == window_size + block_size - 1
-        assert kwargs["ori_win_right"] == block_size - 1
-        calls.append(kwargs)
-        return q_block + 2, torch.empty(0)
-
     monkeypatch.setattr(
         dspark_attention_module,
         "_get_dspark_attention_custom_op",
@@ -551,7 +756,7 @@ def test_dspark_attention_entry_uses_sas_gateway(monkeypatch):
     monkeypatch.setattr(
         dspark_attention_module,
         "_get_dspark_sas_ops",
-        lambda _q: (fake_metadata_op, fake_attn_op),
+        lambda _q: (_ for _ in ()).throw(AssertionError("incompatible private SAS op must not launch")),
     )
 
     actual = dspark_attention(
@@ -571,8 +776,10 @@ def test_dspark_attention_entry_uses_sas_gateway(monkeypatch):
         shared_kv=True,
     )
 
-    assert len(calls) == 1
-    torch.testing.assert_close(actual, q + 2)
+    torch.testing.assert_close(
+        actual,
+        _dspark_attention_reference(q, draft_k, draft_k, torch.zeros(4), 0.125),
+    )
 
 
 def test_dspark_attention_entry_does_not_use_sas_without_shared_kv(monkeypatch):
@@ -617,16 +824,10 @@ def test_dspark_attention_entry_does_not_use_sas_without_shared_kv(monkeypatch):
     )
 
 
-def test_dspark_attention_warns_when_sas_falls_back(monkeypatch):
+def test_dspark_attention_private_sas_guard_needs_no_runtime_warning(monkeypatch):
     q = torch.ones(2, 1, 4, dtype=torch.float32)
     draft_k = torch.ones(2, 1, 4, dtype=torch.float32)
     warnings = []
-
-    def fake_metadata_op(**kwargs):
-        return torch.empty(1, dtype=torch.int32)
-
-    def fake_attn_op(*args, **kwargs):
-        raise RuntimeError("synthetic sas failure")
 
     monkeypatch.setattr(
         dspark_attention_module,
@@ -636,7 +837,7 @@ def test_dspark_attention_warns_when_sas_falls_back(monkeypatch):
     monkeypatch.setattr(
         dspark_attention_module,
         "_get_dspark_sas_ops",
-        lambda _q: (fake_metadata_op, fake_attn_op),
+        lambda _q: (_ for _ in ()).throw(AssertionError("incompatible private SAS op must not launch")),
     )
     monkeypatch.setattr(
         dspark_attention_module.logger,
@@ -661,8 +862,7 @@ def test_dspark_attention_warns_when_sas_falls_back(monkeypatch):
         shared_kv=True,
     )
 
-    assert warnings
-    assert "DSpark SAS attention failed" in warnings[0][0]
+    assert not warnings
     torch.testing.assert_close(
         actual,
         _dspark_attention_reference(q, draft_k, draft_k, torch.zeros(1), 0.125),

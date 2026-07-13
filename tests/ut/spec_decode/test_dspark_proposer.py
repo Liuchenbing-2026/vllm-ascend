@@ -12,7 +12,22 @@ import vllm_ascend.models.deepseek_v4_dspark as dspark_model_module
 import vllm_ascend.spec_decode.dspark_proposer as dspark_proposer_module
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.attention.utils import AscendCommonAttentionMetadata
-from vllm_ascend.spec_decode.dspark_proposer import AscendDSparkProposer
+from vllm_ascend.spec_decode.dspark_proposer import AscendDSparkProposer, _validate_dspark_block_size
+
+
+def test_dspark_block_size_must_match_checkpoint_contract():
+    draft_hf_config = SimpleNamespace(dspark_block_size=5)
+    vllm_config = SimpleNamespace(
+        speculative_config=SimpleNamespace(
+            num_speculative_tokens=5,
+            draft_model_config=SimpleNamespace(hf_config=draft_hf_config),
+        )
+    )
+
+    _validate_dspark_block_size(vllm_config)
+    vllm_config.speculative_config.num_speculative_tokens = 4
+    with pytest.raises(ValueError, match=r"4 != 5"):
+        _validate_dspark_block_size(vllm_config)
 
 
 def test_dspark_draft_cudagraph_keys_use_dspark_query_len(monkeypatch):

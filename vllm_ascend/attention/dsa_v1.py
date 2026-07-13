@@ -21,6 +21,7 @@ from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.attention.dsa_window import (
     get_draft_swa_window,
     get_dspark_query_block_size,
+    get_dspark_sparse_sas_metadata_window,
     get_dspark_sparse_sas_window,
     is_dspark_noncausal_draft,
 )
@@ -1258,8 +1259,13 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
             self.vllm_config,
             common_attn_metadata,
         )
+        metadata_ori_win_left, metadata_ori_win_right = ori_win_left, ori_win_right
         if dspark_swa_indices is not None:
             ori_win_left, ori_win_right = get_dspark_sparse_sas_window(
+                self.vllm_config,
+                common_attn_metadata,
+            )
+            metadata_ori_win_left, metadata_ori_win_right = get_dspark_sparse_sas_metadata_window(
                 self.vllm_config,
                 common_attn_metadata,
             )
@@ -1278,8 +1284,8 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
             batch_size=len(seq_lens),
             cmp_ratio=1,
             ori_mask_mode=4,
-            ori_win_left=ori_win_left,
-            ori_win_right=ori_win_right,
+            ori_win_left=metadata_ori_win_left,
+            ori_win_right=metadata_ori_win_right,
             layout_q="TND",
             layout_kv="PA_ND",
             has_ori_kv=True,
@@ -1362,8 +1368,13 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
             self.vllm_config,
             common_attn_metadata,
         )
+        metadata_ori_win_left, metadata_ori_win_right = ori_win_left, ori_win_right
         if dspark_swa_indices is not None:
             ori_win_left, ori_win_right = get_dspark_sparse_sas_window(
+                self.vllm_config,
+                common_attn_metadata,
+            )
+            metadata_ori_win_left, metadata_ori_win_right = get_dspark_sparse_sas_metadata_window(
                 self.vllm_config,
                 common_attn_metadata,
             )
@@ -1384,8 +1395,8 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
                 cmp_ratio=1,
                 ori_mask_mode=4,
                 cmp_mask_mode=3,
-                ori_win_left=ori_win_left,
-                ori_win_right=ori_win_right,
+                ori_win_left=metadata_ori_win_left,
+                ori_win_right=metadata_ori_win_right,
                 layout_q="TND",
                 layout_kv="PA_ND",
                 has_ori_kv=True,
@@ -1418,8 +1429,8 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
                 cmp_ratio=1,
                 ori_mask_mode=4,
                 cmp_mask_mode=3,
-                ori_win_left=ori_win_left,
-                ori_win_right=ori_win_right,
+                ori_win_left=metadata_ori_win_left,
+                ori_win_right=metadata_ori_win_right,
                 layout_q="TND",
                 layout_kv="PA_ND",
                 has_ori_kv=True,

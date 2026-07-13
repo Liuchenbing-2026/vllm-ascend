@@ -7,6 +7,12 @@ import torch
 from vllm.logger import logger
 
 from vllm_ascend import envs
+from vllm_ascend.attention.dsa_window import (
+    DSPARK_SPARSE_SAS_METADATA_S2_CAPACITY,
+    DSPARK_SPARSE_SAS_METADATA_WIN_LEFT,
+    DSPARK_SPARSE_SAS_METADATA_WIN_RIGHT,
+    validate_dspark_sparse_sas_metadata_capacity,
+)
 
 DSparkAttentionCustomOp = Callable[
     [
@@ -40,13 +46,44 @@ def _dspark_sas_window(block_size: int, window_size: int) -> tuple[int, int, int
 
 
 def _dspark_sparse_sas_window(block_size: int, window_size: int) -> tuple[int, int, int]:
-    # Compatibility scheduling bound for PA_ND + ori_sparse_indices. This is
-    # not the DSpark visible-token definition; the slot list is authoritative.
+    # A2 SparseAttnSharedkv requires the same fixed 127/0 contract as its
+    # metadata op. The explicit slot list remains authoritative for visibility.
+    validate_dspark_sparse_sas_metadata_capacity(block_size, window_size)
     return (
         DSPARK_SAS_MASK_MODE,
-        window_size + block_size - 1,
-        block_size - 1,
+        DSPARK_SPARSE_SAS_METADATA_WIN_LEFT,
+        DSPARK_SPARSE_SAS_METADATA_WIN_RIGHT,
     )
+
+
+def _dspark_sparse_sas_metadata_window(block_size: int, window_size: int) -> tuple[int, int, int]:
+    validate_dspark_sparse_sas_metadata_capacity(block_size, window_size)
+    return (
+        DSPARK_SAS_MASK_MODE,
+        DSPARK_SPARSE_SAS_METADATA_WIN_LEFT,
+        DSPARK_SPARSE_SAS_METADATA_WIN_RIGHT,
+    )
+
+
+def _validate_dspark_sparse_sas_indices(
+    ori_sparse_indices: torch.Tensor,
+    *,
+    min_width: int = 0,
+) -> None:
+    if ori_sparse_indices.ndim != 3:
+        raise ValueError(f"DSpark ori_sparse_indices must be rank 3: shape={tuple(ori_sparse_indices.shape)}")
+    index_width = int(ori_sparse_indices.shape[-1])
+    if index_width <= 0 or index_width % 128 != 0 or index_width > DSPARK_SPARSE_SAS_METADATA_S2_CAPACITY:
+        raise ValueError(
+            "DSpark sparse index width must be a positive multiple of 128 "
+            "within the compatibility metadata capacity: "
+            f"width={index_width}, capacity={DSPARK_SPARSE_SAS_METADATA_S2_CAPACITY}"
+        )
+    if index_width < int(min_width):
+        raise ValueError(
+            "DSpark sparse index width must cover window_size + block_size: "
+            f"width={index_width}, required={int(min_width)}"
+        )
 
 
 def _dspark_sas_lens_match_scheduling(
@@ -60,12 +97,15 @@ def _dspark_sas_lens_match_scheduling(
 ) -> bool:
     """Whether current fixed-bound SAS metadata covers the explicit slot list.
 
-    Until the metadata op takes per-token DSpark lens, the AICore sparse path
-    schedules up to `min(seq_len, window_size + block_size)` ori-side slots per
-    request. Padding `-1` slots are trimmed in the ori-sparse kernel path, so
-    shorter partial draft blocks are valid as long as the fixed bound covers
-    the explicit visible slot length.
+    The A2 compatibility metadata schedule covers one 512-token S2 partition.
+    Padding `-1` slots are trimmed in the ori-sparse kernel path, so shorter
+    partial draft blocks are valid as long as the semantic upper bound and the
+    explicit visible slot length fit that partition.
     """
+    try:
+        validate_dspark_sparse_sas_metadata_capacity(block_size, window_size)
+    except ValueError:
+        return False
     if num_query_tokens == 0 or dspark_swa_lens.numel() < num_query_tokens:
         return False
     if query_start_loc.numel() < 2 or seq_lens.numel() == 0:
@@ -641,8 +681,7 @@ def dspark_attention_from_standard_cache_sas(
     """SAS fast path over standard paged SWA cache.
 
     The operator consumes `dspark_swa_indices` as the true visible slot list.
-    The band window passed to metadata/op is only an upper-bound scheduling
-    shape for this sparse path.
+    Both metadata and attention use the verified A2 127/0 attribute contract.
     """
     if q.device.type == "cpu" or query_start_loc is None or seq_lens is None:
         return None
@@ -652,6 +691,10 @@ def dspark_attention_from_standard_cache_sas(
 
     metadata_op, attn_op = ops
     try:
+        _, metadata_ori_win_left, metadata_ori_win_right = _dspark_sparse_sas_metadata_window(
+            block_size,
+            window_size,
+        )
         standard_cache = _unwrap_single_kv_cache(standard_kv_cache)
         if (dspark_swa_indices is None) != (dspark_swa_lens is None):
             raise ValueError("DSpark SWA indices and lens must be provided together")
@@ -670,6 +713,10 @@ def dspark_attention_from_standard_cache_sas(
                 token_to_req_indices=token_to_req_indices,
             )
         assert dspark_swa_lens is not None
+        _validate_dspark_sparse_sas_indices(
+            dspark_swa_indices,
+            min_width=int(window_size) + int(block_size),
+        )
         active_query_tokens = _dspark_sas_active_query_tokens(
             q.shape[0],
             dspark_swa_lens,
@@ -718,8 +765,8 @@ def dspark_attention_from_standard_cache_sas(
                 cmp_ratio=1,
                 ori_mask_mode=DSPARK_SAS_MASK_MODE,
                 cmp_mask_mode=DSPARK_SAS_CMP_MASK_MODE,
-                ori_win_left=ori_win_left,
-                ori_win_right=ori_win_right,
+                ori_win_left=metadata_ori_win_left,
+                ori_win_right=metadata_ori_win_right,
                 layout_q="TND",
                 layout_kv="PA_ND",
                 has_ori_kv=True,
@@ -825,6 +872,17 @@ def _maybe_call_dspark_sas_attention(
     window_size: int,
     softmax_scale: float,
 ) -> torch.Tensor | None:
+    # Private packed TND has no explicit sparse slot list and needs an expanded
+    # noncausal band. A2 SAS only accepts 127/0, so skip the incompatible op
+    # before an AICPU failure poisons the stream. Graph runtime uses PA_ND with
+    # explicit indices instead.
+    _, required_left, required_right = _dspark_sas_window(block_size, window_size)
+    if (required_left, required_right) != (
+        DSPARK_SPARSE_SAS_METADATA_WIN_LEFT,
+        DSPARK_SPARSE_SAS_METADATA_WIN_RIGHT,
+    ):
+        return None
+
     ops = _get_dspark_sas_ops(q)
     if ops is None:
         return None

@@ -462,6 +462,67 @@ class TestQuantPrefixMapper(TestBase):
                         expected,
                     )
 
+    def test_deepseek_v4_dspark_adds_canonical_aliases_for_raw_modelslim_keys(self):
+        raw_description = {
+            "mtp.0.attn.wq_a.weight": "W8A8_DYNAMIC",
+            "mtp.0.attn.wq_a.weight_scale": "W8A8_DYNAMIC",
+            "mtp.0.ffn.shared_experts.w1.weight": "W8A8_DYNAMIC",
+            "mtp.0.ffn.experts.7.w2.scale_bias": "W4A8_DYNAMIC",
+            "mtp.0.attn_norm.weight": "FLOAT",
+            "mtp.0.ffn_norm.weight": "FLOAT",
+            "mtp.0.ffn.gate.bias": "FLOAT",
+            "mtp.0.main_proj.weight": "W8A8_DYNAMIC",
+        }
+
+        config = AscendModelSlimConfig(raw_description.copy())
+
+        # Raw names are checkpoint tensor names and must remain loadable.
+        for name, quant_type in raw_description.items():
+            self.assertEqual(config.quant_description[name], quant_type)
+
+        expected_aliases = {
+            "model.mtp.0.self_attn.wq_a.weight": "W8A8_DYNAMIC",
+            "model.mtp.0.self_attn.wq_a.weight_scale": "W8A8_DYNAMIC",
+            "model.mtp.0.mlp.shared_experts.gate_proj.weight": "W8A8_DYNAMIC",
+            "model.mtp.0.mlp.experts.7.down_proj.scale_bias": "W4A8_DYNAMIC",
+            "model.mtp.0.input_layernorm.weight": "FLOAT",
+            "model.mtp.0.post_attention_layernorm.weight": "FLOAT",
+            "model.mtp.0.mlp.gate.e_score_correction_bias": "FLOAT",
+            "model.mtp.0.main_proj.weight": "W8A8_DYNAMIC",
+        }
+        for name, quant_type in expected_aliases.items():
+            self.assertEqual(config.quant_description[name], quant_type)
+
+        aliased_description = config.quant_description.copy()
+        config._apply_extra_quant_adaptations()
+        self.assertEqual(config.quant_description, aliased_description)
+
+        self.assertEqual(
+            config.quant_prefix_mapper(
+                "deepseek_mtp",
+                "model.layers.43.self_attn.wq_a",
+                num_hidden_layers=43,
+            ),
+            "model.mtp.0.self_attn.wq_a",
+        )
+        self.assertEqual(
+            config.quant_prefix_mapper(
+                "deepseek_mtp",
+                "model.layers.43.main_proj",
+                num_hidden_layers=43,
+            ),
+            "model.mtp.0.main_proj",
+        )
+
+    def test_deepseek_v4_dspark_rejects_conflicting_raw_and_canonical_quant_keys(self):
+        with self.assertRaisesRegex(ValueError, "conflicting DSpark quantization entries"):
+            AscendModelSlimConfig(
+                {
+                    "mtp.0.attn.wq_a.weight": "W8A8_DYNAMIC",
+                    "model.mtp.0.self_attn.wq_a.weight": "FLOAT",
+                }
+            )
+
     def test_deepseek_v4_dspark_mtp_keeps_direct_quant_key(self):
         config = AscendModelSlimConfig(
             {

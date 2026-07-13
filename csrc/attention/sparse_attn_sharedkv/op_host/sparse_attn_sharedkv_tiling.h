@@ -197,13 +197,13 @@ struct SASParaInfo {
     SASTilingRequiredParaInfo attnOut = {nullptr, nullptr};
 
     const float *softmaxScale = nullptr;
-    const uint32_t *cmpRatio = nullptr;
-    const uint32_t *oriMaskMode = nullptr;
-    const uint32_t *cmpMaskMode = nullptr;
-    const uint32_t *oriKvStride = nullptr;
-    const uint32_t *cmpKvStride = nullptr;
-    const uint32_t *oriWinLeft = nullptr;
-    const uint32_t *oriWinRight = nullptr;
+    const int64_t *cmpRatio = nullptr;
+    const int64_t *oriMaskMode = nullptr;
+    const int64_t *cmpMaskMode = nullptr;
+    const int64_t *oriKvStride = nullptr;
+    const int64_t *cmpKvStride = nullptr;
+    const int64_t *oriWinLeft = nullptr;
+    const int64_t *oriWinRight = nullptr;
     const char *layoutQ = nullptr;
     const char *layoutKv = nullptr;
     const bool *returnSoftmaxLse = nullptr;
@@ -243,8 +243,8 @@ public:
     int64_t cmpRatio = 1;
     uint64_t oriMaskMode = 0;
     uint64_t cmpMaskMode = 0;
-    uint64_t oriKvStride = 0;
-    uint64_t cmpKvStride = 0;
+    int64_t oriKvStride = 0;
+    int64_t cmpKvStride = 0;
     int64_t oriWinLeft = 0;
     int64_t oriWinRight = 0;
     int64_t sparseBlockSize = 0;

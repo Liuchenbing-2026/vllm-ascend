@@ -2,12 +2,16 @@
 
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 import vllm_ascend.attention.context_parallel.dsa_cp as dsa_cp
 import vllm_ascend.attention.dsa_v1 as dsa_v1
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
-from vllm_ascend.attention.dsa_window import get_draft_swa_window
+from vllm_ascend.attention.dsa_window import (
+    get_draft_swa_window,
+    get_dspark_sparse_sas_metadata_window,
+)
 
 
 def _fake_vllm_config(window_size: int = 7, block_size: int = 5) -> SimpleNamespace:
@@ -66,7 +70,16 @@ def test_dspark_dsa_window_does_not_encode_dspark_full_block():
     assert get_draft_swa_window(vllm_config, _fake_common_metadata(causal=False)) == (6, 0)
 
 
-def test_dspark_dsa_decode_metadata_uses_noncausal_window(monkeypatch):
+def test_dspark_dsa_metadata_window_is_compatibility_schedule():
+    common_metadata = _fake_common_metadata(causal=False)
+
+    assert get_dspark_sparse_sas_metadata_window(_fake_vllm_config(128, 5), common_metadata) == (127, 0)
+    assert get_dspark_sparse_sas_metadata_window(_fake_vllm_config(507, 5), common_metadata) == (127, 0)
+    with pytest.raises(ValueError, match="capacity=512"):
+        get_dspark_sparse_sas_metadata_window(_fake_vllm_config(508, 5), common_metadata)
+
+
+def test_dspark_dsa_decode_metadata_decouples_compat_and_attention_windows(monkeypatch):
     captured = {}
 
     def fake_metadata_op(**kwargs):
@@ -104,14 +117,14 @@ def test_dspark_dsa_decode_metadata_uses_noncausal_window(monkeypatch):
         num_decode_tokens=5,
     )
 
-    assert captured["ori_win_left"] == 11
-    assert captured["ori_win_right"] == 4
+    assert captured["ori_win_left"] == 127
+    assert captured["ori_win_right"] == 0
     assert captured["cu_seqlens_ori_kv"] is None
     assert captured["cu_seqlens_cmp_kv"] is None
     assert captured["seqused_q"] is None
     torch.testing.assert_close(captured["seqused_kv"], torch.tensor([15], dtype=torch.int32))
-    assert metadata.ori_win_left == 11
-    assert metadata.ori_win_right == 4
+    assert metadata.ori_win_left == 127
+    assert metadata.ori_win_right == 0
     assert metadata.dspark_swa_indices.shape == (5, 1, 128)
     torch.testing.assert_close(metadata.dspark_swa_lens, torch.full((5,), 12, dtype=torch.int32))
     expected_slots = _expected_slot_ids(
@@ -244,8 +257,10 @@ def test_dspark_dsa_prefill_metadata_slices_slot_mapping_from_token_start(monkey
     )
 
     torch.testing.assert_close(metadata.slot_mapping, torch.tensor([2, 3, 4], dtype=torch.int32))
-    assert captured["ori_win_left"] == 11
-    assert captured["ori_win_right"] == 4
+    assert captured["ori_win_left"] == 127
+    assert captured["ori_win_right"] == 0
+    assert metadata.ori_win_left == 127
+    assert metadata.ori_win_right == 0
     assert metadata.dspark_swa_indices.shape == (3, 1, 128)
     torch.testing.assert_close(metadata.dspark_swa_lens, torch.full((3,), 10, dtype=torch.int32))
     expected_slots = _expected_slot_ids(
@@ -260,7 +275,7 @@ def test_dspark_dsa_prefill_metadata_slices_slot_mapping_from_token_start(monkey
         assert torch.all(metadata.dspark_swa_indices[row, 0, 10:] == -1)
 
 
-def test_dspark_dsa_cp_req_metadata_uses_noncausal_window(monkeypatch):
+def test_dspark_dsa_cp_req_metadata_decouples_compat_and_attention_windows(monkeypatch):
     captured = {}
 
     def fake_metadata_op(**kwargs):
@@ -339,10 +354,10 @@ def test_dspark_dsa_cp_req_metadata_uses_noncausal_window(monkeypatch):
         num_input_tokens=5,
     )
 
-    assert captured["ori_win_left"] == 11
-    assert captured["ori_win_right"] == 4
-    assert metadata.ori_win_left == 11
-    assert metadata.ori_win_right == 4
+    assert captured["ori_win_left"] == 127
+    assert captured["ori_win_right"] == 0
+    assert metadata.ori_win_left == 127
+    assert metadata.ori_win_right == 0
     assert metadata.dspark_swa_indices.shape == (5, 1, 128)
     torch.testing.assert_close(metadata.dspark_swa_lens, torch.full((5,), 12, dtype=torch.int32))
     expected_slots = _expected_slot_ids(
