@@ -1,0 +1,8 @@
+phase=mtp1_fullgraph_baseline
+target_graph=FULL_DECODE_ONLY
+draft_graph=default
+num_speculative_tokens=1
+aisbench_gate=input8192/output128/concurrency1/prompts1
+final_protocol=input8192/output1024/concurrency8/prompts32/seed1
+topology=TP8/DP1/EP
+port=8900

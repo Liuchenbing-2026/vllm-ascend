@@ -1,0 +1,2 @@
+current_time,input_len,output_len,total_req,max_cc,cc,rr,TTFT avg,TTFT P90,TPOT avg,TPOT SLO_P90,E2E_time,output_throughput,single_output_throughput,E2E_throughput,single_E2E_throughput,qps,qpm,input_token_throughput,prefill_token_throughput
+2026-07-13 13:16:44,8196.0,1024.0,32.0,8,7.6931,0,3299.1,7747.7,32.1,39.4,150.5207469,217.6976,217.6976,1960.1285,1960.1285,0.2126,12.756,1742.4309,2484.2915

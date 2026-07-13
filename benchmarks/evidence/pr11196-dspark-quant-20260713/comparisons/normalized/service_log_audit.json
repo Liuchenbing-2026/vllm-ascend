@@ -1,0 +1,53 @@
+{
+  "interpretation": "All benchmark-phase log prefixes are clean. Any listed post-shutdown matches were appended only after the audited SIGTERM teardown and are not request-time failures.",
+  "services": {
+    "dspark5_spec": {
+      "path": "/data2/ds-v4-w8a8/runs/dspark5-v14c-fullgraph-0713/server.log",
+      "post_shutdown_error_pattern_count": 0,
+      "post_shutdown_matches_are_lifecycle_only": false,
+      "pre_shutdown_error_pattern_count": 0,
+      "shutdown_marker_found": true
+    },
+    "dspark_checkpoint_nospec": {
+      "path": "/data2/ds-v4-w8a8/runs/dspark-target-nospec-v15a-fullgraph-0713/server.log",
+      "post_shutdown_error_pattern_count": 8,
+      "post_shutdown_examples": [
+        "(APIServer pid=25765) ERROR 07-13 06:35:19 [async_llm.py:704] AsyncLLM output_handler failed.",
+        "(APIServer pid=25765) ERROR 07-13 06:35:19 [async_llm.py:704] Traceback (most recent call last):",
+        "(APIServer pid=25765) ERROR 07-13 06:35:19 [async_llm.py:704]   File \"/data2/ds-v4-w8a8/vllm/vllm/v1/engine/async_llm.py\", line 660, in output_handler",
+        "(APIServer pid=25765) ERROR 07-13 06:35:19 [async_llm.py:704]     outputs = await engine_core.get_output_async()",
+        "(APIServer pid=25765) ERROR 07-13 06:35:19 [async_llm.py:704]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+        "(APIServer pid=25765) ERROR 07-13 06:35:19 [async_llm.py:704]   File \"/data2/ds-v4-w8a8/vllm/vllm/v1/engine/core_client.py\", line 1046, in get_output_async",
+        "(APIServer pid=25765) ERROR 07-13 06:35:19 [async_llm.py:704]     raise self._format_exception(outputs) from None",
+        "(APIServer pid=25765) ERROR 07-13 06:35:19 [async_llm.py:704] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause."
+      ],
+      "post_shutdown_matches_are_lifecycle_only": true,
+      "pre_shutdown_error_pattern_count": 0,
+      "shutdown_marker_found": true
+    },
+    "mtp1_spec": {
+      "path": "/data2/ds-v4-w8a8/runs/mtp1-v14d-fullgraph-0713/server.log",
+      "post_shutdown_error_pattern_count": 8,
+      "post_shutdown_examples": [
+        "(APIServer pid=19306) ERROR 07-13 05:47:52 [async_llm.py:704] AsyncLLM output_handler failed.",
+        "(APIServer pid=19306) ERROR 07-13 05:47:52 [async_llm.py:704] Traceback (most recent call last):",
+        "(APIServer pid=19306) ERROR 07-13 05:47:52 [async_llm.py:704]   File \"/data2/ds-v4-w8a8/vllm/vllm/v1/engine/async_llm.py\", line 660, in output_handler",
+        "(APIServer pid=19306) ERROR 07-13 05:47:52 [async_llm.py:704]     outputs = await engine_core.get_output_async()",
+        "(APIServer pid=19306) ERROR 07-13 05:47:52 [async_llm.py:704]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+        "(APIServer pid=19306) ERROR 07-13 05:47:52 [async_llm.py:704]   File \"/data2/ds-v4-w8a8/vllm/vllm/v1/engine/core_client.py\", line 1046, in get_output_async",
+        "(APIServer pid=19306) ERROR 07-13 05:47:52 [async_llm.py:704]     raise self._format_exception(outputs) from None",
+        "(APIServer pid=19306) ERROR 07-13 05:47:52 [async_llm.py:704] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause."
+      ],
+      "post_shutdown_matches_are_lifecycle_only": true,
+      "pre_shutdown_error_pattern_count": 0,
+      "shutdown_marker_found": true
+    },
+    "mtp_checkpoint_nospec": {
+      "path": "/data2/ds-v4-w8a8/runs/mtp-target-nospec-v15a-fullgraph-0713/server.log",
+      "post_shutdown_error_pattern_count": 0,
+      "post_shutdown_matches_are_lifecycle_only": false,
+      "pre_shutdown_error_pattern_count": 0,
+      "shutdown_marker_found": true
+    }
+  }
+}

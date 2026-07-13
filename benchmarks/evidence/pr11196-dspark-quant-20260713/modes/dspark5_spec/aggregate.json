@@ -1,0 +1,20 @@
+{
+  "acceptance_length_runs": [
+    5.071203717583571,
+    4.865545010066149,
+    4.8638585393904545
+  ],
+  "acceptance_rate_runs": [
+    0.8142407435167142,
+    0.7731090020132299,
+    0.7727717078780909
+  ],
+  "mode": "dspark5_fullgraph",
+  "output_throughput_median_tok_s": 217.6976,
+  "output_throughput_runs_tok_s": [
+    217.734,
+    217.6976,
+    210.5191
+  ],
+  "output_throughput_spread": 0.03314184446682003
+}

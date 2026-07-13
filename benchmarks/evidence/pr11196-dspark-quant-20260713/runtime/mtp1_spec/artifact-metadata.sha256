@@ -1,0 +1,4 @@
+c3137398b85ef26b9592debadc424349f0b949b7ebe2f20603dda12efab4d533  DeepSeek-V4-Flash-w8a8-mtp/config.json
+932abcc237e82bbb52fc044ae52dd7aa9d8af259cd40100ef978e479231164aa  DeepSeek-V4-Flash-w8a8-mtp/quant_model_weights.safetensors.index.json
+8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf  DeepSeek-V4-Flash-w8a8-mtp/tokenizer.json
+6ac8c8dc065ed118161d02dd532749ae3f52c243deac27872134fae2f50d8547  DeepSeek-V4-Flash-w8a8-mtp/tokenizer_config.json

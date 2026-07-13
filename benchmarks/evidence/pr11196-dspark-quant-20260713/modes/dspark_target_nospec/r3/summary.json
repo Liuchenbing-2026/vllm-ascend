@@ -1,0 +1,26 @@
+{
+  "counter_requests_equivalent": 33.0,
+  "detail_rows": 32,
+  "e2e_time_s": 241.2755351,
+  "generation_tokens_delta": 33792.0,
+  "input_len": 8196,
+  "max_concurrency": 8,
+  "mode": "dspark_target_nospec",
+  "official_requests": 32,
+  "output_len": 1024,
+  "output_throughput_tok_s": 135.8115,
+  "prompt_tokens_delta": 270468.0,
+  "repeat": 3,
+  "spec_counter_deltas": {
+    "accepted_delta": null,
+    "draft_tokens_delta": null,
+    "drafts_delta": null
+  },
+  "speculative_decoding": false,
+  "successes": 32,
+  "tpot_avg_ms": 55.7,
+  "tpot_p90_ms": 56.9,
+  "ttft_avg_ms": 3242.0,
+  "ttft_p90_ms": 6884.7,
+  "wall_s": 332.597035
+}

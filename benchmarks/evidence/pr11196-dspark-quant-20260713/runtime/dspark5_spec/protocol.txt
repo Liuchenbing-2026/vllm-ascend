@@ -1,0 +1,9 @@
+phase=double_graph_acceptance_and_performance
+target_graph=FULL_DECODE_ONLY
+draft_graph=enabled
+draft_impl=SparseAttnSharedkv_custom_op
+num_speculative_tokens=5
+aisbench_gate=input8192/output128/concurrency1/prompts1
+acceptance_gate=45_percent
+final_protocol=input8192/output1024/concurrency8/prompts32/seed1
+port=8900

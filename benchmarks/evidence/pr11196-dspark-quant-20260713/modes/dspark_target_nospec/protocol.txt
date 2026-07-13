@@ -1,0 +1,10 @@
+client=AISBench-3.1
+mode=dspark_target_nospec
+input_len_requested=8192
+input_len_observed=8196
+output_len=1024
+concurrency=8
+formal_requests=32
+seed=1
+repeats=3
+port=8900

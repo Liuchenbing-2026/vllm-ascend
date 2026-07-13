@@ -1,0 +1,16 @@
+{
+  "all_formal_requests_succeeded": true,
+  "e2e_time_median_s": 238.45382759999998,
+  "mode": "mtp_target_nospec",
+  "output_throughput_median_tok_s": 137.4186,
+  "output_throughput_runs_tok_s": [
+    137.4186,
+    136.8683,
+    137.504
+  ],
+  "output_throughput_spread": 0.004626011325977602,
+  "speculative_decoding": false,
+  "tpot_avg_median_ms": 54.8,
+  "ttft_avg_median_ms": 3397.6,
+  "wall_median_s": 330.516747
+}

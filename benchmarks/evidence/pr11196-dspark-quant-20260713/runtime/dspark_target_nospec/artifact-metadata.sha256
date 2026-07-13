@@ -1,0 +1,4 @@
+77b9f9a2b1020cfcc8389a51affcef3f6046ddf1bd37b9a1906766888a4e9198  DeepSeek-V4-Flash-DSpark-w8a8-cleanroom-rotated-decoder-headfix/config.json
+4321562dada267a03afa154709ee2f5c85aafcbd6e5832eb1afcc2cf94896e3f  DeepSeek-V4-Flash-DSpark-w8a8-cleanroom-rotated-decoder-headfix/quant_model_weights.safetensors.index.json
+8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf  DeepSeek-V4-Flash-DSpark-w8a8-cleanroom-rotated-decoder-headfix/tokenizer.json
+6ac8c8dc065ed118161d02dd532749ae3f52c243deac27872134fae2f50d8547  DeepSeek-V4-Flash-DSpark-w8a8-cleanroom-rotated-decoder-headfix/tokenizer_config.json

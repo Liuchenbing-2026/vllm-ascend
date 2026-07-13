@@ -1,0 +1,16 @@
+{
+  "all_formal_requests_succeeded": true,
+  "e2e_time_median_s": 240.6952457,
+  "mode": "dspark_target_nospec",
+  "output_throughput_median_tok_s": 136.139,
+  "output_throughput_runs_tok_s": [
+    136.139,
+    136.9068,
+    135.8115
+  ],
+  "output_throughput_spread": 0.008045453543804558,
+  "speculative_decoding": false,
+  "tpot_avg_median_ms": 55.4,
+  "ttft_avg_median_ms": 3344.7,
+  "wall_median_s": 331.075531
+}

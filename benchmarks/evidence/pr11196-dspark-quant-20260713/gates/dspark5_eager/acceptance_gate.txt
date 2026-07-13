@@ -1,0 +1,3 @@
+draft_delta=330
+accepted_delta=194
+acceptance_rate=58.787879%

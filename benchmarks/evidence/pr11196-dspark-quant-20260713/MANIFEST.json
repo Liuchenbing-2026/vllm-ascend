@@ -1,0 +1,599 @@
+{
+  "excluded_by_design": [
+    "model checkpoints and tensor payloads",
+    "per-request prompts and generated prediction text",
+    "full Prometheus metric dumps",
+    "full server logs; lifecycle summary is included instead"
+  ],
+  "files": [
+    {
+      "path": "comparisons/normalized/SHA256SUMS",
+      "sha256": "5e55e01bb65e61d938f5d1be7a8912ff330208c45cb90e4cca57cbd6a1b85420",
+      "size": 171,
+      "source": "repository-normalized from comparisons/normalized/SHA256SUMS; path operands made relative"
+    },
+    {
+      "path": "comparisons/normalized/comparison.json",
+      "sha256": "160bf16d1a9c65ddf80549aa66b01295d1135a77b764eab5e48a629a1ec0eb66",
+      "size": 8818,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-vs-mtp1-normalized-v15-0713/comparison.json"
+    },
+    {
+      "path": "comparisons/normalized/service_log_audit.json",
+      "sha256": "0ba55b612bdfba247783035c51066d28d5a5d8b3b49e3db8953ed7979a7fd275",
+      "size": 3724,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-vs-mtp1-normalized-v15-0713/service_log_audit.json"
+    },
+    {
+      "path": "comparisons/spec/comparison.json",
+      "sha256": "b840c4bc5da3ae061822efe999d8f6c5261ec336fae44976adeb14c758b48a4b",
+      "size": 6549,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-vs-mtp1-v14-0713/comparison.json"
+    },
+    {
+      "path": "gates/dspark5_eager/acceptance_gate.txt",
+      "sha256": "9abada625d4e5750a0047987de48226092763e56d9081cb27be8802e9a891cfd",
+      "size": 62,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/dspark5-v14b-targetgraph-drafteager-gate-0713/warmup/acceptance_gate.txt"
+    },
+    {
+      "path": "gates/dspark5_eager/result.row.csv",
+      "sha256": "899767e114c126ebb37ca39cb7960dee505e1990d51dc28f8abc89747de32e45",
+      "size": 158,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/dspark5-v14b-targetgraph-drafteager-gate-0713/warmup/result.row.csv"
+    },
+    {
+      "path": "gates/dspark5_fullgraph/acceptance_gate.txt",
+      "sha256": "dc35a35e4a13f3011c2197cf344a04e63c52a51d51f049e3adc0deb0e2eb3f8c",
+      "size": 62,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/dspark5-v14c-fullgraph-gate-0713/warmup/acceptance_gate.txt"
+    },
+    {
+      "path": "gates/dspark5_fullgraph/result.row.csv",
+      "sha256": "67d00f9f9e193d4bc0ca097b3a311d0c78e7d5fe68db68c015890eac66da6651",
+      "size": 157,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/dspark5-v14c-fullgraph-gate-0713/warmup/result.row.csv"
+    },
+    {
+      "path": "gates/dspark_target_nospec/result.row.csv",
+      "sha256": "68911028a110a0b61c262866604191340923b542730fd6324b970616934ef9fe",
+      "size": 148,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/dspark-target-nospec-v15b-smoke-0713/result.row.csv"
+    },
+    {
+      "path": "gates/dspark_target_nospec/state",
+      "sha256": "8497b7aa14aa2e0ab348ca6458795f678e933f5a985658f0caf9093ec6c508f3",
+      "size": 16,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/dspark-target-nospec-v15b-smoke-0713/state"
+    },
+    {
+      "path": "gates/mtp1_fullgraph/acceptance_gate.txt",
+      "sha256": "bcc14beea29b8c2d3b9c647be40a8e09bfa96845f28bd9b5c7bdae72feef4f3c",
+      "size": 62,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/mtp1-v14d-fullgraph-gate-0713/warmup/acceptance_gate.txt"
+    },
+    {
+      "path": "gates/mtp1_fullgraph/result.row.csv",
+      "sha256": "2143c44c746612029cc3a4b7ac53a9757d1ba742519cc82434cbfb81ae53f4b1",
+      "size": 159,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/mtp1-v14d-fullgraph-gate-0713/warmup/result.row.csv"
+    },
+    {
+      "path": "gates/mtp_target_nospec/result.row.csv",
+      "sha256": "10dcb35cc66498e92761beabbe1ab7a6776a280daa7dfbc7d9ba26f354f8c5be",
+      "size": 155,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/mtp-target-nospec-v15a-fullgraph-0713/result.row.csv"
+    },
+    {
+      "path": "gates/mtp_target_nospec/state",
+      "sha256": "8497b7aa14aa2e0ab348ca6458795f678e933f5a985658f0caf9093ec6c508f3",
+      "size": 16,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/mtp-target-nospec-v15a-fullgraph-0713/state"
+    },
+    {
+      "path": "modes/dspark5_spec/aggregate.json",
+      "sha256": "ab2bc3d5f51e74fda5633c7cf1747751d385c8eefb2436ed13b3e976f3c9e07d",
+      "size": 420,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/aggregate.json"
+    },
+    {
+      "path": "modes/dspark5_spec/r1/aisbench_result.csv",
+      "sha256": "95deb853462802f96859c1ac589a521206e2c0effc72b2a01c43412d4be26383",
+      "size": 405,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/r1/aisbench_result.csv"
+    },
+    {
+      "path": "modes/dspark5_spec/r1/result.row.csv",
+      "sha256": "6af8609ad1ac660b992e2e1eb29423f4d6320292eddc6807eca71200d6f05ed0",
+      "size": 163,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/r1/result.row.csv"
+    },
+    {
+      "path": "modes/dspark5_spec/r1/summary.json",
+      "sha256": "d4acac7d30e64745bcb9ca74b8ad438faa971bffac47cc46f96553125e9b4e0c",
+      "size": 643,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/r1/summary.json"
+    },
+    {
+      "path": "modes/dspark5_spec/r1/wall_seconds.txt",
+      "sha256": "8cae8260d1e7f223a7e8f6a6dcc9aabab583ee4412f3586512955cb146c92ac0",
+      "size": 11,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/r1/wall_seconds.txt"
+    },
+    {
+      "path": "modes/dspark5_spec/r2/aisbench_result.csv",
+      "sha256": "585bc7a976fae9309d883be86baf371630840fb9154a604b7d72b33c44def47b",
+      "size": 400,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/r2/aisbench_result.csv"
+    },
+    {
+      "path": "modes/dspark5_spec/r2/result.row.csv",
+      "sha256": "cc83420e403268bc3ab39325e7001e2240b54eeb318ce3c6978e787a35659264",
+      "size": 158,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/r2/result.row.csv"
+    },
+    {
+      "path": "modes/dspark5_spec/r2/summary.json",
+      "sha256": "e9988c13a96eaa6abd413c3746c60a271cefbc289a73371e338aecf4fe20c9a7",
+      "size": 637,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/r2/summary.json"
+    },
+    {
+      "path": "modes/dspark5_spec/r2/wall_seconds.txt",
+      "sha256": "4c4d672fd82f305416c046c19f3aecd6366b5a985561a34b3a86da92f9245643",
+      "size": 11,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/r2/wall_seconds.txt"
+    },
+    {
+      "path": "modes/dspark5_spec/r3/aisbench_result.csv",
+      "sha256": "61f7200f8a80930a5e9cae5eeb6eaa174e921a7930a65dd1397b574b67875d9b",
+      "size": 397,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/r3/aisbench_result.csv"
+    },
+    {
+      "path": "modes/dspark5_spec/r3/result.row.csv",
+      "sha256": "ccf5eb8c752c22a8844a0bdbbb46fa993a0825d973174f60e414b1266e070bd7",
+      "size": 155,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/r3/result.row.csv"
+    },
+    {
+      "path": "modes/dspark5_spec/r3/summary.json",
+      "sha256": "9646675be3ae850cfb7ea37eaf20b316993f055dca893db609defc181b27f491",
+      "size": 638,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/r3/summary.json"
+    },
+    {
+      "path": "modes/dspark5_spec/r3/wall_seconds.txt",
+      "sha256": "1a44167b1dbce48897fd2639c06a58d89caf3d42f86dc5fd1518c37c370307f7",
+      "size": 11,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/r3/wall_seconds.txt"
+    },
+    {
+      "path": "modes/dspark5_spec/state",
+      "sha256": "83760337f15a347c88f829457bfaff911990debeca9812ce7dc27895e2a96881",
+      "size": 281,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark5-v14c-fullgraph-8k1k-c8-0713/state"
+    },
+    {
+      "path": "modes/dspark_target_nospec/aggregate.json",
+      "sha256": "5814716d8791f481f1449d251de5864753a5735e836ade9a32f24c21330d94c8",
+      "size": 418,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/aggregate.json"
+    },
+    {
+      "path": "modes/dspark_target_nospec/protocol.txt",
+      "sha256": "0e6f293c82ebb78d5b7d587b22e5a1a55f7b5df8b9c7c04b4aad52043781587b",
+      "size": 171,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/protocol.txt"
+    },
+    {
+      "path": "modes/dspark_target_nospec/r1/aisbench_result.csv",
+      "sha256": "f705e7c0b4ff218c9e2133a3b31f3a500e4bff9326f4bfb8df5f6549ccf89bd9",
+      "size": 409,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/r1/aisbench_result.csv"
+    },
+    {
+      "path": "modes/dspark_target_nospec/r1/result.row.csv",
+      "sha256": "ee206ff3da11d723edb4887bb45f8317a89e78141ebbcd096d6ab1edc0258920",
+      "size": 167,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/r1/result.row.csv"
+    },
+    {
+      "path": "modes/dspark_target_nospec/r1/summary.json",
+      "sha256": "5269d20b681deb5f1096de8999b5b8b87a1c56a4c354f3dd0290b8321bfa4738",
+      "size": 635,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/r1/summary.json"
+    },
+    {
+      "path": "modes/dspark_target_nospec/r1/wall_seconds.txt",
+      "sha256": "2a21191f2dca0fe16b7f5bbcc5a98421b7188253e17ef74c2ce2cf68a5923f5a",
+      "size": 11,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/r1/wall_seconds.txt"
+    },
+    {
+      "path": "modes/dspark_target_nospec/r2/aisbench_result.csv",
+      "sha256": "b4dc7cbe39304ebb03988190f5cb2405f83e4f936987f796ee8b008cdc03051c",
+      "size": 399,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/r2/aisbench_result.csv"
+    },
+    {
+      "path": "modes/dspark_target_nospec/r2/result.row.csv",
+      "sha256": "cce27942872210933d9926c73c9f4d702df01ec557a125c9ac563563fafe8259",
+      "size": 157,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/r2/result.row.csv"
+    },
+    {
+      "path": "modes/dspark_target_nospec/r2/summary.json",
+      "sha256": "a5c775897d2bc10398c22e5ce76c804bcdf6a487ecb2dd7c3af0b2318322625e",
+      "size": 636,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/r2/summary.json"
+    },
+    {
+      "path": "modes/dspark_target_nospec/r2/wall_seconds.txt",
+      "sha256": "23c7e4ff04b24546b0dc164c9df6e0ef7efe66bef2aecc4eee127035f940863b",
+      "size": 11,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/r2/wall_seconds.txt"
+    },
+    {
+      "path": "modes/dspark_target_nospec/r3/aisbench_result.csv",
+      "sha256": "556c002c17a8e9bc5e878456e3bf3cf23b2033a9214054487e03e23dac8f046c",
+      "size": 412,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/r3/aisbench_result.csv"
+    },
+    {
+      "path": "modes/dspark_target_nospec/r3/result.row.csv",
+      "sha256": "5aed77f9671f8409411c8e2ee6c5be48cd8be4ff7eaa68360b23586511048351",
+      "size": 170,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/r3/result.row.csv"
+    },
+    {
+      "path": "modes/dspark_target_nospec/r3/summary.json",
+      "sha256": "910b601d4e783678a92ed94212028ab2e7306f6675ee88422cfb98902f3cf727",
+      "size": 636,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/r3/summary.json"
+    },
+    {
+      "path": "modes/dspark_target_nospec/r3/wall_seconds.txt",
+      "sha256": "bee0125db42984f6be6d10022acf63c68cc217e09d2e40a6ad7d7e8caf45afa6",
+      "size": 11,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/r3/wall_seconds.txt"
+    },
+    {
+      "path": "modes/dspark_target_nospec/state",
+      "sha256": "c1f22626b8448467b6233d49f579eaa39fe42d36b76fa3d0134803a0304b3eab",
+      "size": 281,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-dspark-target-nospec-v15a-fullgraph-8k1k-c8-0713/state"
+    },
+    {
+      "path": "modes/mtp1_spec/aggregate.json",
+      "sha256": "09ba8ee4ca81ebbc459603eb7688cde4c76568f5b0c41b2c622d375ad105aa56",
+      "size": 415,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/aggregate.json"
+    },
+    {
+      "path": "modes/mtp1_spec/r1/aisbench_result.csv",
+      "sha256": "fdd983d173a37a91fb3f290747665e0102cd493bb34639befa6a5c2ab5ed8897",
+      "size": 391,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/r1/aisbench_result.csv"
+    },
+    {
+      "path": "modes/mtp1_spec/r1/result.row.csv",
+      "sha256": "d9f31f0d604456a113b82727e863edc035bf6985939be3c9f743ec9b5a4d3d8f",
+      "size": 149,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/r1/result.row.csv"
+    },
+    {
+      "path": "modes/mtp1_spec/r1/summary.json",
+      "sha256": "2b80e6946d0cc2b84af3e68b5ccb5cfb2211343bedea2c21bf0228c52b6837f4",
+      "size": 630,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/r1/summary.json"
+    },
+    {
+      "path": "modes/mtp1_spec/r1/wall_seconds.txt",
+      "sha256": "6c34845ce08c482c3e06fdc3db3ff0fc8b11e9dc1b812814b6c95ea6bfc91d20",
+      "size": 11,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/r1/wall_seconds.txt"
+    },
+    {
+      "path": "modes/mtp1_spec/r2/aisbench_result.csv",
+      "sha256": "148b42ee9ae3d58698cbb3ddbcca2acffb4778b6ce088518ace4dbbd46a83e0c",
+      "size": 398,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/r2/aisbench_result.csv"
+    },
+    {
+      "path": "modes/mtp1_spec/r2/result.row.csv",
+      "sha256": "6e45772d2873966d6ddeb2b844c801e35a20d02b9bd2d07566b17a98acc0a017",
+      "size": 156,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/r2/result.row.csv"
+    },
+    {
+      "path": "modes/mtp1_spec/r2/summary.json",
+      "sha256": "fa922ff44e2a2fca2a15a8a046db2f98bac15fa1e5e0319a547a6c2925601dd1",
+      "size": 636,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/r2/summary.json"
+    },
+    {
+      "path": "modes/mtp1_spec/r2/wall_seconds.txt",
+      "sha256": "e6343e431ef11eeaf4c2e09581ddc8248b99bc0c54809c1d3c25e229af067a90",
+      "size": 11,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/r2/wall_seconds.txt"
+    },
+    {
+      "path": "modes/mtp1_spec/r3/aisbench_result.csv",
+      "sha256": "e827401368b00abc3b6ab6add3c2dfbb9f8a9c1f270204c5e5623f14ec89471a",
+      "size": 398,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/r3/aisbench_result.csv"
+    },
+    {
+      "path": "modes/mtp1_spec/r3/result.row.csv",
+      "sha256": "247dff9bfec1be9e14abdedde9294e6384fa05ccd35ad713e1827d3e1f9bce3b",
+      "size": 156,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/r3/result.row.csv"
+    },
+    {
+      "path": "modes/mtp1_spec/r3/summary.json",
+      "sha256": "18d583523d2b04059a73874fe1640ecd94c76aa93ec9228b82b24c8ab9efb5eb",
+      "size": 636,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/r3/summary.json"
+    },
+    {
+      "path": "modes/mtp1_spec/r3/wall_seconds.txt",
+      "sha256": "2232510ac268bac77b391af9dd0a63d2d753cbf715c8a98a48c50be4ae7a1f24",
+      "size": 11,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/r3/wall_seconds.txt"
+    },
+    {
+      "path": "modes/mtp1_spec/state",
+      "sha256": "e70f26194ad58677c9f49dbff147f6c30cf864d0f524d2459a14866c4fac07d7",
+      "size": 281,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp1-v14d-fullgraph-8k1k-c8-0713/state"
+    },
+    {
+      "path": "modes/mtp_target_nospec/aggregate.json",
+      "sha256": "6ea355cfe5f7bc68274ea352fb2deec13ab0200d16560d56122baa1e92e62123",
+      "size": 423,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/aggregate.json"
+    },
+    {
+      "path": "modes/mtp_target_nospec/protocol.txt",
+      "sha256": "828a6b1d37e21733c4a9a5d0e5cf26468a0102f4b81824755dee23b83f00dea4",
+      "size": 168,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/protocol.txt"
+    },
+    {
+      "path": "modes/mtp_target_nospec/r1/aisbench_result.csv",
+      "sha256": "a0cf688a9199903ad6b7c3e012a0e75b11a0fbafd252ee9a30408d30eae266e1",
+      "size": 417,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/r1/aisbench_result.csv"
+    },
+    {
+      "path": "modes/mtp_target_nospec/r1/result.row.csv",
+      "sha256": "fed20bd626969f0ee6e42c0afd723813a38745745fe31ff9ca3f23139b6151a2",
+      "size": 175,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/r1/result.row.csv"
+    },
+    {
+      "path": "modes/mtp_target_nospec/r1/summary.json",
+      "sha256": "bfbdda30950753f197f27aa0de9e573cdf0e142d10756212cbc84571aa1bf18d",
+      "size": 640,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/r1/summary.json"
+    },
+    {
+      "path": "modes/mtp_target_nospec/r1/wall_seconds.txt",
+      "sha256": "200ebd78d27bda0ad42123c28ef6ab2e7708b2dfad024a926e573d2a0fbfa52f",
+      "size": 11,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/r1/wall_seconds.txt"
+    },
+    {
+      "path": "modes/mtp_target_nospec/r2/aisbench_result.csv",
+      "sha256": "e37c980b3caf41bcc973c4a00212214925ec12f552834e902c83b967339188d8",
+      "size": 398,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/r2/aisbench_result.csv"
+    },
+    {
+      "path": "modes/mtp_target_nospec/r2/result.row.csv",
+      "sha256": "cb39368264395c3d92b77b62bd0a1ba4b7a8928e92da055936bf6d4a9c75c332",
+      "size": 156,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/r2/result.row.csv"
+    },
+    {
+      "path": "modes/mtp_target_nospec/r2/summary.json",
+      "sha256": "d9b8cd5981cb9eebf02830ba06c24ee4fee63681882fb3f78e8a07224529c5e1",
+      "size": 632,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/r2/summary.json"
+    },
+    {
+      "path": "modes/mtp_target_nospec/r2/wall_seconds.txt",
+      "sha256": "159dff7b7ae551a5fb09a6dc36b30851e26b34fea3d1a19c99973ff3b656c198",
+      "size": 11,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/r2/wall_seconds.txt"
+    },
+    {
+      "path": "modes/mtp_target_nospec/r3/aisbench_result.csv",
+      "sha256": "26e1dce55ed4ed882bfb808a1890f6da0986cf0434771e6b031202be45736ac8",
+      "size": 396,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/r3/aisbench_result.csv"
+    },
+    {
+      "path": "modes/mtp_target_nospec/r3/result.row.csv",
+      "sha256": "5a803cb3b8a4c73dd5ef89cddfc11d28b9fc62f89e375a9dbf6d34845ecfa8d7",
+      "size": 154,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/r3/result.row.csv"
+    },
+    {
+      "path": "modes/mtp_target_nospec/r3/summary.json",
+      "sha256": "375006958dde12117539fa3183fca8e3e8f8121ab2c2a5575aa48f24ca511543",
+      "size": 631,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/r3/summary.json"
+    },
+    {
+      "path": "modes/mtp_target_nospec/r3/wall_seconds.txt",
+      "sha256": "7145b456ac0e3e3187705c634511a4c940781cba0020e871d5c6effbafcc5936",
+      "size": 11,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/r3/wall_seconds.txt"
+    },
+    {
+      "path": "modes/mtp_target_nospec/state",
+      "sha256": "6924d3ee2efaeaf0b4fc13e4dcb2704b246a9fd5a1c7a3dfba868f1cfe7a2c8f",
+      "size": 281,
+      "source": "/data1/ds-v4-w8a8-aisbench/runs/final-mtp-target-nospec-v15a-fullgraph-8k1k-c8-0713/state"
+    },
+    {
+      "path": "runtime/active_package.sha256",
+      "sha256": "e78e02d2bef93928807516d926e52355a039e7966893b7c482f88aa4ec712a3d",
+      "size": 201039,
+      "source": "/data2/ds-v4-w8a8/runs/dspark5-v14c-fullgraph-0713/package.sha256"
+    },
+    {
+      "path": "runtime/dspark5_spec/artifact-metadata.sha256",
+      "sha256": "18b2d0d05505feda1363bb6d5977ecd1fd31e3f60b8e53001ac5c92e229dedfd",
+      "size": 612,
+      "source": "repository-normalized from /data2/ds-v4-w8a8/runs/dspark5-v14c-fullgraph-0713/artifact-metadata.sha256; path operands made checkpoint-relative"
+    },
+    {
+      "path": "runtime/dspark5_spec/code.commit",
+      "sha256": "27c3910caa46b3d16094c466f2c561bc6774588c8b0597b380e6d1c4ff5d5917",
+      "size": 41,
+      "source": "/data2/ds-v4-w8a8/runs/dspark5-v14c-fullgraph-0713/code.commit"
+    },
+    {
+      "path": "runtime/dspark5_spec/code.diff.sha256",
+      "sha256": "4b249e2689d4e544f1ffb494f4abfea69f6423fab81334b84cae35d65bc4813b",
+      "size": 68,
+      "source": "/data2/ds-v4-w8a8/runs/dspark5-v14c-fullgraph-0713/code.diff.sha256"
+    },
+    {
+      "path": "runtime/dspark5_spec/model.path",
+      "sha256": "26d6c8c3fc11ec23ee61fded11e726331f5c5896d251db0faa93cca43c553d20",
+      "size": 64,
+      "source": "repository-normalized from /data2/ds-v4-w8a8/runs/dspark5-v14c-fullgraph-0713/model.path; value made checkpoint-relative"
+    },
+    {
+      "path": "runtime/dspark5_spec/protocol.txt",
+      "sha256": "e67ca40b3f4c2ce0ea62e99b8ec1f8547cd9330aa1e9b04e1718e26ee067072f",
+      "size": 319,
+      "source": "/data2/ds-v4-w8a8/runs/dspark5-v14c-fullgraph-0713/protocol.txt"
+    },
+    {
+      "path": "runtime/dspark5_spec/served.name",
+      "sha256": "c8f22e53810b5a343f876525b23951efa4f530b3e38fcf577a5e469bc75c5bf0",
+      "size": 31,
+      "source": "/data2/ds-v4-w8a8/runs/dspark5-v14c-fullgraph-0713/served.name"
+    },
+    {
+      "path": "runtime/dspark_target_nospec/artifact-metadata.sha256",
+      "sha256": "18b2d0d05505feda1363bb6d5977ecd1fd31e3f60b8e53001ac5c92e229dedfd",
+      "size": 612,
+      "source": "repository-normalized from /data2/ds-v4-w8a8/runs/dspark-target-nospec-v15a-fullgraph-0713/artifact-metadata.sha256; path operands made checkpoint-relative"
+    },
+    {
+      "path": "runtime/dspark_target_nospec/code.commit",
+      "sha256": "27c3910caa46b3d16094c466f2c561bc6774588c8b0597b380e6d1c4ff5d5917",
+      "size": 41,
+      "source": "/data2/ds-v4-w8a8/runs/dspark-target-nospec-v15a-fullgraph-0713/code.commit"
+    },
+    {
+      "path": "runtime/dspark_target_nospec/code.diff.sha256",
+      "sha256": "4b249e2689d4e544f1ffb494f4abfea69f6423fab81334b84cae35d65bc4813b",
+      "size": 68,
+      "source": "/data2/ds-v4-w8a8/runs/dspark-target-nospec-v15a-fullgraph-0713/code.diff.sha256"
+    },
+    {
+      "path": "runtime/dspark_target_nospec/model.path",
+      "sha256": "26d6c8c3fc11ec23ee61fded11e726331f5c5896d251db0faa93cca43c553d20",
+      "size": 64,
+      "source": "repository-normalized from /data2/ds-v4-w8a8/runs/dspark-target-nospec-v15a-fullgraph-0713/model.path; value made checkpoint-relative"
+    },
+    {
+      "path": "runtime/dspark_target_nospec/protocol.txt",
+      "sha256": "f50988494172c654af3e7ddb5d3e8c292b425270f83e1d898fd43e29e0e124cd",
+      "size": 290,
+      "source": "/data2/ds-v4-w8a8/runs/dspark-target-nospec-v15a-fullgraph-0713/protocol.txt"
+    },
+    {
+      "path": "runtime/dspark_target_nospec/served.name",
+      "sha256": "8560d8d82efc229d1a6a6a54f75847552ef844da138c2da5013b9132cbce15c9",
+      "size": 44,
+      "source": "/data2/ds-v4-w8a8/runs/dspark-target-nospec-v15a-fullgraph-0713/served.name"
+    },
+    {
+      "path": "runtime/mtp1_spec/artifact-metadata.sha256",
+      "sha256": "2940547fa1f57329c8d098f75b8660307a65f8f1ee085317336e7bf441839a79",
+      "size": 464,
+      "source": "repository-normalized from /data2/ds-v4-w8a8/runs/mtp1-v14d-fullgraph-0713/artifact-metadata.sha256; path operands made checkpoint-relative"
+    },
+    {
+      "path": "runtime/mtp1_spec/code.commit",
+      "sha256": "27c3910caa46b3d16094c466f2c561bc6774588c8b0597b380e6d1c4ff5d5917",
+      "size": 41,
+      "source": "/data2/ds-v4-w8a8/runs/mtp1-v14d-fullgraph-0713/code.commit"
+    },
+    {
+      "path": "runtime/mtp1_spec/code.diff.sha256",
+      "sha256": "4b249e2689d4e544f1ffb494f4abfea69f6423fab81334b84cae35d65bc4813b",
+      "size": 68,
+      "source": "/data2/ds-v4-w8a8/runs/mtp1-v14d-fullgraph-0713/code.diff.sha256"
+    },
+    {
+      "path": "runtime/mtp1_spec/model.path",
+      "sha256": "0c549921aedaf8b2570ce66781c7dd904e71d1ec281069ed4ceb21b79e97622e",
+      "size": 27,
+      "source": "repository-normalized from /data2/ds-v4-w8a8/runs/mtp1-v14d-fullgraph-0713/model.path; value made checkpoint-relative"
+    },
+    {
+      "path": "runtime/mtp1_spec/protocol.txt",
+      "sha256": "b4e39d7ea3cb7af3e57bf02e7a21373b2b2ee4d18f8361e970c77a7e11931705",
+      "size": 256,
+      "source": "/data2/ds-v4-w8a8/runs/mtp1-v14d-fullgraph-0713/protocol.txt"
+    },
+    {
+      "path": "runtime/mtp1_spec/served.name",
+      "sha256": "80db5c1c754622d6136fce8f654fb170a6ad764281d5cba43430cc26136eee2d",
+      "size": 28,
+      "source": "/data2/ds-v4-w8a8/runs/mtp1-v14d-fullgraph-0713/served.name"
+    },
+    {
+      "path": "runtime/mtp_target_nospec/artifact-metadata.sha256",
+      "sha256": "2940547fa1f57329c8d098f75b8660307a65f8f1ee085317336e7bf441839a79",
+      "size": 464,
+      "source": "repository-normalized from /data2/ds-v4-w8a8/runs/mtp-target-nospec-v15a-fullgraph-0713/artifact-metadata.sha256; path operands made checkpoint-relative"
+    },
+    {
+      "path": "runtime/mtp_target_nospec/code.commit",
+      "sha256": "27c3910caa46b3d16094c466f2c561bc6774588c8b0597b380e6d1c4ff5d5917",
+      "size": 41,
+      "source": "/data2/ds-v4-w8a8/runs/mtp-target-nospec-v15a-fullgraph-0713/code.commit"
+    },
+    {
+      "path": "runtime/mtp_target_nospec/code.diff.sha256",
+      "sha256": "4b249e2689d4e544f1ffb494f4abfea69f6423fab81334b84cae35d65bc4813b",
+      "size": 68,
+      "source": "/data2/ds-v4-w8a8/runs/mtp-target-nospec-v15a-fullgraph-0713/code.diff.sha256"
+    },
+    {
+      "path": "runtime/mtp_target_nospec/model.path",
+      "sha256": "0c549921aedaf8b2570ce66781c7dd904e71d1ec281069ed4ceb21b79e97622e",
+      "size": 27,
+      "source": "repository-normalized from /data2/ds-v4-w8a8/runs/mtp-target-nospec-v15a-fullgraph-0713/model.path; value made checkpoint-relative"
+    },
+    {
+      "path": "runtime/mtp_target_nospec/protocol.txt",
+      "sha256": "9b11c75249ca616e40a08e572e32b8febe2d77742aceb01eac9efdf93e000145",
+      "size": 287,
+      "source": "/data2/ds-v4-w8a8/runs/mtp-target-nospec-v15a-fullgraph-0713/protocol.txt"
+    },
+    {
+      "path": "runtime/mtp_target_nospec/served.name",
+      "sha256": "be309fab818cbfaba1c35537c377adf3bfe528c798e7e964d51056d2b2d8e09a",
+      "size": 41,
+      "source": "/data2/ds-v4-w8a8/runs/mtp-target-nospec-v15a-fullgraph-0713/served.name"
+    },
+    {
+      "path": "runtime/source-provenance.json",
+      "sha256": "f653f6f0a074bca01c1274c187b6e8326e1520705fef3208be64586d53e6c463",
+      "size": 3618,
+      "source": "repository-generated exact Git blob comparison between the benchmark runtime worktree and functional commit b1909f574e0ce6642379e8ef3fb63d26d802570e"
+    }
+  ],
+  "generated_at": "2026-07-13T15:31:48.471801+08:00"
+}

@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "public_baseline_commit": "8bca4f2061baefec54b18005839eb17ed3654d02",
+  "benchmark_runtime_revision": {
+    "head_commit": "1c785f8218a3c675e5eda4eb134fd2dd3cde34bf",
+    "head_parent": "380e253b0cd4ea20ac204b6a87be9b6f98057f39",
+    "head_tree": "ba459578ec1f101182fcc0c4366827a1467424f2",
+    "tracked_worktree_diff_bytes": 77227,
+    "tracked_worktree_diff_sha256": "bc2ef4d2ccc10201489ab1f16971f21437faa8819a080bfdeec867cc8fa34a04"
+  },
+  "submitted_functional_revision": {
+    "commit": "b1909f574e0ce6642379e8ef3fb63d26d802570e",
+    "parent": "8bca4f2061baefec54b18005839eb17ed3654d02",
+    "tree": "2dcd7b848c923326a42cbf95d2bf71f5ad380d64"
+  },
+  "source_test_equivalence": {
+    "scope": [
+      "csrc",
+      "tests",
+      "vllm_ascend"
+    ],
+    "excluded_generated_prefix": "vllm_ascend/_cann_ops_custom/",
+    "excluded_non_regular_gitlink": "csrc/third_party/catlass",
+    "regular_files_compared": 2436,
+    "exact_blob_matches": 2436,
+    "blob_mismatches": 0,
+    "benchmark_manifest_sha256": "1007760c8eef07db628e054dc02fd35ac5f1dfa28ac61eb2a6bfea621502d3e9",
+    "submitted_manifest_sha256": "1007760c8eef07db628e054dc02fd35ac5f1dfa28ac61eb2a6bfea621502d3e9",
+    "manifest_format": "Git blob OID, two spaces, path; LC_ALL=C sorted; one LF-terminated record per regular file",
+    "exact": true
+  },
+  "changed_path_blobs": {
+    "csrc/attention/sparse_attn_sharedkv/op_host/sparse_attn_sharedkv_tiling.cpp": "53e6d673f4e59f3e61ca65b2cd41edab2339ac99",
+    "csrc/attention/sparse_attn_sharedkv/op_host/sparse_attn_sharedkv_tiling.h": "6ba14b8fb6f89123d0b89bccb5a63d603052ac08",
+    "csrc/build_aclnn.sh": "5fed65c9e3a6fe370cd1bda0c34c461dc196439e",
+    "tests/ut/quantization/test_modelslim_config.py": "d8ebf53c1d71f1cd98c31ce2d9a6ec64ebded4d3",
+    "tests/ut/spec_decode/test_dspark_attention_semantics.py": "9d8e3bb3c017c85ef2c77e919bca3a266b501941",
+    "tests/ut/spec_decode/test_dspark_config.py": "9ca045e28623ecd4ca0e0e526208bf04e1390c37",
+    "tests/ut/spec_decode/test_dspark_dsa_metadata.py": "b47acc160141b7c31dec31cb0737392459a60f27",
+    "tests/ut/spec_decode/test_dspark_proposer.py": "c134d5d8899930b9ef9abccd9280d5908a696efd",
+    "tests/ut/spec_decode/test_llm_base_proposer.py": "c017ba0d66c65e31579f212ba907ad852ae16637",
+    "tests/ut/test_build_aclnn_cache_policy.py": "d279c52a81e51c35833ed4bf53f29f2eb7e1c6a3",
+    "vllm_ascend/attention/context_parallel/dsa_cp.py": "a8a23d602466d314c18aea68904cba9c0fd07e31",
+    "vllm_ascend/attention/dsa_v1.py": "73dab7d7367099f0c375589769cd5577cdbc9704",
+    "vllm_ascend/attention/dsa_window.py": "cc6f69b38cb5c6914d8747cc2bc7f58c844165b2",
+    "vllm_ascend/models/deepseek_v4_dspark.py": "313519ef0b91bbf449914040f890406d79fcecee",
+    "vllm_ascend/ops/dspark_attention.py": "2a21e32cdfcfbbe24ac8a039adebeb8e27202fff",
+    "vllm_ascend/quantization/modelslim_config.py": "64017e520f7ee159873e941bc00a802f027678dd",
+    "vllm_ascend/spec_decode/dspark_proposer.py": "1bf345ec9d6cfba70fba22a25d97cb32c1a3fa28",
+    "vllm_ascend/spec_decode/llm_base_proposer.py": "3aa6f3c800552128b2ae1ee86ce93e719e6b943e"
+  },
+  "notes": [
+    "Raw runtime code.commit and code.diff.sha256 files retain the deployment repository lineage recorded at service startup.",
+    "The submitted functional commit has different commit metadata and history, but every regular source and test blob in the audited scope is identical to the benchmark runtime worktree.",
+    "Generated custom-op packages and the third-party gitlink are fingerprinted or versioned separately and are not regular source files in this comparison."
+  ]
+}

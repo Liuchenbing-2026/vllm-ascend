@@ -1,0 +1,7 @@
+phase=mtp_checkpoint_target_only_no_spec_baseline
+target_graph=FULL_DECODE_ONLY
+speculative_decoding=disabled
+correctness_probe=input8192/output128/concurrency1/prompts1/temperature0
+final_protocol=input8192/output1024/concurrency8/prompts32/seed1/repeats3
+topology=TP8/DP1/EP
+port=8900

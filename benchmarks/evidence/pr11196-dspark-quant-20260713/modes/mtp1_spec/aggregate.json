@@ -1,0 +1,20 @@
+{
+  "acceptance_length_runs": [
+    1.946288612263716,
+    1.9414266827613957,
+    1.9560458651841557
+  ],
+  "acceptance_rate_runs": [
+    0.946288612263716,
+    0.9414266827613956,
+    0.9560458651841557
+  ],
+  "mode": "mtp1_fullgraph",
+  "output_throughput_median_tok_s": 191.81,
+  "output_throughput_runs_tok_s": [
+    191.81,
+    190.6709,
+    193.5156
+  ],
+  "output_throughput_spread": 0.014830822167770279
+}
