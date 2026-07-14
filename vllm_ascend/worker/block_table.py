@@ -5,7 +5,6 @@ from vllm.utils.math_utils import cdiv
 from vllm.v1.attention.backends.utils import PAD_SLOT_ID
 from vllm.v1.kv_cache_interface import KVCacheGroupSpec, MambaSpec, UniformTypeKVCacheSpecs
 from vllm.v1.utils import CpuGpuBuffer
-from vllm.v1.worker.block_table import _compute_slot_mapping_kernel
 from vllm.v1.worker.cp_utils import get_total_cp_world_size
 
 
@@ -158,20 +157,47 @@ class BlockTable:
             )
             self._compute_pcp_dcp_slot_mapping(req_indices, positions)
         else:
-            _compute_slot_mapping_kernel[(num_reqs + 1,)](
-                num_tokens,
-                self.max_num_batched_tokens,
-                query_start_loc,
-                positions,
-                self.block_table.gpu,
-                self.block_table.gpu.stride(0),
-                self.block_size,
-                self.slot_mapping.gpu,
-                TOTAL_CP_WORLD_SIZE=total_cp_world_size,
-                TOTAL_CP_RANK=total_cp_rank,
-                CP_KV_CACHE_INTERLEAVE_SIZE=self.cp_kv_cache_interleave_size,
-                PAD_ID=PAD_SLOT_ID,
-                BLOCK_SIZE=1024,
+            # #7640 revert: this branch launched an NPU Triton kernel with a
+            # data-dependent grid (num_reqs + 1,) that is host-bound on the
+            # decode critical path. Restore the pre-#7640 CPU computation.
+            req_indices = torch.repeat_interleave(
+                torch.arange(num_reqs, dtype=torch.int32, device=query_start_loc.device),
+                query_start_loc[1:] - query_start_loc[:-1],
+                output_size=num_tokens,
+            ).cpu().numpy()
+            self.compute_slot_mapping_cpu(req_indices, positions.cpu().numpy())
+            self.commit_slot_mapping(num_tokens)
+
+    def compute_slot_mapping_cpu(
+        self,
+        req_indices: np.ndarray,
+        positions: np.ndarray,
+    ) -> None:
+        # #7640 moved slot_mapping to an NPU Triton kernel launched with a
+        # data-dependent grid (num_reqs + 1,), which is host-bound on the
+        # decode critical path. Compute it on CPU instead (pre-#7640 path);
+        # no per-step kernel launch is needed.
+        if self.dcp_world_size * self.pcp_world_size > 1:
+            self._compute_pcp_dcp_slot_mapping(
+                torch.from_numpy(req_indices),
+                torch.from_numpy(positions),
+            )
+        else:
+            assert self.kernel_sizes is not None
+            assert self.block_size == self.kernel_sizes[0]
+            logical_block_idx = positions // self.block_size
+            block_table_indices = (
+                req_indices
+                * self.max_num_blocks_per_req
+                * self.blocks_per_phys_block
+                + logical_block_idx
+            )
+            block_numbers = self.block_table.np.ravel()[block_table_indices]
+            block_offsets = positions % self.block_size
+            np.add(
+                block_numbers * self.block_size,
+                block_offsets,
+                out=self.slot_mapping.np[: req_indices.shape[0]],
             )
 
     def compute_slot_mapping_draft(
@@ -273,6 +299,9 @@ class BlockTable:
 
     def commit_block_table(self, num_reqs: int) -> None:
         self.block_table.copy_to_gpu(num_reqs)
+
+    def commit_slot_mapping(self, num_tokens: int) -> None:
+        self.slot_mapping.copy_to_gpu(num_tokens)
 
     def clear(self) -> None:
         self.block_table.fill_(0)
@@ -426,6 +455,16 @@ class MultiGroupBlockTable:
             else:
                 block_table.compute_slot_mapping(num_reqs, query_start_loc, positions)
 
+    def compute_slot_mapping_cpu(
+        self,
+        req_indices: np.ndarray,
+        positions: np.ndarray,
+    ) -> None:
+        for block_table in self.block_tables:
+            if block_table.is_mamba_group:
+                continue
+            block_table.compute_slot_mapping_cpu(req_indices, positions)
+
     def compute_slot_mapping_draft(
         self,
         req_indices: np.ndarray | torch.Tensor,
@@ -444,6 +483,12 @@ class MultiGroupBlockTable:
     def commit_block_table(self, num_reqs: int) -> None:
         for block_table in self.block_tables:
             block_table.commit_block_table(num_reqs)
+
+    def commit_slot_mapping(self, num_tokens: int) -> None:
+        for block_table in self.block_tables:
+            if block_table.is_mamba_group:
+                continue
+            block_table.commit_slot_mapping(num_tokens)
 
     def clear(self) -> None:
         for block_table in self.block_tables:
