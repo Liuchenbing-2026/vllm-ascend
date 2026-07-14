@@ -171,6 +171,15 @@ class AscendDsparkProposer(AscendDflashProposer):
             return "DSpark requires a cudagraph mode containing FULL graphs"
         if self.vllm_config.lora_config is not None:
             return "DSpark draft ACLGraph does not yet support LoRA"
+        if getattr(getattr(self.vllm_config, "model_config", None), "is_multimodal_model", False):
+            return "DSpark draft ACLGraph does not support multimodal inputs"
+        if getattr(self, "enable_enpu", False) or getattr(getattr(self, "runner", None), "enable_enpu", False):
+            # ENPU updates FULL-graph attention tasks before invoking the
+            # proposer.  DSpark's fused runtime guards execute inside the
+            # proposer, so an eager fallback could otherwise leave an update
+            # event with no matching replay.  Keep this mode eager until the
+            # graph eligibility decision can be moved ahead of that update.
+            return "DSpark draft ACLGraph does not yet support ENPU update ordering"
         if self.pcp_size * self.dcp_size > 1:
             return "DSpark draft ACLGraph does not yet support PCP/DCP"
         if lmhead_tp_enable():
@@ -196,6 +205,8 @@ class AscendDsparkProposer(AscendDflashProposer):
         self._dspark_enable_draft_aclgraph = self.use_cuda_graph
         self._dspark_graph_runnable_uses_buffers = False
         self._dspark_graph_model_inputs: dict[str, Any] | None = None
+        self._dspark_graph_context_inputs: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
+        self._dspark_fused_graph_replay_enqueued = False
         self._dspark_draft_capture_sizes: list[int] = []
         self._dspark_logged_capture_keys: set[Any] = set()
         self._dspark_logged_replay_keys: set[Any] = set()
@@ -261,9 +272,10 @@ class AscendDsparkProposer(AscendDflashProposer):
         return self.cudagraph_dispatcher
 
     def _draft_uniform_decode(self, target_model_batch_desc) -> bool:
-        # DSpark always runs one fixed [anchor + N masks] query block per
-        # request, independently of whether the verifier batch is mixed.
-        return True
+        # A fixed DSpark query width does not make a mixed target batch safe to
+        # capture. FULL_DECODE_ONLY must remain fail-closed for prefill/mixed
+        # target descriptors; the eager path still supports those batches.
+        return bool(getattr(target_model_batch_desc, "uniform", False))
 
     def _sync_draft_cudagraph_mode_across_dp(self) -> bool:
         return True
@@ -304,9 +316,9 @@ class AscendDsparkProposer(AscendDflashProposer):
     def load_model(self, model) -> None:
         enable_draft_aclgraph = self.use_cuda_graph and self._dspark_enable_draft_aclgraph
         if enable_draft_aclgraph:
-            # The base loader wraps the complete merged draft flow. DSpark must
-            # keep context-KV precompute eager while capturing the fixed-shape
-            # backbone and sampler tail, so suppress that generic wrapper here.
+            # DSpark owns persistent context/query buffers and a dedicated
+            # fixed-width dispatcher, so suppress the generic base wrapper and
+            # install the complete context+backbone+tail wrapper below.
             self.use_cuda_graph = False
         try:
             super().load_model(model)
@@ -330,32 +342,32 @@ class AscendDsparkProposer(AscendDflashProposer):
                 "DSpark local-vocab argmax is enabled; full-vocab TP gathers for the base and Markov heads are skipped."
             )
 
+        if enable_draft_aclgraph and not self._dspark_use_local_vocab_argmax:
+            logger.warning(
+                "DSpark fused ACLGraph requires the local-vocab argmax path; keeping the complete draft path eager."
+            )
+            enable_draft_aclgraph = False
+            self.use_cuda_graph = False
+            self._dspark_enable_draft_aclgraph = False
+
         if enable_draft_aclgraph:
             logger.info(
-                "DSpark draft ACLGraph is enabled for the backbone forward; context-KV precompute remains eager."
+                "DSpark draft ACLGraph is enabled for context-KV precompute, backbone forward, and local sampling."
             )
             self.update_stream = torch.npu.Stream()
-            graph_runnable = (
-                self._run_dspark_model_and_sampler_tail_from_graph_buffers
-                if self._dspark_use_local_vocab_argmax
-                else self._run_dspark_model_from_graph_buffers
-            )
             self._dspark_backbone_runnable: ACLGraphWrapper | Callable = ACLGraphWrapper(
-                graph_runnable,
+                self._run_dspark_model_and_sampler_tail_from_graph_buffers,
                 self.vllm_config,
                 runtime_mode=CUDAGraphMode.FULL,
-                # This is not the merged EAGLE graph whose wrapper may safely
-                # skip the replay ordering barrier.
-                use_eagle=False,
+                # The complete merged draft flow is now one graph. Reuse the
+                # generic EAGLE replay-then-update protocol: replay reaches the
+                # captured ExternalEvent after context-KV work, then the outer
+                # proposer updates the attention tasks on its side stream.
+                use_eagle=True,
                 enable_enpu=self.enable_enpu,
-                # _run_merged_draft synchronizes before graph-task update, so
-                # the wrapper must not repeat the same host barrier after the
-                # update.  ExternalEvent waits captured in the backbone graph
-                # still order replay behind the update stream.
-                caller_orders_graph_update=True,
             )
             self._dspark_graph_runnable_uses_buffers = True
-            self._dspark_sampler_tail_graph_enabled = self._dspark_use_local_vocab_argmax
+            self._dspark_sampler_tail_graph_enabled = True
         else:
             self._dspark_backbone_runnable = self._run_dspark_model
             self._dspark_graph_runnable_uses_buffers = False
@@ -363,12 +375,8 @@ class AscendDsparkProposer(AscendDflashProposer):
 
         if self._dspark_sampler_tail_graph_enabled:
             logger.info(
-                "DSpark sampler-tail ACLGraph is enabled inside the fused backbone graph; "
+                "DSpark sampler-tail ACLGraph is enabled inside the fused context/backbone graph; "
                 "local logits and sequential Markov sampling use fixed graph shapes."
-            )
-        elif enable_draft_aclgraph:
-            logger.warning(
-                "DSpark sampler-tail ACLGraph requires the local-vocab argmax path; keeping Markov sampling eager."
             )
         if draft_backbone is not None:
             global_rank = dist.get_rank() if dist.is_initialized() else 0
@@ -474,12 +482,95 @@ class AscendDsparkProposer(AscendDflashProposer):
         self.positions[num_actual_tokens:num_input_tokens].zero_()
         self._slot_mapping_buffer[num_actual_tokens:num_input_tokens].fill_(PADDING_SLOT_ID)
 
-    def _synchronize_before_dspark_graph_update(self) -> None:
-        if not self.enable_enpu:
-            # graph_task_update mutates the captured attention handles on a
-            # side stream. Wait for the previous backbone replay (including a
-            # fused sampler tail) before allowing the next update to start.
-            torch.npu.current_stream().synchronize()
+    def _dspark_fused_graph_capacity(
+        self,
+        forward_context,
+        num_input_tokens: int,
+        batch_size: int,
+        num_actual_query_tokens: int,
+        is_prefill: Any,
+    ) -> int | None:
+        """Return the fixed context/query capacity for a safe fused replay."""
+        if not self._dspark_sampler_tail_graph_enabled:
+            return None
+        if self._draft_aclgraph_disabled_reason() is not None:
+            return None
+        # Do not inspect a device tensor on the host merely to select a graph.
+        # An unexpected tensor-valued marker is therefore conservatively eager.
+        if isinstance(is_prefill, torch.Tensor) or bool(is_prefill):
+            return None
+
+        batch_descriptor = getattr(forward_context, "batch_descriptor", None)
+        if batch_descriptor is None or getattr(batch_descriptor, "uniform", False) is not True:
+            return None
+        if getattr(batch_descriptor, "has_lora", False):
+            return None
+
+        graph_num_reqs = getattr(batch_descriptor, "num_reqs", None)
+        graph_num_tokens = getattr(batch_descriptor, "num_tokens", None)
+        if graph_num_reqs is None or graph_num_tokens is None:
+            return None
+        graph_num_reqs = int(graph_num_reqs)
+        graph_num_tokens = int(graph_num_tokens)
+        query_len = 1 + self.num_speculative_tokens
+        if graph_num_reqs < 0 or graph_num_tokens != graph_num_reqs * query_len:
+            return None
+        if graph_num_tokens != num_input_tokens:
+            return None
+        if batch_size < 0 or batch_size > graph_num_reqs:
+            return None
+        if num_actual_query_tokens != batch_size * query_len:
+            return None
+
+        num_context = int(self._dflash_num_context)
+        if num_context < 0 or num_context > graph_num_tokens:
+            return None
+        context_buffers = (
+            self._dflash_hidden_states,
+            self._context_positions_buffer,
+            self._context_slot_mapping_buffer,
+        )
+        if any(buffer.shape[0] < graph_num_tokens for buffer in context_buffers):
+            return None
+        return graph_num_tokens
+
+    def _prepare_dspark_graph_context_inputs(
+        self,
+        num_context: int,
+        graph_capacity: int,
+    ) -> bool:
+        """Pad persistent context inputs to the descriptor's fixed capacity."""
+        context_buffers = (
+            self._dflash_hidden_states,
+            self._context_positions_buffer,
+            self._context_slot_mapping_buffer,
+        )
+        if (
+            num_context < 0
+            or num_context > graph_capacity
+            or any(buffer.shape[0] < graph_capacity for buffer in context_buffers)
+        ):
+            self._dspark_graph_context_inputs = None
+            return False
+
+        if num_context < graph_capacity:
+            self._dflash_hidden_states[num_context:graph_capacity].zero_()
+            self._context_positions_buffer[num_context:graph_capacity].zero_()
+            self._context_slot_mapping_buffer[num_context:graph_capacity].fill_(PADDING_SLOT_ID)
+        self._dspark_graph_context_inputs = (
+            self._dflash_hidden_states[:graph_capacity],
+            self._context_positions_buffer[:graph_capacity],
+            self._context_slot_mapping_buffer[:graph_capacity],
+        )
+        return True
+
+    def _build_dspark_graph_model_inputs(self, num_input_tokens: int) -> dict[str, Any]:
+        """Build query inputs without running eager context-KV precompute."""
+        return {
+            "input_ids": self.input_ids[:num_input_tokens],
+            "positions": self.positions[:num_input_tokens],
+            "inputs_embeds": None,
+        }
 
     def _run_dspark_model(self, **model_inputs: Any) -> torch.Tensor:
         return self.model(**model_inputs)
@@ -491,7 +582,11 @@ class AscendDsparkProposer(AscendDflashProposer):
         return self._run_dspark_model(**model_inputs)
 
     def _run_dspark_model_and_sampler_tail_from_graph_buffers(self) -> torch.Tensor:
-        """Run the fixed-shape backbone and local sampler tail in one graph."""
+        """Run fixed-shape context-KV, backbone, and local tail in one graph."""
+        context_inputs = self._dspark_graph_context_inputs
+        if context_inputs is None:
+            raise RuntimeError("DSpark context ACLGraph inputs were not prepared before capture/replay")
+        self.model.precompute_and_store_context_kv(*context_inputs)
         hidden_states = self._run_dspark_model_from_graph_buffers()
         if self.model_returns_tuple():
             last_hidden_states, _ = hidden_states
@@ -512,12 +607,19 @@ class AscendDsparkProposer(AscendDflashProposer):
             graph_entry = graph_entries.get(batch_descriptor)
             had_graph = graph_entry is not None and graph_entry.aclgraph is not None
             output = run_model()
+            # Reflect capture/replay enqueue before marker bookkeeping; the
+            # outer proposer performs the corresponding side-stream update.
+            self._dspark_fused_graph_replay_enqueued = True
             graph_entries = getattr(run_model, "concrete_aclgraph_entries", {})
             graph_entry = graph_entries.get(batch_descriptor)
             has_graph = graph_entry is not None and graph_entry.aclgraph is not None
             if has_graph and not had_graph and batch_descriptor not in self._dspark_logged_capture_keys:
                 logger.info(
                     "Captured DSpark draft backbone ACLGraph for %s",
+                    batch_descriptor,
+                )
+                logger.info(
+                    "Captured DSpark context-KV ACLGraph for %s",
                     batch_descriptor,
                 )
                 self._dspark_logged_capture_keys.add(batch_descriptor)
@@ -532,6 +634,10 @@ class AscendDsparkProposer(AscendDflashProposer):
             elif had_graph and batch_descriptor not in self._dspark_logged_replay_keys:
                 logger.info(
                     "Replayed DSpark draft backbone ACLGraph for %s",
+                    batch_descriptor,
+                )
+                logger.info(
+                    "Replayed DSpark context-KV ACLGraph for %s",
                     batch_descriptor,
                 )
                 self._dspark_logged_replay_keys.add(batch_descriptor)
@@ -565,13 +671,13 @@ class AscendDsparkProposer(AscendDflashProposer):
         multi_steps_attn_metadata: list[dict[str, Any]],
     ) -> None:
         if (
-            self.use_cuda_graph
-            and self._dspark_enable_draft_aclgraph
+            not self.enable_enpu
             and forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL
+            and not self._dspark_fused_graph_replay_enqueued
         ):
-            # The DSpark orchestrator updates graph tasks immediately before
-            # backbone replay. Base's normal post-runnable update would happen
-            # after sampler-tail kernels have already been enqueued.
+            # A runtime shape guard may fail after FULL dispatch. No graph was
+            # enqueued in that case, so do not record update events that could
+            # incorrectly release the next graph replay.
             return
         return super()._update_full_graph_params_if_needed(
             forward_context,
@@ -590,6 +696,7 @@ class AscendDsparkProposer(AscendDflashProposer):
         num_tokens,
         is_prefill=None,
     ) -> torch.Tensor:
+        self._dspark_fused_graph_replay_enqueued = False
         forward_context = get_forward_context()
         use_backbone_aclgraph = (
             self.use_cuda_graph
@@ -597,7 +704,18 @@ class AscendDsparkProposer(AscendDflashProposer):
             and forward_context is not None
             and forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL
         )
+        graph_capacity = None
+        if use_backbone_aclgraph:
+            graph_capacity = self._dspark_fused_graph_capacity(
+                forward_context,
+                num_input_tokens,
+                batch_size,
+                num_tokens,
+                is_prefill,
+            )
+            use_backbone_aclgraph = graph_capacity is not None
         if not use_backbone_aclgraph:
+            self._dspark_graph_context_inputs = None
             return super()._run_merged_draft(
                 num_input_tokens=num_input_tokens,
                 batch_size=batch_size,
@@ -612,16 +730,25 @@ class AscendDsparkProposer(AscendDflashProposer):
         if lmhead_tp_enable():
             raise NotImplementedError("DSpark drafting does not support LM-head tensor parallel yet.")
 
+        assert graph_capacity is not None
+        if not self._prepare_dspark_graph_context_inputs(
+            int(self._dflash_num_context),
+            graph_capacity,
+        ):
+            # This is intentionally a complete eager fallback. In particular,
+            # never truncate dynamic context rows to make them fit a graph key.
+            return super()._run_merged_draft(
+                num_input_tokens=num_input_tokens,
+                batch_size=batch_size,
+                token_indices_to_sample=token_indices_to_sample,
+                target_positions=target_positions,
+                inputs_embeds=inputs_embeds,
+                multi_steps_attn_metadata=multi_steps_attn_metadata,
+                num_tokens=num_tokens,
+                is_prefill=is_prefill,
+            )
         self._pad_dspark_query_buffers(num_tokens, num_input_tokens)
-        self._synchronize_before_dspark_graph_update()
-        # This call performs context-KV precompute eagerly on every iteration.
-        # Only the fixed-shape query model forward below is captured.
-        model_inputs = self.build_model_inputs_first_pass(num_input_tokens)
-        self._update_full_graph_params(
-            forward_context,
-            num_input_tokens,
-            multi_steps_attn_metadata,
-        )
+        model_inputs = self._build_dspark_graph_model_inputs(num_input_tokens)
         if self._dspark_sampler_tail_graph_enabled:
             expected_sample_rows = batch_size * self.num_speculative_tokens
             if token_indices_to_sample.shape[0] != expected_sample_rows:
@@ -634,6 +761,7 @@ class AscendDsparkProposer(AscendDflashProposer):
                 self._dspark_backbone_runnable,
                 model_inputs,
             )
+            self._dspark_fused_graph_replay_enqueued = True
             # The tail graph uses the descriptor's fixed DP-uniform request
             # count. Only locally real requests are returned to verification.
             return draft_tokens[:batch_size]
