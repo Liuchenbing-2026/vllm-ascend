@@ -1,0 +1,165 @@
+{
+ "binFileName": "HcPre_c12a9d608e5abdbd1728e849208025ff",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "MIX",
+ "intercoreSync": 1,
+ "kernelName": "HcPre_c12a9d608e5abdbd1728e849208025ff",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF",
+ "memoryStamping": [],
+ "opParaSize": 408,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "355f38f1682b4ec2b19bf3b071f9f7ca2a2c065337e82c7f0009c31bb9ef2892",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "tilingKey": 0,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "HcPre_c12a9d608e5abdbd1728e849208025ff_0"
+  }
+ ],
+ "taskRation": "tilingKey",
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "HcPre/d=0,p=1/27,2/0,2/0,2/0,2/27,2/0,2/0,2",
+   "HcPre/d=0,p=0/27,2/0,2/0,2/0,2/27,2/0,2/0,2",
+   "HcPre/d=1,p=1/27,2/0,2/0,2/0,2/27,2/0,2/0,2",
+   "HcPre/d=1,p=0/27,2/0,2/0,2/0,2/27,2/0,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "67d18d953219ac67d7524c3eaadbbd8a3f48f33ea05165c68629b6db97945d71,33d7c3e7024735ad5298091328078a8f50316c0befe6645e79789a1eff8759ed",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "hc_fn",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "hc_scale",
+    "index": 2,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "hc_base",
+    "index": 3,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "post",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "comb_frag",
+    "index": 2,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "hc_mult",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "hc_sinkhorn_iters",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "hc_eps",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "norm_eps",
+    "dtype": "float",
+    "value": 0.0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/hc_pre/HcPre_c12a9d608e5abdbd1728e849208025ff.json"
+}

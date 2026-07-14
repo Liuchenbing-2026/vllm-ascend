@@ -1,0 +1,253 @@
+{
+  "binList": [
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "StoreKVBlock/d=0,p=1/27,2/27,2/3,2/3,2/3,2",
+        "StoreKVBlock/d=0,p=0/27,2/27,2/3,2/3,2/3,2",
+        "StoreKVBlock/d=1,p=1/27,2/27,2/3,2/3,2/3,2",
+        "StoreKVBlock/d=1,p=0/27,2/27,2/3,2/3,2/3,2"
+      ],
+      "staticKey": "9d22b42cf6b2f2054be03d12e7358755340f62c554dcf97fd70a3a7cdf488eb2,dc04e8687752dc3ee35b7b11db38eda652943a4d9e52b9970b1c939c35187a9e",
+      "inputs": [
+        {
+          "name": "keyIn",
+          "index": 0,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "keyCacheIn",
+          "index": 1,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "groupLen",
+          "index": 2,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "groupKeyIdx",
+          "index": 3,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "groupKeyCacheIdx",
+          "index": 4,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [],
+      "attrs": [
+        {
+          "name": "blockSize",
+          "dtype": "int",
+          "value": 0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/store_kv_block/StoreKVBlock_31de74cd8e5b500774587b2407e9920c.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "StoreKVBlock/d=0,p=1/2,2/2,2/3,2/3,2/3,2",
+        "StoreKVBlock/d=0,p=0/2,2/2,2/3,2/3,2/3,2",
+        "StoreKVBlock/d=1,p=1/2,2/2,2/3,2/3,2/3,2",
+        "StoreKVBlock/d=1,p=0/2,2/2,2/3,2/3,2/3,2"
+      ],
+      "staticKey": "3b716acd181333a401965fe7a88b6efb7f70fbb3996b57b7b274d588d255432d,b308010e177c9674ebf926fe5815abca992673c0301b2871782158a317172fb4",
+      "inputs": [
+        {
+          "name": "keyIn",
+          "index": 0,
+          "dtype": "int8",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "keyCacheIn",
+          "index": 1,
+          "dtype": "int8",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "groupLen",
+          "index": 2,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "groupKeyIdx",
+          "index": 3,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "groupKeyCacheIdx",
+          "index": 4,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [],
+      "attrs": [
+        {
+          "name": "blockSize",
+          "dtype": "int",
+          "value": 0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/store_kv_block/StoreKVBlock_6f511e351f42e061b3680fd0387a177f.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "StoreKVBlock/d=0,p=1/1,2/1,2/3,2/3,2/3,2",
+        "StoreKVBlock/d=0,p=0/1,2/1,2/3,2/3,2/3,2",
+        "StoreKVBlock/d=1,p=1/1,2/1,2/3,2/3,2/3,2",
+        "StoreKVBlock/d=1,p=0/1,2/1,2/3,2/3,2/3,2"
+      ],
+      "staticKey": "789b267c944117dd60afdf5d29e1634135e60d6d6565a9c702690068502ed5a1,2118ae6da6a42e11fda4b6f4f8ab64282594d0b35f3511c8d2cf9b7bd99671fd",
+      "inputs": [
+        {
+          "name": "keyIn",
+          "index": 0,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "keyCacheIn",
+          "index": 1,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "groupLen",
+          "index": 2,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "groupKeyIdx",
+          "index": 3,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "groupKeyCacheIdx",
+          "index": 4,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [],
+      "attrs": [
+        {
+          "name": "blockSize",
+          "dtype": "int",
+          "value": 0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/store_kv_block/StoreKVBlock_7f5d033c78efc614a77f95bba8aef3bd.json"
+      }
+    }
+  ]
+}

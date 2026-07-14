@@ -1,0 +1,179 @@
+{
+ "binFileName": "CompressorMetadata_8ccf83a3be9b66d739e408b3044ff751",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "CompressorMetadata_8ccf83a3be9b66d739e408b3044ff751",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 64,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "757707b47e4dc6f0802dc4602236c891ddf310fff9fe9738126670802fdd9cb2",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "CompressorMetadata_8ccf83a3be9b66d739e408b3044ff751_1"
+  },
+  {
+   "kernelName": "CompressorMetadata_8ccf83a3be9b66d739e408b3044ff751_2"
+  },
+  {
+   "kernelName": "CompressorMetadata_8ccf83a3be9b66d739e408b3044ff751_3"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "CompressorMetadata/d=0,p=1/27,2/27,2/3,2/3,2/3,2/27,2/27,2/3,2",
+   "CompressorMetadata/d=0,p=0/27,2/27,2/3,2/3,2/3,2/27,2/27,2/3,2",
+   "CompressorMetadata/d=1,p=1/27,2/27,2/3,2/3,2/3,2/27,2/27,2/3,2",
+   "CompressorMetadata/d=1,p=0/27,2/27,2/3,2/3,2/3,2/27,2/27,2/3,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "29f4ffa5aacf59333430bc80f2d6ad315fe68f6e1e329006fa249ad660cb1d00,e58a1ede43f6ef38ac3eef4dacccc5c6ea1d0fa9a26880d507f28a2595c84fa8",
+  "inputs": [
+   {
+    "name": "ropeCos",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "ropeSin",
+    "index": 1,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "cuSeqlens",
+    "index": 2,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "startPos",
+    "index": 3,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "kvBlockTable",
+    "index": 4,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "compressCos",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "compressSin",
+    "index": 1,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "slotMapping",
+    "index": 2,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "kvBlockSize",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "slotMappingFormat",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "cmpRatio",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "actualNumReqs",
+    "dtype": "int",
+    "value": 0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/compressor_metadata/CompressorMetadata_8ccf83a3be9b66d739e408b3044ff751.json"
+}

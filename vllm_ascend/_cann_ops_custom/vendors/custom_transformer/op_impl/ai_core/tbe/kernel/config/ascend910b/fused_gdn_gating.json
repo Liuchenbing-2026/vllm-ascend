@@ -1,0 +1,610 @@
+{
+  "binList": [
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "FusedGdnGating/d=0,p=1/27,2/1,2/1,2/27,2/0,2/1,2",
+        "FusedGdnGating/d=0,p=0/27,2/1,2/1,2/27,2/0,2/1,2",
+        "FusedGdnGating/d=1,p=1/27,2/1,2/1,2/27,2/0,2/1,2",
+        "FusedGdnGating/d=1,p=0/27,2/1,2/1,2/27,2/0,2/1,2"
+      ],
+      "staticKey": "4761f3426b816ca619246ee8303c3648c371ace57472201e5064093f19d6ee41,3ad123f0b50383d7f9d628641b51b676be93250dd0a3ae3aba14d53d8f0972d3",
+      "inputs": [
+        {
+          "name": "a_log",
+          "index": 0,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "a",
+          "index": 1,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "b",
+          "index": 2,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "dt_bias",
+          "index": 3,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "g",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "beta_output",
+          "index": 1,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "beta",
+          "dtype": "float",
+          "value": 0.0
+        },
+        {
+          "name": "threshold",
+          "dtype": "float",
+          "value": 0.0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/fused_gdn_gating/FusedGdnGating_03a3c75b3b130394625c7ffcade6e98c.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "FusedGdnGating/d=0,p=1/1,2/1,2/1,2/1,2/0,2/1,2",
+        "FusedGdnGating/d=0,p=0/1,2/1,2/1,2/1,2/0,2/1,2",
+        "FusedGdnGating/d=1,p=1/1,2/1,2/1,2/1,2/0,2/1,2",
+        "FusedGdnGating/d=1,p=0/1,2/1,2/1,2/1,2/0,2/1,2"
+      ],
+      "staticKey": "a2a5680d72089a8431262f30bd5e5a2e93a1937f6f31825616c539da9bacef86,251348f372d8bdd223cae891a10af2e872f0a84521271efdcfa9a0dc002d550e",
+      "inputs": [
+        {
+          "name": "a_log",
+          "index": 0,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "a",
+          "index": 1,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "b",
+          "index": 2,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "dt_bias",
+          "index": 3,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "g",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "beta_output",
+          "index": 1,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "beta",
+          "dtype": "float",
+          "value": 0.0
+        },
+        {
+          "name": "threshold",
+          "dtype": "float",
+          "value": 0.0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/fused_gdn_gating/FusedGdnGating_4fcaf3b233507ddbd17b107d152c5da4.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "FusedGdnGating/d=0,p=1/1,2/27,2/27,2/1,2/0,2/27,2",
+        "FusedGdnGating/d=0,p=0/1,2/27,2/27,2/1,2/0,2/27,2",
+        "FusedGdnGating/d=1,p=1/1,2/27,2/27,2/1,2/0,2/27,2",
+        "FusedGdnGating/d=1,p=0/1,2/27,2/27,2/1,2/0,2/27,2"
+      ],
+      "staticKey": "3c54e68cb4d7e08feb80c55698effb226d1eb1c2eccbd9fc110bf85fda4f7c2e,4b647128cfc36acb4247cfdb6a950df3c661e22334a6a29305f164be9981de26",
+      "inputs": [
+        {
+          "name": "a_log",
+          "index": 0,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "a",
+          "index": 1,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "b",
+          "index": 2,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "dt_bias",
+          "index": 3,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "g",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "beta_output",
+          "index": 1,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "beta",
+          "dtype": "float",
+          "value": 0.0
+        },
+        {
+          "name": "threshold",
+          "dtype": "float",
+          "value": 0.0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/fused_gdn_gating/FusedGdnGating_94bdbaa05f93837113ccdaee00bfbbae.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "FusedGdnGating/d=0,p=1/27,2/27,2/27,2/27,2/0,2/27,2",
+        "FusedGdnGating/d=0,p=0/27,2/27,2/27,2/27,2/0,2/27,2",
+        "FusedGdnGating/d=1,p=1/27,2/27,2/27,2/27,2/0,2/27,2",
+        "FusedGdnGating/d=1,p=0/27,2/27,2/27,2/27,2/0,2/27,2"
+      ],
+      "staticKey": "8770b0f4561c7e3dedcdd397ea10c36ddd0a10cff4b30d6379327d0fee075f3c,61276a2a41054471a4eb482800671af8cbb219f0b04b8c000c7b66b9093dbfe0",
+      "inputs": [
+        {
+          "name": "a_log",
+          "index": 0,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "a",
+          "index": 1,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "b",
+          "index": 2,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "dt_bias",
+          "index": 3,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "g",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "beta_output",
+          "index": 1,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "beta",
+          "dtype": "float",
+          "value": 0.0
+        },
+        {
+          "name": "threshold",
+          "dtype": "float",
+          "value": 0.0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/fused_gdn_gating/FusedGdnGating_9b62f8616ffe6659784bbf6362c67ced.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "FusedGdnGating/d=0,p=1/0,2/1,2/1,2/0,2/0,2/1,2",
+        "FusedGdnGating/d=0,p=0/0,2/1,2/1,2/0,2/0,2/1,2",
+        "FusedGdnGating/d=1,p=1/0,2/1,2/1,2/0,2/0,2/1,2",
+        "FusedGdnGating/d=1,p=0/0,2/1,2/1,2/0,2/0,2/1,2"
+      ],
+      "staticKey": "01b10a77712dc9a727076094fc5f1c179504066c588aee886e742a5a8cb5d6e8,dc28a5a4d37a51eba935ec565864eda6637422411dc9b03dc0aee2e0b97c4e74",
+      "inputs": [
+        {
+          "name": "a_log",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "a",
+          "index": 1,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "b",
+          "index": 2,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "dt_bias",
+          "index": 3,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "g",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "beta_output",
+          "index": 1,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "beta",
+          "dtype": "float",
+          "value": 0.0
+        },
+        {
+          "name": "threshold",
+          "dtype": "float",
+          "value": 0.0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/fused_gdn_gating/FusedGdnGating_ac8dec8c6c58db56280b7cf0496e8ef0.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "FusedGdnGating/d=0,p=1/0,2/27,2/27,2/0,2/0,2/27,2",
+        "FusedGdnGating/d=0,p=0/0,2/27,2/27,2/0,2/0,2/27,2",
+        "FusedGdnGating/d=1,p=1/0,2/27,2/27,2/0,2/0,2/27,2",
+        "FusedGdnGating/d=1,p=0/0,2/27,2/27,2/0,2/0,2/27,2"
+      ],
+      "staticKey": "7330075903e9228d185695700a6771484a0cca1d28ce4f333100ff8df5685181,249e089169281aa08577168f7dcc9424384b6e08002a4bd4ce551bd314f477e7",
+      "inputs": [
+        {
+          "name": "a_log",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "a",
+          "index": 1,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "b",
+          "index": 2,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "dt_bias",
+          "index": 3,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "g",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "beta_output",
+          "index": 1,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "beta",
+          "dtype": "float",
+          "value": 0.0
+        },
+        {
+          "name": "threshold",
+          "dtype": "float",
+          "value": 0.0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/fused_gdn_gating/FusedGdnGating_bfc89caf1025c7a3deee6332c92bd039.json"
+      }
+    }
+  ]
+}

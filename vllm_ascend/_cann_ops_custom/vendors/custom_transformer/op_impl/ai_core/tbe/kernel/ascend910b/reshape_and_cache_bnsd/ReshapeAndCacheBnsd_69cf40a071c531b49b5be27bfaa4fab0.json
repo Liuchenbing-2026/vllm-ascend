@@ -1,0 +1,115 @@
+{
+ "binFileName": "ReshapeAndCacheBnsd_69cf40a071c531b49b5be27bfaa4fab0",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "ReshapeAndCacheBnsd_69cf40a071c531b49b5be27bfaa4fab0",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 40,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "eaa499dfbfc393f27c61d29d16ac03400985c96a0833abc170ec8b33113c082d",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "ReshapeAndCacheBnsd_69cf40a071c531b49b5be27bfaa4fab0_0"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "ReshapeAndCacheBnsd/d=0,p=1/4,2/4,2/3,2/3,2/4,2",
+   "ReshapeAndCacheBnsd/d=0,p=0/4,2/4,2/3,2/3,2/4,2",
+   "ReshapeAndCacheBnsd/d=1,p=1/4,2/4,2/3,2/3,2/4,2",
+   "ReshapeAndCacheBnsd/d=1,p=0/4,2/4,2/3,2/3,2/4,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "4f0e469867b5b25e24453d5c2ab0343aa9e3f659cd5a55c0708946bdd9ba0c11,a1ee8c144bd31511639895ec09aa7e442ec2c4a2f2f02d7202cb21bcc24389cf",
+  "inputs": [
+   {
+    "name": "keyIn",
+    "index": 0,
+    "dtype": "uint8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "keyCacheIn",
+    "index": 1,
+    "dtype": "uint8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "slotMapping",
+    "index": 2,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "seqLen",
+    "index": 3,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "keyCacheOut",
+    "index": 0,
+    "dtype": "uint8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_69cf40a071c531b49b5be27bfaa4fab0.json"
+}

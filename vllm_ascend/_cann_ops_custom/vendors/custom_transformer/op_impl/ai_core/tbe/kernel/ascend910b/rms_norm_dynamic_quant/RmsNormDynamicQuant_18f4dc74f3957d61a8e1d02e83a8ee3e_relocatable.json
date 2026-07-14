@@ -1,0 +1,231 @@
+{
+ "binFileName": "RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 120,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "31bf8d16ba48631afd012cd07b6573ea0f36b804ab9f2b8031e7c4b87d572f6e",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable_0"
+  },
+  {
+   "kernelName": "RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable_1"
+  },
+  {
+   "kernelName": "RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable_2"
+  },
+  {
+   "kernelName": "RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable_3"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "sub_operator_op_type": "RmsNormDynamicQuant",
+ "sub_operator_params": [
+  "x_in__",
+  "gamma_in__",
+  "smooth_scale1_in__",
+  "smooth_scale2_in__",
+  "beta_in__",
+  "y1_out_",
+  "y2_out_",
+  "scale1_out_",
+  "scale2_out_",
+  "workspace",
+  "tiling"
+ ],
+ "sub_operator_kernel_type": "",
+ "sub_operator_kernel_name": {
+  "dynamic_func_names": {
+   "0": {
+    "AiCore": "RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable_0",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   },
+   "1": {
+    "AiCore": "RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable_1",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   },
+   "2": {
+    "AiCore": "RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable_2",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   },
+   "3": {
+    "AiCore": "RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable_3",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   }
+  }
+ },
+ "sub_operator_early_start_set_flag": false,
+ "sub_operator_early_start_wait_flag": false,
+ "sub_operator_call_dcci_before_kernel_start": true,
+ "sub_operator_call_dcci_after_kernel_end": true,
+ "sub_operator_call_dcci_disable_on_kernel": false,
+ "sub_op_with_sync_all": false,
+ "compileInfo": {},
+ "feature_list": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "RmsNormDynamicQuant/d=0,p=1/1,2/1,2/2,2/2,2/0,2/0,2",
+   "RmsNormDynamicQuant/d=0,p=0/1,2/1,2/2,2/2,2/0,2/0,2",
+   "RmsNormDynamicQuant/d=1,p=1/1,2/1,2/2,2/2,2/0,2/0,2",
+   "RmsNormDynamicQuant/d=1,p=0/1,2/1,2/2,2/2,2/0,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "49cb752eeab8d7ee8ffd6466f1ad9661884ccab851594d673f524cdedc100ba8,05a93715bdce7367c5a770ef33f98569ad2683e280b1bbcf5c4598d23a8535e8",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "gamma",
+    "index": 1,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "smooth_scale1",
+    "index": 2,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "smooth_scale2",
+    "index": 3,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "beta",
+    "index": 4,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y1",
+    "index": 0,
+    "dtype": "int8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "y2",
+    "index": 1,
+    "dtype": "int8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "scale1",
+    "index": 2,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "scale2",
+    "index": 3,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "epsilon",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "output_mask",
+    "dtype": "list_bool",
+    "value": []
+   },
+   {
+    "name": "dst_type",
+    "dtype": "int",
+    "value": 0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/rms_norm_dynamic_quant/RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable.json"
+}

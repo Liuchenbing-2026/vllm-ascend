@@ -1,0 +1,1601 @@
+{
+ "binFileName": "Compressor_49507def9d8354a82f6afebe5354ffab",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "MIX",
+ "intercoreSync": 1,
+ "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF",
+ "memoryStamping": [],
+ "opParaSize": 112,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "8432101c35063a7a468d9be9e4870dfba937b359551cd1360606b2c736be5355",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "tilingKey": 0,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_0"
+  },
+  {
+   "tilingKey": 8192,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8192"
+  },
+  {
+   "tilingKey": 2048,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2048"
+  },
+  {
+   "tilingKey": 10240,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10240"
+  },
+  {
+   "tilingKey": 4096,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4096"
+  },
+  {
+   "tilingKey": 12288,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12288"
+  },
+  {
+   "tilingKey": 512,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_512"
+  },
+  {
+   "tilingKey": 8704,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8704"
+  },
+  {
+   "tilingKey": 2560,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2560"
+  },
+  {
+   "tilingKey": 10752,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10752"
+  },
+  {
+   "tilingKey": 4608,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4608"
+  },
+  {
+   "tilingKey": 12800,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12800"
+  },
+  {
+   "tilingKey": 128,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_128"
+  },
+  {
+   "tilingKey": 8320,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8320"
+  },
+  {
+   "tilingKey": 2176,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2176"
+  },
+  {
+   "tilingKey": 10368,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10368"
+  },
+  {
+   "tilingKey": 4224,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4224"
+  },
+  {
+   "tilingKey": 12416,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12416"
+  },
+  {
+   "tilingKey": 640,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_640"
+  },
+  {
+   "tilingKey": 8832,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8832"
+  },
+  {
+   "tilingKey": 2688,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2688"
+  },
+  {
+   "tilingKey": 10880,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10880"
+  },
+  {
+   "tilingKey": 4736,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4736"
+  },
+  {
+   "tilingKey": 12928,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12928"
+  },
+  {
+   "tilingKey": 32,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_32"
+  },
+  {
+   "tilingKey": 8224,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8224"
+  },
+  {
+   "tilingKey": 2080,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2080"
+  },
+  {
+   "tilingKey": 10272,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10272"
+  },
+  {
+   "tilingKey": 4128,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4128"
+  },
+  {
+   "tilingKey": 12320,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12320"
+  },
+  {
+   "tilingKey": 544,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_544"
+  },
+  {
+   "tilingKey": 8736,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8736"
+  },
+  {
+   "tilingKey": 2592,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2592"
+  },
+  {
+   "tilingKey": 10784,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10784"
+  },
+  {
+   "tilingKey": 4640,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4640"
+  },
+  {
+   "tilingKey": 12832,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12832"
+  },
+  {
+   "tilingKey": 160,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_160"
+  },
+  {
+   "tilingKey": 8352,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8352"
+  },
+  {
+   "tilingKey": 2208,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2208"
+  },
+  {
+   "tilingKey": 10400,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10400"
+  },
+  {
+   "tilingKey": 4256,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4256"
+  },
+  {
+   "tilingKey": 12448,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12448"
+  },
+  {
+   "tilingKey": 672,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_672"
+  },
+  {
+   "tilingKey": 8864,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8864"
+  },
+  {
+   "tilingKey": 2720,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2720"
+  },
+  {
+   "tilingKey": 10912,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10912"
+  },
+  {
+   "tilingKey": 4768,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4768"
+  },
+  {
+   "tilingKey": 12960,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12960"
+  },
+  {
+   "tilingKey": 2,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2"
+  },
+  {
+   "tilingKey": 8194,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8194"
+  },
+  {
+   "tilingKey": 2050,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2050"
+  },
+  {
+   "tilingKey": 10242,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10242"
+  },
+  {
+   "tilingKey": 4098,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4098"
+  },
+  {
+   "tilingKey": 12290,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12290"
+  },
+  {
+   "tilingKey": 514,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_514"
+  },
+  {
+   "tilingKey": 8706,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8706"
+  },
+  {
+   "tilingKey": 2562,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2562"
+  },
+  {
+   "tilingKey": 10754,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10754"
+  },
+  {
+   "tilingKey": 4610,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4610"
+  },
+  {
+   "tilingKey": 12802,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12802"
+  },
+  {
+   "tilingKey": 130,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_130"
+  },
+  {
+   "tilingKey": 8322,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8322"
+  },
+  {
+   "tilingKey": 2178,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2178"
+  },
+  {
+   "tilingKey": 10370,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10370"
+  },
+  {
+   "tilingKey": 4226,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4226"
+  },
+  {
+   "tilingKey": 12418,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12418"
+  },
+  {
+   "tilingKey": 642,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_642"
+  },
+  {
+   "tilingKey": 8834,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8834"
+  },
+  {
+   "tilingKey": 2690,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2690"
+  },
+  {
+   "tilingKey": 10882,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10882"
+  },
+  {
+   "tilingKey": 4738,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4738"
+  },
+  {
+   "tilingKey": 12930,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12930"
+  },
+  {
+   "tilingKey": 34,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_34"
+  },
+  {
+   "tilingKey": 8226,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8226"
+  },
+  {
+   "tilingKey": 2082,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2082"
+  },
+  {
+   "tilingKey": 10274,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10274"
+  },
+  {
+   "tilingKey": 4130,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4130"
+  },
+  {
+   "tilingKey": 12322,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12322"
+  },
+  {
+   "tilingKey": 546,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_546"
+  },
+  {
+   "tilingKey": 8738,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8738"
+  },
+  {
+   "tilingKey": 2594,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2594"
+  },
+  {
+   "tilingKey": 10786,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10786"
+  },
+  {
+   "tilingKey": 4642,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4642"
+  },
+  {
+   "tilingKey": 12834,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12834"
+  },
+  {
+   "tilingKey": 162,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_162"
+  },
+  {
+   "tilingKey": 8354,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8354"
+  },
+  {
+   "tilingKey": 2210,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2210"
+  },
+  {
+   "tilingKey": 10402,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10402"
+  },
+  {
+   "tilingKey": 4258,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4258"
+  },
+  {
+   "tilingKey": 12450,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12450"
+  },
+  {
+   "tilingKey": 674,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_674"
+  },
+  {
+   "tilingKey": 8866,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8866"
+  },
+  {
+   "tilingKey": 2722,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2722"
+  },
+  {
+   "tilingKey": 10914,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10914"
+  },
+  {
+   "tilingKey": 4770,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4770"
+  },
+  {
+   "tilingKey": 12962,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12962"
+  },
+  {
+   "tilingKey": 1,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_1"
+  },
+  {
+   "tilingKey": 8193,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8193"
+  },
+  {
+   "tilingKey": 2049,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2049"
+  },
+  {
+   "tilingKey": 10241,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10241"
+  },
+  {
+   "tilingKey": 4097,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4097"
+  },
+  {
+   "tilingKey": 12289,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12289"
+  },
+  {
+   "tilingKey": 513,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_513"
+  },
+  {
+   "tilingKey": 8705,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8705"
+  },
+  {
+   "tilingKey": 2561,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2561"
+  },
+  {
+   "tilingKey": 10753,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10753"
+  },
+  {
+   "tilingKey": 4609,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4609"
+  },
+  {
+   "tilingKey": 12801,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12801"
+  },
+  {
+   "tilingKey": 129,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_129"
+  },
+  {
+   "tilingKey": 8321,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8321"
+  },
+  {
+   "tilingKey": 2177,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2177"
+  },
+  {
+   "tilingKey": 10369,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10369"
+  },
+  {
+   "tilingKey": 4225,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4225"
+  },
+  {
+   "tilingKey": 12417,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12417"
+  },
+  {
+   "tilingKey": 641,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_641"
+  },
+  {
+   "tilingKey": 8833,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8833"
+  },
+  {
+   "tilingKey": 2689,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2689"
+  },
+  {
+   "tilingKey": 10881,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10881"
+  },
+  {
+   "tilingKey": 4737,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4737"
+  },
+  {
+   "tilingKey": 12929,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12929"
+  },
+  {
+   "tilingKey": 33,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_33"
+  },
+  {
+   "tilingKey": 8225,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8225"
+  },
+  {
+   "tilingKey": 2081,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2081"
+  },
+  {
+   "tilingKey": 10273,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10273"
+  },
+  {
+   "tilingKey": 4129,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4129"
+  },
+  {
+   "tilingKey": 12321,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12321"
+  },
+  {
+   "tilingKey": 545,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_545"
+  },
+  {
+   "tilingKey": 8737,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8737"
+  },
+  {
+   "tilingKey": 2593,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2593"
+  },
+  {
+   "tilingKey": 10785,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10785"
+  },
+  {
+   "tilingKey": 4641,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4641"
+  },
+  {
+   "tilingKey": 12833,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12833"
+  },
+  {
+   "tilingKey": 161,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_161"
+  },
+  {
+   "tilingKey": 8353,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8353"
+  },
+  {
+   "tilingKey": 2209,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2209"
+  },
+  {
+   "tilingKey": 10401,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10401"
+  },
+  {
+   "tilingKey": 4257,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4257"
+  },
+  {
+   "tilingKey": 12449,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12449"
+  },
+  {
+   "tilingKey": 673,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_673"
+  },
+  {
+   "tilingKey": 8865,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8865"
+  },
+  {
+   "tilingKey": 2721,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2721"
+  },
+  {
+   "tilingKey": 10913,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10913"
+  },
+  {
+   "tilingKey": 4769,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4769"
+  },
+  {
+   "tilingKey": 12961,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12961"
+  },
+  {
+   "tilingKey": 3,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_3"
+  },
+  {
+   "tilingKey": 8195,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8195"
+  },
+  {
+   "tilingKey": 2051,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2051"
+  },
+  {
+   "tilingKey": 10243,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10243"
+  },
+  {
+   "tilingKey": 4099,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4099"
+  },
+  {
+   "tilingKey": 12291,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12291"
+  },
+  {
+   "tilingKey": 515,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_515"
+  },
+  {
+   "tilingKey": 8707,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8707"
+  },
+  {
+   "tilingKey": 2563,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2563"
+  },
+  {
+   "tilingKey": 10755,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10755"
+  },
+  {
+   "tilingKey": 4611,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4611"
+  },
+  {
+   "tilingKey": 12803,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12803"
+  },
+  {
+   "tilingKey": 131,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_131"
+  },
+  {
+   "tilingKey": 8323,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8323"
+  },
+  {
+   "tilingKey": 2179,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2179"
+  },
+  {
+   "tilingKey": 10371,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10371"
+  },
+  {
+   "tilingKey": 4227,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4227"
+  },
+  {
+   "tilingKey": 12419,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12419"
+  },
+  {
+   "tilingKey": 643,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_643"
+  },
+  {
+   "tilingKey": 8835,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8835"
+  },
+  {
+   "tilingKey": 2691,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2691"
+  },
+  {
+   "tilingKey": 10883,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10883"
+  },
+  {
+   "tilingKey": 4739,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4739"
+  },
+  {
+   "tilingKey": 12931,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12931"
+  },
+  {
+   "tilingKey": 35,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_35"
+  },
+  {
+   "tilingKey": 8227,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8227"
+  },
+  {
+   "tilingKey": 2083,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2083"
+  },
+  {
+   "tilingKey": 10275,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10275"
+  },
+  {
+   "tilingKey": 4131,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4131"
+  },
+  {
+   "tilingKey": 12323,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12323"
+  },
+  {
+   "tilingKey": 547,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_547"
+  },
+  {
+   "tilingKey": 8739,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8739"
+  },
+  {
+   "tilingKey": 2595,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2595"
+  },
+  {
+   "tilingKey": 10787,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10787"
+  },
+  {
+   "tilingKey": 4643,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4643"
+  },
+  {
+   "tilingKey": 12835,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12835"
+  },
+  {
+   "tilingKey": 163,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_163"
+  },
+  {
+   "tilingKey": 8355,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8355"
+  },
+  {
+   "tilingKey": 2211,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2211"
+  },
+  {
+   "tilingKey": 10403,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10403"
+  },
+  {
+   "tilingKey": 4259,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4259"
+  },
+  {
+   "tilingKey": 12451,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12451"
+  },
+  {
+   "tilingKey": 675,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_675"
+  },
+  {
+   "tilingKey": 8867,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_8867"
+  },
+  {
+   "tilingKey": 2723,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_2723"
+  },
+  {
+   "tilingKey": 10915,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_10915"
+  },
+  {
+   "tilingKey": 4771,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_4771"
+  },
+  {
+   "tilingKey": 12963,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_12963"
+  }
+ ],
+ "taskRation": "tilingKey",
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "Compressor/d=0,p=1/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2",
+   "Compressor/d=0,p=0/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2",
+   "Compressor/d=1,p=1/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2",
+   "Compressor/d=1,p=0/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "5c4cf1253288da007fe252bb11aea1cceee598a94c6784baabc5d76cbd069cba,505d61b4dbaa079ff635d3191c1fc3ea7f256d3791d50697ba8d379890ff4c27",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "wkv",
+    "index": 1,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "wgate",
+    "index": 2,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "state_cache",
+    "index": 3,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "ape",
+    "index": 4,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "norm_weight",
+    "index": 5,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "rope_sin",
+    "index": 6,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "rope_cos",
+    "index": 7,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "state_block_table",
+    "index": 8,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "cu_seqlens",
+    "index": 9,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "seqused",
+    "index": 10,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "start_pos",
+    "index": 11,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "cmp_kv",
+    "index": 0,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "state_cache",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "rope_head_dim",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "cmp_ratio",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "coff",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "norm_eps",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "rotary_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "cache_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "state_cache_stride_dim0",
+    "dtype": "int",
+    "value": 0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/compressor/Compressor_49507def9d8354a82f6afebe5354ffab.json"
+}

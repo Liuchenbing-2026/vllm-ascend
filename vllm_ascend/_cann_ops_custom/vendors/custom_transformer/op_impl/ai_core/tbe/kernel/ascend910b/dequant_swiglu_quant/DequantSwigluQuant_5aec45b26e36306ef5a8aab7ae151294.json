@@ -1,0 +1,312 @@
+{
+ "binFileName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 192,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "574294d37b7800f8d7d3e032cdd92491d76a75d22e65d9619c9bc9d66fe56cee",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_100000000"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_100000100"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_100000200"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_100001000"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_100001100"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_100001200"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_100002000"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_100002100"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_100002200"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_100003000"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_100003100"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_100003200"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_200000000"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_200000100"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_200000200"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_110000000"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_110000100"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_110000200"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_10004"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_10005"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_30001"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_30005"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_10006"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_10007"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_30003"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_30007"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_10008"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_10009"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_30002"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_30013"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_30006"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_10010"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_10011"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_30004"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294_30008"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "DequantSwigluQuant/d=0,p=1/3,2/2,2/0,2",
+   "DequantSwigluQuant/d=0,p=0/3,2/2,2/0,2",
+   "DequantSwigluQuant/d=1,p=1/3,2/2,2/0,2",
+   "DequantSwigluQuant/d=1,p=0/3,2/2,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "1e1e9bc654d0844e1a16f873ec012140e402e9522f94d8a707f75b9bf6fe2bdd,25a5282a4e5d123f936d539e3945870e6c5832cb1d37b744cd8c9c76f8a2e89b",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "weight_scale",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "activation_scale",
+    "index": 2,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "bias",
+    "index": 3,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "quant_scale",
+    "index": 4,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "quant_offset",
+    "index": 5,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "group_index",
+    "index": 6,
+    "dtype": "int64",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "int8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "scale",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "activate_left",
+    "dtype": "bool",
+    "value": false
+   },
+   {
+    "name": "quant_mode",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "dst_type",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "round_mode",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "activate_dim",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "swiglu_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "clamp_limit",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "glu_alpha",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "glu_bias",
+    "dtype": "float",
+    "value": 0.0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/dequant_swiglu_quant/DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294.json"
+}

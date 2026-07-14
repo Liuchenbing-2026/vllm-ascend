@@ -1,0 +1,228 @@
+{
+ "binFileName": "DequantSwigluQuant_dfb791658a1095653daca5bf33e5c5a8",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "DequantSwigluQuant_dfb791658a1095653daca5bf33e5c5a8",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 192,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "8ac76ce461d5551dab07fb967b316aa243b8c2bff6512495fc1ba186f2cec18b",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "DequantSwigluQuant_dfb791658a1095653daca5bf33e5c5a8_100000000"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_dfb791658a1095653daca5bf33e5c5a8_100000100"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_dfb791658a1095653daca5bf33e5c5a8_100000200"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_dfb791658a1095653daca5bf33e5c5a8_10001"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_dfb791658a1095653daca5bf33e5c5a8_10003"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_dfb791658a1095653daca5bf33e5c5a8_30011"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_dfb791658a1095653daca5bf33e5c5a8_30012"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "DequantSwigluQuant/d=0,p=1/27,2/2,2/0,2",
+   "DequantSwigluQuant/d=0,p=0/27,2/2,2/0,2",
+   "DequantSwigluQuant/d=1,p=1/27,2/2,2/0,2",
+   "DequantSwigluQuant/d=1,p=0/27,2/2,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "9fb4254c81e155821d72e47c89f246e81cbb4b91576ac39377c9385031b726ce,c0dd814250e9ff93aebde067ab725323f3e19b90b6e2d330a2970168428913ee",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "weight_scale",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "activation_scale",
+    "index": 2,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "bias",
+    "index": 3,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "quant_scale",
+    "index": 4,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "quant_offset",
+    "index": 5,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "group_index",
+    "index": 6,
+    "dtype": "int64",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "int8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "scale",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "activate_left",
+    "dtype": "bool",
+    "value": false
+   },
+   {
+    "name": "quant_mode",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "dst_type",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "round_mode",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "activate_dim",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "swiglu_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "clamp_limit",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "glu_alpha",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "glu_bias",
+    "dtype": "float",
+    "value": 0.0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/dequant_swiglu_quant/DequantSwigluQuant_dfb791658a1095653daca5bf33e5c5a8.json"
+}

@@ -1,0 +1,399 @@
+{
+  "binList": [
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "InplacePartialRotaryMul/d=0,p=1/1,2/0,2/0,2/1,2",
+        "InplacePartialRotaryMul/d=0,p=0/1,2/0,2/0,2/1,2",
+        "InplacePartialRotaryMul/d=1,p=1/1,2/0,2/0,2/1,2",
+        "InplacePartialRotaryMul/d=1,p=0/1,2/0,2/0,2/1,2"
+      ],
+      "staticKey": "ff7eaf2dfd3907db9ccd704838feb3e9682f2687740dd6c3791a103e40f3423a,1720de59a4e9bf252797391b43b0d44cbb4377b738de1345d2d39082e6d19aa8",
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cos",
+          "index": 1,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "sin",
+          "index": 2,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "mode",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "partial_slice",
+          "dtype": "list_int",
+          "value": []
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_6ff5dddd25b5de53ba4d1e4df2975bc9.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "InplacePartialRotaryMul/d=0,p=1/0,2/0,2/0,2/0,2",
+        "InplacePartialRotaryMul/d=0,p=0/0,2/0,2/0,2/0,2",
+        "InplacePartialRotaryMul/d=1,p=1/0,2/0,2/0,2/0,2",
+        "InplacePartialRotaryMul/d=1,p=0/0,2/0,2/0,2/0,2"
+      ],
+      "staticKey": "ff244f23bf9fe7ff9d8858409d71c839e2a34a7f85b57a017e0f9104aff23fac,165c8b799d268bc503e337eefb7c9b29083a38482c2ce02ff1b8447b1200927f",
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cos",
+          "index": 1,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "sin",
+          "index": 2,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "mode",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "partial_slice",
+          "dtype": "list_int",
+          "value": []
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_82896c5db0faaeb44e3eacbada73642f.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "InplacePartialRotaryMul/d=0,p=1/27,2/27,2/27,2/27,2",
+        "InplacePartialRotaryMul/d=0,p=0/27,2/27,2/27,2/27,2",
+        "InplacePartialRotaryMul/d=1,p=1/27,2/27,2/27,2/27,2",
+        "InplacePartialRotaryMul/d=1,p=0/27,2/27,2/27,2/27,2"
+      ],
+      "staticKey": "7e9c0589aed9fe5f807ed7915e15b091caf0f77e249ffb46ff2a4eba4765108e,cd6cecfc4fd4a4bfb69a2c1b910ffd2267d3bbe881678d546d412c3c42ba75a6",
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cos",
+          "index": 1,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "sin",
+          "index": 2,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "mode",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "partial_slice",
+          "dtype": "list_int",
+          "value": []
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "InplacePartialRotaryMul/d=0,p=1/1,2/1,2/1,2/1,2",
+        "InplacePartialRotaryMul/d=0,p=0/1,2/1,2/1,2/1,2",
+        "InplacePartialRotaryMul/d=1,p=1/1,2/1,2/1,2/1,2",
+        "InplacePartialRotaryMul/d=1,p=0/1,2/1,2/1,2/1,2"
+      ],
+      "staticKey": "1cb71a544326d9b92dc008ab93c1b211c66833b5a71b44c76d050c66cf8af0d9,31fc8ef68a170e2281de79fca6d53ff6db309b19fe52a2e5d77e5dca94a8acc8",
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cos",
+          "index": 1,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "sin",
+          "index": 2,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "mode",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "partial_slice",
+          "dtype": "list_int",
+          "value": []
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_b16e6010eb7f3153591301274510db14.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "InplacePartialRotaryMul/d=0,p=1/27,2/0,2/0,2/27,2",
+        "InplacePartialRotaryMul/d=0,p=0/27,2/0,2/0,2/27,2",
+        "InplacePartialRotaryMul/d=1,p=1/27,2/0,2/0,2/27,2",
+        "InplacePartialRotaryMul/d=1,p=0/27,2/0,2/0,2/27,2"
+      ],
+      "staticKey": "eb921ff0fdc88968428ebf9e0bb13a2a6a74f3b9af9bb4d6efd965787922d281,46e23944838ec2bd283884cecf5e5eb34a34b40c8de1b65934b2722fe874df97",
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cos",
+          "index": 1,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "sin",
+          "index": 2,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "mode",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "partial_slice",
+          "dtype": "list_int",
+          "value": []
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_ec081ae2fec8ce00af9a8192bd55ef8c.json"
+      }
+    }
+  ]
+}

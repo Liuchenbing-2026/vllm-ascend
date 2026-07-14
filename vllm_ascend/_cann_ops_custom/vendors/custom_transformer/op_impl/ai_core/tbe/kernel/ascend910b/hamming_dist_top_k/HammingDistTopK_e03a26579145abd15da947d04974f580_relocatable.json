@@ -1,0 +1,246 @@
+{
+ "binFileName": "HammingDistTopK_e03a26579145abd15da947d04974f580_relocatable",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "MIX",
+ "intercoreSync": 1,
+ "kernelName": "HammingDistTopK_e03a26579145abd15da947d04974f580_relocatable",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF",
+ "memoryStamping": [],
+ "opParaSize": 680,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "37b91dfe0dcdc41093edbd0144df961362a69fa15de23924613213b9815526a1",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "tilingKey": 1,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "HammingDistTopK_e03a26579145abd15da947d04974f580_relocatable_1"
+  },
+  {
+   "tilingKey": 10,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "HammingDistTopK_e03a26579145abd15da947d04974f580_relocatable_10"
+  }
+ ],
+ "taskRation": "tilingKey",
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "sub_operator_op_type": "HammingDistTopK",
+ "sub_operator_params": [
+  "ffts_addr",
+  "query_in__",
+  "key_compressed_in__",
+  "k_in__",
+  "seq_len_in__",
+  "chunk_size_in__",
+  "key_block_table_in__",
+  "indices_in_in__",
+  "key_compressed_rope_in__",
+  "mask_in__",
+  "indices_out_",
+  "workspace",
+  "tiling"
+ ],
+ "sub_operator_kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+ "sub_operator_kernel_name": {
+  "dynamic_func_names": {
+   "1": {
+    "dav-c220-cube": "HammingDistTopK_e03a26579145abd15da947d04974f580_relocatable_1_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "HammingDistTopK_e03a26579145abd15da947d04974f580_relocatable_1_mix_aiv"
+   },
+   "10": {
+    "dav-c220-cube": "HammingDistTopK_e03a26579145abd15da947d04974f580_relocatable_10_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "HammingDistTopK_e03a26579145abd15da947d04974f580_relocatable_10_mix_aiv"
+   }
+  }
+ },
+ "sub_operator_early_start_set_flag": false,
+ "sub_operator_early_start_wait_flag": false,
+ "sub_operator_call_dcci_before_kernel_start": true,
+ "sub_operator_call_dcci_after_kernel_end": true,
+ "sub_operator_call_dcci_disable_on_kernel": false,
+ "sub_op_with_sync_all": false,
+ "compileInfo": {},
+ "feature_list": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "HammingDistTopK/d=0,p=1/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2",
+   "HammingDistTopK/d=0,p=0/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2",
+   "HammingDistTopK/d=1,p=1/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2",
+   "HammingDistTopK/d=1,p=0/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "71970b26cda5f380e1df023ca2ce23a39f3c3f8f871f283d85a120f0f6985e58,a2eedf9072e7bda3a0f748f2c3c0e946fe458a674cd4ad291b1596ef627cb42c",
+  "inputs": [
+   {
+    "name": "query",
+    "index": 0,
+    "dtype": "uint8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "key_compressed",
+    "index": 1,
+    "dtype": "uint8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "k",
+    "index": 2,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "seq_len",
+    "index": 3,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "chunk_size",
+    "index": 4,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "key_block_table",
+    "index": 5,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "indices_in",
+    "index": 6,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "key_compressed_rope",
+    "index": 7,
+    "dtype": "uint8",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "mask",
+    "index": 8,
+    "dtype": "bool",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "indices",
+    "index": 0,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "max_seq_len",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "sink",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "recent",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "support_offload",
+    "dtype": "int",
+    "value": 0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/hamming_dist_top_k/HammingDistTopK_e03a26579145abd15da947d04974f580_relocatable.json"
+}

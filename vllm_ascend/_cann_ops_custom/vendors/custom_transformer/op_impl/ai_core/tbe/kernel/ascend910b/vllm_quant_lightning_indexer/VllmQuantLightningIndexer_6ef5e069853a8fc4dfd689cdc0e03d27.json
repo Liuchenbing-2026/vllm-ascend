@@ -1,0 +1,274 @@
+{
+ "binFileName": "VllmQuantLightningIndexer_6ef5e069853a8fc4dfd689cdc0e03d27",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "MIX",
+ "intercoreSync": 1,
+ "kernelName": "VllmQuantLightningIndexer_6ef5e069853a8fc4dfd689cdc0e03d27",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF",
+ "memoryStamping": [],
+ "opParaSize": 80,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "498a554cd1ab61735a39a84d3786ee4ebdbbf9e529a6f72feff50e5e04b187d4",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "tilingKey": 1090716162,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "VllmQuantLightningIndexer_6ef5e069853a8fc4dfd689cdc0e03d27_1090716162"
+  },
+  {
+   "tilingKey": 1124270594,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "VllmQuantLightningIndexer_6ef5e069853a8fc4dfd689cdc0e03d27_1124270594"
+  },
+  {
+   "tilingKey": 197122,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "VllmQuantLightningIndexer_6ef5e069853a8fc4dfd689cdc0e03d27_197122"
+  },
+  {
+   "tilingKey": 570622466,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "VllmQuantLightningIndexer_6ef5e069853a8fc4dfd689cdc0e03d27_570622466"
+  }
+ ],
+ "taskRation": "tilingKey",
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "VllmQuantLightningIndexer/d=0,p=1/2,2/2,2/1,2/1,2/1,2/3,2/0,2",
+   "VllmQuantLightningIndexer/d=0,p=0/2,2/2,2/1,2/1,2/1,2/3,2/0,2",
+   "VllmQuantLightningIndexer/d=1,p=1/2,2/2,2/1,2/1,2/1,2/3,2/0,2",
+   "VllmQuantLightningIndexer/d=1,p=0/2,2/2,2/1,2/1,2/1,2/3,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "ebf91b56597f73e01a7b02e0b866b6df282aea553d284243175bdfc154f652e0,2e723c1d32aeb119116e3c00ee5529d93daf6e284db72763364c29998286b8b6",
+  "inputs": [
+   {
+    "name": "query",
+    "index": 0,
+    "dtype": "int8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "key",
+    "index": 1,
+    "dtype": "int8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "weights",
+    "index": 2,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "query_dequant_scale",
+    "index": 3,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "key_dequant_scale",
+    "index": 4,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "actual_seq_lengths_query",
+    "index": 5,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "actual_seq_lengths_key",
+    "index": 6,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "block_table",
+    "index": 7,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "metadata",
+    "index": 8,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "sparse_indices",
+    "index": 0,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "sparse_values",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "query_quant_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "key_quant_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "layout_query",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "layout_key",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "sparse_count",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "sparse_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "pre_tokens",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "next_tokens",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "cmp_ratio",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "return_values",
+    "dtype": "bool",
+    "value": false
+   },
+   {
+    "name": "stride",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "scale_stride",
+    "dtype": "int",
+    "value": 0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/vllm_quant_lightning_indexer/VllmQuantLightningIndexer_6ef5e069853a8fc4dfd689cdc0e03d27.json"
+}

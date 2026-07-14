@@ -1,0 +1,159 @@
+{
+  "binList": [
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "HammingDistTopK/d=0,p=1/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2",
+        "HammingDistTopK/d=0,p=0/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2",
+        "HammingDistTopK/d=1,p=1/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2",
+        "HammingDistTopK/d=1,p=0/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2"
+      ],
+      "staticKey": "71970b26cda5f380e1df023ca2ce23a39f3c3f8f871f283d85a120f0f6985e58,a2eedf9072e7bda3a0f748f2c3c0e946fe458a674cd4ad291b1596ef627cb42c",
+      "inputs": [
+        {
+          "name": "query",
+          "index": 0,
+          "dtype": "uint8",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "key_compressed",
+          "index": 1,
+          "dtype": "uint8",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "k",
+          "index": 2,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "seq_len",
+          "index": 3,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "chunk_size",
+          "index": 4,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "key_block_table",
+          "index": 5,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "indices_in",
+          "index": 6,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "key_compressed_rope",
+          "index": 7,
+          "dtype": "uint8",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "mask",
+          "index": 8,
+          "dtype": "bool",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "indices",
+          "index": 0,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "max_seq_len",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "sink",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "recent",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "support_offload",
+          "dtype": "int",
+          "value": 0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/hamming_dist_top_k/HammingDistTopK_e03a26579145abd15da947d04974f580.json"
+      }
+    }
+  ]
+}

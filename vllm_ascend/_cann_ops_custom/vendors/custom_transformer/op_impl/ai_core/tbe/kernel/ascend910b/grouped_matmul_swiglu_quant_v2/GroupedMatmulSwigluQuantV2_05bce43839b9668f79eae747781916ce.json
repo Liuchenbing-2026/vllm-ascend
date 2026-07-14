@@ -1,0 +1,236 @@
+{
+ "binFileName": "GroupedMatmulSwigluQuantV2_05bce43839b9668f79eae747781916ce",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "MIX",
+ "intercoreSync": 1,
+ "kernelName": "GroupedMatmulSwigluQuantV2_05bce43839b9668f79eae747781916ce",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF",
+ "memoryStamping": [],
+ "opParaSize": 360,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "0a9ef37e91bccf163480608b0eb59841deec8bd9b4b4a4ec680311a39b45c319",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "tilingKey": 2,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "GroupedMatmulSwigluQuantV2_05bce43839b9668f79eae747781916ce_2"
+  },
+  {
+   "tilingKey": 3,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "GroupedMatmulSwigluQuantV2_05bce43839b9668f79eae747781916ce_3"
+  }
+ ],
+ "taskRation": "tilingKey",
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "dynamicParamMode": "folded_with_desc",
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "GroupedMatmulSwigluQuantV2/d=0,p=1/2,2/0,2/9,2/29,2/10,2/0,2/2,2/0,2",
+   "GroupedMatmulSwigluQuantV2/d=0,p=0/2,2/0,2/9,2/29,2/10,2/0,2/2,2/0,2",
+   "GroupedMatmulSwigluQuantV2/d=1,p=1/2,2/0,2/9,2/29,2/10,2/0,2/2,2/0,2",
+   "GroupedMatmulSwigluQuantV2/d=1,p=0/2,2/0,2/9,2/29,2/10,2/0,2/2,2/0,2"
+  ],
+  "dynamicParamMode": "folded_with_desc",
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "b200eff97fd26e11865a60c74cc634566f090defa797c9659b6faadf704d9467,28c10df08cc06da8731120f38a41b27a235301ffaa51456a7df0e0589a51ea09",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "int8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "x_scale",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "group_list",
+    "index": 2,
+    "dtype": "int64",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   [
+    {
+     "name": "weight",
+     "index": 3,
+     "dtype": "int4",
+     "format": "ND",
+     "paramType": "dynamic",
+     "shape": [
+      -2
+     ],
+     "format_match_mode": "FormatAgnostic"
+    }
+   ],
+   [
+    {
+     "name": "weight_scale",
+     "index": 4,
+     "dtype": "uint64",
+     "format": "ND",
+     "paramType": "dynamic",
+     "shape": [
+      -2
+     ],
+     "format_match_mode": "FormatAgnostic"
+    }
+   ],
+   [
+    {
+     "name": "weight_assist_matrix",
+     "index": 5,
+     "dtype": "float32",
+     "format": "ND",
+     "paramType": "dynamic",
+     "shape": [
+      -2
+     ],
+     "format_match_mode": "FormatAgnostic"
+    }
+   ],
+   {
+    "name": "bias",
+    "index": 6,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "smooth_scale",
+    "index": 7,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "int8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "y_scale",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "dequant_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "dequant_dtype",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "quant_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "quant_dtype",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "transpose_weight",
+    "dtype": "bool",
+    "value": false
+   },
+   {
+    "name": "group_list_type",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "tuning_config",
+    "dtype": "list_int",
+    "value": []
+   },
+   {
+    "name": "swiglu_limit",
+    "dtype": "float",
+    "value": 0.0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_05bce43839b9668f79eae747781916ce.json"
+}

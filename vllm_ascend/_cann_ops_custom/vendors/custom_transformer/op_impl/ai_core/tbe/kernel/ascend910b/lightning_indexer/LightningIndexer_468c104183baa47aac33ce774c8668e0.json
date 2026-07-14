@@ -1,0 +1,297 @@
+{
+ "binFileName": "LightningIndexer_468c104183baa47aac33ce774c8668e0",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "MIX",
+ "intercoreSync": 1,
+ "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF",
+ "memoryStamping": [],
+ "opParaSize": 72,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "269807d898f2e16430b02a7c8018758982842e3f5c018361d01703cb049f5192",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "tilingKey": 1090715905,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_1090715905"
+  },
+  {
+   "tilingKey": 9680650497,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_9680650497"
+  },
+  {
+   "tilingKey": 1124270337,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_1124270337"
+  },
+  {
+   "tilingKey": 9714204929,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_9714204929"
+  },
+  {
+   "tilingKey": 1090722587,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_1090722587"
+  },
+  {
+   "tilingKey": 9680657179,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_9680657179"
+  },
+  {
+   "tilingKey": 1124277019,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_1124277019"
+  },
+  {
+   "tilingKey": 9714211611,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_9714211611"
+  },
+  {
+   "tilingKey": 196865,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_196865"
+  },
+  {
+   "tilingKey": 8590131457,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_8590131457"
+  },
+  {
+   "tilingKey": 570622209,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_570622209"
+  },
+  {
+   "tilingKey": 9160556801,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_9160556801"
+  },
+  {
+   "tilingKey": 203547,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_203547"
+  },
+  {
+   "tilingKey": 8590138139,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_8590138139"
+  },
+  {
+   "tilingKey": 570628891,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_570628891"
+  },
+  {
+   "tilingKey": 9160563483,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "LightningIndexer_468c104183baa47aac33ce774c8668e0_9160563483"
+  }
+ ],
+ "taskRation": "tilingKey",
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "LightningIndexer/d=0,p=1/1,2/1,2/1,2/3,2/1,2",
+   "LightningIndexer/d=0,p=0/1,2/1,2/1,2/3,2/1,2",
+   "LightningIndexer/d=1,p=1/1,2/1,2/1,2/3,2/1,2",
+   "LightningIndexer/d=1,p=0/1,2/1,2/1,2/3,2/1,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "d9d8a63f269812233e2ec2b2fb8dac251656183edaf8ae79467f53979b2142a5,962b93ed3c1a059a9a74c589c02bb6924fe679bfb7f7de4cab81fb4259909a42",
+  "inputs": [
+   {
+    "name": "query",
+    "index": 0,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "key",
+    "index": 1,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "weights",
+    "index": 2,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "actual_seq_lengths_query",
+    "index": 3,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "actual_seq_lengths_key",
+    "index": 4,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "block_table",
+    "index": 5,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "sparse_indices",
+    "index": 0,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "sparse_values",
+    "index": 1,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "layout_query",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "layout_key",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "sparse_count",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "sparse_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "pre_tokens",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "next_tokens",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "return_values",
+    "dtype": "bool",
+    "value": false
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/lightning_indexer/LightningIndexer_468c104183baa47aac33ce774c8668e0.json"
+}

@@ -1,0 +1,160 @@
+{
+  "binList": [
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "HcPreInvRms/d=0,p=1/27,2/0,2",
+        "HcPreInvRms/d=0,p=0/27,2/0,2",
+        "HcPreInvRms/d=1,p=1/27,2/0,2",
+        "HcPreInvRms/d=1,p=0/27,2/0,2"
+      ],
+      "staticKey": "0e95855f20c13972a6727b75f08c49a6056c5c6ba37e7265ee3acd7b85ccf8b0,eb4c41860893c2697752e930cfd1a1f3296e8824677a36b7ec509ad77fae8115",
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "epsilon",
+          "dtype": "float",
+          "value": 0.0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_698bcb6f52ef8589299a756885a2af28.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "HcPreInvRms/d=0,p=1/0,2/0,2",
+        "HcPreInvRms/d=0,p=0/0,2/0,2",
+        "HcPreInvRms/d=1,p=1/0,2/0,2",
+        "HcPreInvRms/d=1,p=0/0,2/0,2"
+      ],
+      "staticKey": "fc7c64e4a23910ca38d9ecf8e29c0a37df0c171f572768ed7a5ba0ab5d60d4ec,794cb4832899a70050bca87528bcf29bc742bfabd2bad2c5aa0b2e32ea7086fb",
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "epsilon",
+          "dtype": "float",
+          "value": 0.0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_a435f521e67e2ce9c8ba6d483e029bbb.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "HcPreInvRms/d=0,p=1/1,2/0,2",
+        "HcPreInvRms/d=0,p=0/1,2/0,2",
+        "HcPreInvRms/d=1,p=1/1,2/0,2",
+        "HcPreInvRms/d=1,p=0/1,2/0,2"
+      ],
+      "staticKey": "5ed8c7bc15f77da72cc494dbf8c36ee225f080c616a48ca609071343c69544de,173de5952c715aa7c7d7bcb84787d140ed9070ce8c17f699e1b2971b4841375f",
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "epsilon",
+          "dtype": "float",
+          "value": 0.0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_ee172a296a08c53c8f0a195044de3a1c.json"
+      }
+    }
+  ]
+}

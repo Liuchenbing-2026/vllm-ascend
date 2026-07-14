@@ -1,0 +1,115 @@
+{
+ "binFileName": "HcPost_f8d6568802bb9bf815c79fd66277cb55",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "HcPost_f8d6568802bb9bf815c79fd66277cb55",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 88,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "57878b6b75be3c593fb123f5f4721693da726f270ffd6a51c72ca1ec633aecc0",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "HcPost_f8d6568802bb9bf815c79fd66277cb55_0"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "HcPost/d=0,p=1/27,2/27,2/1,2/1,2/27,2",
+   "HcPost/d=0,p=0/27,2/27,2/1,2/1,2/27,2",
+   "HcPost/d=1,p=1/27,2/27,2/1,2/1,2/27,2",
+   "HcPost/d=1,p=0/27,2/27,2/1,2/1,2/27,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "2de393436fc4590cd988a4d1a0662ed83250919c1c90cf3a776f547bd06002d5,2695fe3811992259564c745047e85c276bbe1c12fec861882127fd6906727484",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "residual",
+    "index": 1,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "post",
+    "index": 2,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "comb",
+    "index": 3,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/hc_post/HcPost_f8d6568802bb9bf815c79fd66277cb55.json"
+}

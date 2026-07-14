@@ -1,0 +1,2593 @@
+{
+ "binFileName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "MIX",
+ "intercoreSync": 1,
+ "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF",
+ "memoryStamping": [],
+ "opParaSize": 112,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "c7a82325ef49ce15c40a6a3744780578de8aa00dea20e2f0f89dd5d1597636c1",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "tilingKey": 0,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_0"
+  },
+  {
+   "tilingKey": 8192,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8192"
+  },
+  {
+   "tilingKey": 2048,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2048"
+  },
+  {
+   "tilingKey": 10240,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10240"
+  },
+  {
+   "tilingKey": 4096,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4096"
+  },
+  {
+   "tilingKey": 12288,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12288"
+  },
+  {
+   "tilingKey": 512,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_512"
+  },
+  {
+   "tilingKey": 8704,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8704"
+  },
+  {
+   "tilingKey": 2560,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2560"
+  },
+  {
+   "tilingKey": 10752,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10752"
+  },
+  {
+   "tilingKey": 4608,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4608"
+  },
+  {
+   "tilingKey": 12800,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12800"
+  },
+  {
+   "tilingKey": 128,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_128"
+  },
+  {
+   "tilingKey": 8320,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8320"
+  },
+  {
+   "tilingKey": 2176,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2176"
+  },
+  {
+   "tilingKey": 10368,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10368"
+  },
+  {
+   "tilingKey": 4224,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4224"
+  },
+  {
+   "tilingKey": 12416,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12416"
+  },
+  {
+   "tilingKey": 640,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_640"
+  },
+  {
+   "tilingKey": 8832,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8832"
+  },
+  {
+   "tilingKey": 2688,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2688"
+  },
+  {
+   "tilingKey": 10880,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10880"
+  },
+  {
+   "tilingKey": 4736,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4736"
+  },
+  {
+   "tilingKey": 12928,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12928"
+  },
+  {
+   "tilingKey": 32,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_32"
+  },
+  {
+   "tilingKey": 8224,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8224"
+  },
+  {
+   "tilingKey": 2080,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2080"
+  },
+  {
+   "tilingKey": 10272,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10272"
+  },
+  {
+   "tilingKey": 4128,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4128"
+  },
+  {
+   "tilingKey": 12320,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12320"
+  },
+  {
+   "tilingKey": 544,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_544"
+  },
+  {
+   "tilingKey": 8736,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8736"
+  },
+  {
+   "tilingKey": 2592,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2592"
+  },
+  {
+   "tilingKey": 10784,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10784"
+  },
+  {
+   "tilingKey": 4640,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4640"
+  },
+  {
+   "tilingKey": 12832,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12832"
+  },
+  {
+   "tilingKey": 160,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_160"
+  },
+  {
+   "tilingKey": 8352,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8352"
+  },
+  {
+   "tilingKey": 2208,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2208"
+  },
+  {
+   "tilingKey": 10400,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10400"
+  },
+  {
+   "tilingKey": 4256,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4256"
+  },
+  {
+   "tilingKey": 12448,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12448"
+  },
+  {
+   "tilingKey": 672,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_672"
+  },
+  {
+   "tilingKey": 8864,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8864"
+  },
+  {
+   "tilingKey": 2720,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2720"
+  },
+  {
+   "tilingKey": 10912,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10912"
+  },
+  {
+   "tilingKey": 4768,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4768"
+  },
+  {
+   "tilingKey": 12960,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12960"
+  },
+  {
+   "tilingKey": 2,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2"
+  },
+  {
+   "tilingKey": 8194,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8194"
+  },
+  {
+   "tilingKey": 2050,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2050"
+  },
+  {
+   "tilingKey": 10242,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10242"
+  },
+  {
+   "tilingKey": 4098,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4098"
+  },
+  {
+   "tilingKey": 12290,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12290"
+  },
+  {
+   "tilingKey": 514,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_514"
+  },
+  {
+   "tilingKey": 8706,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8706"
+  },
+  {
+   "tilingKey": 2562,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2562"
+  },
+  {
+   "tilingKey": 10754,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10754"
+  },
+  {
+   "tilingKey": 4610,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4610"
+  },
+  {
+   "tilingKey": 12802,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12802"
+  },
+  {
+   "tilingKey": 130,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_130"
+  },
+  {
+   "tilingKey": 8322,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8322"
+  },
+  {
+   "tilingKey": 2178,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2178"
+  },
+  {
+   "tilingKey": 10370,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10370"
+  },
+  {
+   "tilingKey": 4226,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4226"
+  },
+  {
+   "tilingKey": 12418,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12418"
+  },
+  {
+   "tilingKey": 642,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_642"
+  },
+  {
+   "tilingKey": 8834,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8834"
+  },
+  {
+   "tilingKey": 2690,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2690"
+  },
+  {
+   "tilingKey": 10882,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10882"
+  },
+  {
+   "tilingKey": 4738,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4738"
+  },
+  {
+   "tilingKey": 12930,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12930"
+  },
+  {
+   "tilingKey": 34,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_34"
+  },
+  {
+   "tilingKey": 8226,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8226"
+  },
+  {
+   "tilingKey": 2082,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2082"
+  },
+  {
+   "tilingKey": 10274,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10274"
+  },
+  {
+   "tilingKey": 4130,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4130"
+  },
+  {
+   "tilingKey": 12322,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12322"
+  },
+  {
+   "tilingKey": 546,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_546"
+  },
+  {
+   "tilingKey": 8738,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8738"
+  },
+  {
+   "tilingKey": 2594,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2594"
+  },
+  {
+   "tilingKey": 10786,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10786"
+  },
+  {
+   "tilingKey": 4642,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4642"
+  },
+  {
+   "tilingKey": 12834,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12834"
+  },
+  {
+   "tilingKey": 162,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_162"
+  },
+  {
+   "tilingKey": 8354,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8354"
+  },
+  {
+   "tilingKey": 2210,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2210"
+  },
+  {
+   "tilingKey": 10402,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10402"
+  },
+  {
+   "tilingKey": 4258,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4258"
+  },
+  {
+   "tilingKey": 12450,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12450"
+  },
+  {
+   "tilingKey": 674,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_674"
+  },
+  {
+   "tilingKey": 8866,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8866"
+  },
+  {
+   "tilingKey": 2722,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2722"
+  },
+  {
+   "tilingKey": 10914,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10914"
+  },
+  {
+   "tilingKey": 4770,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4770"
+  },
+  {
+   "tilingKey": 12962,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12962"
+  },
+  {
+   "tilingKey": 1,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_1"
+  },
+  {
+   "tilingKey": 8193,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8193"
+  },
+  {
+   "tilingKey": 2049,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2049"
+  },
+  {
+   "tilingKey": 10241,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10241"
+  },
+  {
+   "tilingKey": 4097,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4097"
+  },
+  {
+   "tilingKey": 12289,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12289"
+  },
+  {
+   "tilingKey": 513,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_513"
+  },
+  {
+   "tilingKey": 8705,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8705"
+  },
+  {
+   "tilingKey": 2561,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2561"
+  },
+  {
+   "tilingKey": 10753,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10753"
+  },
+  {
+   "tilingKey": 4609,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4609"
+  },
+  {
+   "tilingKey": 12801,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12801"
+  },
+  {
+   "tilingKey": 129,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_129"
+  },
+  {
+   "tilingKey": 8321,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8321"
+  },
+  {
+   "tilingKey": 2177,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2177"
+  },
+  {
+   "tilingKey": 10369,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10369"
+  },
+  {
+   "tilingKey": 4225,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4225"
+  },
+  {
+   "tilingKey": 12417,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12417"
+  },
+  {
+   "tilingKey": 641,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_641"
+  },
+  {
+   "tilingKey": 8833,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8833"
+  },
+  {
+   "tilingKey": 2689,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2689"
+  },
+  {
+   "tilingKey": 10881,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10881"
+  },
+  {
+   "tilingKey": 4737,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4737"
+  },
+  {
+   "tilingKey": 12929,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12929"
+  },
+  {
+   "tilingKey": 33,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_33"
+  },
+  {
+   "tilingKey": 8225,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8225"
+  },
+  {
+   "tilingKey": 2081,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2081"
+  },
+  {
+   "tilingKey": 10273,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10273"
+  },
+  {
+   "tilingKey": 4129,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4129"
+  },
+  {
+   "tilingKey": 12321,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12321"
+  },
+  {
+   "tilingKey": 545,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_545"
+  },
+  {
+   "tilingKey": 8737,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8737"
+  },
+  {
+   "tilingKey": 2593,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2593"
+  },
+  {
+   "tilingKey": 10785,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10785"
+  },
+  {
+   "tilingKey": 4641,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4641"
+  },
+  {
+   "tilingKey": 12833,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12833"
+  },
+  {
+   "tilingKey": 161,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_161"
+  },
+  {
+   "tilingKey": 8353,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8353"
+  },
+  {
+   "tilingKey": 2209,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2209"
+  },
+  {
+   "tilingKey": 10401,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10401"
+  },
+  {
+   "tilingKey": 4257,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4257"
+  },
+  {
+   "tilingKey": 12449,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12449"
+  },
+  {
+   "tilingKey": 673,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_673"
+  },
+  {
+   "tilingKey": 8865,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8865"
+  },
+  {
+   "tilingKey": 2721,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2721"
+  },
+  {
+   "tilingKey": 10913,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10913"
+  },
+  {
+   "tilingKey": 4769,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4769"
+  },
+  {
+   "tilingKey": 12961,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12961"
+  },
+  {
+   "tilingKey": 3,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_3"
+  },
+  {
+   "tilingKey": 8195,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8195"
+  },
+  {
+   "tilingKey": 2051,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2051"
+  },
+  {
+   "tilingKey": 10243,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10243"
+  },
+  {
+   "tilingKey": 4099,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4099"
+  },
+  {
+   "tilingKey": 12291,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12291"
+  },
+  {
+   "tilingKey": 515,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_515"
+  },
+  {
+   "tilingKey": 8707,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8707"
+  },
+  {
+   "tilingKey": 2563,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2563"
+  },
+  {
+   "tilingKey": 10755,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10755"
+  },
+  {
+   "tilingKey": 4611,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4611"
+  },
+  {
+   "tilingKey": 12803,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12803"
+  },
+  {
+   "tilingKey": 131,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_131"
+  },
+  {
+   "tilingKey": 8323,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8323"
+  },
+  {
+   "tilingKey": 2179,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2179"
+  },
+  {
+   "tilingKey": 10371,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10371"
+  },
+  {
+   "tilingKey": 4227,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4227"
+  },
+  {
+   "tilingKey": 12419,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12419"
+  },
+  {
+   "tilingKey": 643,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_643"
+  },
+  {
+   "tilingKey": 8835,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8835"
+  },
+  {
+   "tilingKey": 2691,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2691"
+  },
+  {
+   "tilingKey": 10883,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10883"
+  },
+  {
+   "tilingKey": 4739,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4739"
+  },
+  {
+   "tilingKey": 12931,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12931"
+  },
+  {
+   "tilingKey": 35,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_35"
+  },
+  {
+   "tilingKey": 8227,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8227"
+  },
+  {
+   "tilingKey": 2083,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2083"
+  },
+  {
+   "tilingKey": 10275,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10275"
+  },
+  {
+   "tilingKey": 4131,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4131"
+  },
+  {
+   "tilingKey": 12323,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12323"
+  },
+  {
+   "tilingKey": 547,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_547"
+  },
+  {
+   "tilingKey": 8739,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8739"
+  },
+  {
+   "tilingKey": 2595,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2595"
+  },
+  {
+   "tilingKey": 10787,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10787"
+  },
+  {
+   "tilingKey": 4643,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4643"
+  },
+  {
+   "tilingKey": 12835,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12835"
+  },
+  {
+   "tilingKey": 163,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_163"
+  },
+  {
+   "tilingKey": 8355,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8355"
+  },
+  {
+   "tilingKey": 2211,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2211"
+  },
+  {
+   "tilingKey": 10403,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10403"
+  },
+  {
+   "tilingKey": 4259,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4259"
+  },
+  {
+   "tilingKey": 12451,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12451"
+  },
+  {
+   "tilingKey": 675,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_675"
+  },
+  {
+   "tilingKey": 8867,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8867"
+  },
+  {
+   "tilingKey": 2723,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2723"
+  },
+  {
+   "tilingKey": 10915,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10915"
+  },
+  {
+   "tilingKey": 4771,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4771"
+  },
+  {
+   "tilingKey": 12963,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12963"
+  }
+ ],
+ "taskRation": "tilingKey",
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "sub_operator_op_type": "Compressor",
+ "sub_operator_params": [
+  "ffts_addr",
+  "x_in__",
+  "wkv_in__",
+  "wgate_in__",
+  "state_cache_in__",
+  "ape_in__",
+  "norm_weight_in__",
+  "rope_sin_in__",
+  "rope_cos_in__",
+  "state_block_table_in__",
+  "cu_seqlens_in__",
+  "seqused_in__",
+  "start_pos_in__",
+  "cmp_kv_out_",
+  "state_cache_out_",
+  "workspace",
+  "tiling"
+ ],
+ "sub_operator_kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+ "sub_operator_kernel_name": {
+  "dynamic_func_names": {
+   "0": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_0_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_0_mix_aiv"
+   },
+   "8192": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8192_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8192_mix_aiv"
+   },
+   "2048": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2048_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2048_mix_aiv"
+   },
+   "10240": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10240_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10240_mix_aiv"
+   },
+   "4096": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4096_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4096_mix_aiv"
+   },
+   "12288": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12288_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12288_mix_aiv"
+   },
+   "512": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_512_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_512_mix_aiv"
+   },
+   "8704": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8704_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8704_mix_aiv"
+   },
+   "2560": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2560_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2560_mix_aiv"
+   },
+   "10752": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10752_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10752_mix_aiv"
+   },
+   "4608": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4608_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4608_mix_aiv"
+   },
+   "12800": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12800_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12800_mix_aiv"
+   },
+   "128": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_128_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_128_mix_aiv"
+   },
+   "8320": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8320_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8320_mix_aiv"
+   },
+   "2176": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2176_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2176_mix_aiv"
+   },
+   "10368": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10368_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10368_mix_aiv"
+   },
+   "4224": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4224_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4224_mix_aiv"
+   },
+   "12416": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12416_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12416_mix_aiv"
+   },
+   "640": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_640_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_640_mix_aiv"
+   },
+   "8832": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8832_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8832_mix_aiv"
+   },
+   "2688": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2688_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2688_mix_aiv"
+   },
+   "10880": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10880_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10880_mix_aiv"
+   },
+   "4736": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4736_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4736_mix_aiv"
+   },
+   "12928": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12928_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12928_mix_aiv"
+   },
+   "32": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_32_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_32_mix_aiv"
+   },
+   "8224": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8224_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8224_mix_aiv"
+   },
+   "2080": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2080_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2080_mix_aiv"
+   },
+   "10272": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10272_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10272_mix_aiv"
+   },
+   "4128": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4128_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4128_mix_aiv"
+   },
+   "12320": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12320_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12320_mix_aiv"
+   },
+   "544": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_544_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_544_mix_aiv"
+   },
+   "8736": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8736_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8736_mix_aiv"
+   },
+   "2592": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2592_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2592_mix_aiv"
+   },
+   "10784": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10784_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10784_mix_aiv"
+   },
+   "4640": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4640_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4640_mix_aiv"
+   },
+   "12832": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12832_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12832_mix_aiv"
+   },
+   "160": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_160_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_160_mix_aiv"
+   },
+   "8352": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8352_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8352_mix_aiv"
+   },
+   "2208": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2208_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2208_mix_aiv"
+   },
+   "10400": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10400_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10400_mix_aiv"
+   },
+   "4256": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4256_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4256_mix_aiv"
+   },
+   "12448": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12448_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12448_mix_aiv"
+   },
+   "672": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_672_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_672_mix_aiv"
+   },
+   "8864": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8864_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8864_mix_aiv"
+   },
+   "2720": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2720_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2720_mix_aiv"
+   },
+   "10912": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10912_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10912_mix_aiv"
+   },
+   "4768": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4768_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4768_mix_aiv"
+   },
+   "12960": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12960_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12960_mix_aiv"
+   },
+   "2": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2_mix_aiv"
+   },
+   "8194": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8194_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8194_mix_aiv"
+   },
+   "2050": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2050_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2050_mix_aiv"
+   },
+   "10242": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10242_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10242_mix_aiv"
+   },
+   "4098": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4098_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4098_mix_aiv"
+   },
+   "12290": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12290_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12290_mix_aiv"
+   },
+   "514": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_514_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_514_mix_aiv"
+   },
+   "8706": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8706_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8706_mix_aiv"
+   },
+   "2562": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2562_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2562_mix_aiv"
+   },
+   "10754": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10754_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10754_mix_aiv"
+   },
+   "4610": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4610_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4610_mix_aiv"
+   },
+   "12802": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12802_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12802_mix_aiv"
+   },
+   "130": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_130_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_130_mix_aiv"
+   },
+   "8322": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8322_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8322_mix_aiv"
+   },
+   "2178": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2178_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2178_mix_aiv"
+   },
+   "10370": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10370_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10370_mix_aiv"
+   },
+   "4226": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4226_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4226_mix_aiv"
+   },
+   "12418": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12418_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12418_mix_aiv"
+   },
+   "642": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_642_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_642_mix_aiv"
+   },
+   "8834": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8834_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8834_mix_aiv"
+   },
+   "2690": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2690_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2690_mix_aiv"
+   },
+   "10882": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10882_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10882_mix_aiv"
+   },
+   "4738": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4738_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4738_mix_aiv"
+   },
+   "12930": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12930_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12930_mix_aiv"
+   },
+   "34": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_34_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_34_mix_aiv"
+   },
+   "8226": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8226_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8226_mix_aiv"
+   },
+   "2082": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2082_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2082_mix_aiv"
+   },
+   "10274": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10274_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10274_mix_aiv"
+   },
+   "4130": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4130_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4130_mix_aiv"
+   },
+   "12322": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12322_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12322_mix_aiv"
+   },
+   "546": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_546_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_546_mix_aiv"
+   },
+   "8738": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8738_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8738_mix_aiv"
+   },
+   "2594": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2594_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2594_mix_aiv"
+   },
+   "10786": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10786_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10786_mix_aiv"
+   },
+   "4642": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4642_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4642_mix_aiv"
+   },
+   "12834": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12834_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12834_mix_aiv"
+   },
+   "162": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_162_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_162_mix_aiv"
+   },
+   "8354": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8354_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8354_mix_aiv"
+   },
+   "2210": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2210_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2210_mix_aiv"
+   },
+   "10402": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10402_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10402_mix_aiv"
+   },
+   "4258": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4258_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4258_mix_aiv"
+   },
+   "12450": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12450_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12450_mix_aiv"
+   },
+   "674": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_674_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_674_mix_aiv"
+   },
+   "8866": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8866_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8866_mix_aiv"
+   },
+   "2722": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2722_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2722_mix_aiv"
+   },
+   "10914": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10914_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10914_mix_aiv"
+   },
+   "4770": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4770_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4770_mix_aiv"
+   },
+   "12962": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12962_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12962_mix_aiv"
+   },
+   "1": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_1_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_1_mix_aiv"
+   },
+   "8193": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8193_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8193_mix_aiv"
+   },
+   "2049": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2049_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2049_mix_aiv"
+   },
+   "10241": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10241_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10241_mix_aiv"
+   },
+   "4097": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4097_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4097_mix_aiv"
+   },
+   "12289": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12289_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12289_mix_aiv"
+   },
+   "513": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_513_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_513_mix_aiv"
+   },
+   "8705": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8705_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8705_mix_aiv"
+   },
+   "2561": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2561_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2561_mix_aiv"
+   },
+   "10753": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10753_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10753_mix_aiv"
+   },
+   "4609": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4609_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4609_mix_aiv"
+   },
+   "12801": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12801_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12801_mix_aiv"
+   },
+   "129": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_129_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_129_mix_aiv"
+   },
+   "8321": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8321_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8321_mix_aiv"
+   },
+   "2177": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2177_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2177_mix_aiv"
+   },
+   "10369": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10369_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10369_mix_aiv"
+   },
+   "4225": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4225_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4225_mix_aiv"
+   },
+   "12417": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12417_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12417_mix_aiv"
+   },
+   "641": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_641_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_641_mix_aiv"
+   },
+   "8833": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8833_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8833_mix_aiv"
+   },
+   "2689": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2689_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2689_mix_aiv"
+   },
+   "10881": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10881_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10881_mix_aiv"
+   },
+   "4737": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4737_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4737_mix_aiv"
+   },
+   "12929": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12929_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12929_mix_aiv"
+   },
+   "33": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_33_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_33_mix_aiv"
+   },
+   "8225": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8225_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8225_mix_aiv"
+   },
+   "2081": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2081_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2081_mix_aiv"
+   },
+   "10273": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10273_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10273_mix_aiv"
+   },
+   "4129": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4129_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4129_mix_aiv"
+   },
+   "12321": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12321_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12321_mix_aiv"
+   },
+   "545": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_545_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_545_mix_aiv"
+   },
+   "8737": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8737_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8737_mix_aiv"
+   },
+   "2593": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2593_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2593_mix_aiv"
+   },
+   "10785": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10785_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10785_mix_aiv"
+   },
+   "4641": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4641_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4641_mix_aiv"
+   },
+   "12833": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12833_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12833_mix_aiv"
+   },
+   "161": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_161_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_161_mix_aiv"
+   },
+   "8353": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8353_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8353_mix_aiv"
+   },
+   "2209": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2209_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2209_mix_aiv"
+   },
+   "10401": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10401_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10401_mix_aiv"
+   },
+   "4257": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4257_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4257_mix_aiv"
+   },
+   "12449": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12449_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12449_mix_aiv"
+   },
+   "673": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_673_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_673_mix_aiv"
+   },
+   "8865": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8865_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8865_mix_aiv"
+   },
+   "2721": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2721_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2721_mix_aiv"
+   },
+   "10913": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10913_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10913_mix_aiv"
+   },
+   "4769": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4769_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4769_mix_aiv"
+   },
+   "12961": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12961_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12961_mix_aiv"
+   },
+   "3": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_3_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_3_mix_aiv"
+   },
+   "8195": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8195_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8195_mix_aiv"
+   },
+   "2051": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2051_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2051_mix_aiv"
+   },
+   "10243": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10243_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10243_mix_aiv"
+   },
+   "4099": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4099_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4099_mix_aiv"
+   },
+   "12291": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12291_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12291_mix_aiv"
+   },
+   "515": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_515_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_515_mix_aiv"
+   },
+   "8707": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8707_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8707_mix_aiv"
+   },
+   "2563": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2563_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2563_mix_aiv"
+   },
+   "10755": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10755_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10755_mix_aiv"
+   },
+   "4611": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4611_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4611_mix_aiv"
+   },
+   "12803": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12803_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12803_mix_aiv"
+   },
+   "131": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_131_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_131_mix_aiv"
+   },
+   "8323": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8323_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8323_mix_aiv"
+   },
+   "2179": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2179_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2179_mix_aiv"
+   },
+   "10371": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10371_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10371_mix_aiv"
+   },
+   "4227": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4227_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4227_mix_aiv"
+   },
+   "12419": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12419_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12419_mix_aiv"
+   },
+   "643": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_643_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_643_mix_aiv"
+   },
+   "8835": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8835_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8835_mix_aiv"
+   },
+   "2691": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2691_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2691_mix_aiv"
+   },
+   "10883": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10883_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10883_mix_aiv"
+   },
+   "4739": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4739_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4739_mix_aiv"
+   },
+   "12931": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12931_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12931_mix_aiv"
+   },
+   "35": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_35_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_35_mix_aiv"
+   },
+   "8227": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8227_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8227_mix_aiv"
+   },
+   "2083": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2083_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2083_mix_aiv"
+   },
+   "10275": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10275_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10275_mix_aiv"
+   },
+   "4131": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4131_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4131_mix_aiv"
+   },
+   "12323": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12323_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12323_mix_aiv"
+   },
+   "547": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_547_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_547_mix_aiv"
+   },
+   "8739": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8739_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8739_mix_aiv"
+   },
+   "2595": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2595_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2595_mix_aiv"
+   },
+   "10787": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10787_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10787_mix_aiv"
+   },
+   "4643": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4643_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4643_mix_aiv"
+   },
+   "12835": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12835_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12835_mix_aiv"
+   },
+   "163": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_163_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_163_mix_aiv"
+   },
+   "8355": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8355_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8355_mix_aiv"
+   },
+   "2211": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2211_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2211_mix_aiv"
+   },
+   "10403": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10403_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10403_mix_aiv"
+   },
+   "4259": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4259_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4259_mix_aiv"
+   },
+   "12451": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12451_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12451_mix_aiv"
+   },
+   "675": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_675_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_675_mix_aiv"
+   },
+   "8867": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8867_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_8867_mix_aiv"
+   },
+   "2723": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2723_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_2723_mix_aiv"
+   },
+   "10915": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10915_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_10915_mix_aiv"
+   },
+   "4771": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4771_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_4771_mix_aiv"
+   },
+   "12963": {
+    "dav-c220-cube": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12963_mix_aic",
+    "kernel_type": "KERNEL_TYPE_MIX_AIC_1_2",
+    "dav-c220-vec": "Compressor_49507def9d8354a82f6afebe5354ffab_relocatable_12963_mix_aiv"
+   }
+  }
+ },
+ "sub_operator_early_start_set_flag": false,
+ "sub_operator_early_start_wait_flag": false,
+ "sub_operator_call_dcci_before_kernel_start": true,
+ "sub_operator_call_dcci_after_kernel_end": true,
+ "sub_operator_call_dcci_disable_on_kernel": false,
+ "sub_op_with_sync_all": true,
+ "compileInfo": {},
+ "feature_list": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "Compressor/d=0,p=1/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2",
+   "Compressor/d=0,p=0/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2",
+   "Compressor/d=1,p=1/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2",
+   "Compressor/d=1,p=0/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "5c4cf1253288da007fe252bb11aea1cceee598a94c6784baabc5d76cbd069cba,505d61b4dbaa079ff635d3191c1fc3ea7f256d3791d50697ba8d379890ff4c27",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "wkv",
+    "index": 1,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "wgate",
+    "index": 2,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "state_cache",
+    "index": 3,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "ape",
+    "index": 4,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "norm_weight",
+    "index": 5,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "rope_sin",
+    "index": 6,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "rope_cos",
+    "index": 7,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "state_block_table",
+    "index": 8,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "cu_seqlens",
+    "index": 9,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "seqused",
+    "index": 10,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "start_pos",
+    "index": 11,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "cmp_kv",
+    "index": 0,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "state_cache",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "rope_head_dim",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "cmp_ratio",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "coff",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "norm_eps",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "rotary_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "cache_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "state_cache_stride_dim0",
+    "dtype": "int",
+    "value": 0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/compressor/Compressor_49507def9d8354a82f6afebe5354ffab_relocatable.json"
+}

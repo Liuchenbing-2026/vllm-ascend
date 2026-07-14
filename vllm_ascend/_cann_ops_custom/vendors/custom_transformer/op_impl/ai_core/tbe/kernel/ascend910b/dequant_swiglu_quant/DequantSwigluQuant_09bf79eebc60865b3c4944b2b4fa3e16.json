@@ -1,0 +1,219 @@
+{
+ "binFileName": "DequantSwigluQuant_09bf79eebc60865b3c4944b2b4fa3e16",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "DequantSwigluQuant_09bf79eebc60865b3c4944b2b4fa3e16",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 192,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "8058cc3cdb0e377a5950bc9d917cca240dbc038a910905fbfbfac4a654210cc0",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "DequantSwigluQuant_09bf79eebc60865b3c4944b2b4fa3e16_10000"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_09bf79eebc60865b3c4944b2b4fa3e16_10002"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_09bf79eebc60865b3c4944b2b4fa3e16_30009"
+  },
+  {
+   "kernelName": "DequantSwigluQuant_09bf79eebc60865b3c4944b2b4fa3e16_30010"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "DequantSwigluQuant/d=0,p=1/1,2/2,2/0,2",
+   "DequantSwigluQuant/d=0,p=0/1,2/2,2/0,2",
+   "DequantSwigluQuant/d=1,p=1/1,2/2,2/0,2",
+   "DequantSwigluQuant/d=1,p=0/1,2/2,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "98fa760a3ae26b19458207aa45321a53939831df03d95bd208ecee6d417e403c,83f361bc1316547972a0f1b5fdfbe26e1f090a556e1e98f574c0322a286a9ce4",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "weight_scale",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "activation_scale",
+    "index": 2,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "bias",
+    "index": 3,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "quant_scale",
+    "index": 4,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "quant_offset",
+    "index": 5,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "group_index",
+    "index": 6,
+    "dtype": "int64",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "int8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "scale",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "activate_left",
+    "dtype": "bool",
+    "value": false
+   },
+   {
+    "name": "quant_mode",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "dst_type",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "round_mode",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "activate_dim",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "swiglu_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "clamp_limit",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "glu_alpha",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "glu_bias",
+    "dtype": "float",
+    "value": 0.0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/dequant_swiglu_quant/DequantSwigluQuant_09bf79eebc60865b3c4944b2b4fa3e16.json"
+}

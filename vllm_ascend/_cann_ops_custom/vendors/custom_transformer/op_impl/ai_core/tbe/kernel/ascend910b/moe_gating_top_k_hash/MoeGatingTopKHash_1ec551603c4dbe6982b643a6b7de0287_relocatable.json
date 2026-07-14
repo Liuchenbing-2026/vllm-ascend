@@ -1,0 +1,256 @@
+{
+ "binFileName": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 160,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "41512592892621d70ca87127a937384b8dd70a6182160c5a7dcd48b4675a5f9d",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_0"
+  },
+  {
+   "kernelName": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_1"
+  },
+  {
+   "kernelName": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_3"
+  },
+  {
+   "kernelName": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_4"
+  },
+  {
+   "kernelName": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_5"
+  },
+  {
+   "kernelName": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_6"
+  },
+  {
+   "kernelName": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_2"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "sub_operator_op_type": "MoeGatingTopKHash",
+ "sub_operator_params": [
+  "x_in__",
+  "bias_in__",
+  "input_ids_in__",
+  "tid2eid_in__",
+  "y_out_",
+  "expert_idx_out_",
+  "out_out_",
+  "workspace",
+  "tiling"
+ ],
+ "sub_operator_kernel_type": "KERNEL_TYPE_AIV_ONLY",
+ "sub_operator_kernel_name": {
+  "dynamic_func_names": {
+   "0": {
+    "AiCore": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_0",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   },
+   "1": {
+    "AiCore": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_1",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   },
+   "3": {
+    "AiCore": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_3",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   },
+   "4": {
+    "AiCore": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_4",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   },
+   "5": {
+    "AiCore": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_5",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   },
+   "6": {
+    "AiCore": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_6",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   },
+   "2": {
+    "AiCore": "MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable_2",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   }
+  }
+ },
+ "sub_operator_early_start_set_flag": false,
+ "sub_operator_early_start_wait_flag": false,
+ "sub_operator_call_dcci_before_kernel_start": true,
+ "sub_operator_call_dcci_after_kernel_end": true,
+ "sub_operator_call_dcci_disable_on_kernel": false,
+ "sub_op_with_sync_all": false,
+ "compileInfo": {},
+ "feature_list": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "MoeGatingTopKHash/d=0,p=1/1,2/1,2/3,2/0,2",
+   "MoeGatingTopKHash/d=0,p=0/1,2/1,2/3,2/0,2",
+   "MoeGatingTopKHash/d=1,p=1/1,2/1,2/3,2/0,2",
+   "MoeGatingTopKHash/d=1,p=0/1,2/1,2/3,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "cf724620be9542f371bf453779001db0a017ca7ff3c2a7dc212b019a51dbb0ba,364cddbf3531858eb0253088b3ca2c8847aa52f92e6849328112e9aee1c80d81",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "bias",
+    "index": 1,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "input_ids",
+    "index": 2,
+    "dtype": "int64",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "tid2eid",
+    "index": 3,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "expert_idx",
+    "index": 1,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "out",
+    "index": 2,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "k",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "k_group",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "group_count",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "group_select_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "renorm",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "norm_type",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "out_flag",
+    "dtype": "bool",
+    "value": false
+   },
+   {
+    "name": "routed_scaling_factor",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "eps",
+    "dtype": "float",
+    "value": 0.0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/moe_gating_top_k_hash/MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable.json"
+}

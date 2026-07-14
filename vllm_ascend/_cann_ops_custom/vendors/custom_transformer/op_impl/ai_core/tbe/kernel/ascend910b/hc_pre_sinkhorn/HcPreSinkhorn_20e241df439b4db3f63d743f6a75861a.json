@@ -1,0 +1,168 @@
+{
+ "binFileName": "HcPreSinkhorn_20e241df439b4db3f63d743f6a75861a",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "HcPreSinkhorn_20e241df439b4db3f63d743f6a75861a",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 144,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "7493a36984455b54ca2569ea6cd6390863b1d34c4952b6c8b6c38d2f91e1666c",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "HcPreSinkhorn_20e241df439b4db3f63d743f6a75861a_0"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "HcPreSinkhorn/d=0,p=1/0,2/0,2/0,2/0,2/27,2/27,2/0,2/0,2",
+   "HcPreSinkhorn/d=0,p=0/0,2/0,2/0,2/0,2/27,2/27,2/0,2/0,2",
+   "HcPreSinkhorn/d=1,p=1/0,2/0,2/0,2/0,2/27,2/27,2/0,2/0,2",
+   "HcPreSinkhorn/d=1,p=0/0,2/0,2/0,2/0,2/27,2/27,2/0,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "80f5f47114b21563c643888c99b277c75a2201183924ed7453ed18ad54652796,8ca93634f5f574f38ac19c238b990b00ae60d6ae460dee3ee1e8344bbbfee46f",
+  "inputs": [
+   {
+    "name": "mixes",
+    "index": 0,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "rsqrt",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "hc_scale",
+    "index": 2,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "hc_base",
+    "index": 3,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "x",
+    "index": 4,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "post",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "comb_frag",
+    "index": 2,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "hc_mult",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "hc_sinkhorn_iters",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "hc_eps",
+    "dtype": "float",
+    "value": 0.0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/hc_pre_sinkhorn/HcPreSinkhorn_20e241df439b4db3f63d743f6a75861a.json"
+}

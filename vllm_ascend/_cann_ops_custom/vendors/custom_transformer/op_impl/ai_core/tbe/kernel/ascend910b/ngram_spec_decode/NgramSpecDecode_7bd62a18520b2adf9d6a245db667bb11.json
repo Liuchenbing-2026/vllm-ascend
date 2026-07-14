@@ -1,0 +1,161 @@
+{
+ "binFileName": "NgramSpecDecode_7bd62a18520b2adf9d6a245db667bb11",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "NgramSpecDecode_7bd62a18520b2adf9d6a245db667bb11",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 628,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "609b17211a677859183e6c91a95b1b495c0cc080e34da5a361e1d0f7bed0deae",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "NgramSpecDecode_7bd62a18520b2adf9d6a245db667bb11_0"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "NgramSpecDecode/d=0,p=1/3,2/3,2/3,2/3,2/3,2/3,2/3,2",
+   "NgramSpecDecode/d=0,p=0/3,2/3,2/3,2/3,2/3,2/3,2/3,2",
+   "NgramSpecDecode/d=1,p=1/3,2/3,2/3,2/3,2/3,2/3,2/3,2",
+   "NgramSpecDecode/d=1,p=0/3,2/3,2/3,2/3,2/3,2/3,2/3,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "2220d4b18c27bf51a640616e438596edee300b1f2cac14606a49ccb5eecc1b60,a28234a19098fd0fffe9332eb29f2e0583d67807929e43ecb0bcafc371160a35",
+  "inputs": [
+   {
+    "name": "tokenIds",
+    "index": 0,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "numTokensNoSpec",
+    "index": 1,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "sampledTokenIds",
+    "index": 2,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "discardRequestMask",
+    "index": 3,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "nextTokenIds",
+    "index": 0,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "draftTokenIds",
+    "index": 1,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "numValidDraftTokens",
+    "index": 2,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "vocab_size",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "min_n",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "max_n",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "k",
+    "dtype": "int",
+    "value": 0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/ngram_spec_decode/NgramSpecDecode_7bd62a18520b2adf9d6a245db667bb11.json"
+}

@@ -1,0 +1,214 @@
+{
+ "binFileName": "CopyAndExpandEagleInputs_a1c7dba6692aeefe97a362e92012ea35",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "CopyAndExpandEagleInputs_a1c7dba6692aeefe97a362e92012ea35",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 48,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "a768e24a5a614e0bf2c1978805c0fb61e7ed7a081c251f4e14fb38e1a938bf43",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "CopyAndExpandEagleInputs_a1c7dba6692aeefe97a362e92012ea35_1"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "CopyAndExpandEagleInputs/d=0,p=1/3,2/3,2/3,2/3,2/3,2/3,2/3,2/2,2/2,2/3,2/3,2",
+   "CopyAndExpandEagleInputs/d=0,p=0/3,2/3,2/3,2/3,2/3,2/3,2/3,2/2,2/2,2/3,2/3,2",
+   "CopyAndExpandEagleInputs/d=1,p=1/3,2/3,2/3,2/3,2/3,2/3,2/3,2/2,2/2,2/3,2/3,2",
+   "CopyAndExpandEagleInputs/d=1,p=0/3,2/3,2/3,2/3,2/3,2/3,2/3,2/2,2/2,2/3,2/3,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "242ef702c2b1a861c2d71b413833aaa89616ac123b19576c59595d8cf084d32a,ccf1e28b1e2be1cd358377462ee053b7d06628ff03f3c02d3bac7b9fa9170d49",
+  "inputs": [
+   {
+    "name": "target_token_ids",
+    "index": 0,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "target_positions",
+    "index": 1,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "next_token_ids",
+    "index": 2,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "query_start_loc",
+    "index": 3,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "query_end_loc",
+    "index": 4,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "out_input_ids",
+    "index": 0,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "out_positions",
+    "index": 1,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "out_is_rejected_token_mask",
+    "index": 2,
+    "dtype": "int8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "out_is_masked_token_mask",
+    "index": 3,
+    "dtype": "int8",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "out_new_token_indices",
+    "index": 4,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "out_hidden_state_mapping",
+    "index": 5,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "padding_token_id",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "parallel_drafting_token_id",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "num_padding_slots_per_request",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "shift_input_ids",
+    "dtype": "bool",
+    "value": false
+   },
+   {
+    "name": "total_input_tokens",
+    "dtype": "int",
+    "value": 0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/copy_and_expand_eagle_inputs/CopyAndExpandEagleInputs_a1c7dba6692aeefe97a362e92012ea35.json"
+}

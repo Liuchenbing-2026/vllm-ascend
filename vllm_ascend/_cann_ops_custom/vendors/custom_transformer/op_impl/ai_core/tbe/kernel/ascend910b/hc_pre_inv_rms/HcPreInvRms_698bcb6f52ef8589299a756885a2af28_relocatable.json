@@ -1,0 +1,116 @@
+{
+ "binFileName": "HcPreInvRms_698bcb6f52ef8589299a756885a2af28_relocatable",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "HcPreInvRms_698bcb6f52ef8589299a756885a2af28_relocatable",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 64,
+ "parameters": [
+  null,
+  null,
+  null
+ ],
+ "sha256": "9f9c005e915338ada7d813e81eaa47c9f7682f4e68b408b898d607deafc5141e",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "HcPreInvRms_698bcb6f52ef8589299a756885a2af28_relocatable_1000"
+  },
+  {
+   "kernelName": "HcPreInvRms_698bcb6f52ef8589299a756885a2af28_relocatable_1001"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "sub_operator_op_type": "HcPreInvRms",
+ "sub_operator_params": [
+  "x_in__",
+  "y_out_",
+  "workspace",
+  "tiling"
+ ],
+ "sub_operator_kernel_type": "",
+ "sub_operator_kernel_name": {
+  "dynamic_func_names": {
+   "1000": {
+    "AiCore": "HcPreInvRms_698bcb6f52ef8589299a756885a2af28_relocatable_1000",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   },
+   "1001": {
+    "AiCore": "HcPreInvRms_698bcb6f52ef8589299a756885a2af28_relocatable_1001",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   }
+  }
+ },
+ "sub_operator_early_start_set_flag": false,
+ "sub_operator_early_start_wait_flag": false,
+ "sub_operator_call_dcci_before_kernel_start": true,
+ "sub_operator_call_dcci_after_kernel_end": true,
+ "sub_operator_call_dcci_disable_on_kernel": false,
+ "sub_op_with_sync_all": false,
+ "compileInfo": {},
+ "feature_list": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "HcPreInvRms/d=0,p=1/27,2/0,2",
+   "HcPreInvRms/d=0,p=0/27,2/0,2",
+   "HcPreInvRms/d=1,p=1/27,2/0,2",
+   "HcPreInvRms/d=1,p=0/27,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "0e95855f20c13972a6727b75f08c49a6056c5c6ba37e7265ee3acd7b85ccf8b0,eb4c41860893c2697752e930cfd1a1f3296e8824677a36b7ec509ad77fae8115",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "epsilon",
+    "dtype": "float",
+    "value": 0.0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/hc_pre_inv_rms/HcPreInvRms_698bcb6f52ef8589299a756885a2af28_relocatable.json"
+}

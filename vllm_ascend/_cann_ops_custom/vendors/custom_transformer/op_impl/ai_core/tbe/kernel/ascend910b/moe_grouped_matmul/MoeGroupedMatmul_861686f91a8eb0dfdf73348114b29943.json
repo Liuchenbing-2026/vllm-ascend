@@ -1,0 +1,121 @@
+{
+ "binFileName": "MoeGroupedMatmul_861686f91a8eb0dfdf73348114b29943",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "AiCore",
+ "core_type": "AIC",
+ "intercoreSync": 0,
+ "kernelName": "MoeGroupedMatmul_861686f91a8eb0dfdf73348114b29943",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AICUBE",
+ "memoryStamping": [],
+ "opParaSize": 240,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "550cf1a42c50029217ba8e7f5d5a1016a43ec62961742fe718e24002219421f8",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "MoeGroupedMatmul_861686f91a8eb0dfdf73348114b29943_10"
+  },
+  {
+   "kernelName": "MoeGroupedMatmul_861686f91a8eb0dfdf73348114b29943_11"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "dynamicParamMode": "folded_with_desc",
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "MoeGroupedMatmul/d=0,p=1/27,2/27,29/3,2/27,2",
+   "MoeGroupedMatmul/d=0,p=0/27,2/27,29/3,2/27,2",
+   "MoeGroupedMatmul/d=1,p=1/27,2/27,29/3,2/27,2",
+   "MoeGroupedMatmul/d=1,p=0/27,2/27,29/3,2/27,2"
+  ],
+  "dynamicParamMode": "folded_with_desc",
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "bab009213f7debb27a6c66b4ff4748b5acdbe8559f3dc782f39c2cf15259adef,08c640caece9639514431f40840a2461cdae4adeea149bb1b1c42fcd455651e6",
+  "inputs": [
+   [
+    {
+     "name": "x",
+     "index": 0,
+     "dtype": "bfloat16",
+     "format": "ND",
+     "paramType": "dynamic",
+     "shape": [
+      -2
+     ],
+     "format_match_mode": "FormatAgnostic"
+    }
+   ],
+   [
+    {
+     "name": "weight",
+     "index": 1,
+     "dtype": "bfloat16",
+     "format": "FRACTAL_NZ",
+     "paramType": "dynamic",
+     "shape": [
+      -2
+     ],
+     "format_match_mode": "FormatAgnostic"
+    }
+   ],
+   {
+    "name": "group_list",
+    "index": 2,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   [
+    {
+     "name": "y",
+     "index": 0,
+     "dtype": "bfloat16",
+     "format": "ND",
+     "paramType": "dynamic",
+     "shape": [
+      -2
+     ],
+     "format_match_mode": "FormatAgnostic"
+    }
+   ]
+  ],
+  "attrs": [
+   {
+    "name": "transpose_weight",
+    "dtype": "bool",
+    "value": false
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/moe_grouped_matmul/MoeGroupedMatmul_861686f91a8eb0dfdf73348114b29943.json"
+}

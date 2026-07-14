@@ -1,0 +1,178 @@
+{
+ "binFileName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 496,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "0c4c77a7c3ed8ca653c4c5af3d3c9c438763dfd54b9314df01649ee34bfade00",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_1"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_11"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_12"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2000"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2010"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2020"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2100"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2110"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2120"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2200"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2210"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2220"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2001"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2011"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2021"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2101"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2111"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2121"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2201"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2211"
+  },
+  {
+   "kernelName": "InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_2221"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "InplacePartialRotaryMul/d=0,p=1/27,2/27,2/27,2/27,2",
+   "InplacePartialRotaryMul/d=0,p=0/27,2/27,2/27,2/27,2",
+   "InplacePartialRotaryMul/d=1,p=1/27,2/27,2/27,2/27,2",
+   "InplacePartialRotaryMul/d=1,p=0/27,2/27,2/27,2/27,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "7e9c0589aed9fe5f807ed7915e15b091caf0f77e249ffb46ff2a4eba4765108e,cd6cecfc4fd4a4bfb69a2c1b910ffd2267d3bbe881678d546d412c3c42ba75a6",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "cos",
+    "index": 1,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "sin",
+    "index": 2,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "partial_slice",
+    "dtype": "list_int",
+    "value": []
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/inplace_partial_rotary_mul/InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4.json"
+}

@@ -1,0 +1,516 @@
+{
+  "binList": [
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "SparseAttnSharedkv/d=0,p=1/27,2/27,2/0,2",
+        "SparseAttnSharedkv/d=0,p=0/27,2/27,2/0,2",
+        "SparseAttnSharedkv/d=1,p=1/27,2/27,2/0,2",
+        "SparseAttnSharedkv/d=1,p=0/27,2/27,2/0,2"
+      ],
+      "staticKey": "b57d55189de085a87ebd7861427481702471a8eb86a1defe9c0edab1eae857e8,72e7d2e8a96d5f2631ec66c5bc6e8e8cc7b7ce6181d96295d315540d41252d87",
+      "inputs": [
+        {
+          "name": "q",
+          "index": 0,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "ori_kv",
+          "index": 1,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cmp_kv",
+          "index": 2,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "ori_sparse_indices",
+          "index": 3,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cmp_sparse_indices",
+          "index": 4,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "ori_block_table",
+          "index": 5,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cmp_block_table",
+          "index": 6,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cu_seqlens_q",
+          "index": 7,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cu_seqlens_ori_kv",
+          "index": 8,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cu_seqlens_cmp_kv",
+          "index": 9,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "seqused_q",
+          "index": 10,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "seqused_kv",
+          "index": 11,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "sinks",
+          "index": 12,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "metadata",
+          "index": 13,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "attn_out",
+          "index": 0,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "softmax_lse",
+          "index": 1,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "softmax_scale",
+          "dtype": "float",
+          "value": 0.0
+        },
+        {
+          "name": "cmp_ratio",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "ori_mask_mode",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "cmp_mask_mode",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "ori_kv_stride",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "cmp_kv_stride",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "ori_win_left",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "ori_win_right",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "layout_q",
+          "dtype": "str",
+          "value": ""
+        },
+        {
+          "name": "layout_kv",
+          "dtype": "str",
+          "value": ""
+        },
+        {
+          "name": "return_softmax_lse",
+          "dtype": "bool",
+          "value": false
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/sparse_attn_sharedkv/SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "SparseAttnSharedkv/d=0,p=1/1,2/1,2/0,2",
+        "SparseAttnSharedkv/d=0,p=0/1,2/1,2/0,2",
+        "SparseAttnSharedkv/d=1,p=1/1,2/1,2/0,2",
+        "SparseAttnSharedkv/d=1,p=0/1,2/1,2/0,2"
+      ],
+      "staticKey": "95b8acf0af7a04c78035755f1e0d360c202c055a40906fc58aec85e09634398a,a842d9fb5c8ed4d797fd7ec5ba7a9869a0b80dabfce2ceeaf8c577708c1a1337",
+      "inputs": [
+        {
+          "name": "q",
+          "index": 0,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "ori_kv",
+          "index": 1,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cmp_kv",
+          "index": 2,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "ori_sparse_indices",
+          "index": 3,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cmp_sparse_indices",
+          "index": 4,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "ori_block_table",
+          "index": 5,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cmp_block_table",
+          "index": 6,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cu_seqlens_q",
+          "index": 7,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cu_seqlens_ori_kv",
+          "index": 8,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "cu_seqlens_cmp_kv",
+          "index": 9,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "seqused_q",
+          "index": 10,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "seqused_kv",
+          "index": 11,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "sinks",
+          "index": 12,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "metadata",
+          "index": 13,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "optional",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "attn_out",
+          "index": 0,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "softmax_lse",
+          "index": 1,
+          "dtype": "float32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "softmax_scale",
+          "dtype": "float",
+          "value": 0.0
+        },
+        {
+          "name": "cmp_ratio",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "ori_mask_mode",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "cmp_mask_mode",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "ori_kv_stride",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "cmp_kv_stride",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "ori_win_left",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "ori_win_right",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "layout_q",
+          "dtype": "str",
+          "value": ""
+        },
+        {
+          "name": "layout_kv",
+          "dtype": "str",
+          "value": ""
+        },
+        {
+          "name": "return_softmax_lse",
+          "dtype": "bool",
+          "value": false
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/sparse_attn_sharedkv/SparseAttnSharedkv_b4f65ead04fb4fc6e9a77e022317d6e5.json"
+      }
+    }
+  ]
+}

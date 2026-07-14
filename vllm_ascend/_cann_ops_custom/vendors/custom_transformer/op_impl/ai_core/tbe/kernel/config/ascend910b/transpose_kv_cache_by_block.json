@@ -1,0 +1,176 @@
+{
+  "binList": [
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "TransposeKvCacheByBlock/d=0,p=1/27,2/27,2/9,2",
+        "TransposeKvCacheByBlock/d=0,p=0/27,2/27,2/9,2",
+        "TransposeKvCacheByBlock/d=1,p=1/27,2/27,2/9,2",
+        "TransposeKvCacheByBlock/d=1,p=0/27,2/27,2/9,2"
+      ],
+      "dynamicParamMode": "folded_with_desc",
+      "staticKey": "e3a0c0d35ac79a36fbe2155cdf2bbd95dbf8d664b9b21492750510796466f39b,c3ed7dc8bbfc3f81d8ce16ac3d7f92468d0bc445d1d73e1a61527673a17bbb90",
+      "inputs": [
+        [
+          {
+            "name": "KCache",
+            "index": 0,
+            "dtype": "bfloat16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        [
+          {
+            "name": "VCache",
+            "index": 1,
+            "dtype": "bfloat16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        {
+          "name": "blockIDs",
+          "index": 2,
+          "dtype": "int64",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [],
+      "attrs": [
+        {
+          "name": "blockSize",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "headNum",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "headDim",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "splitNum",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "layerNum",
+          "dtype": "int",
+          "value": 0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/transpose_kv_cache_by_block/TransposeKvCacheByBlock_f57d0192c8d2552ec56e02af54cfc504.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "TransposeKvCacheByBlock/d=0,p=1/1,2/1,2/9,2",
+        "TransposeKvCacheByBlock/d=0,p=0/1,2/1,2/9,2",
+        "TransposeKvCacheByBlock/d=1,p=1/1,2/1,2/9,2",
+        "TransposeKvCacheByBlock/d=1,p=0/1,2/1,2/9,2"
+      ],
+      "dynamicParamMode": "folded_with_desc",
+      "staticKey": "8b51421f0bb37e280b24e03fc72b30c27d0fb5ff57db301600906afde65f898e,a148b453a25aee9c44eac9081c00807435ce007aaf4025493925c8108a6d2692",
+      "inputs": [
+        [
+          {
+            "name": "KCache",
+            "index": 0,
+            "dtype": "float16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        [
+          {
+            "name": "VCache",
+            "index": 1,
+            "dtype": "float16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        {
+          "name": "blockIDs",
+          "index": 2,
+          "dtype": "int64",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [],
+      "attrs": [
+        {
+          "name": "blockSize",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "headNum",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "headDim",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "splitNum",
+          "dtype": "int",
+          "value": 0
+        },
+        {
+          "name": "layerNum",
+          "dtype": "int",
+          "value": 0
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/transpose_kv_cache_by_block/TransposeKvCacheByBlock_feefe007b5f0ab287bbced185c1648f6.json"
+      }
+    }
+  ]
+}

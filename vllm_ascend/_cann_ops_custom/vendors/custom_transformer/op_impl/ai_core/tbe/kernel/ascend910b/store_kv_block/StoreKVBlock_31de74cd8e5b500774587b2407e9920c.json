@@ -1,0 +1,125 @@
+{
+ "binFileName": "StoreKVBlock_31de74cd8e5b500774587b2407e9920c",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "StoreKVBlock_31de74cd8e5b500774587b2407e9920c",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 40,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "2df2b76720385b48b97d7674bd7d87c860252c82607caaa8180ed92e5b4b75c8",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "StoreKVBlock_31de74cd8e5b500774587b2407e9920c_1"
+  },
+  {
+   "kernelName": "StoreKVBlock_31de74cd8e5b500774587b2407e9920c_2"
+  },
+  {
+   "kernelName": "StoreKVBlock_31de74cd8e5b500774587b2407e9920c_4"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "StoreKVBlock/d=0,p=1/27,2/27,2/3,2/3,2/3,2",
+   "StoreKVBlock/d=0,p=0/27,2/27,2/3,2/3,2/3,2",
+   "StoreKVBlock/d=1,p=1/27,2/27,2/3,2/3,2/3,2",
+   "StoreKVBlock/d=1,p=0/27,2/27,2/3,2/3,2/3,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "staticKey": "9d22b42cf6b2f2054be03d12e7358755340f62c554dcf97fd70a3a7cdf488eb2,dc04e8687752dc3ee35b7b11db38eda652943a4d9e52b9970b1c939c35187a9e",
+  "inputs": [
+   {
+    "name": "keyIn",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "keyCacheIn",
+    "index": 1,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "groupLen",
+    "index": 2,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "groupKeyIdx",
+    "index": 3,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "groupKeyCacheIdx",
+    "index": 4,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [],
+  "attrs": [
+   {
+    "name": "blockSize",
+    "dtype": "int",
+    "value": 0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/store_kv_block/StoreKVBlock_31de74cd8e5b500774587b2407e9920c.json"
+}

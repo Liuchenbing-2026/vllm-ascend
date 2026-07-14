@@ -1,0 +1,652 @@
+{
+  "binList": [
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "MoeGroupedMatmul/d=0,p=1/1,2/1,2/9,2/1,2",
+        "MoeGroupedMatmul/d=0,p=0/1,2/1,2/9,2/1,2",
+        "MoeGroupedMatmul/d=1,p=1/1,2/1,2/9,2/1,2",
+        "MoeGroupedMatmul/d=1,p=0/1,2/1,2/9,2/1,2"
+      ],
+      "dynamicParamMode": "folded_with_desc",
+      "staticKey": "761eb76a8128e9c72a498a1d516c8a85aaeb5676d2f92615875f3f90a2ec35c0,d3ea57e25bbc6b52e30aeeeccfa805d77d1a124f34379238055fc67aad81a86d",
+      "inputs": [
+        [
+          {
+            "name": "x",
+            "index": 0,
+            "dtype": "float16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight",
+            "index": 1,
+            "dtype": "float16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        {
+          "name": "group_list",
+          "index": 2,
+          "dtype": "int64",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        [
+          {
+            "name": "y",
+            "index": 0,
+            "dtype": "float16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ]
+      ],
+      "attrs": [
+        {
+          "name": "transpose_weight",
+          "dtype": "bool",
+          "value": false
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_3461fb7c82f702c45a7dc8574ee64859.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "MoeGroupedMatmul/d=0,p=1/1,2/1,2/3,2/1,2",
+        "MoeGroupedMatmul/d=0,p=0/1,2/1,2/3,2/1,2",
+        "MoeGroupedMatmul/d=1,p=1/1,2/1,2/3,2/1,2",
+        "MoeGroupedMatmul/d=1,p=0/1,2/1,2/3,2/1,2"
+      ],
+      "dynamicParamMode": "folded_with_desc",
+      "staticKey": "f536b1ac421dd91848744ccd313fc98058d77ea2d991394c312150f5c098106a,a221b55b3e312dcf856ad00d69461ac95c561a0712dbe962032cd9c2bb90952e",
+      "inputs": [
+        [
+          {
+            "name": "x",
+            "index": 0,
+            "dtype": "float16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight",
+            "index": 1,
+            "dtype": "float16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        {
+          "name": "group_list",
+          "index": 2,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        [
+          {
+            "name": "y",
+            "index": 0,
+            "dtype": "float16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ]
+      ],
+      "attrs": [
+        {
+          "name": "transpose_weight",
+          "dtype": "bool",
+          "value": false
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_3a69da49b50a522c2b1ded9ba72e5af0.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "MoeGroupedMatmul/d=0,p=1/1,2/1,29/9,2/1,2",
+        "MoeGroupedMatmul/d=0,p=0/1,2/1,29/9,2/1,2",
+        "MoeGroupedMatmul/d=1,p=1/1,2/1,29/9,2/1,2",
+        "MoeGroupedMatmul/d=1,p=0/1,2/1,29/9,2/1,2"
+      ],
+      "dynamicParamMode": "folded_with_desc",
+      "staticKey": "c95b27e8ed8cda2b832de4bcb7a2f742d0a234635f7acf01513de34925eceb08,5f5bc509176bc307124a84a54c4fe0f8202584f55680c1b0ed13e7c92f3896d0",
+      "inputs": [
+        [
+          {
+            "name": "x",
+            "index": 0,
+            "dtype": "float16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight",
+            "index": 1,
+            "dtype": "float16",
+            "format": "FRACTAL_NZ",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        {
+          "name": "group_list",
+          "index": 2,
+          "dtype": "int64",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        [
+          {
+            "name": "y",
+            "index": 0,
+            "dtype": "float16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ]
+      ],
+      "attrs": [
+        {
+          "name": "transpose_weight",
+          "dtype": "bool",
+          "value": false
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_3e5cf1f9f2a93f9a172b29b9595ba34b.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "MoeGroupedMatmul/d=0,p=1/27,2/27,2/9,2/27,2",
+        "MoeGroupedMatmul/d=0,p=0/27,2/27,2/9,2/27,2",
+        "MoeGroupedMatmul/d=1,p=1/27,2/27,2/9,2/27,2",
+        "MoeGroupedMatmul/d=1,p=0/27,2/27,2/9,2/27,2"
+      ],
+      "dynamicParamMode": "folded_with_desc",
+      "staticKey": "151d8291f488731a5c89e1a5790bdc534760c216ff46e08ed22099e1feec4799,686965577e8b6a0a22ed2d714f78d07e0161575c2e9a10d061b5b1f0f096c11d",
+      "inputs": [
+        [
+          {
+            "name": "x",
+            "index": 0,
+            "dtype": "bfloat16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight",
+            "index": 1,
+            "dtype": "bfloat16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        {
+          "name": "group_list",
+          "index": 2,
+          "dtype": "int64",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        [
+          {
+            "name": "y",
+            "index": 0,
+            "dtype": "bfloat16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ]
+      ],
+      "attrs": [
+        {
+          "name": "transpose_weight",
+          "dtype": "bool",
+          "value": false
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_458e548937f65cda8992cb7bd8da726e.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "MoeGroupedMatmul/d=0,p=1/27,2/27,29/9,2/27,2",
+        "MoeGroupedMatmul/d=0,p=0/27,2/27,29/9,2/27,2",
+        "MoeGroupedMatmul/d=1,p=1/27,2/27,29/9,2/27,2",
+        "MoeGroupedMatmul/d=1,p=0/27,2/27,29/9,2/27,2"
+      ],
+      "dynamicParamMode": "folded_with_desc",
+      "staticKey": "d197e7f72759f5f60a274f7b3e0f917810feb6c4a237e6ea9c08397a2b497b91,06769aaecc13399b1010a323dacb4963968470b9cac50c6eedb47dca2ccbe7a9",
+      "inputs": [
+        [
+          {
+            "name": "x",
+            "index": 0,
+            "dtype": "bfloat16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight",
+            "index": 1,
+            "dtype": "bfloat16",
+            "format": "FRACTAL_NZ",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        {
+          "name": "group_list",
+          "index": 2,
+          "dtype": "int64",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        [
+          {
+            "name": "y",
+            "index": 0,
+            "dtype": "bfloat16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ]
+      ],
+      "attrs": [
+        {
+          "name": "transpose_weight",
+          "dtype": "bool",
+          "value": false
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_58681bafc526dcf5fcfa60dd9e71b15f.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "MoeGroupedMatmul/d=0,p=1/27,2/27,29/3,2/27,2",
+        "MoeGroupedMatmul/d=0,p=0/27,2/27,29/3,2/27,2",
+        "MoeGroupedMatmul/d=1,p=1/27,2/27,29/3,2/27,2",
+        "MoeGroupedMatmul/d=1,p=0/27,2/27,29/3,2/27,2"
+      ],
+      "dynamicParamMode": "folded_with_desc",
+      "staticKey": "bab009213f7debb27a6c66b4ff4748b5acdbe8559f3dc782f39c2cf15259adef,08c640caece9639514431f40840a2461cdae4adeea149bb1b1c42fcd455651e6",
+      "inputs": [
+        [
+          {
+            "name": "x",
+            "index": 0,
+            "dtype": "bfloat16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight",
+            "index": 1,
+            "dtype": "bfloat16",
+            "format": "FRACTAL_NZ",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        {
+          "name": "group_list",
+          "index": 2,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        [
+          {
+            "name": "y",
+            "index": 0,
+            "dtype": "bfloat16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ]
+      ],
+      "attrs": [
+        {
+          "name": "transpose_weight",
+          "dtype": "bool",
+          "value": false
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_861686f91a8eb0dfdf73348114b29943.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "MoeGroupedMatmul/d=0,p=1/27,2/27,2/3,2/27,2",
+        "MoeGroupedMatmul/d=0,p=0/27,2/27,2/3,2/27,2",
+        "MoeGroupedMatmul/d=1,p=1/27,2/27,2/3,2/27,2",
+        "MoeGroupedMatmul/d=1,p=0/27,2/27,2/3,2/27,2"
+      ],
+      "dynamicParamMode": "folded_with_desc",
+      "staticKey": "44403d9dd2f18f6ff80d4850d8f6aa687b3acb6f2d47ef276f9cbc051ea3b352,8847e2997fce812a36fcb0e6d2949fb5a1d4617f90da84d11850115e8903137b",
+      "inputs": [
+        [
+          {
+            "name": "x",
+            "index": 0,
+            "dtype": "bfloat16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight",
+            "index": 1,
+            "dtype": "bfloat16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        {
+          "name": "group_list",
+          "index": 2,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        [
+          {
+            "name": "y",
+            "index": 0,
+            "dtype": "bfloat16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ]
+      ],
+      "attrs": [
+        {
+          "name": "transpose_weight",
+          "dtype": "bool",
+          "value": false
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_874ac10e095175029522168d9b95ee3c.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "MoeGroupedMatmul/d=0,p=1/1,2/1,29/3,2/1,2",
+        "MoeGroupedMatmul/d=0,p=0/1,2/1,29/3,2/1,2",
+        "MoeGroupedMatmul/d=1,p=1/1,2/1,29/3,2/1,2",
+        "MoeGroupedMatmul/d=1,p=0/1,2/1,29/3,2/1,2"
+      ],
+      "dynamicParamMode": "folded_with_desc",
+      "staticKey": "e6c5121cca48b38e7251ad97bddd9d3d30bd4dfed1f89b4206cbf79b145847f7,435fa540ae8f91ae6a9b792ffae53da48e079a44ddb2263c715409c32270e654",
+      "inputs": [
+        [
+          {
+            "name": "x",
+            "index": 0,
+            "dtype": "float16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight",
+            "index": 1,
+            "dtype": "float16",
+            "format": "FRACTAL_NZ",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ],
+        {
+          "name": "group_list",
+          "index": 2,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        [
+          {
+            "name": "y",
+            "index": 0,
+            "dtype": "float16",
+            "format": "ND",
+            "paramType": "dynamic",
+            "shape": [
+              -2
+            ],
+            "format_match_mode": "FormatAgnostic"
+          }
+        ]
+      ],
+      "attrs": [
+        {
+          "name": "transpose_weight",
+          "dtype": "bool",
+          "value": false
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_9fdd125efee20777f55f129e1504bf88.json"
+      }
+    }
+  ]
+}

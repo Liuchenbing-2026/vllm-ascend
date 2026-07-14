@@ -1,0 +1,141 @@
+{
+ "binFileName": "HcPost_f8d6568802bb9bf815c79fd66277cb55_relocatable",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "HcPost_f8d6568802bb9bf815c79fd66277cb55_relocatable",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 88,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "2f300c2c993f927c11b0389e797ef1fc8b4f1bfd447f006ec897a9ee25840710",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "HcPost_f8d6568802bb9bf815c79fd66277cb55_relocatable_0"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "sub_operator_op_type": "HcPost",
+ "sub_operator_params": [
+  "x_in__",
+  "residual_in__",
+  "post_in__",
+  "comb_in__",
+  "y_out_",
+  "workspace",
+  "tiling"
+ ],
+ "sub_operator_kernel_type": "",
+ "sub_operator_kernel_name": {
+  "dynamic_func_names": {
+   "0": {
+    "AiCore": "HcPost_f8d6568802bb9bf815c79fd66277cb55_relocatable_0",
+    "kernel_type": "KERNEL_TYPE_AIV_ONLY"
+   }
+  }
+ },
+ "sub_operator_early_start_set_flag": false,
+ "sub_operator_early_start_wait_flag": false,
+ "sub_operator_call_dcci_before_kernel_start": true,
+ "sub_operator_call_dcci_after_kernel_end": true,
+ "sub_operator_call_dcci_disable_on_kernel": false,
+ "sub_op_with_sync_all": false,
+ "compileInfo": {},
+ "feature_list": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "HcPost/d=0,p=1/27,2/27,2/1,2/1,2/27,2",
+   "HcPost/d=0,p=0/27,2/27,2/1,2/1,2/27,2",
+   "HcPost/d=1,p=1/27,2/27,2/1,2/1,2/27,2",
+   "HcPost/d=1,p=0/27,2/27,2/1,2/1,2/27,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "2de393436fc4590cd988a4d1a0662ed83250919c1c90cf3a776f547bd06002d5,2695fe3811992259564c745047e85c276bbe1c12fec861882127fd6906727484",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "residual",
+    "index": 1,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "post",
+    "index": 2,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "comb",
+    "index": 3,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/hc_post/HcPost_f8d6568802bb9bf815c79fd66277cb55_relocatable.json"
+}

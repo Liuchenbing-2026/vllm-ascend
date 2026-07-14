@@ -1,0 +1,427 @@
+{
+ "binFileName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "MIX",
+ "intercoreSync": 1,
+ "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF",
+ "memoryStamping": [],
+ "opParaSize": 168,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "49ad7ae97e486931fe46cddb2d36a27d40a94c045d0cc0c885567baaf8bf7e81",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "tilingKey": 0,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_0"
+  },
+  {
+   "tilingKey": 32,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_32"
+  },
+  {
+   "tilingKey": 64,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_64"
+  },
+  {
+   "tilingKey": 2,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_2"
+  },
+  {
+   "tilingKey": 34,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_34"
+  },
+  {
+   "tilingKey": 66,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_66"
+  },
+  {
+   "tilingKey": 512,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_512"
+  },
+  {
+   "tilingKey": 544,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_544"
+  },
+  {
+   "tilingKey": 576,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_576"
+  },
+  {
+   "tilingKey": 514,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_514"
+  },
+  {
+   "tilingKey": 546,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_546"
+  },
+  {
+   "tilingKey": 578,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_578"
+  },
+  {
+   "tilingKey": 1024,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_1024"
+  },
+  {
+   "tilingKey": 1056,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_1056"
+  },
+  {
+   "tilingKey": 1088,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_1088"
+  },
+  {
+   "tilingKey": 1026,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_1026"
+  },
+  {
+   "tilingKey": 1058,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_1058"
+  },
+  {
+   "tilingKey": 1090,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc_1090"
+  }
+ ],
+ "taskRation": "tilingKey",
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "SparseAttnSharedkv/d=0,p=1/27,2/27,2/0,2",
+   "SparseAttnSharedkv/d=0,p=0/27,2/27,2/0,2",
+   "SparseAttnSharedkv/d=1,p=1/27,2/27,2/0,2",
+   "SparseAttnSharedkv/d=1,p=0/27,2/27,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "b57d55189de085a87ebd7861427481702471a8eb86a1defe9c0edab1eae857e8,72e7d2e8a96d5f2631ec66c5bc6e8e8cc7b7ce6181d96295d315540d41252d87",
+  "inputs": [
+   {
+    "name": "q",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "ori_kv",
+    "index": 1,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "cmp_kv",
+    "index": 2,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "ori_sparse_indices",
+    "index": 3,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "cmp_sparse_indices",
+    "index": 4,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "ori_block_table",
+    "index": 5,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "cmp_block_table",
+    "index": 6,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "cu_seqlens_q",
+    "index": 7,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "cu_seqlens_ori_kv",
+    "index": 8,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "cu_seqlens_cmp_kv",
+    "index": 9,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "seqused_q",
+    "index": 10,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "seqused_kv",
+    "index": 11,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "sinks",
+    "index": 12,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "metadata",
+    "index": 13,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "attn_out",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "softmax_lse",
+    "index": 1,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "softmax_scale",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "cmp_ratio",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "ori_mask_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "cmp_mask_mode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "ori_kv_stride",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "cmp_kv_stride",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "ori_win_left",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "ori_win_right",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "layout_q",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "layout_kv",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "return_softmax_lse",
+    "dtype": "bool",
+    "value": false
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/sparse_attn_sharedkv/SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc.json"
+}

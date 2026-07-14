@@ -1,0 +1,163 @@
+{
+ "binFileName": "MatmulAllreduceAddRmsnorm_d690727640f624ffb9f66c44036234b8",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "MIX",
+ "intercoreSync": 1,
+ "kernelName": "MatmulAllreduceAddRmsnorm_d690727640f624ffb9f66c44036234b8",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF",
+ "memoryStamping": [],
+ "opParaSize": 780,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "d49b7ba3c56c49454016c5e6e8c53e172242c303f43e3280619378faab1fab9c",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "tilingKey": 0,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "1:2",
+   "kernelName": "MatmulAllreduceAddRmsnorm_d690727640f624ffb9f66c44036234b8_0"
+  }
+ ],
+ "taskRation": "tilingKey",
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "MatmulAllreduceAddRmsnorm/d=0,p=1/1,2/1,2/1,2/1,2/1,2/1,2",
+   "MatmulAllreduceAddRmsnorm/d=0,p=0/1,2/1,2/1,2/1,2/1,2/1,2",
+   "MatmulAllreduceAddRmsnorm/d=1,p=1/1,2/1,2/1,2/1,2/1,2/1,2",
+   "MatmulAllreduceAddRmsnorm/d=1,p=0/1,2/1,2/1,2/1,2/1,2/1,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "84215aec5ed2a86f6c94f54742e4595ad0e3e298de5a000af2d1fb317bb57e85,91e61b0aa5e6e9631690a0f5d0fa721de613a10012e3ecfc5ede902ce1fd6a94",
+  "inputs": [
+   {
+    "name": "x1",
+    "index": 0,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "x2",
+    "index": 1,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "residual",
+    "index": 2,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "gamma",
+    "index": 3,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "add_out",
+    "index": 1,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "group_tp",
+    "dtype": "str",
+    "value": ""
+   },
+   {
+    "name": "tp_rank_size",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "tp_rank_id",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "epsilon",
+    "dtype": "float",
+    "value": 0.0
+   },
+   {
+    "name": "is_trans_b",
+    "dtype": "bool",
+    "value": false
+   },
+   {
+    "name": "is_gather_add_out",
+    "dtype": "bool",
+    "value": false
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/matmul_allreduce_add_rmsnorm/MatmulAllreduceAddRmsnorm_d690727640f624ffb9f66c44036234b8.json"
+}

@@ -1,0 +1,89 @@
+{
+ "binFileName": "HcPreInvRms_ee172a296a08c53c8f0a195044de3a1c",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "HcPreInvRms_ee172a296a08c53c8f0a195044de3a1c",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 64,
+ "parameters": [
+  null,
+  null,
+  null
+ ],
+ "sha256": "9c1b7c5ed7c5d2bd59a07588d37d408284df271bc731974460dec3a637227362",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "HcPreInvRms_ee172a296a08c53c8f0a195044de3a1c_1000"
+  },
+  {
+   "kernelName": "HcPreInvRms_ee172a296a08c53c8f0a195044de3a1c_1001"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "HcPreInvRms/d=0,p=1/1,2/0,2",
+   "HcPreInvRms/d=0,p=0/1,2/0,2",
+   "HcPreInvRms/d=1,p=1/1,2/0,2",
+   "HcPreInvRms/d=1,p=0/1,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "5ed8c7bc15f77da72cc494dbf8c36ee225f080c616a48ca609071343c69544de,173de5952c715aa7c7d7bcb84787d140ed9070ce8c17f699e1b2971b4841375f",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "float16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "epsilon",
+    "dtype": "float",
+    "value": 0.0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/hc_pre_inv_rms/HcPreInvRms_ee172a296a08c53c8f0a195044de3a1c.json"
+}

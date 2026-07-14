@@ -1,0 +1,1347 @@
+{
+  "Compressor": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "wkv",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "wgate",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "state_cache",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "ape",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "norm_weight",
+          "index": 5,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "rope_sin",
+          "index": 6,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "rope_cos",
+          "index": 7,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "state_block_table",
+          "index": 8,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cu_seqlens",
+          "index": 9,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "seqused",
+          "index": 10,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "start_pos",
+          "index": 11,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "cmp_kv",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "state_cache",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "rope_head_dim"
+        },
+        {
+          "name": "cmp_ratio"
+        },
+        {
+          "name": "coff"
+        },
+        {
+          "name": "norm_eps"
+        },
+        {
+          "name": "rotary_mode"
+        },
+        {
+          "name": "cache_mode"
+        },
+        {
+          "name": "state_cache_stride_dim0"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "Compressor/d=0,p=1/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2",
+          "Compressor/d=0,p=0/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2",
+          "Compressor/d=1,p=1/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2",
+          "Compressor/d=1,p=0/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/compressor/Compressor_49507def9d8354a82f6afebe5354ffab_relocatable.o",
+        "jsonPath": "ascend910b/compressor/Compressor_49507def9d8354a82f6afebe5354ffab_relocatable.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "Compressor/d=0,p=1/27,2/27,2/27,2/0,2/0,2/27,2/0,2/0,2/27,2/0,2",
+          "Compressor/d=0,p=0/27,2/27,2/27,2/0,2/0,2/27,2/0,2/0,2/27,2/0,2",
+          "Compressor/d=1,p=1/27,2/27,2/27,2/0,2/0,2/27,2/0,2/0,2/27,2/0,2",
+          "Compressor/d=1,p=0/27,2/27,2/27,2/0,2/0,2/27,2/0,2/0,2/27,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/compressor/Compressor_5d0f45757e9591d6e00196bb7912baa5_relocatable.o",
+        "jsonPath": "ascend910b/compressor/Compressor_5d0f45757e9591d6e00196bb7912baa5_relocatable.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "Compressor/d=0,p=1/27,2/27,2/27,2/0,2/0,2/27,2/27,2/27,2/27,2/0,2",
+          "Compressor/d=0,p=0/27,2/27,2/27,2/0,2/0,2/27,2/27,2/27,2/27,2/0,2",
+          "Compressor/d=1,p=1/27,2/27,2/27,2/0,2/0,2/27,2/27,2/27,2/27,2/0,2",
+          "Compressor/d=1,p=0/27,2/27,2/27,2/0,2/0,2/27,2/27,2/27,2/27,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/compressor/Compressor_9549d63a2f1a939012a18a8fa94a8636_relocatable.o",
+        "jsonPath": "ascend910b/compressor/Compressor_9549d63a2f1a939012a18a8fa94a8636_relocatable.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "Compressor/d=0,p=1/1,2/1,2/1,2/0,2/0,2/1,2/0,2/0,2/1,2/0,2",
+          "Compressor/d=0,p=0/1,2/1,2/1,2/0,2/0,2/1,2/0,2/0,2/1,2/0,2",
+          "Compressor/d=1,p=1/1,2/1,2/1,2/0,2/0,2/1,2/0,2/0,2/1,2/0,2",
+          "Compressor/d=1,p=0/1,2/1,2/1,2/0,2/0,2/1,2/0,2/0,2/1,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/compressor/Compressor_dbfc38c326010f867e98962cf4de1ac9_relocatable.o",
+        "jsonPath": "ascend910b/compressor/Compressor_dbfc38c326010f867e98962cf4de1ac9_relocatable.json"
+      }
+    ]
+  },
+  "CompressorMetadata": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "ropeCos",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "ropeSin",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cuSeqlens",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "startPos",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "kvBlockTable",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "compressCos",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "compressSin",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "slotMapping",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "kvBlockSize"
+        },
+        {
+          "name": "slotMappingFormat"
+        },
+        {
+          "name": "cmpRatio"
+        },
+        {
+          "name": "actualNumReqs"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "CompressorMetadata/d=0,p=1/1,2/1,2/3,2/3,2/3,2/1,2/1,2/3,2",
+          "CompressorMetadata/d=0,p=0/1,2/1,2/3,2/3,2/3,2/1,2/1,2/3,2",
+          "CompressorMetadata/d=1,p=1/1,2/1,2/3,2/3,2/3,2/1,2/1,2/3,2",
+          "CompressorMetadata/d=1,p=0/1,2/1,2/3,2/3,2/3,2/1,2/1,2/3,2"
+        ],
+        "binPath": "ascend910b/compressor_metadata/CompressorMetadata_07fa79edac355883dd17d95a898804ec_relocatable.o",
+        "jsonPath": "ascend910b/compressor_metadata/CompressorMetadata_07fa79edac355883dd17d95a898804ec_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "CompressorMetadata/d=0,p=1/0,2/0,2/3,2/3,2/3,2/0,2/0,2/3,2",
+          "CompressorMetadata/d=0,p=0/0,2/0,2/3,2/3,2/3,2/0,2/0,2/3,2",
+          "CompressorMetadata/d=1,p=1/0,2/0,2/3,2/3,2/3,2/0,2/0,2/3,2",
+          "CompressorMetadata/d=1,p=0/0,2/0,2/3,2/3,2/3,2/0,2/0,2/3,2"
+        ],
+        "binPath": "ascend910b/compressor_metadata/CompressorMetadata_152c4baeee722882a4f94b479159b76c_relocatable.o",
+        "jsonPath": "ascend910b/compressor_metadata/CompressorMetadata_152c4baeee722882a4f94b479159b76c_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "CompressorMetadata/d=0,p=1/27,2/27,2/3,2/3,2/3,2/27,2/27,2/3,2",
+          "CompressorMetadata/d=0,p=0/27,2/27,2/3,2/3,2/3,2/27,2/27,2/3,2",
+          "CompressorMetadata/d=1,p=1/27,2/27,2/3,2/3,2/3,2/27,2/27,2/3,2",
+          "CompressorMetadata/d=1,p=0/27,2/27,2/3,2/3,2/3,2/27,2/27,2/3,2"
+        ],
+        "binPath": "ascend910b/compressor_metadata/CompressorMetadata_8ccf83a3be9b66d739e408b3044ff751_relocatable.o",
+        "jsonPath": "ascend910b/compressor_metadata/CompressorMetadata_8ccf83a3be9b66d739e408b3044ff751_relocatable.json"
+      }
+    ]
+  },
+  "HammingDistTopK": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "query",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key_compressed",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "k",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "seq_len",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "chunk_size",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key_block_table",
+          "index": 5,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "indices_in",
+          "index": 6,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key_compressed_rope",
+          "index": 7,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "mask",
+          "index": 8,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "indices",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "max_seq_len"
+        },
+        {
+          "name": "sink"
+        },
+        {
+          "name": "recent"
+        },
+        {
+          "name": "support_offload"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "HammingDistTopK/d=0,p=1/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2",
+          "HammingDistTopK/d=0,p=0/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2",
+          "HammingDistTopK/d=1,p=1/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2",
+          "HammingDistTopK/d=1,p=0/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/hamming_dist_top_k/HammingDistTopK_e03a26579145abd15da947d04974f580_relocatable.o",
+        "jsonPath": "ascend910b/hamming_dist_top_k/HammingDistTopK_e03a26579145abd15da947d04974f580_relocatable.json"
+      }
+    ]
+  },
+  "HcPost": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "residual",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "post",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "comb",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/1,2/1,2/27,2/27,2/1,2",
+          "HcPost/d=0,p=0/1,2/1,2/27,2/27,2/1,2",
+          "HcPost/d=1,p=1/1,2/1,2/27,2/27,2/1,2",
+          "HcPost/d=1,p=0/1,2/1,2/27,2/27,2/1,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_2e5303ac4dede76effa18248fd20ec57_relocatable.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_2e5303ac4dede76effa18248fd20ec57_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/0,2/0,2/27,2/27,2/0,2",
+          "HcPost/d=0,p=0/0,2/0,2/27,2/27,2/0,2",
+          "HcPost/d=1,p=1/0,2/0,2/27,2/27,2/0,2",
+          "HcPost/d=1,p=0/0,2/0,2/27,2/27,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_be2dcafbf0c8af390bf57177141bf669_relocatable.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_be2dcafbf0c8af390bf57177141bf669_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/27,2/27,2/0,2/0,2/27,2",
+          "HcPost/d=0,p=0/27,2/27,2/0,2/0,2/27,2",
+          "HcPost/d=1,p=1/27,2/27,2/0,2/0,2/27,2",
+          "HcPost/d=1,p=0/27,2/27,2/0,2/0,2/27,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_d2fe6614722b27afa6f8d964c215447e_relocatable.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_d2fe6614722b27afa6f8d964c215447e_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/0,2/0,2/1,2/1,2/0,2",
+          "HcPost/d=0,p=0/0,2/0,2/1,2/1,2/0,2",
+          "HcPost/d=1,p=1/0,2/0,2/1,2/1,2/0,2",
+          "HcPost/d=1,p=0/0,2/0,2/1,2/1,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_d7d8f653fdae4af65c2dc961400185bd_relocatable.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_d7d8f653fdae4af65c2dc961400185bd_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/0,2/0,2/0,2/0,2/0,2",
+          "HcPost/d=0,p=0/0,2/0,2/0,2/0,2/0,2",
+          "HcPost/d=1,p=1/0,2/0,2/0,2/0,2/0,2",
+          "HcPost/d=1,p=0/0,2/0,2/0,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_d980ed89966470aa6bbdc62419309139_relocatable.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_d980ed89966470aa6bbdc62419309139_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/1,2/1,2/0,2/0,2/1,2",
+          "HcPost/d=0,p=0/1,2/1,2/0,2/0,2/1,2",
+          "HcPost/d=1,p=1/1,2/1,2/0,2/0,2/1,2",
+          "HcPost/d=1,p=0/1,2/1,2/0,2/0,2/1,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_dffc3b13070cacc52a1006b48c22063b_relocatable.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_dffc3b13070cacc52a1006b48c22063b_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/27,2/27,2/27,2/27,2/27,2",
+          "HcPost/d=0,p=0/27,2/27,2/27,2/27,2/27,2",
+          "HcPost/d=1,p=1/27,2/27,2/27,2/27,2/27,2",
+          "HcPost/d=1,p=0/27,2/27,2/27,2/27,2/27,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_e2220bcfb1da2706e99e1c9e5e9ab203_relocatable.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_e2220bcfb1da2706e99e1c9e5e9ab203_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/1,2/1,2/1,2/1,2/1,2",
+          "HcPost/d=0,p=0/1,2/1,2/1,2/1,2/1,2",
+          "HcPost/d=1,p=1/1,2/1,2/1,2/1,2/1,2",
+          "HcPost/d=1,p=0/1,2/1,2/1,2/1,2/1,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_e4c4ea08fc7875f3275751adc399868d_relocatable.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_e4c4ea08fc7875f3275751adc399868d_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/27,2/27,2/1,2/1,2/27,2",
+          "HcPost/d=0,p=0/27,2/27,2/1,2/1,2/27,2",
+          "HcPost/d=1,p=1/27,2/27,2/1,2/1,2/27,2",
+          "HcPost/d=1,p=0/27,2/27,2/1,2/1,2/27,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_f8d6568802bb9bf815c79fd66277cb55_relocatable.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_f8d6568802bb9bf815c79fd66277cb55_relocatable.json"
+      }
+    ]
+  },
+  "HcPre": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "hc_fn",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "hc_scale",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "hc_base",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "post",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "comb_frag",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "hc_mult"
+        },
+        {
+          "name": "hc_sinkhorn_iters"
+        },
+        {
+          "name": "hc_eps"
+        },
+        {
+          "name": "norm_eps"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "HcPre/d=0,p=1/27,2/0,2/0,2/0,2/27,2/0,2/0,2",
+          "HcPre/d=0,p=0/27,2/0,2/0,2/0,2/27,2/0,2/0,2",
+          "HcPre/d=1,p=1/27,2/0,2/0,2/0,2/27,2/0,2/0,2",
+          "HcPre/d=1,p=0/27,2/0,2/0,2/0,2/27,2/0,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/hc_pre/HcPre_c12a9d608e5abdbd1728e849208025ff_relocatable.o",
+        "jsonPath": "ascend910b/hc_pre/HcPre_c12a9d608e5abdbd1728e849208025ff_relocatable.json"
+      }
+    ]
+  },
+  "HcPreInvRms": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "epsilon"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPreInvRms/d=0,p=1/27,2/0,2",
+          "HcPreInvRms/d=0,p=0/27,2/0,2",
+          "HcPreInvRms/d=1,p=1/27,2/0,2",
+          "HcPreInvRms/d=1,p=0/27,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_698bcb6f52ef8589299a756885a2af28_relocatable.o",
+        "jsonPath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_698bcb6f52ef8589299a756885a2af28_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPreInvRms/d=0,p=1/0,2/0,2",
+          "HcPreInvRms/d=0,p=0/0,2/0,2",
+          "HcPreInvRms/d=1,p=1/0,2/0,2",
+          "HcPreInvRms/d=1,p=0/0,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_a435f521e67e2ce9c8ba6d483e029bbb_relocatable.o",
+        "jsonPath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_a435f521e67e2ce9c8ba6d483e029bbb_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPreInvRms/d=0,p=1/1,2/0,2",
+          "HcPreInvRms/d=0,p=0/1,2/0,2",
+          "HcPreInvRms/d=1,p=1/1,2/0,2",
+          "HcPreInvRms/d=1,p=0/1,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_ee172a296a08c53c8f0a195044de3a1c_relocatable.o",
+        "jsonPath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_ee172a296a08c53c8f0a195044de3a1c_relocatable.json"
+      }
+    ]
+  },
+  "HcPreSinkhorn": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "mixes",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "rsqrt",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "hc_scale",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "hc_base",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "x",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "post",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "comb_frag",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "hc_mult"
+        },
+        {
+          "name": "hc_sinkhorn_iters"
+        },
+        {
+          "name": "hc_eps"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPreSinkhorn/d=0,p=1/0,2/0,2/0,2/0,2/27,2/27,2/0,2/0,2",
+          "HcPreSinkhorn/d=0,p=0/0,2/0,2/0,2/0,2/27,2/27,2/0,2/0,2",
+          "HcPreSinkhorn/d=1,p=1/0,2/0,2/0,2/0,2/27,2/27,2/0,2/0,2",
+          "HcPreSinkhorn/d=1,p=0/0,2/0,2/0,2/0,2/27,2/27,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_pre_sinkhorn/HcPreSinkhorn_20e241df439b4db3f63d743f6a75861a_relocatable.o",
+        "jsonPath": "ascend910b/hc_pre_sinkhorn/HcPreSinkhorn_20e241df439b4db3f63d743f6a75861a_relocatable.json"
+      }
+    ]
+  },
+  "InplacePartialRotaryMul": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cos",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "sin",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "mode"
+        },
+        {
+          "name": "partial_slice"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "InplacePartialRotaryMul/d=0,p=1/1,2/0,2/0,2/1,2",
+          "InplacePartialRotaryMul/d=0,p=0/1,2/0,2/0,2/1,2",
+          "InplacePartialRotaryMul/d=1,p=1/1,2/0,2/0,2/1,2",
+          "InplacePartialRotaryMul/d=1,p=0/1,2/0,2/0,2/1,2"
+        ],
+        "binPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_6ff5dddd25b5de53ba4d1e4df2975bc9_relocatable.o",
+        "jsonPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_6ff5dddd25b5de53ba4d1e4df2975bc9_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "InplacePartialRotaryMul/d=0,p=1/0,2/0,2/0,2/0,2",
+          "InplacePartialRotaryMul/d=0,p=0/0,2/0,2/0,2/0,2",
+          "InplacePartialRotaryMul/d=1,p=1/0,2/0,2/0,2/0,2",
+          "InplacePartialRotaryMul/d=1,p=0/0,2/0,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_82896c5db0faaeb44e3eacbada73642f_relocatable.o",
+        "jsonPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_82896c5db0faaeb44e3eacbada73642f_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "InplacePartialRotaryMul/d=0,p=1/27,2/27,2/27,2/27,2",
+          "InplacePartialRotaryMul/d=0,p=0/27,2/27,2/27,2/27,2",
+          "InplacePartialRotaryMul/d=1,p=1/27,2/27,2/27,2/27,2",
+          "InplacePartialRotaryMul/d=1,p=0/27,2/27,2/27,2/27,2"
+        ],
+        "binPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_relocatable.o",
+        "jsonPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "InplacePartialRotaryMul/d=0,p=1/1,2/1,2/1,2/1,2",
+          "InplacePartialRotaryMul/d=0,p=0/1,2/1,2/1,2/1,2",
+          "InplacePartialRotaryMul/d=1,p=1/1,2/1,2/1,2/1,2",
+          "InplacePartialRotaryMul/d=1,p=0/1,2/1,2/1,2/1,2"
+        ],
+        "binPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_b16e6010eb7f3153591301274510db14_relocatable.o",
+        "jsonPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_b16e6010eb7f3153591301274510db14_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "InplacePartialRotaryMul/d=0,p=1/27,2/0,2/0,2/27,2",
+          "InplacePartialRotaryMul/d=0,p=0/27,2/0,2/0,2/27,2",
+          "InplacePartialRotaryMul/d=1,p=1/27,2/0,2/0,2/27,2",
+          "InplacePartialRotaryMul/d=1,p=0/27,2/0,2/0,2/27,2"
+        ],
+        "binPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_ec081ae2fec8ce00af9a8192bd55ef8c_relocatable.o",
+        "jsonPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_ec081ae2fec8ce00af9a8192bd55ef8c_relocatable.json"
+      }
+    ]
+  },
+  "LightningIndexerQuant": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "query",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "weights",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "query_dequant_scale",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key_dequant_scale",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_query",
+          "index": 5,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_key",
+          "index": 6,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "block_table",
+          "index": 7,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "sparse_indices",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "query_quant_mode"
+        },
+        {
+          "name": "key_quant_mode"
+        },
+        {
+          "name": "layout_query"
+        },
+        {
+          "name": "layout_key"
+        },
+        {
+          "name": "sparse_count"
+        },
+        {
+          "name": "sparse_mode"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "LightningIndexerQuant/d=0,p=1/2,2/2,2/1,2/1,2/1,2/3,2",
+          "LightningIndexerQuant/d=0,p=0/2,2/2,2/1,2/1,2/1,2/3,2",
+          "LightningIndexerQuant/d=1,p=1/2,2/2,2/1,2/1,2/1,2/3,2",
+          "LightningIndexerQuant/d=1,p=0/2,2/2,2/1,2/1,2/1,2/3,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/lightning_indexer_quant/LightningIndexerQuant_b983416e9c1ab662b1023da974d989c1_relocatable.o",
+        "jsonPath": "ascend910b/lightning_indexer_quant/LightningIndexerQuant_b983416e9c1ab662b1023da974d989c1_relocatable.json"
+      }
+    ]
+  },
+  "MoeGatingTopKHash": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "bias",
+          "index": 1,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "input_ids",
+          "index": 2,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "tid2eid",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "expert_idx",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "out",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "k"
+        },
+        {
+          "name": "k_group"
+        },
+        {
+          "name": "group_count"
+        },
+        {
+          "name": "group_select_mode"
+        },
+        {
+          "name": "renorm"
+        },
+        {
+          "name": "norm_type"
+        },
+        {
+          "name": "out_flag"
+        },
+        {
+          "name": "routed_scaling_factor"
+        },
+        {
+          "name": "eps"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "MoeGatingTopKHash/d=0,p=1/1,2/1,2/3,2/0,2",
+          "MoeGatingTopKHash/d=0,p=0/1,2/1,2/3,2/0,2",
+          "MoeGatingTopKHash/d=1,p=1/1,2/1,2/3,2/0,2",
+          "MoeGatingTopKHash/d=1,p=0/1,2/1,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/moe_gating_top_k_hash/MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable.o",
+        "jsonPath": "ascend910b/moe_gating_top_k_hash/MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "MoeGatingTopKHash/d=0,p=1/27,2/27,2/3,2/0,2",
+          "MoeGatingTopKHash/d=0,p=0/27,2/27,2/3,2/0,2",
+          "MoeGatingTopKHash/d=1,p=1/27,2/27,2/3,2/0,2",
+          "MoeGatingTopKHash/d=1,p=0/27,2/27,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/moe_gating_top_k_hash/MoeGatingTopKHash_4d279081224dceb2ba5c4a13ba9e90f5_relocatable.o",
+        "jsonPath": "ascend910b/moe_gating_top_k_hash/MoeGatingTopKHash_4d279081224dceb2ba5c4a13ba9e90f5_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "MoeGatingTopKHash/d=0,p=1/0,2/0,2/3,2/0,2",
+          "MoeGatingTopKHash/d=0,p=0/0,2/0,2/3,2/0,2",
+          "MoeGatingTopKHash/d=1,p=1/0,2/0,2/3,2/0,2",
+          "MoeGatingTopKHash/d=1,p=0/0,2/0,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/moe_gating_top_k_hash/MoeGatingTopKHash_c9fe881608378d9bec1f72b77dd57c53_relocatable.o",
+        "jsonPath": "ascend910b/moe_gating_top_k_hash/MoeGatingTopKHash_c9fe881608378d9bec1f72b77dd57c53_relocatable.json"
+      }
+    ]
+  },
+  "ReshapeAndCacheBnsd": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "keyIn",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "keyCacheIn",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "slotMapping",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "seqLen",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "keyCacheOut",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "ReshapeAndCacheBnsd/d=0,p=1/4,2/4,2/3,2/3,2/4,2",
+          "ReshapeAndCacheBnsd/d=0,p=0/4,2/4,2/3,2/3,2/4,2",
+          "ReshapeAndCacheBnsd/d=1,p=1/4,2/4,2/3,2/3,2/4,2",
+          "ReshapeAndCacheBnsd/d=1,p=0/4,2/4,2/3,2/3,2/4,2"
+        ],
+        "binPath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_69cf40a071c531b49b5be27bfaa4fab0_relocatable.o",
+        "jsonPath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_69cf40a071c531b49b5be27bfaa4fab0_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "ReshapeAndCacheBnsd/d=0,p=1/1,2/1,2/3,2/3,2/1,2",
+          "ReshapeAndCacheBnsd/d=0,p=0/1,2/1,2/3,2/3,2/1,2",
+          "ReshapeAndCacheBnsd/d=1,p=1/1,2/1,2/3,2/3,2/1,2",
+          "ReshapeAndCacheBnsd/d=1,p=0/1,2/1,2/3,2/3,2/1,2"
+        ],
+        "binPath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_98ba07b04b816b84e9cf8396047a724b_relocatable.o",
+        "jsonPath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_98ba07b04b816b84e9cf8396047a724b_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "ReshapeAndCacheBnsd/d=0,p=1/27,2/27,2/3,2/3,2/27,2",
+          "ReshapeAndCacheBnsd/d=0,p=0/27,2/27,2/3,2/3,2/27,2",
+          "ReshapeAndCacheBnsd/d=1,p=1/27,2/27,2/3,2/3,2/27,2",
+          "ReshapeAndCacheBnsd/d=1,p=0/27,2/27,2/3,2/3,2/27,2"
+        ],
+        "binPath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_cbfb6aa81347796329c7283318b41e8c_relocatable.o",
+        "jsonPath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_cbfb6aa81347796329c7283318b41e8c_relocatable.json"
+      }
+    ]
+  },
+  "RmsNormDynamicQuant": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "gamma",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "smooth_scale1",
+          "index": 2,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "smooth_scale2",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "beta",
+          "index": 4,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y1",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "y2",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "scale1",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "scale2",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "epsilon"
+        },
+        {
+          "name": "output_mask"
+        },
+        {
+          "name": "dst_type"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "RmsNormDynamicQuant/d=0,p=1/1,2/1,2/2,2/2,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=0,p=0/1,2/1,2/2,2/2,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=1/1,2/1,2/2,2/2,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=0/1,2/1,2/2,2/2,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable.o",
+        "jsonPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "RmsNormDynamicQuant/d=0,p=1/27,2/27,2/29,2/29,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=0,p=0/27,2/27,2/29,2/29,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=1/27,2/27,2/29,2/29,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=0/27,2/27,2/29,2/29,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_752f4d9526546215c765ac323b15248d_relocatable.o",
+        "jsonPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_752f4d9526546215c765ac323b15248d_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "RmsNormDynamicQuant/d=0,p=1/1,2/1,2/29,2/29,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=0,p=0/1,2/1,2/29,2/29,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=1/1,2/1,2/29,2/29,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=0/1,2/1,2/29,2/29,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_8b10934c022ebb22b7797f8001c4c4fc_relocatable.o",
+        "jsonPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_8b10934c022ebb22b7797f8001c4c4fc_relocatable.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "RmsNormDynamicQuant/d=0,p=1/27,2/27,2/2,2/2,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=0,p=0/27,2/27,2/2,2/2,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=1/27,2/27,2/2,2/2,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=0/27,2/27,2/2,2/2,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_a24014a99c880e660456f6930bd3808a_relocatable.o",
+        "jsonPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_a24014a99c880e660456f6930bd3808a_relocatable.json"
+      }
+    ]
+  },
+  "TransposeKvCacheByBlock": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        [
+          {
+            "name": "KCache",
+            "index": 0,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        [
+          {
+            "name": "VCache",
+            "index": 1,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        {
+          "name": "blockIDs",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [],
+      "attrs": [
+        {
+          "name": "blockSize"
+        },
+        {
+          "name": "headNum"
+        },
+        {
+          "name": "headDim"
+        },
+        {
+          "name": "splitNum"
+        },
+        {
+          "name": "layerNum"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "TransposeKvCacheByBlock/d=0,p=1/27,2/27,2/9,2",
+          "TransposeKvCacheByBlock/d=0,p=0/27,2/27,2/9,2",
+          "TransposeKvCacheByBlock/d=1,p=1/27,2/27,2/9,2",
+          "TransposeKvCacheByBlock/d=1,p=0/27,2/27,2/9,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/transpose_kv_cache_by_block/TransposeKvCacheByBlock_f57d0192c8d2552ec56e02af54cfc504_relocatable.o",
+        "jsonPath": "ascend910b/transpose_kv_cache_by_block/TransposeKvCacheByBlock_f57d0192c8d2552ec56e02af54cfc504_relocatable.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "TransposeKvCacheByBlock/d=0,p=1/1,2/1,2/9,2",
+          "TransposeKvCacheByBlock/d=0,p=0/1,2/1,2/9,2",
+          "TransposeKvCacheByBlock/d=1,p=1/1,2/1,2/9,2",
+          "TransposeKvCacheByBlock/d=1,p=0/1,2/1,2/9,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/transpose_kv_cache_by_block/TransposeKvCacheByBlock_feefe007b5f0ab287bbced185c1648f6_relocatable.o",
+        "jsonPath": "ascend910b/transpose_kv_cache_by_block/TransposeKvCacheByBlock_feefe007b5f0ab287bbced185c1648f6_relocatable.json"
+      }
+    ]
+  }
+}

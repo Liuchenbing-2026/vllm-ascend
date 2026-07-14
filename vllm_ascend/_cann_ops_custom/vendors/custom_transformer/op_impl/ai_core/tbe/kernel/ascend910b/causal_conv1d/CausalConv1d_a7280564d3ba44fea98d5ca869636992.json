@@ -1,0 +1,226 @@
+{
+ "binFileName": "CausalConv1d_a7280564d3ba44fea98d5ca869636992",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "MIX",
+ "intercoreSync": 1,
+ "kernelName": "CausalConv1d_a7280564d3ba44fea98d5ca869636992",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF",
+ "memoryStamping": [],
+ "opParaSize": 2272,
+ "parameters": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+ ],
+ "sha256": "f136ee08f7e270e0e26b1d7ee85bcd40aad7bedf9dbb4c6d437c801efa6b2cdc",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "tilingKey": 1,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "0:1",
+   "kernelName": "CausalConv1d_a7280564d3ba44fea98d5ca869636992_1"
+  },
+  {
+   "tilingKey": 10,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "0:1",
+   "kernelName": "CausalConv1d_a7280564d3ba44fea98d5ca869636992_10"
+  },
+  {
+   "tilingKey": 12,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "0:1",
+   "kernelName": "CausalConv1d_a7280564d3ba44fea98d5ca869636992_12"
+  },
+  {
+   "tilingKey": 14,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "0:1",
+   "kernelName": "CausalConv1d_a7280564d3ba44fea98d5ca869636992_14"
+  },
+  {
+   "tilingKey": 18,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "0:1",
+   "kernelName": "CausalConv1d_a7280564d3ba44fea98d5ca869636992_18"
+  },
+  {
+   "tilingKey": 20,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "0:1",
+   "kernelName": "CausalConv1d_a7280564d3ba44fea98d5ca869636992_20"
+  },
+  {
+   "tilingKey": 22,
+   "kernelType": "MIX_AIC",
+   "crossCoreSync": 1,
+   "taskRation": "0:1",
+   "kernelName": "CausalConv1d_a7280564d3ba44fea98d5ca869636992_22"
+  }
+ ],
+ "taskRation": "tilingKey",
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "CausalConv1d/d=0,p=1/27,2/27,2/27,2/27,2",
+   "CausalConv1d/d=0,p=0/27,2/27,2/27,2/27,2",
+   "CausalConv1d/d=1,p=1/27,2/27,2/27,2/27,2",
+   "CausalConv1d/d=1,p=0/27,2/27,2/27,2/27,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "e2e02940e02b3eef59062de22c6b8a813f999169f18c913f26a7b3a80ab9a85f,d8d9e1f14b16f3ff5eb0ca009f0d01f53365bebdecbdc22d3d64fae2e1679f56",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "weight",
+    "index": 1,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "bias",
+    "index": 2,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "convStates",
+    "index": 3,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "queryStartLoc",
+    "index": 4,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "cacheIndices",
+    "index": 5,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "initialStateMode",
+    "index": 6,
+    "dtype": "bool",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   },
+   {
+    "name": "numAcceptedTokens",
+    "index": 7,
+    "dtype": "int32",
+    "format": "ND",
+    "paramType": "optional",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "activationMode",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "padSlotId",
+    "dtype": "int",
+    "value": 0
+   },
+   {
+    "name": "runMode",
+    "dtype": "int",
+    "value": 0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/causal_conv1d/CausalConv1d_a7280564d3ba44fea98d5ca869636992.json"
+}

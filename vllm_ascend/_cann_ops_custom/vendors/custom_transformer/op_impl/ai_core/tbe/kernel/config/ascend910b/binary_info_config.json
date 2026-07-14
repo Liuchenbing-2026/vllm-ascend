@@ -1,0 +1,4285 @@
+{
+  "AddRmsNormBias": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x1",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "x2",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "gamma",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "beta",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "rstd",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "x",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "epsilon"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "AddRmsNormBias/d=0,p=1/0,2/0,2/0,2/0,2/0,2/0,2",
+          "AddRmsNormBias/d=0,p=0/0,2/0,2/0,2/0,2/0,2/0,2",
+          "AddRmsNormBias/d=1,p=1/0,2/0,2/0,2/0,2/0,2/0,2",
+          "AddRmsNormBias/d=1,p=0/0,2/0,2/0,2/0,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/add_rms_norm_bias/AddRmsNormBias_19e35017264aa50680f35d13d8badd71.o",
+        "jsonPath": "ascend910b/add_rms_norm_bias/AddRmsNormBias_19e35017264aa50680f35d13d8badd71.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "AddRmsNormBias/d=0,p=1/27,2/27,2/27,2/27,2/0,2/27,2",
+          "AddRmsNormBias/d=0,p=0/27,2/27,2/27,2/27,2/0,2/27,2",
+          "AddRmsNormBias/d=1,p=1/27,2/27,2/27,2/27,2/0,2/27,2",
+          "AddRmsNormBias/d=1,p=0/27,2/27,2/27,2/27,2/0,2/27,2"
+        ],
+        "binPath": "ascend910b/add_rms_norm_bias/AddRmsNormBias_352d2859a07d64c080e8dfc836d9897f.o",
+        "jsonPath": "ascend910b/add_rms_norm_bias/AddRmsNormBias_352d2859a07d64c080e8dfc836d9897f.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "AddRmsNormBias/d=0,p=1/1,2/1,2/1,2/1,2/0,2/1,2",
+          "AddRmsNormBias/d=0,p=0/1,2/1,2/1,2/1,2/0,2/1,2",
+          "AddRmsNormBias/d=1,p=1/1,2/1,2/1,2/1,2/0,2/1,2",
+          "AddRmsNormBias/d=1,p=0/1,2/1,2/1,2/1,2/0,2/1,2"
+        ],
+        "binPath": "ascend910b/add_rms_norm_bias/AddRmsNormBias_6dc9d65746f49267d3d534b1b9ba85f9.o",
+        "jsonPath": "ascend910b/add_rms_norm_bias/AddRmsNormBias_6dc9d65746f49267d3d534b1b9ba85f9.json"
+      }
+    ]
+  },
+  "ApplyTopKTopPCustom": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "sorted_value",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "sorted_indices",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "p",
+          "index": 2,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "k",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ApplyTopKTopPCustom/d=0,p=1/27,2/3,2/27,2",
+          "ApplyTopKTopPCustom/d=0,p=0/27,2/3,2/27,2",
+          "ApplyTopKTopPCustom/d=1,p=1/27,2/3,2/27,2",
+          "ApplyTopKTopPCustom/d=1,p=0/27,2/3,2/27,2"
+        ],
+        "binPath": "ascend910b/apply_top_k_top_p_custom/ApplyTopKTopPCustom_43cebf9614fe7140744842c6d08fb8c3.o",
+        "jsonPath": "ascend910b/apply_top_k_top_p_custom/ApplyTopKTopPCustom_43cebf9614fe7140744842c6d08fb8c3.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ApplyTopKTopPCustom/d=0,p=1/1,2/3,2/1,2",
+          "ApplyTopKTopPCustom/d=0,p=0/1,2/3,2/1,2",
+          "ApplyTopKTopPCustom/d=1,p=1/1,2/3,2/1,2",
+          "ApplyTopKTopPCustom/d=1,p=0/1,2/3,2/1,2"
+        ],
+        "binPath": "ascend910b/apply_top_k_top_p_custom/ApplyTopKTopPCustom_7dda2b5777eadccf83fa601ee81d4452.o",
+        "jsonPath": "ascend910b/apply_top_k_top_p_custom/ApplyTopKTopPCustom_7dda2b5777eadccf83fa601ee81d4452.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ApplyTopKTopPCustom/d=0,p=1/0,2/3,2/0,2",
+          "ApplyTopKTopPCustom/d=0,p=0/0,2/3,2/0,2",
+          "ApplyTopKTopPCustom/d=1,p=1/0,2/3,2/0,2",
+          "ApplyTopKTopPCustom/d=1,p=0/0,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/apply_top_k_top_p_custom/ApplyTopKTopPCustom_ca5d5d3791bee23b52d166083657676f.o",
+        "jsonPath": "ascend910b/apply_top_k_top_p_custom/ApplyTopKTopPCustom_ca5d5d3791bee23b52d166083657676f.json"
+      }
+    ]
+  },
+  "CausalConv1d": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "weight",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "bias",
+          "index": 2,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "convStates",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "queryStartLoc",
+          "index": 4,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cacheIndices",
+          "index": 5,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "initialStateMode",
+          "index": 6,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "numAcceptedTokens",
+          "index": 7,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "activationMode"
+        },
+        {
+          "name": "padSlotId"
+        },
+        {
+          "name": "runMode"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "CausalConv1d/d=0,p=1/1,2/1,2/1,2/1,2",
+          "CausalConv1d/d=0,p=0/1,2/1,2/1,2/1,2",
+          "CausalConv1d/d=1,p=1/1,2/1,2/1,2/1,2",
+          "CausalConv1d/d=1,p=0/1,2/1,2/1,2/1,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/causal_conv1d/CausalConv1d_15db1c32d9e3fdd2cc8be564dbc309f8.o",
+        "jsonPath": "ascend910b/causal_conv1d/CausalConv1d_15db1c32d9e3fdd2cc8be564dbc309f8.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "CausalConv1d/d=0,p=1/27,2/27,2/27,2/27,2",
+          "CausalConv1d/d=0,p=0/27,2/27,2/27,2/27,2",
+          "CausalConv1d/d=1,p=1/27,2/27,2/27,2/27,2",
+          "CausalConv1d/d=1,p=0/27,2/27,2/27,2/27,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/causal_conv1d/CausalConv1d_a7280564d3ba44fea98d5ca869636992.o",
+        "jsonPath": "ascend910b/causal_conv1d/CausalConv1d_a7280564d3ba44fea98d5ca869636992.json"
+      }
+    ]
+  },
+  "ChunkFwdO": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "q",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "k",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "v",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "h",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "g",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cu_seqlens",
+          "index": 5,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "chunk_offsets",
+          "index": 6,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "o",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "scale"
+        },
+        {
+          "name": "chunk_size"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ChunkFwdO/d=0,p=1/1,2/1,2/1,2/1,2/1,2/1,2",
+          "ChunkFwdO/d=0,p=0/1,2/1,2/1,2/1,2/1,2/1,2",
+          "ChunkFwdO/d=1,p=1/1,2/1,2/1,2/1,2/1,2/1,2",
+          "ChunkFwdO/d=1,p=0/1,2/1,2/1,2/1,2/1,2/1,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/chunk_fwd_o/ChunkFwdO_468be93dec9481966e0177cfd499986d.o",
+        "jsonPath": "ascend910b/chunk_fwd_o/ChunkFwdO_468be93dec9481966e0177cfd499986d.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ChunkFwdO/d=0,p=1/27,2/27,2/27,2/27,2/27,2/27,2",
+          "ChunkFwdO/d=0,p=0/27,2/27,2/27,2/27,2/27,2/27,2",
+          "ChunkFwdO/d=1,p=1/27,2/27,2/27,2/27,2/27,2/27,2",
+          "ChunkFwdO/d=1,p=0/27,2/27,2/27,2/27,2/27,2/27,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/chunk_fwd_o/ChunkFwdO_707498c78530a537f88ab9f335b99816.o",
+        "jsonPath": "ascend910b/chunk_fwd_o/ChunkFwdO_707498c78530a537f88ab9f335b99816.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ChunkFwdO/d=0,p=1/1,2/1,2/1,2/1,2/0,2/1,2",
+          "ChunkFwdO/d=0,p=0/1,2/1,2/1,2/1,2/0,2/1,2",
+          "ChunkFwdO/d=1,p=1/1,2/1,2/1,2/1,2/0,2/1,2",
+          "ChunkFwdO/d=1,p=0/1,2/1,2/1,2/1,2/0,2/1,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/chunk_fwd_o/ChunkFwdO_a2e54254f74a60f6f1ddea6fa0e1bf0e.o",
+        "jsonPath": "ascend910b/chunk_fwd_o/ChunkFwdO_a2e54254f74a60f6f1ddea6fa0e1bf0e.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ChunkFwdO/d=0,p=1/27,2/27,2/27,2/27,2/0,2/27,2",
+          "ChunkFwdO/d=0,p=0/27,2/27,2/27,2/27,2/0,2/27,2",
+          "ChunkFwdO/d=1,p=1/27,2/27,2/27,2/27,2/0,2/27,2",
+          "ChunkFwdO/d=1,p=0/27,2/27,2/27,2/27,2/0,2/27,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/chunk_fwd_o/ChunkFwdO_d4fc774159b2651ab5cc995d4a7d029b.o",
+        "jsonPath": "ascend910b/chunk_fwd_o/ChunkFwdO_d4fc774159b2651ab5cc995d4a7d029b.json"
+      }
+    ]
+  },
+  "ChunkGatedDeltaRuleFwdH": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "k",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "w",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "u",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "g",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "inital_state",
+          "index": 4,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cu_seqlens",
+          "index": 5,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "chunk_indices",
+          "index": 6,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "h",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "v_new",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "final_state",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "output_final_state"
+        },
+        {
+          "name": "chunk_size"
+        },
+        {
+          "name": "inital_state_stride0"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ChunkGatedDeltaRuleFwdH/d=0,p=1/1,2/1,2/1,2/1,2/1,2/1,2/1,2",
+          "ChunkGatedDeltaRuleFwdH/d=0,p=0/1,2/1,2/1,2/1,2/1,2/1,2/1,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=1/1,2/1,2/1,2/1,2/1,2/1,2/1,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=0/1,2/1,2/1,2/1,2/1,2/1,2/1,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_0c6d721f948d07280ddb3f78c8ee264f.o",
+        "jsonPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_0c6d721f948d07280ddb3f78c8ee264f.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ChunkGatedDeltaRuleFwdH/d=0,p=1/27,2/27,2/27,2/27,2/27,2/27,2/0,2",
+          "ChunkGatedDeltaRuleFwdH/d=0,p=0/27,2/27,2/27,2/27,2/27,2/27,2/0,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=1/27,2/27,2/27,2/27,2/27,2/27,2/0,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=0/27,2/27,2/27,2/27,2/27,2/27,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_17f9487b3624265312502db640f0e3cb.o",
+        "jsonPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_17f9487b3624265312502db640f0e3cb.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ChunkGatedDeltaRuleFwdH/d=0,p=1/1,2/1,2/1,2/0,2/1,2/1,2/0,2",
+          "ChunkGatedDeltaRuleFwdH/d=0,p=0/1,2/1,2/1,2/0,2/1,2/1,2/0,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=1/1,2/1,2/1,2/0,2/1,2/1,2/0,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=0/1,2/1,2/1,2/0,2/1,2/1,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_7de42a0daa64bba8f188684b09dbd9e6.o",
+        "jsonPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_7de42a0daa64bba8f188684b09dbd9e6.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ChunkGatedDeltaRuleFwdH/d=0,p=1/27,2/27,2/27,2/0,2/27,2/27,2/27,2",
+          "ChunkGatedDeltaRuleFwdH/d=0,p=0/27,2/27,2/27,2/0,2/27,2/27,2/27,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=1/27,2/27,2/27,2/0,2/27,2/27,2/27,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=0/27,2/27,2/27,2/0,2/27,2/27,2/27,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_7e558339de2b775a637749a2f058423b.o",
+        "jsonPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_7e558339de2b775a637749a2f058423b.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ChunkGatedDeltaRuleFwdH/d=0,p=1/1,2/1,2/1,2/0,2/1,2/1,2/1,2",
+          "ChunkGatedDeltaRuleFwdH/d=0,p=0/1,2/1,2/1,2/0,2/1,2/1,2/1,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=1/1,2/1,2/1,2/0,2/1,2/1,2/1,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=0/1,2/1,2/1,2/0,2/1,2/1,2/1,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_c90ea72048d28d09e09d67b3c1510fd4.o",
+        "jsonPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_c90ea72048d28d09e09d67b3c1510fd4.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ChunkGatedDeltaRuleFwdH/d=0,p=1/27,2/27,2/27,2/27,2/27,2/27,2/27,2",
+          "ChunkGatedDeltaRuleFwdH/d=0,p=0/27,2/27,2/27,2/27,2/27,2/27,2/27,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=1/27,2/27,2/27,2/27,2/27,2/27,2/27,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=0/27,2/27,2/27,2/27,2/27,2/27,2/27,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_d0451c0b964d491017d89040847e9615.o",
+        "jsonPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_d0451c0b964d491017d89040847e9615.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ChunkGatedDeltaRuleFwdH/d=0,p=1/27,2/27,2/27,2/0,2/27,2/27,2/0,2",
+          "ChunkGatedDeltaRuleFwdH/d=0,p=0/27,2/27,2/27,2/0,2/27,2/27,2/0,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=1/27,2/27,2/27,2/0,2/27,2/27,2/0,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=0/27,2/27,2/27,2/0,2/27,2/27,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_da7b8be16b2775c80bb697533cd61607.o",
+        "jsonPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_da7b8be16b2775c80bb697533cd61607.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ChunkGatedDeltaRuleFwdH/d=0,p=1/1,2/1,2/1,2/1,2/1,2/1,2/0,2",
+          "ChunkGatedDeltaRuleFwdH/d=0,p=0/1,2/1,2/1,2/1,2/1,2/1,2/0,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=1/1,2/1,2/1,2/1,2/1,2/1,2/0,2",
+          "ChunkGatedDeltaRuleFwdH/d=1,p=0/1,2/1,2/1,2/1,2/1,2/1,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_e0b93aa62ba111fcf82ba1c4780d7ea1.o",
+        "jsonPath": "ascend910b/chunk_gated_delta_rule_fwd_h/ChunkGatedDeltaRuleFwdH_e0b93aa62ba111fcf82ba1c4780d7ea1.json"
+      }
+    ]
+  },
+  "Compressor": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "wkv",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "wgate",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "state_cache",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "ape",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "norm_weight",
+          "index": 5,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "rope_sin",
+          "index": 6,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "rope_cos",
+          "index": 7,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "state_block_table",
+          "index": 8,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cu_seqlens",
+          "index": 9,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "seqused",
+          "index": 10,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "start_pos",
+          "index": 11,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "cmp_kv",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "state_cache",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "rope_head_dim"
+        },
+        {
+          "name": "cmp_ratio"
+        },
+        {
+          "name": "coff"
+        },
+        {
+          "name": "norm_eps"
+        },
+        {
+          "name": "rotary_mode"
+        },
+        {
+          "name": "cache_mode"
+        },
+        {
+          "name": "state_cache_stride_dim0"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "Compressor/d=0,p=1/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2",
+          "Compressor/d=0,p=0/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2",
+          "Compressor/d=1,p=1/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2",
+          "Compressor/d=1,p=0/1,2/1,2/1,2/0,2/0,2/1,2/1,2/1,2/1,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/compressor/Compressor_49507def9d8354a82f6afebe5354ffab.o",
+        "jsonPath": "ascend910b/compressor/Compressor_49507def9d8354a82f6afebe5354ffab.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "Compressor/d=0,p=1/27,2/27,2/27,2/0,2/0,2/27,2/0,2/0,2/27,2/0,2",
+          "Compressor/d=0,p=0/27,2/27,2/27,2/0,2/0,2/27,2/0,2/0,2/27,2/0,2",
+          "Compressor/d=1,p=1/27,2/27,2/27,2/0,2/0,2/27,2/0,2/0,2/27,2/0,2",
+          "Compressor/d=1,p=0/27,2/27,2/27,2/0,2/0,2/27,2/0,2/0,2/27,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/compressor/Compressor_5d0f45757e9591d6e00196bb7912baa5.o",
+        "jsonPath": "ascend910b/compressor/Compressor_5d0f45757e9591d6e00196bb7912baa5.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "Compressor/d=0,p=1/27,2/27,2/27,2/0,2/0,2/27,2/27,2/27,2/27,2/0,2",
+          "Compressor/d=0,p=0/27,2/27,2/27,2/0,2/0,2/27,2/27,2/27,2/27,2/0,2",
+          "Compressor/d=1,p=1/27,2/27,2/27,2/0,2/0,2/27,2/27,2/27,2/27,2/0,2",
+          "Compressor/d=1,p=0/27,2/27,2/27,2/0,2/0,2/27,2/27,2/27,2/27,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/compressor/Compressor_9549d63a2f1a939012a18a8fa94a8636.o",
+        "jsonPath": "ascend910b/compressor/Compressor_9549d63a2f1a939012a18a8fa94a8636.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "Compressor/d=0,p=1/1,2/1,2/1,2/0,2/0,2/1,2/0,2/0,2/1,2/0,2",
+          "Compressor/d=0,p=0/1,2/1,2/1,2/0,2/0,2/1,2/0,2/0,2/1,2/0,2",
+          "Compressor/d=1,p=1/1,2/1,2/1,2/0,2/0,2/1,2/0,2/0,2/1,2/0,2",
+          "Compressor/d=1,p=0/1,2/1,2/1,2/0,2/0,2/1,2/0,2/0,2/1,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/compressor/Compressor_dbfc38c326010f867e98962cf4de1ac9.o",
+        "jsonPath": "ascend910b/compressor/Compressor_dbfc38c326010f867e98962cf4de1ac9.json"
+      }
+    ]
+  },
+  "CompressorMetadata": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "ropeCos",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "ropeSin",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cuSeqlens",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "startPos",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "kvBlockTable",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "compressCos",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "compressSin",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "slotMapping",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "kvBlockSize"
+        },
+        {
+          "name": "slotMappingFormat"
+        },
+        {
+          "name": "cmpRatio"
+        },
+        {
+          "name": "actualNumReqs"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "CompressorMetadata/d=0,p=1/1,2/1,2/3,2/3,2/3,2/1,2/1,2/3,2",
+          "CompressorMetadata/d=0,p=0/1,2/1,2/3,2/3,2/3,2/1,2/1,2/3,2",
+          "CompressorMetadata/d=1,p=1/1,2/1,2/3,2/3,2/3,2/1,2/1,2/3,2",
+          "CompressorMetadata/d=1,p=0/1,2/1,2/3,2/3,2/3,2/1,2/1,2/3,2"
+        ],
+        "binPath": "ascend910b/compressor_metadata/CompressorMetadata_07fa79edac355883dd17d95a898804ec.o",
+        "jsonPath": "ascend910b/compressor_metadata/CompressorMetadata_07fa79edac355883dd17d95a898804ec.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "CompressorMetadata/d=0,p=1/0,2/0,2/3,2/3,2/3,2/0,2/0,2/3,2",
+          "CompressorMetadata/d=0,p=0/0,2/0,2/3,2/3,2/3,2/0,2/0,2/3,2",
+          "CompressorMetadata/d=1,p=1/0,2/0,2/3,2/3,2/3,2/0,2/0,2/3,2",
+          "CompressorMetadata/d=1,p=0/0,2/0,2/3,2/3,2/3,2/0,2/0,2/3,2"
+        ],
+        "binPath": "ascend910b/compressor_metadata/CompressorMetadata_152c4baeee722882a4f94b479159b76c.o",
+        "jsonPath": "ascend910b/compressor_metadata/CompressorMetadata_152c4baeee722882a4f94b479159b76c.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "CompressorMetadata/d=0,p=1/27,2/27,2/3,2/3,2/3,2/27,2/27,2/3,2",
+          "CompressorMetadata/d=0,p=0/27,2/27,2/3,2/3,2/3,2/27,2/27,2/3,2",
+          "CompressorMetadata/d=1,p=1/27,2/27,2/3,2/3,2/3,2/27,2/27,2/3,2",
+          "CompressorMetadata/d=1,p=0/27,2/27,2/3,2/3,2/3,2/27,2/27,2/3,2"
+        ],
+        "binPath": "ascend910b/compressor_metadata/CompressorMetadata_8ccf83a3be9b66d739e408b3044ff751.o",
+        "jsonPath": "ascend910b/compressor_metadata/CompressorMetadata_8ccf83a3be9b66d739e408b3044ff751.json"
+      }
+    ]
+  },
+  "CopyAndExpandEagleInputs": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "target_token_ids",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "target_positions",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "next_token_ids",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "query_start_loc",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "query_end_loc",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out_input_ids",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "out_positions",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "out_is_rejected_token_mask",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "out_is_masked_token_mask",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "out_new_token_indices",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "out_hidden_state_mapping",
+          "index": 5,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "padding_token_id"
+        },
+        {
+          "name": "parallel_drafting_token_id"
+        },
+        {
+          "name": "num_padding_slots_per_request"
+        },
+        {
+          "name": "shift_input_ids"
+        },
+        {
+          "name": "total_input_tokens"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "CopyAndExpandEagleInputs/d=0,p=1/3,2/3,2/3,2/3,2/3,2/3,2/3,2/2,2/2,2/3,2/3,2",
+          "CopyAndExpandEagleInputs/d=0,p=0/3,2/3,2/3,2/3,2/3,2/3,2/3,2/2,2/2,2/3,2/3,2",
+          "CopyAndExpandEagleInputs/d=1,p=1/3,2/3,2/3,2/3,2/3,2/3,2/3,2/2,2/2,2/3,2/3,2",
+          "CopyAndExpandEagleInputs/d=1,p=0/3,2/3,2/3,2/3,2/3,2/3,2/3,2/2,2/2,2/3,2/3,2"
+        ],
+        "binPath": "ascend910b/copy_and_expand_eagle_inputs/CopyAndExpandEagleInputs_a1c7dba6692aeefe97a362e92012ea35.o",
+        "jsonPath": "ascend910b/copy_and_expand_eagle_inputs/CopyAndExpandEagleInputs_a1c7dba6692aeefe97a362e92012ea35.json"
+      }
+    ]
+  },
+  "DequantSwigluQuant": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "weight_scale",
+          "index": 1,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "activation_scale",
+          "index": 2,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "bias",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "quant_scale",
+          "index": 4,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "quant_offset",
+          "index": 5,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "group_index",
+          "index": 6,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "scale",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "activate_left"
+        },
+        {
+          "name": "quant_mode"
+        },
+        {
+          "name": "dst_type"
+        },
+        {
+          "name": "round_mode"
+        },
+        {
+          "name": "activate_dim"
+        },
+        {
+          "name": "swiglu_mode"
+        },
+        {
+          "name": "clamp_limit"
+        },
+        {
+          "name": "glu_alpha"
+        },
+        {
+          "name": "glu_bias"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "DequantSwigluQuant/d=0,p=1/1,2/2,2/0,2",
+          "DequantSwigluQuant/d=0,p=0/1,2/2,2/0,2",
+          "DequantSwigluQuant/d=1,p=1/1,2/2,2/0,2",
+          "DequantSwigluQuant/d=1,p=0/1,2/2,2/0,2"
+        ],
+        "binPath": "ascend910b/dequant_swiglu_quant/DequantSwigluQuant_09bf79eebc60865b3c4944b2b4fa3e16.o",
+        "jsonPath": "ascend910b/dequant_swiglu_quant/DequantSwigluQuant_09bf79eebc60865b3c4944b2b4fa3e16.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "DequantSwigluQuant/d=0,p=1/3,2/2,2/0,2",
+          "DequantSwigluQuant/d=0,p=0/3,2/2,2/0,2",
+          "DequantSwigluQuant/d=1,p=1/3,2/2,2/0,2",
+          "DequantSwigluQuant/d=1,p=0/3,2/2,2/0,2"
+        ],
+        "binPath": "ascend910b/dequant_swiglu_quant/DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294.o",
+        "jsonPath": "ascend910b/dequant_swiglu_quant/DequantSwigluQuant_5aec45b26e36306ef5a8aab7ae151294.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "DequantSwigluQuant/d=0,p=1/27,2/2,2/0,2",
+          "DequantSwigluQuant/d=0,p=0/27,2/2,2/0,2",
+          "DequantSwigluQuant/d=1,p=1/27,2/2,2/0,2",
+          "DequantSwigluQuant/d=1,p=0/27,2/2,2/0,2"
+        ],
+        "binPath": "ascend910b/dequant_swiglu_quant/DequantSwigluQuant_dfb791658a1095653daca5bf33e5c5a8.o",
+        "jsonPath": "ascend910b/dequant_swiglu_quant/DequantSwigluQuant_dfb791658a1095653daca5bf33e5c5a8.json"
+      }
+    ]
+  },
+  "FusedGdnGating": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "a_log",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "a",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "b",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "dt_bias",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "g",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "beta_output",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "beta"
+        },
+        {
+          "name": "threshold"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "FusedGdnGating/d=0,p=1/27,2/1,2/1,2/27,2/0,2/1,2",
+          "FusedGdnGating/d=0,p=0/27,2/1,2/1,2/27,2/0,2/1,2",
+          "FusedGdnGating/d=1,p=1/27,2/1,2/1,2/27,2/0,2/1,2",
+          "FusedGdnGating/d=1,p=0/27,2/1,2/1,2/27,2/0,2/1,2"
+        ],
+        "binPath": "ascend910b/fused_gdn_gating/FusedGdnGating_03a3c75b3b130394625c7ffcade6e98c.o",
+        "jsonPath": "ascend910b/fused_gdn_gating/FusedGdnGating_03a3c75b3b130394625c7ffcade6e98c.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "FusedGdnGating/d=0,p=1/1,2/1,2/1,2/1,2/0,2/1,2",
+          "FusedGdnGating/d=0,p=0/1,2/1,2/1,2/1,2/0,2/1,2",
+          "FusedGdnGating/d=1,p=1/1,2/1,2/1,2/1,2/0,2/1,2",
+          "FusedGdnGating/d=1,p=0/1,2/1,2/1,2/1,2/0,2/1,2"
+        ],
+        "binPath": "ascend910b/fused_gdn_gating/FusedGdnGating_4fcaf3b233507ddbd17b107d152c5da4.o",
+        "jsonPath": "ascend910b/fused_gdn_gating/FusedGdnGating_4fcaf3b233507ddbd17b107d152c5da4.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "FusedGdnGating/d=0,p=1/1,2/27,2/27,2/1,2/0,2/27,2",
+          "FusedGdnGating/d=0,p=0/1,2/27,2/27,2/1,2/0,2/27,2",
+          "FusedGdnGating/d=1,p=1/1,2/27,2/27,2/1,2/0,2/27,2",
+          "FusedGdnGating/d=1,p=0/1,2/27,2/27,2/1,2/0,2/27,2"
+        ],
+        "binPath": "ascend910b/fused_gdn_gating/FusedGdnGating_94bdbaa05f93837113ccdaee00bfbbae.o",
+        "jsonPath": "ascend910b/fused_gdn_gating/FusedGdnGating_94bdbaa05f93837113ccdaee00bfbbae.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "FusedGdnGating/d=0,p=1/27,2/27,2/27,2/27,2/0,2/27,2",
+          "FusedGdnGating/d=0,p=0/27,2/27,2/27,2/27,2/0,2/27,2",
+          "FusedGdnGating/d=1,p=1/27,2/27,2/27,2/27,2/0,2/27,2",
+          "FusedGdnGating/d=1,p=0/27,2/27,2/27,2/27,2/0,2/27,2"
+        ],
+        "binPath": "ascend910b/fused_gdn_gating/FusedGdnGating_9b62f8616ffe6659784bbf6362c67ced.o",
+        "jsonPath": "ascend910b/fused_gdn_gating/FusedGdnGating_9b62f8616ffe6659784bbf6362c67ced.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "FusedGdnGating/d=0,p=1/0,2/1,2/1,2/0,2/0,2/1,2",
+          "FusedGdnGating/d=0,p=0/0,2/1,2/1,2/0,2/0,2/1,2",
+          "FusedGdnGating/d=1,p=1/0,2/1,2/1,2/0,2/0,2/1,2",
+          "FusedGdnGating/d=1,p=0/0,2/1,2/1,2/0,2/0,2/1,2"
+        ],
+        "binPath": "ascend910b/fused_gdn_gating/FusedGdnGating_ac8dec8c6c58db56280b7cf0496e8ef0.o",
+        "jsonPath": "ascend910b/fused_gdn_gating/FusedGdnGating_ac8dec8c6c58db56280b7cf0496e8ef0.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "FusedGdnGating/d=0,p=1/0,2/27,2/27,2/0,2/0,2/27,2",
+          "FusedGdnGating/d=0,p=0/0,2/27,2/27,2/0,2/0,2/27,2",
+          "FusedGdnGating/d=1,p=1/0,2/27,2/27,2/0,2/0,2/27,2",
+          "FusedGdnGating/d=1,p=0/0,2/27,2/27,2/0,2/0,2/27,2"
+        ],
+        "binPath": "ascend910b/fused_gdn_gating/FusedGdnGating_bfc89caf1025c7a3deee6332c92bd039.o",
+        "jsonPath": "ascend910b/fused_gdn_gating/FusedGdnGating_bfc89caf1025c7a3deee6332c92bd039.json"
+      }
+    ]
+  },
+  "GroupedMatmulSwigluQuant": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "nd_agnostic"
+        },
+        {
+          "name": "weight",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "nd_agnostic"
+        },
+        {
+          "name": "weight_scale",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "nd_agnostic"
+        },
+        {
+          "name": "x_scale",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "nd_agnostic"
+        },
+        {
+          "name": "weight_assistance_matrix",
+          "index": 4,
+          "paramType": "optional",
+          "formatMode": "nd_agnostic"
+        },
+        {
+          "name": "group_list",
+          "index": 5,
+          "paramType": "required",
+          "formatMode": "nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "nd_agnostic"
+        },
+        {
+          "name": "y_scale",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "is_enable_weight_assistance_matrix"
+        },
+        {
+          "name": "dequant_mode"
+        },
+        {
+          "name": "limited"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuant/d=0,p=1/2,2/29,29/10,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=0,p=0/2,2/29,29/10,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=1,p=1/2,2/29,29/10,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=1,p=0/2,2/29,29/10,2/0,2/9,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant/GroupedMatmulSwigluQuant_15ff717a8eb3523c8bc096cdb5f5f6f2.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant/GroupedMatmulSwigluQuant_15ff717a8eb3523c8bc096cdb5f5f6f2.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuant/d=0,p=1/2,2/2,29/0,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=0,p=0/2,2/2,29/0,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=1,p=1/2,2/2,29/0,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=1,p=0/2,2/2,29/0,2/0,2/9,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant/GroupedMatmulSwigluQuant_2d40d3cceaa71c6a5dee680a6edfb0f0.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant/GroupedMatmulSwigluQuant_2d40d3cceaa71c6a5dee680a6edfb0f0.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuant/d=0,p=1/2,2/2,29/1,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=0,p=0/2,2/2,29/1,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=1,p=1/2,2/2,29/1,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=1,p=0/2,2/2,29/1,2/0,2/9,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant/GroupedMatmulSwigluQuant_3f52a669596f24fb2397ef3a50fe6b81.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant/GroupedMatmulSwigluQuant_3f52a669596f24fb2397ef3a50fe6b81.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuant/d=0,p=1/2,2/2,29/27,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=0,p=0/2,2/2,29/27,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=1,p=1/2,2/2,29/27,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=1,p=0/2,2/2,29/27,2/0,2/9,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant/GroupedMatmulSwigluQuant_47bb47ee8c58c20098408d49a085403b.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant/GroupedMatmulSwigluQuant_47bb47ee8c58c20098408d49a085403b.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuant/d=0,p=1/2,2/29,2/10,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=0,p=0/2,2/29,2/10,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=1,p=1/2,2/29,2/10,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuant/d=1,p=0/2,2/29,2/10,2/0,2/9,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant/GroupedMatmulSwigluQuant_7e6c538cc23e894c1aa1f9249f370d8f.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant/GroupedMatmulSwigluQuant_7e6c538cc23e894c1aa1f9249f370d8f.json"
+      }
+    ]
+  },
+  "GroupedMatmulSwigluQuantV2": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "x_scale",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "group_list",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        [
+          {
+            "name": "weight",
+            "index": 3,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight_scale",
+            "index": 4,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight_assist_matrix",
+            "index": 5,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        {
+          "name": "bias",
+          "index": 6,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "smooth_scale",
+          "index": 7,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "y_scale",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "dequant_mode"
+        },
+        {
+          "name": "dequant_dtype"
+        },
+        {
+          "name": "quant_mode"
+        },
+        {
+          "name": "quant_dtype"
+        },
+        {
+          "name": "transpose_weight"
+        },
+        {
+          "name": "group_list_type"
+        },
+        {
+          "name": "tuning_config"
+        },
+        {
+          "name": "swiglu_limit"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantV2/d=0,p=1/2,2/0,2/9,2/29,2/10,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=0,p=0/2,2/0,2/9,2/29,2/10,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=1/2,2/0,2/9,2/29,2/10,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=0/2,2/0,2/9,2/29,2/10,2/0,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_05bce43839b9668f79eae747781916ce.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_05bce43839b9668f79eae747781916ce.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantV2/d=0,p=1/2,2/0,2/9,2/2,29/27,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=0,p=0/2,2/0,2/9,2/2,29/27,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=1/2,2/0,2/9,2/2,29/27,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=0/2,2/0,2/9,2/2,29/27,2/0,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_1fb9c50aafc2c5d1995ebe9c37504195.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_1fb9c50aafc2c5d1995ebe9c37504195.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantV2/d=0,p=1/29,2/0,2/9,2/29,29/10,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=0,p=0/29,2/0,2/9,2/29,29/10,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=1/29,2/0,2/9,2/29,29/10,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=0/29,2/0,2/9,2/29,29/10,2/0,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_2df98c64d3c1eec72a45b339e9d64480.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_2df98c64d3c1eec72a45b339e9d64480.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantV2/d=0,p=1/2,2/0,2/9,2/2,29/0,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=0,p=0/2,2/0,2/9,2/2,29/0,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=1/2,2/0,2/9,2/2,29/0,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=0/2,2/0,2/9,2/2,29/0,2/0,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_9c59f840d4e5c7d23212a04659ad060d.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_9c59f840d4e5c7d23212a04659ad060d.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantV2/d=0,p=1/2,2/0,2/9,2/2,29/1,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=0,p=0/2,2/0,2/9,2/2,29/1,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=1/2,2/0,2/9,2/2,29/1,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=0/2,2/0,2/9,2/2,29/1,2/0,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_a6b1e5f1163e9d3a18177420ab649e87.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_a6b1e5f1163e9d3a18177420ab649e87.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantV2/d=0,p=1/29,2/0,2/9,2/29,2/10,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=0,p=0/29,2/0,2/9,2/29,2/10,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=1/29,2/0,2/9,2/29,2/10,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=0/29,2/0,2/9,2/29,2/10,2/0,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_ad8b7035042860380f60ef7afd0d2076.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_ad8b7035042860380f60ef7afd0d2076.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantV2/d=0,p=1/2,2/0,2/9,2/29,29/10,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=0,p=0/2,2/0,2/9,2/29,29/10,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=1/2,2/0,2/9,2/29,29/10,2/0,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantV2/d=1,p=0/2,2/0,2/9,2/29,29/10,2/0,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_fa3d6d3de6e1f32e170e39d2ddd3a20e.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_v2/GroupedMatmulSwigluQuantV2_fa3d6d3de6e1f32e170e39d2ddd3a20e.json"
+      }
+    ]
+  },
+  "GroupedMatmulSwigluQuantWeightNzTensorList": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        [
+          {
+            "name": "weight",
+            "index": 1,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight_scale",
+            "index": 2,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        {
+          "name": "x_scale",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "group_list",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "y_scale",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "swiglu_limit"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=0,p=1/2,2/2,29/1,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=0,p=0/2,2/2,29/1,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=1,p=1/2,2/2,29/1,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=1,p=0/2,2/2,29/1,2/0,2/9,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_weight_nz_tensor_list/GroupedMatmulSwigluQuantWeightNzTensorList_23493d8faa76b305119fa7efb609f40f.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_weight_nz_tensor_list/GroupedMatmulSwigluQuantWeightNzTensorList_23493d8faa76b305119fa7efb609f40f.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=0,p=1/2,2/2,29/27,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=0,p=0/2,2/2,29/27,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=1,p=1/2,2/2,29/27,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=1,p=0/2,2/2,29/27,2/0,2/9,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_weight_nz_tensor_list/GroupedMatmulSwigluQuantWeightNzTensorList_3192847a5b300d42c55aec4fda067b21.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_weight_nz_tensor_list/GroupedMatmulSwigluQuantWeightNzTensorList_3192847a5b300d42c55aec4fda067b21.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=0,p=1/2,2/2,29/0,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=0,p=0/2,2/2,29/0,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=1,p=1/2,2/2,29/0,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=1,p=0/2,2/2,29/0,2/0,2/9,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_weight_nz_tensor_list/GroupedMatmulSwigluQuantWeightNzTensorList_db8e5a830b9da97ada83041bd606f1fd.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_weight_nz_tensor_list/GroupedMatmulSwigluQuantWeightNzTensorList_db8e5a830b9da97ada83041bd606f1fd.json"
+      }
+    ]
+  },
+  "HammingDistTopK": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "query",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key_compressed",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "k",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "seq_len",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "chunk_size",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key_block_table",
+          "index": 5,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "indices_in",
+          "index": 6,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key_compressed_rope",
+          "index": 7,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "mask",
+          "index": 8,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "indices",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "max_seq_len"
+        },
+        {
+          "name": "sink"
+        },
+        {
+          "name": "recent"
+        },
+        {
+          "name": "support_offload"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "HammingDistTopK/d=0,p=1/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2",
+          "HammingDistTopK/d=0,p=0/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2",
+          "HammingDistTopK/d=1,p=1/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2",
+          "HammingDistTopK/d=1,p=0/4,2/4,2/3,2/3,2/3,2/3,2/3,2/3,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/hamming_dist_top_k/HammingDistTopK_e03a26579145abd15da947d04974f580.o",
+        "jsonPath": "ascend910b/hamming_dist_top_k/HammingDistTopK_e03a26579145abd15da947d04974f580.json"
+      }
+    ]
+  },
+  "HcPost": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "residual",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "post",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "comb",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/1,2/1,2/27,2/27,2/1,2",
+          "HcPost/d=0,p=0/1,2/1,2/27,2/27,2/1,2",
+          "HcPost/d=1,p=1/1,2/1,2/27,2/27,2/1,2",
+          "HcPost/d=1,p=0/1,2/1,2/27,2/27,2/1,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_2e5303ac4dede76effa18248fd20ec57.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_2e5303ac4dede76effa18248fd20ec57.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/0,2/0,2/27,2/27,2/0,2",
+          "HcPost/d=0,p=0/0,2/0,2/27,2/27,2/0,2",
+          "HcPost/d=1,p=1/0,2/0,2/27,2/27,2/0,2",
+          "HcPost/d=1,p=0/0,2/0,2/27,2/27,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_be2dcafbf0c8af390bf57177141bf669.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_be2dcafbf0c8af390bf57177141bf669.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/27,2/27,2/0,2/0,2/27,2",
+          "HcPost/d=0,p=0/27,2/27,2/0,2/0,2/27,2",
+          "HcPost/d=1,p=1/27,2/27,2/0,2/0,2/27,2",
+          "HcPost/d=1,p=0/27,2/27,2/0,2/0,2/27,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_d2fe6614722b27afa6f8d964c215447e.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_d2fe6614722b27afa6f8d964c215447e.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/0,2/0,2/1,2/1,2/0,2",
+          "HcPost/d=0,p=0/0,2/0,2/1,2/1,2/0,2",
+          "HcPost/d=1,p=1/0,2/0,2/1,2/1,2/0,2",
+          "HcPost/d=1,p=0/0,2/0,2/1,2/1,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_d7d8f653fdae4af65c2dc961400185bd.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_d7d8f653fdae4af65c2dc961400185bd.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/0,2/0,2/0,2/0,2/0,2",
+          "HcPost/d=0,p=0/0,2/0,2/0,2/0,2/0,2",
+          "HcPost/d=1,p=1/0,2/0,2/0,2/0,2/0,2",
+          "HcPost/d=1,p=0/0,2/0,2/0,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_d980ed89966470aa6bbdc62419309139.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_d980ed89966470aa6bbdc62419309139.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/1,2/1,2/0,2/0,2/1,2",
+          "HcPost/d=0,p=0/1,2/1,2/0,2/0,2/1,2",
+          "HcPost/d=1,p=1/1,2/1,2/0,2/0,2/1,2",
+          "HcPost/d=1,p=0/1,2/1,2/0,2/0,2/1,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_dffc3b13070cacc52a1006b48c22063b.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_dffc3b13070cacc52a1006b48c22063b.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/27,2/27,2/27,2/27,2/27,2",
+          "HcPost/d=0,p=0/27,2/27,2/27,2/27,2/27,2",
+          "HcPost/d=1,p=1/27,2/27,2/27,2/27,2/27,2",
+          "HcPost/d=1,p=0/27,2/27,2/27,2/27,2/27,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_e2220bcfb1da2706e99e1c9e5e9ab203.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_e2220bcfb1da2706e99e1c9e5e9ab203.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/1,2/1,2/1,2/1,2/1,2",
+          "HcPost/d=0,p=0/1,2/1,2/1,2/1,2/1,2",
+          "HcPost/d=1,p=1/1,2/1,2/1,2/1,2/1,2",
+          "HcPost/d=1,p=0/1,2/1,2/1,2/1,2/1,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_e4c4ea08fc7875f3275751adc399868d.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_e4c4ea08fc7875f3275751adc399868d.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPost/d=0,p=1/27,2/27,2/1,2/1,2/27,2",
+          "HcPost/d=0,p=0/27,2/27,2/1,2/1,2/27,2",
+          "HcPost/d=1,p=1/27,2/27,2/1,2/1,2/27,2",
+          "HcPost/d=1,p=0/27,2/27,2/1,2/1,2/27,2"
+        ],
+        "binPath": "ascend910b/hc_post/HcPost_f8d6568802bb9bf815c79fd66277cb55.o",
+        "jsonPath": "ascend910b/hc_post/HcPost_f8d6568802bb9bf815c79fd66277cb55.json"
+      }
+    ]
+  },
+  "HcPre": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "hc_fn",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "hc_scale",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "hc_base",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "post",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "comb_frag",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "hc_mult"
+        },
+        {
+          "name": "hc_sinkhorn_iters"
+        },
+        {
+          "name": "hc_eps"
+        },
+        {
+          "name": "norm_eps"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "HcPre/d=0,p=1/27,2/0,2/0,2/0,2/27,2/0,2/0,2",
+          "HcPre/d=0,p=0/27,2/0,2/0,2/0,2/27,2/0,2/0,2",
+          "HcPre/d=1,p=1/27,2/0,2/0,2/0,2/27,2/0,2/0,2",
+          "HcPre/d=1,p=0/27,2/0,2/0,2/0,2/27,2/0,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/hc_pre/HcPre_c12a9d608e5abdbd1728e849208025ff.o",
+        "jsonPath": "ascend910b/hc_pre/HcPre_c12a9d608e5abdbd1728e849208025ff.json"
+      }
+    ]
+  },
+  "HcPreInvRms": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "epsilon"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPreInvRms/d=0,p=1/27,2/0,2",
+          "HcPreInvRms/d=0,p=0/27,2/0,2",
+          "HcPreInvRms/d=1,p=1/27,2/0,2",
+          "HcPreInvRms/d=1,p=0/27,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_698bcb6f52ef8589299a756885a2af28.o",
+        "jsonPath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_698bcb6f52ef8589299a756885a2af28.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPreInvRms/d=0,p=1/0,2/0,2",
+          "HcPreInvRms/d=0,p=0/0,2/0,2",
+          "HcPreInvRms/d=1,p=1/0,2/0,2",
+          "HcPreInvRms/d=1,p=0/0,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_a435f521e67e2ce9c8ba6d483e029bbb.o",
+        "jsonPath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_a435f521e67e2ce9c8ba6d483e029bbb.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPreInvRms/d=0,p=1/1,2/0,2",
+          "HcPreInvRms/d=0,p=0/1,2/0,2",
+          "HcPreInvRms/d=1,p=1/1,2/0,2",
+          "HcPreInvRms/d=1,p=0/1,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_ee172a296a08c53c8f0a195044de3a1c.o",
+        "jsonPath": "ascend910b/hc_pre_inv_rms/HcPreInvRms_ee172a296a08c53c8f0a195044de3a1c.json"
+      }
+    ]
+  },
+  "HcPreSinkhorn": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "mixes",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "rsqrt",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "hc_scale",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "hc_base",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "x",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "post",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "comb_frag",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "hc_mult"
+        },
+        {
+          "name": "hc_sinkhorn_iters"
+        },
+        {
+          "name": "hc_eps"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "HcPreSinkhorn/d=0,p=1/0,2/0,2/0,2/0,2/27,2/27,2/0,2/0,2",
+          "HcPreSinkhorn/d=0,p=0/0,2/0,2/0,2/0,2/27,2/27,2/0,2/0,2",
+          "HcPreSinkhorn/d=1,p=1/0,2/0,2/0,2/0,2/27,2/27,2/0,2/0,2",
+          "HcPreSinkhorn/d=1,p=0/0,2/0,2/0,2/0,2/27,2/27,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/hc_pre_sinkhorn/HcPreSinkhorn_20e241df439b4db3f63d743f6a75861a.o",
+        "jsonPath": "ascend910b/hc_pre_sinkhorn/HcPreSinkhorn_20e241df439b4db3f63d743f6a75861a.json"
+      }
+    ]
+  },
+  "InplacePartialRotaryMul": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cos",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "sin",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "mode"
+        },
+        {
+          "name": "partial_slice"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "InplacePartialRotaryMul/d=0,p=1/1,2/0,2/0,2/1,2",
+          "InplacePartialRotaryMul/d=0,p=0/1,2/0,2/0,2/1,2",
+          "InplacePartialRotaryMul/d=1,p=1/1,2/0,2/0,2/1,2",
+          "InplacePartialRotaryMul/d=1,p=0/1,2/0,2/0,2/1,2"
+        ],
+        "binPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_6ff5dddd25b5de53ba4d1e4df2975bc9.o",
+        "jsonPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_6ff5dddd25b5de53ba4d1e4df2975bc9.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "InplacePartialRotaryMul/d=0,p=1/0,2/0,2/0,2/0,2",
+          "InplacePartialRotaryMul/d=0,p=0/0,2/0,2/0,2/0,2",
+          "InplacePartialRotaryMul/d=1,p=1/0,2/0,2/0,2/0,2",
+          "InplacePartialRotaryMul/d=1,p=0/0,2/0,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_82896c5db0faaeb44e3eacbada73642f.o",
+        "jsonPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_82896c5db0faaeb44e3eacbada73642f.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "InplacePartialRotaryMul/d=0,p=1/27,2/27,2/27,2/27,2",
+          "InplacePartialRotaryMul/d=0,p=0/27,2/27,2/27,2/27,2",
+          "InplacePartialRotaryMul/d=1,p=1/27,2/27,2/27,2/27,2",
+          "InplacePartialRotaryMul/d=1,p=0/27,2/27,2/27,2/27,2"
+        ],
+        "binPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4.o",
+        "jsonPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_9a8ff82cc6ecbe02ebd212c4702181f4.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "InplacePartialRotaryMul/d=0,p=1/1,2/1,2/1,2/1,2",
+          "InplacePartialRotaryMul/d=0,p=0/1,2/1,2/1,2/1,2",
+          "InplacePartialRotaryMul/d=1,p=1/1,2/1,2/1,2/1,2",
+          "InplacePartialRotaryMul/d=1,p=0/1,2/1,2/1,2/1,2"
+        ],
+        "binPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_b16e6010eb7f3153591301274510db14.o",
+        "jsonPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_b16e6010eb7f3153591301274510db14.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "InplacePartialRotaryMul/d=0,p=1/27,2/0,2/0,2/27,2",
+          "InplacePartialRotaryMul/d=0,p=0/27,2/0,2/0,2/27,2",
+          "InplacePartialRotaryMul/d=1,p=1/27,2/0,2/0,2/27,2",
+          "InplacePartialRotaryMul/d=1,p=0/27,2/0,2/0,2/27,2"
+        ],
+        "binPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_ec081ae2fec8ce00af9a8192bd55ef8c.o",
+        "jsonPath": "ascend910b/inplace_partial_rotary_mul/InplacePartialRotaryMul_ec081ae2fec8ce00af9a8192bd55ef8c.json"
+      }
+    ]
+  },
+  "LightningIndexer": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "query",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "weights",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_query",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_key",
+          "index": 4,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "block_table",
+          "index": 5,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "sparse_indices",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "sparse_values",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "layout_query"
+        },
+        {
+          "name": "layout_key"
+        },
+        {
+          "name": "sparse_count"
+        },
+        {
+          "name": "sparse_mode"
+        },
+        {
+          "name": "pre_tokens"
+        },
+        {
+          "name": "next_tokens"
+        },
+        {
+          "name": "return_values"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "LightningIndexer/d=0,p=1/27,2/27,2/0,2/3,2/27,2",
+          "LightningIndexer/d=0,p=0/27,2/27,2/0,2/3,2/27,2",
+          "LightningIndexer/d=1,p=1/27,2/27,2/0,2/3,2/27,2",
+          "LightningIndexer/d=1,p=0/27,2/27,2/0,2/3,2/27,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/lightning_indexer/LightningIndexer_0704142c0a98b377b01b6ebed9643a0c.o",
+        "jsonPath": "ascend910b/lightning_indexer/LightningIndexer_0704142c0a98b377b01b6ebed9643a0c.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "LightningIndexer/d=0,p=1/27,2/27,2/27,2/3,2/27,2",
+          "LightningIndexer/d=0,p=0/27,2/27,2/27,2/3,2/27,2",
+          "LightningIndexer/d=1,p=1/27,2/27,2/27,2/3,2/27,2",
+          "LightningIndexer/d=1,p=0/27,2/27,2/27,2/3,2/27,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/lightning_indexer/LightningIndexer_2517851d7f53b28f971ff94bfa4b7037.o",
+        "jsonPath": "ascend910b/lightning_indexer/LightningIndexer_2517851d7f53b28f971ff94bfa4b7037.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "LightningIndexer/d=0,p=1/1,2/1,2/1,2/3,2/1,2",
+          "LightningIndexer/d=0,p=0/1,2/1,2/1,2/3,2/1,2",
+          "LightningIndexer/d=1,p=1/1,2/1,2/1,2/3,2/1,2",
+          "LightningIndexer/d=1,p=0/1,2/1,2/1,2/3,2/1,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/lightning_indexer/LightningIndexer_468c104183baa47aac33ce774c8668e0.o",
+        "jsonPath": "ascend910b/lightning_indexer/LightningIndexer_468c104183baa47aac33ce774c8668e0.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "LightningIndexer/d=0,p=1/1,2/1,2/0,2/3,2/1,2",
+          "LightningIndexer/d=0,p=0/1,2/1,2/0,2/3,2/1,2",
+          "LightningIndexer/d=1,p=1/1,2/1,2/0,2/3,2/1,2",
+          "LightningIndexer/d=1,p=0/1,2/1,2/0,2/3,2/1,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/lightning_indexer/LightningIndexer_5e74d4b002cc3d030158f0e18362672c.o",
+        "jsonPath": "ascend910b/lightning_indexer/LightningIndexer_5e74d4b002cc3d030158f0e18362672c.json"
+      }
+    ]
+  },
+  "LightningIndexerQuant": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "query",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "weights",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "query_dequant_scale",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key_dequant_scale",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_query",
+          "index": 5,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_key",
+          "index": 6,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "block_table",
+          "index": 7,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "sparse_indices",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "query_quant_mode"
+        },
+        {
+          "name": "key_quant_mode"
+        },
+        {
+          "name": "layout_query"
+        },
+        {
+          "name": "layout_key"
+        },
+        {
+          "name": "sparse_count"
+        },
+        {
+          "name": "sparse_mode"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "LightningIndexerQuant/d=0,p=1/2,2/2,2/1,2/1,2/1,2/3,2",
+          "LightningIndexerQuant/d=0,p=0/2,2/2,2/1,2/1,2/1,2/3,2",
+          "LightningIndexerQuant/d=1,p=1/2,2/2,2/1,2/1,2/1,2/3,2",
+          "LightningIndexerQuant/d=1,p=0/2,2/2,2/1,2/1,2/1,2/3,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/lightning_indexer_quant/LightningIndexerQuant_b983416e9c1ab662b1023da974d989c1.o",
+        "jsonPath": "ascend910b/lightning_indexer_quant/LightningIndexerQuant_b983416e9c1ab662b1023da974d989c1.json"
+      }
+    ]
+  },
+  "MatmulAllreduceAddRmsnorm": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x1",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "x2",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "residual",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "gamma",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "add_out",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "group_tp"
+        },
+        {
+          "name": "tp_rank_size"
+        },
+        {
+          "name": "tp_rank_id"
+        },
+        {
+          "name": "epsilon"
+        },
+        {
+          "name": "is_trans_b"
+        },
+        {
+          "name": "is_gather_add_out"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MatmulAllreduceAddRmsnorm/d=0,p=1/27,2/27,2/27,2/27,2/27,2/27,2",
+          "MatmulAllreduceAddRmsnorm/d=0,p=0/27,2/27,2/27,2/27,2/27,2/27,2",
+          "MatmulAllreduceAddRmsnorm/d=1,p=1/27,2/27,2/27,2/27,2/27,2/27,2",
+          "MatmulAllreduceAddRmsnorm/d=1,p=0/27,2/27,2/27,2/27,2/27,2/27,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/matmul_allreduce_add_rmsnorm/MatmulAllreduceAddRmsnorm_bfef8aaa7a074dfc8ac343d3e6492497.o",
+        "jsonPath": "ascend910b/matmul_allreduce_add_rmsnorm/MatmulAllreduceAddRmsnorm_bfef8aaa7a074dfc8ac343d3e6492497.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MatmulAllreduceAddRmsnorm/d=0,p=1/1,2/1,2/1,2/1,2/1,2/1,2",
+          "MatmulAllreduceAddRmsnorm/d=0,p=0/1,2/1,2/1,2/1,2/1,2/1,2",
+          "MatmulAllreduceAddRmsnorm/d=1,p=1/1,2/1,2/1,2/1,2/1,2/1,2",
+          "MatmulAllreduceAddRmsnorm/d=1,p=0/1,2/1,2/1,2/1,2/1,2/1,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/matmul_allreduce_add_rmsnorm/MatmulAllreduceAddRmsnorm_d690727640f624ffb9f66c44036234b8.o",
+        "jsonPath": "ascend910b/matmul_allreduce_add_rmsnorm/MatmulAllreduceAddRmsnorm_d690727640f624ffb9f66c44036234b8.json"
+      }
+    ]
+  },
+  "MoeGatingTopK": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "bias",
+          "index": 1,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "expert_idx",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "out",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "k"
+        },
+        {
+          "name": "k_group"
+        },
+        {
+          "name": "group_count"
+        },
+        {
+          "name": "group_select_mode"
+        },
+        {
+          "name": "renorm"
+        },
+        {
+          "name": "norm_type"
+        },
+        {
+          "name": "out_flag"
+        },
+        {
+          "name": "routed_scaling_factor"
+        },
+        {
+          "name": "eps"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "MoeGatingTopK/d=0,p=1/1,2/1,2/3,2/0,2",
+          "MoeGatingTopK/d=0,p=0/1,2/1,2/3,2/0,2",
+          "MoeGatingTopK/d=1,p=1/1,2/1,2/3,2/0,2",
+          "MoeGatingTopK/d=1,p=0/1,2/1,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/moe_gating_top_k/MoeGatingTopK_600198027c25530951785e436a150069.o",
+        "jsonPath": "ascend910b/moe_gating_top_k/MoeGatingTopK_600198027c25530951785e436a150069.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "MoeGatingTopK/d=0,p=1/0,2/0,2/3,2/0,2",
+          "MoeGatingTopK/d=0,p=0/0,2/0,2/3,2/0,2",
+          "MoeGatingTopK/d=1,p=1/0,2/0,2/3,2/0,2",
+          "MoeGatingTopK/d=1,p=0/0,2/0,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/moe_gating_top_k/MoeGatingTopK_81369a2fa0455f39b5d19d432d261f57.o",
+        "jsonPath": "ascend910b/moe_gating_top_k/MoeGatingTopK_81369a2fa0455f39b5d19d432d261f57.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "MoeGatingTopK/d=0,p=1/27,2/27,2/3,2/0,2",
+          "MoeGatingTopK/d=0,p=0/27,2/27,2/3,2/0,2",
+          "MoeGatingTopK/d=1,p=1/27,2/27,2/3,2/0,2",
+          "MoeGatingTopK/d=1,p=0/27,2/27,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/moe_gating_top_k/MoeGatingTopK_85043434be9263d9775e83ed1918b0a1.o",
+        "jsonPath": "ascend910b/moe_gating_top_k/MoeGatingTopK_85043434be9263d9775e83ed1918b0a1.json"
+      }
+    ]
+  },
+  "MoeGatingTopKHash": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "bias",
+          "index": 1,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "input_ids",
+          "index": 2,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "tid2eid",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "expert_idx",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "out",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "k"
+        },
+        {
+          "name": "k_group"
+        },
+        {
+          "name": "group_count"
+        },
+        {
+          "name": "group_select_mode"
+        },
+        {
+          "name": "renorm"
+        },
+        {
+          "name": "norm_type"
+        },
+        {
+          "name": "out_flag"
+        },
+        {
+          "name": "routed_scaling_factor"
+        },
+        {
+          "name": "eps"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "MoeGatingTopKHash/d=0,p=1/1,2/1,2/3,2/0,2",
+          "MoeGatingTopKHash/d=0,p=0/1,2/1,2/3,2/0,2",
+          "MoeGatingTopKHash/d=1,p=1/1,2/1,2/3,2/0,2",
+          "MoeGatingTopKHash/d=1,p=0/1,2/1,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/moe_gating_top_k_hash/MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287.o",
+        "jsonPath": "ascend910b/moe_gating_top_k_hash/MoeGatingTopKHash_1ec551603c4dbe6982b643a6b7de0287.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "MoeGatingTopKHash/d=0,p=1/27,2/27,2/3,2/0,2",
+          "MoeGatingTopKHash/d=0,p=0/27,2/27,2/3,2/0,2",
+          "MoeGatingTopKHash/d=1,p=1/27,2/27,2/3,2/0,2",
+          "MoeGatingTopKHash/d=1,p=0/27,2/27,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/moe_gating_top_k_hash/MoeGatingTopKHash_4d279081224dceb2ba5c4a13ba9e90f5.o",
+        "jsonPath": "ascend910b/moe_gating_top_k_hash/MoeGatingTopKHash_4d279081224dceb2ba5c4a13ba9e90f5.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "MoeGatingTopKHash/d=0,p=1/0,2/0,2/3,2/0,2",
+          "MoeGatingTopKHash/d=0,p=0/0,2/0,2/3,2/0,2",
+          "MoeGatingTopKHash/d=1,p=1/0,2/0,2/3,2/0,2",
+          "MoeGatingTopKHash/d=1,p=0/0,2/0,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/moe_gating_top_k_hash/MoeGatingTopKHash_c9fe881608378d9bec1f72b77dd57c53.o",
+        "jsonPath": "ascend910b/moe_gating_top_k_hash/MoeGatingTopKHash_c9fe881608378d9bec1f72b77dd57c53.json"
+      }
+    ]
+  },
+  "MoeGroupedMatmul": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        [
+          {
+            "name": "x",
+            "index": 0,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight",
+            "index": 1,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        {
+          "name": "group_list",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        [
+          {
+            "name": "y",
+            "index": 0,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ]
+      ],
+      "attrs": [
+        {
+          "name": "transpose_weight"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 1,
+        "simplifiedKey": [
+          "MoeGroupedMatmul/d=0,p=1/1,2/1,2/9,2/1,2",
+          "MoeGroupedMatmul/d=0,p=0/1,2/1,2/9,2/1,2",
+          "MoeGroupedMatmul/d=1,p=1/1,2/1,2/9,2/1,2",
+          "MoeGroupedMatmul/d=1,p=0/1,2/1,2/9,2/1,2"
+        ],
+        "binPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_3461fb7c82f702c45a7dc8574ee64859.o",
+        "jsonPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_3461fb7c82f702c45a7dc8574ee64859.json"
+      },
+      {
+        "coreType": 1,
+        "simplifiedKey": [
+          "MoeGroupedMatmul/d=0,p=1/1,2/1,2/3,2/1,2",
+          "MoeGroupedMatmul/d=0,p=0/1,2/1,2/3,2/1,2",
+          "MoeGroupedMatmul/d=1,p=1/1,2/1,2/3,2/1,2",
+          "MoeGroupedMatmul/d=1,p=0/1,2/1,2/3,2/1,2"
+        ],
+        "binPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_3a69da49b50a522c2b1ded9ba72e5af0.o",
+        "jsonPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_3a69da49b50a522c2b1ded9ba72e5af0.json"
+      },
+      {
+        "coreType": 1,
+        "simplifiedKey": [
+          "MoeGroupedMatmul/d=0,p=1/1,2/1,29/9,2/1,2",
+          "MoeGroupedMatmul/d=0,p=0/1,2/1,29/9,2/1,2",
+          "MoeGroupedMatmul/d=1,p=1/1,2/1,29/9,2/1,2",
+          "MoeGroupedMatmul/d=1,p=0/1,2/1,29/9,2/1,2"
+        ],
+        "binPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_3e5cf1f9f2a93f9a172b29b9595ba34b.o",
+        "jsonPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_3e5cf1f9f2a93f9a172b29b9595ba34b.json"
+      },
+      {
+        "coreType": 1,
+        "simplifiedKey": [
+          "MoeGroupedMatmul/d=0,p=1/27,2/27,2/9,2/27,2",
+          "MoeGroupedMatmul/d=0,p=0/27,2/27,2/9,2/27,2",
+          "MoeGroupedMatmul/d=1,p=1/27,2/27,2/9,2/27,2",
+          "MoeGroupedMatmul/d=1,p=0/27,2/27,2/9,2/27,2"
+        ],
+        "binPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_458e548937f65cda8992cb7bd8da726e.o",
+        "jsonPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_458e548937f65cda8992cb7bd8da726e.json"
+      },
+      {
+        "coreType": 1,
+        "simplifiedKey": [
+          "MoeGroupedMatmul/d=0,p=1/27,2/27,29/9,2/27,2",
+          "MoeGroupedMatmul/d=0,p=0/27,2/27,29/9,2/27,2",
+          "MoeGroupedMatmul/d=1,p=1/27,2/27,29/9,2/27,2",
+          "MoeGroupedMatmul/d=1,p=0/27,2/27,29/9,2/27,2"
+        ],
+        "binPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_58681bafc526dcf5fcfa60dd9e71b15f.o",
+        "jsonPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_58681bafc526dcf5fcfa60dd9e71b15f.json"
+      },
+      {
+        "coreType": 1,
+        "simplifiedKey": [
+          "MoeGroupedMatmul/d=0,p=1/27,2/27,29/3,2/27,2",
+          "MoeGroupedMatmul/d=0,p=0/27,2/27,29/3,2/27,2",
+          "MoeGroupedMatmul/d=1,p=1/27,2/27,29/3,2/27,2",
+          "MoeGroupedMatmul/d=1,p=0/27,2/27,29/3,2/27,2"
+        ],
+        "binPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_861686f91a8eb0dfdf73348114b29943.o",
+        "jsonPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_861686f91a8eb0dfdf73348114b29943.json"
+      },
+      {
+        "coreType": 1,
+        "simplifiedKey": [
+          "MoeGroupedMatmul/d=0,p=1/27,2/27,2/3,2/27,2",
+          "MoeGroupedMatmul/d=0,p=0/27,2/27,2/3,2/27,2",
+          "MoeGroupedMatmul/d=1,p=1/27,2/27,2/3,2/27,2",
+          "MoeGroupedMatmul/d=1,p=0/27,2/27,2/3,2/27,2"
+        ],
+        "binPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_874ac10e095175029522168d9b95ee3c.o",
+        "jsonPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_874ac10e095175029522168d9b95ee3c.json"
+      },
+      {
+        "coreType": 1,
+        "simplifiedKey": [
+          "MoeGroupedMatmul/d=0,p=1/1,2/1,29/3,2/1,2",
+          "MoeGroupedMatmul/d=0,p=0/1,2/1,29/3,2/1,2",
+          "MoeGroupedMatmul/d=1,p=1/1,2/1,29/3,2/1,2",
+          "MoeGroupedMatmul/d=1,p=0/1,2/1,29/3,2/1,2"
+        ],
+        "binPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_9fdd125efee20777f55f129e1504bf88.o",
+        "jsonPath": "ascend910b/moe_grouped_matmul/MoeGroupedMatmul_9fdd125efee20777f55f129e1504bf88.json"
+      }
+    ]
+  },
+  "MoeInitRoutingCustom": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "expert_idx",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "scale",
+          "index": 2,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "offset",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "expanded_x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "expanded_row_idx",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "expert_tokens_count_or_cumsum",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "expanded_scale",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "active_num"
+        },
+        {
+          "name": "expert_capacity"
+        },
+        {
+          "name": "expert_num"
+        },
+        {
+          "name": "drop_pad_mode"
+        },
+        {
+          "name": "expert_tokens_num_type"
+        },
+        {
+          "name": "expert_tokens_num_flag"
+        },
+        {
+          "name": "quant_mode"
+        },
+        {
+          "name": "active_expert_range"
+        },
+        {
+          "name": "row_idx_type"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/1,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/1,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/1,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/1,2/3,2/2,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_103c6bf9757a4db3c1bbbfcf552f797b.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_103c6bf9757a4db3c1bbbfcf552f797b.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/2,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/2,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/2,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/2,2/3,2/2,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_6f86ac41300a95d6b875df6144a1258d.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_6f86ac41300a95d6b875df6144a1258d.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/1,2/3,2/1,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/1,2/3,2/1,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/1,2/3,2/1,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/1,2/3,2/1,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_83ea20a79ec31274731fe9c3378ffc21.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_83ea20a79ec31274731fe9c3378ffc21.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/27,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/27,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/27,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/27,2/3,2/2,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_c16c6bc489e206f21949f807202f3cb0.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_c16c6bc489e206f21949f807202f3cb0.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/0,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/0,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/0,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/0,2/3,2/2,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_dbb3315443e3bbcaf60545e29487f972.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_dbb3315443e3bbcaf60545e29487f972.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/0,2/3,2/0,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/0,2/3,2/0,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/0,2/3,2/0,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/0,2/3,2/0,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_f0cc9094cbc1179c081bfde0b95f6b1d.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_f0cc9094cbc1179c081bfde0b95f6b1d.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/27,2/3,2/27,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/27,2/3,2/27,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/27,2/3,2/27,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/27,2/3,2/27,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_f4e5d4358d52376e96d5f6100c6fbfcd.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_f4e5d4358d52376e96d5f6100c6fbfcd.json"
+      }
+    ]
+  },
+  "NgramSpecDecode": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "tokenIds",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "numTokensNoSpec",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "sampledTokenIds",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "discardRequestMask",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "nextTokenIds",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "draftTokenIds",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "numValidDraftTokens",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "vocab_size"
+        },
+        {
+          "name": "min_n"
+        },
+        {
+          "name": "max_n"
+        },
+        {
+          "name": "k"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "NgramSpecDecode/d=0,p=1/3,2/3,2/3,2/3,2/3,2/3,2/3,2",
+          "NgramSpecDecode/d=0,p=0/3,2/3,2/3,2/3,2/3,2/3,2/3,2",
+          "NgramSpecDecode/d=1,p=1/3,2/3,2/3,2/3,2/3,2/3,2/3,2",
+          "NgramSpecDecode/d=1,p=0/3,2/3,2/3,2/3,2/3,2/3,2/3,2"
+        ],
+        "binPath": "ascend910b/ngram_spec_decode/NgramSpecDecode_7bd62a18520b2adf9d6a245db667bb11.o",
+        "jsonPath": "ascend910b/ngram_spec_decode/NgramSpecDecode_7bd62a18520b2adf9d6a245db667bb11.json"
+      }
+    ]
+  },
+  "RecurrentGatedDeltaRule": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "query",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "value",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "beta",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "state",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths",
+          "index": 5,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "ssm_state_indices",
+          "index": 6,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "g",
+          "index": 7,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "gk",
+          "index": 8,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "num_accepted_tokens",
+          "index": 9,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "out",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "state",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "scale_value"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "RecurrentGatedDeltaRule/d=0,p=1/27,2/27,2/27,2/27,2/0,2/3,2/3,2/27,2/0,2",
+          "RecurrentGatedDeltaRule/d=0,p=0/27,2/27,2/27,2/27,2/0,2/3,2/3,2/27,2/0,2",
+          "RecurrentGatedDeltaRule/d=1,p=1/27,2/27,2/27,2/27,2/0,2/3,2/3,2/27,2/0,2",
+          "RecurrentGatedDeltaRule/d=1,p=0/27,2/27,2/27,2/27,2/0,2/3,2/3,2/27,2/0,2"
+        ],
+        "binPath": "ascend910b/recurrent_gated_delta_rule/RecurrentGatedDeltaRule_37ef20e52a126f008ab9edfe51ac2143.o",
+        "jsonPath": "ascend910b/recurrent_gated_delta_rule/RecurrentGatedDeltaRule_37ef20e52a126f008ab9edfe51ac2143.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "RecurrentGatedDeltaRule/d=0,p=1/27,2/27,2/27,2/27,2/27,2/3,2/3,2/27,2/27,2",
+          "RecurrentGatedDeltaRule/d=0,p=0/27,2/27,2/27,2/27,2/27,2/3,2/3,2/27,2/27,2",
+          "RecurrentGatedDeltaRule/d=1,p=1/27,2/27,2/27,2/27,2/27,2/3,2/3,2/27,2/27,2",
+          "RecurrentGatedDeltaRule/d=1,p=0/27,2/27,2/27,2/27,2/27,2/3,2/3,2/27,2/27,2"
+        ],
+        "binPath": "ascend910b/recurrent_gated_delta_rule/RecurrentGatedDeltaRule_85669048de2f4ae7785fd8d81b12f70b.o",
+        "jsonPath": "ascend910b/recurrent_gated_delta_rule/RecurrentGatedDeltaRule_85669048de2f4ae7785fd8d81b12f70b.json"
+      }
+    ]
+  },
+  "ReshapeAndCacheBnsd": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "keyIn",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "keyCacheIn",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "slotMapping",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "seqLen",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "keyCacheOut",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "ReshapeAndCacheBnsd/d=0,p=1/4,2/4,2/3,2/3,2/4,2",
+          "ReshapeAndCacheBnsd/d=0,p=0/4,2/4,2/3,2/3,2/4,2",
+          "ReshapeAndCacheBnsd/d=1,p=1/4,2/4,2/3,2/3,2/4,2",
+          "ReshapeAndCacheBnsd/d=1,p=0/4,2/4,2/3,2/3,2/4,2"
+        ],
+        "binPath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_69cf40a071c531b49b5be27bfaa4fab0.o",
+        "jsonPath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_69cf40a071c531b49b5be27bfaa4fab0.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "ReshapeAndCacheBnsd/d=0,p=1/1,2/1,2/3,2/3,2/1,2",
+          "ReshapeAndCacheBnsd/d=0,p=0/1,2/1,2/3,2/3,2/1,2",
+          "ReshapeAndCacheBnsd/d=1,p=1/1,2/1,2/3,2/3,2/1,2",
+          "ReshapeAndCacheBnsd/d=1,p=0/1,2/1,2/3,2/3,2/1,2"
+        ],
+        "binPath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_98ba07b04b816b84e9cf8396047a724b.o",
+        "jsonPath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_98ba07b04b816b84e9cf8396047a724b.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "ReshapeAndCacheBnsd/d=0,p=1/27,2/27,2/3,2/3,2/27,2",
+          "ReshapeAndCacheBnsd/d=0,p=0/27,2/27,2/3,2/3,2/27,2",
+          "ReshapeAndCacheBnsd/d=1,p=1/27,2/27,2/3,2/3,2/27,2",
+          "ReshapeAndCacheBnsd/d=1,p=0/27,2/27,2/3,2/3,2/27,2"
+        ],
+        "binPath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_cbfb6aa81347796329c7283318b41e8c.o",
+        "jsonPath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_cbfb6aa81347796329c7283318b41e8c.json"
+      }
+    ]
+  },
+  "RmsNormDynamicQuant": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "gamma",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "smooth_scale1",
+          "index": 2,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "smooth_scale2",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "beta",
+          "index": 4,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y1",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "y2",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "scale1",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "scale2",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "epsilon"
+        },
+        {
+          "name": "output_mask"
+        },
+        {
+          "name": "dst_type"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "RmsNormDynamicQuant/d=0,p=1/1,2/1,2/2,2/2,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=0,p=0/1,2/1,2/2,2/2,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=1/1,2/1,2/2,2/2,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=0/1,2/1,2/2,2/2,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e.o",
+        "jsonPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_18f4dc74f3957d61a8e1d02e83a8ee3e.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "RmsNormDynamicQuant/d=0,p=1/27,2/27,2/29,2/29,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=0,p=0/27,2/27,2/29,2/29,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=1/27,2/27,2/29,2/29,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=0/27,2/27,2/29,2/29,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_752f4d9526546215c765ac323b15248d.o",
+        "jsonPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_752f4d9526546215c765ac323b15248d.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "RmsNormDynamicQuant/d=0,p=1/1,2/1,2/29,2/29,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=0,p=0/1,2/1,2/29,2/29,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=1/1,2/1,2/29,2/29,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=0/1,2/1,2/29,2/29,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_8b10934c022ebb22b7797f8001c4c4fc.o",
+        "jsonPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_8b10934c022ebb22b7797f8001c4c4fc.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "RmsNormDynamicQuant/d=0,p=1/27,2/27,2/2,2/2,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=0,p=0/27,2/27,2/2,2/2,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=1/27,2/27,2/2,2/2,2/0,2/0,2",
+          "RmsNormDynamicQuant/d=1,p=0/27,2/27,2/2,2/2,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_a24014a99c880e660456f6930bd3808a.o",
+        "jsonPath": "ascend910b/rms_norm_dynamic_quant/RmsNormDynamicQuant_a24014a99c880e660456f6930bd3808a.json"
+      }
+    ]
+  },
+  "ScatterNdUpdateV2": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "var",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "indices",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "updates",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "var",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "strides"
+        },
+        {
+          "name": "use_locking"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/1,2/3,2/1,2/1,2",
+          "ScatterNdUpdateV2/d=0,p=0/1,2/3,2/1,2/1,2",
+          "ScatterNdUpdateV2/d=1,p=1/1,2/3,2/1,2/1,2",
+          "ScatterNdUpdateV2/d=1,p=0/1,2/3,2/1,2/1,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_0e675ed9c31b6f8eb4fec80650b6492b.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_0e675ed9c31b6f8eb4fec80650b6492b.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/9,2/9,2/9,2/9,2",
+          "ScatterNdUpdateV2/d=0,p=0/9,2/9,2/9,2/9,2",
+          "ScatterNdUpdateV2/d=1,p=1/9,2/9,2/9,2/9,2",
+          "ScatterNdUpdateV2/d=1,p=0/9,2/9,2/9,2/9,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_236fd349d19bff1ad0462d3cb7cc630f.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_236fd349d19bff1ad0462d3cb7cc630f.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/6,2/9,2/6,2/6,2",
+          "ScatterNdUpdateV2/d=0,p=0/6,2/9,2/6,2/6,2",
+          "ScatterNdUpdateV2/d=1,p=1/6,2/9,2/6,2/6,2",
+          "ScatterNdUpdateV2/d=1,p=0/6,2/9,2/6,2/6,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_29ae49856e85f90954394091c831ea16.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_29ae49856e85f90954394091c831ea16.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/12,2/3,2/12,2/12,2",
+          "ScatterNdUpdateV2/d=0,p=0/12,2/3,2/12,2/12,2",
+          "ScatterNdUpdateV2/d=1,p=1/12,2/3,2/12,2/12,2",
+          "ScatterNdUpdateV2/d=1,p=0/12,2/3,2/12,2/12,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_3401535e65d41711c5378d0a9b30330a.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_3401535e65d41711c5378d0a9b30330a.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/2,2/9,2/2,2/2,2",
+          "ScatterNdUpdateV2/d=0,p=0/2,2/9,2/2,2/2,2",
+          "ScatterNdUpdateV2/d=1,p=1/2,2/9,2/2,2/2,2",
+          "ScatterNdUpdateV2/d=1,p=0/2,2/9,2/2,2/2,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_372abbd83470b8960a26f60aa335f192.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_372abbd83470b8960a26f60aa335f192.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/27,2/9,2/27,2/27,2",
+          "ScatterNdUpdateV2/d=0,p=0/27,2/9,2/27,2/27,2",
+          "ScatterNdUpdateV2/d=1,p=1/27,2/9,2/27,2/27,2",
+          "ScatterNdUpdateV2/d=1,p=0/27,2/9,2/27,2/27,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_87c48e5a1bd7049f231ad743925d0d51.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_87c48e5a1bd7049f231ad743925d0d51.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/3,2/3,2/3,2/3,2",
+          "ScatterNdUpdateV2/d=0,p=0/3,2/3,2/3,2/3,2",
+          "ScatterNdUpdateV2/d=1,p=1/3,2/3,2/3,2/3,2",
+          "ScatterNdUpdateV2/d=1,p=0/3,2/3,2/3,2/3,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_8b6a881ade555fea0f5495e6d241655c.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_8b6a881ade555fea0f5495e6d241655c.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/0,2/3,2/0,2/0,2",
+          "ScatterNdUpdateV2/d=0,p=0/0,2/3,2/0,2/0,2",
+          "ScatterNdUpdateV2/d=1,p=1/0,2/3,2/0,2/0,2",
+          "ScatterNdUpdateV2/d=1,p=0/0,2/3,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_9cd4a19c2f0ddd82e17fe85e7c6f6603.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_9cd4a19c2f0ddd82e17fe85e7c6f6603.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/2,2/3,2/2,2/2,2",
+          "ScatterNdUpdateV2/d=0,p=0/2,2/3,2/2,2/2,2",
+          "ScatterNdUpdateV2/d=1,p=1/2,2/3,2/2,2/2,2",
+          "ScatterNdUpdateV2/d=1,p=0/2,2/3,2/2,2/2,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_aa51c231fd8ce6115a78a8a50749593f.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_aa51c231fd8ce6115a78a8a50749593f.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/12,2/9,2/12,2/12,2",
+          "ScatterNdUpdateV2/d=0,p=0/12,2/9,2/12,2/12,2",
+          "ScatterNdUpdateV2/d=1,p=1/12,2/9,2/12,2/12,2",
+          "ScatterNdUpdateV2/d=1,p=0/12,2/9,2/12,2/12,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_b2709145e1ac911e8800bfe48c6f8693.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_b2709145e1ac911e8800bfe48c6f8693.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/0,2/9,2/0,2/0,2",
+          "ScatterNdUpdateV2/d=0,p=0/0,2/9,2/0,2/0,2",
+          "ScatterNdUpdateV2/d=1,p=1/0,2/9,2/0,2/0,2",
+          "ScatterNdUpdateV2/d=1,p=0/0,2/9,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_b75ff3db8ad3efcac1d9f9d43b1409a5.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_b75ff3db8ad3efcac1d9f9d43b1409a5.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/6,2/3,2/6,2/6,2",
+          "ScatterNdUpdateV2/d=0,p=0/6,2/3,2/6,2/6,2",
+          "ScatterNdUpdateV2/d=1,p=1/6,2/3,2/6,2/6,2",
+          "ScatterNdUpdateV2/d=1,p=0/6,2/3,2/6,2/6,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_bcba53c2f17413e71c7cf0627f826367.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_bcba53c2f17413e71c7cf0627f826367.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/3,2/9,2/3,2/3,2",
+          "ScatterNdUpdateV2/d=0,p=0/3,2/9,2/3,2/3,2",
+          "ScatterNdUpdateV2/d=1,p=1/3,2/9,2/3,2/3,2",
+          "ScatterNdUpdateV2/d=1,p=0/3,2/9,2/3,2/3,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_c047ced3bf24b3dd77e20efa828bb497.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_c047ced3bf24b3dd77e20efa828bb497.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/9,2/3,2/9,2/9,2",
+          "ScatterNdUpdateV2/d=0,p=0/9,2/3,2/9,2/9,2",
+          "ScatterNdUpdateV2/d=1,p=1/9,2/3,2/9,2/9,2",
+          "ScatterNdUpdateV2/d=1,p=0/9,2/3,2/9,2/9,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_c3d7485f845eb780f237311a158214ff.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_c3d7485f845eb780f237311a158214ff.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/1,2/9,2/1,2/1,2",
+          "ScatterNdUpdateV2/d=0,p=0/1,2/9,2/1,2/1,2",
+          "ScatterNdUpdateV2/d=1,p=1/1,2/9,2/1,2/1,2",
+          "ScatterNdUpdateV2/d=1,p=0/1,2/9,2/1,2/1,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_cf988dc063030c3ff9136d70f2c25c03.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_cf988dc063030c3ff9136d70f2c25c03.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "ScatterNdUpdateV2/d=0,p=1/27,2/3,2/27,2/27,2",
+          "ScatterNdUpdateV2/d=0,p=0/27,2/3,2/27,2/27,2",
+          "ScatterNdUpdateV2/d=1,p=1/27,2/3,2/27,2/27,2",
+          "ScatterNdUpdateV2/d=1,p=0/27,2/3,2/27,2/27,2"
+        ],
+        "binPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_f80d03120b318b3748a42c708f901c9f.o",
+        "jsonPath": "ascend910b/scatter_nd_update_v2/ScatterNdUpdateV2_f80d03120b318b3748a42c708f901c9f.json"
+      }
+    ]
+  },
+  "SparseAttnSharedkv": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "q",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "ori_kv",
+          "index": 1,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cmp_kv",
+          "index": 2,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "ori_sparse_indices",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cmp_sparse_indices",
+          "index": 4,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "ori_block_table",
+          "index": 5,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cmp_block_table",
+          "index": 6,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cu_seqlens_q",
+          "index": 7,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cu_seqlens_ori_kv",
+          "index": 8,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "cu_seqlens_cmp_kv",
+          "index": 9,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "seqused_q",
+          "index": 10,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "seqused_kv",
+          "index": 11,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "sinks",
+          "index": 12,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "metadata",
+          "index": 13,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "attn_out",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "softmax_lse",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "softmax_scale"
+        },
+        {
+          "name": "cmp_ratio"
+        },
+        {
+          "name": "ori_mask_mode"
+        },
+        {
+          "name": "cmp_mask_mode"
+        },
+        {
+          "name": "ori_kv_stride"
+        },
+        {
+          "name": "cmp_kv_stride"
+        },
+        {
+          "name": "ori_win_left"
+        },
+        {
+          "name": "ori_win_right"
+        },
+        {
+          "name": "layout_q"
+        },
+        {
+          "name": "layout_kv"
+        },
+        {
+          "name": "return_softmax_lse"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "SparseAttnSharedkv/d=0,p=1/27,2/27,2/0,2",
+          "SparseAttnSharedkv/d=0,p=0/27,2/27,2/0,2",
+          "SparseAttnSharedkv/d=1,p=1/27,2/27,2/0,2",
+          "SparseAttnSharedkv/d=1,p=0/27,2/27,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/sparse_attn_sharedkv/SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc.o",
+        "jsonPath": "ascend910b/sparse_attn_sharedkv/SparseAttnSharedkv_7d53da980fa2b93856b96304fde51fcc.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "SparseAttnSharedkv/d=0,p=1/1,2/1,2/0,2",
+          "SparseAttnSharedkv/d=0,p=0/1,2/1,2/0,2",
+          "SparseAttnSharedkv/d=1,p=1/1,2/1,2/0,2",
+          "SparseAttnSharedkv/d=1,p=0/1,2/1,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/sparse_attn_sharedkv/SparseAttnSharedkv_b4f65ead04fb4fc6e9a77e022317d6e5.o",
+        "jsonPath": "ascend910b/sparse_attn_sharedkv/SparseAttnSharedkv_b4f65ead04fb4fc6e9a77e022317d6e5.json"
+      }
+    ]
+  },
+  "SparseFlashAttention": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "query",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "value",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "sparse_indices",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "block_table",
+          "index": 4,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_query",
+          "index": 5,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_kv",
+          "index": 6,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "query_rope",
+          "index": 7,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key_rope",
+          "index": 8,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "attention_out",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "softmax_max",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "softmax_sum",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "scale_value"
+        },
+        {
+          "name": "sparse_block_size"
+        },
+        {
+          "name": "layout_query"
+        },
+        {
+          "name": "layout_kv"
+        },
+        {
+          "name": "sparse_mode"
+        },
+        {
+          "name": "pre_tokens"
+        },
+        {
+          "name": "next_tokens"
+        },
+        {
+          "name": "attention_mode"
+        },
+        {
+          "name": "return_softmax_lse"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "SparseFlashAttention/d=0,p=1/1,2/1,2/1,2/3,2/1,2/0,2/0,2",
+          "SparseFlashAttention/d=0,p=0/1,2/1,2/1,2/3,2/1,2/0,2/0,2",
+          "SparseFlashAttention/d=1,p=1/1,2/1,2/1,2/3,2/1,2/0,2/0,2",
+          "SparseFlashAttention/d=1,p=0/1,2/1,2/1,2/3,2/1,2/0,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/sparse_flash_attention/SparseFlashAttention_04d19c29334449b1853b913ad67aa9d4.o",
+        "jsonPath": "ascend910b/sparse_flash_attention/SparseFlashAttention_04d19c29334449b1853b913ad67aa9d4.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "SparseFlashAttention/d=0,p=1/27,2/27,2/27,2/3,2/27,2/0,2/0,2",
+          "SparseFlashAttention/d=0,p=0/27,2/27,2/27,2/3,2/27,2/0,2/0,2",
+          "SparseFlashAttention/d=1,p=1/27,2/27,2/27,2/3,2/27,2/0,2/0,2",
+          "SparseFlashAttention/d=1,p=0/27,2/27,2/27,2/3,2/27,2/0,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/sparse_flash_attention/SparseFlashAttention_2e25ad8fefac1f04c03bd78f2d2ab366.o",
+        "jsonPath": "ascend910b/sparse_flash_attention/SparseFlashAttention_2e25ad8fefac1f04c03bd78f2d2ab366.json"
+      }
+    ]
+  },
+  "StoreKVBlock": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "keyIn",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "keyCacheIn",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "groupLen",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "groupKeyIdx",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "groupKeyCacheIdx",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [],
+      "attrs": [
+        {
+          "name": "blockSize"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "StoreKVBlock/d=0,p=1/27,2/27,2/3,2/3,2/3,2",
+          "StoreKVBlock/d=0,p=0/27,2/27,2/3,2/3,2/3,2",
+          "StoreKVBlock/d=1,p=1/27,2/27,2/3,2/3,2/3,2",
+          "StoreKVBlock/d=1,p=0/27,2/27,2/3,2/3,2/3,2"
+        ],
+        "binPath": "ascend910b/store_kv_block/StoreKVBlock_31de74cd8e5b500774587b2407e9920c.o",
+        "jsonPath": "ascend910b/store_kv_block/StoreKVBlock_31de74cd8e5b500774587b2407e9920c.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "StoreKVBlock/d=0,p=1/2,2/2,2/3,2/3,2/3,2",
+          "StoreKVBlock/d=0,p=0/2,2/2,2/3,2/3,2/3,2",
+          "StoreKVBlock/d=1,p=1/2,2/2,2/3,2/3,2/3,2",
+          "StoreKVBlock/d=1,p=0/2,2/2,2/3,2/3,2/3,2"
+        ],
+        "binPath": "ascend910b/store_kv_block/StoreKVBlock_6f511e351f42e061b3680fd0387a177f.o",
+        "jsonPath": "ascend910b/store_kv_block/StoreKVBlock_6f511e351f42e061b3680fd0387a177f.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "StoreKVBlock/d=0,p=1/1,2/1,2/3,2/3,2/3,2",
+          "StoreKVBlock/d=0,p=0/1,2/1,2/3,2/3,2/3,2",
+          "StoreKVBlock/d=1,p=1/1,2/1,2/3,2/3,2/3,2",
+          "StoreKVBlock/d=1,p=0/1,2/1,2/3,2/3,2/3,2"
+        ],
+        "binPath": "ascend910b/store_kv_block/StoreKVBlock_7f5d033c78efc614a77f95bba8aef3bd.o",
+        "jsonPath": "ascend910b/store_kv_block/StoreKVBlock_7f5d033c78efc614a77f95bba8aef3bd.json"
+      }
+    ]
+  },
+  "TransposeKvCacheByBlock": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        [
+          {
+            "name": "KCache",
+            "index": 0,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        [
+          {
+            "name": "VCache",
+            "index": 1,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        {
+          "name": "blockIDs",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [],
+      "attrs": [
+        {
+          "name": "blockSize"
+        },
+        {
+          "name": "headNum"
+        },
+        {
+          "name": "headDim"
+        },
+        {
+          "name": "splitNum"
+        },
+        {
+          "name": "layerNum"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "TransposeKvCacheByBlock/d=0,p=1/27,2/27,2/9,2",
+          "TransposeKvCacheByBlock/d=0,p=0/27,2/27,2/9,2",
+          "TransposeKvCacheByBlock/d=1,p=1/27,2/27,2/9,2",
+          "TransposeKvCacheByBlock/d=1,p=0/27,2/27,2/9,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/transpose_kv_cache_by_block/TransposeKvCacheByBlock_f57d0192c8d2552ec56e02af54cfc504.o",
+        "jsonPath": "ascend910b/transpose_kv_cache_by_block/TransposeKvCacheByBlock_f57d0192c8d2552ec56e02af54cfc504.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "TransposeKvCacheByBlock/d=0,p=1/1,2/1,2/9,2",
+          "TransposeKvCacheByBlock/d=0,p=0/1,2/1,2/9,2",
+          "TransposeKvCacheByBlock/d=1,p=1/1,2/1,2/9,2",
+          "TransposeKvCacheByBlock/d=1,p=0/1,2/1,2/9,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/transpose_kv_cache_by_block/TransposeKvCacheByBlock_feefe007b5f0ab287bbced185c1648f6.o",
+        "jsonPath": "ascend910b/transpose_kv_cache_by_block/TransposeKvCacheByBlock_feefe007b5f0ab287bbced185c1648f6.json"
+      }
+    ]
+  },
+  "VllmQuantLightningIndexer": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "query",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "weights",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "query_dequant_scale",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key_dequant_scale",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_query",
+          "index": 5,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_key",
+          "index": 6,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "block_table",
+          "index": 7,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "metadata",
+          "index": 8,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "sparse_indices",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "sparse_values",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "query_quant_mode"
+        },
+        {
+          "name": "key_quant_mode"
+        },
+        {
+          "name": "layout_query"
+        },
+        {
+          "name": "layout_key"
+        },
+        {
+          "name": "sparse_count"
+        },
+        {
+          "name": "sparse_mode"
+        },
+        {
+          "name": "pre_tokens"
+        },
+        {
+          "name": "next_tokens"
+        },
+        {
+          "name": "cmp_ratio"
+        },
+        {
+          "name": "return_values"
+        },
+        {
+          "name": "stride"
+        },
+        {
+          "name": "scale_stride"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "VllmQuantLightningIndexer/d=0,p=1/2,2/2,2/1,2/1,2/1,2/3,2/0,2",
+          "VllmQuantLightningIndexer/d=0,p=0/2,2/2,2/1,2/1,2/1,2/3,2/0,2",
+          "VllmQuantLightningIndexer/d=1,p=1/2,2/2,2/1,2/1,2/1,2/3,2/0,2",
+          "VllmQuantLightningIndexer/d=1,p=0/2,2/2,2/1,2/1,2/1,2/3,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/vllm_quant_lightning_indexer/VllmQuantLightningIndexer_6ef5e069853a8fc4dfd689cdc0e03d27.o",
+        "jsonPath": "ascend910b/vllm_quant_lightning_indexer/VllmQuantLightningIndexer_6ef5e069853a8fc4dfd689cdc0e03d27.json"
+      }
+    ]
+  }
+}

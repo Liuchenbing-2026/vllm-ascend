@@ -1,0 +1,89 @@
+{
+ "binFileName": "HcPreInvRms_698bcb6f52ef8589299a756885a2af28",
+ "binFileSuffix": ".o",
+ "blockDim": -1,
+ "coreType": "VectorCore",
+ "core_type": "AIV",
+ "intercoreSync": 0,
+ "kernelName": "HcPreInvRms_698bcb6f52ef8589299a756885a2af28",
+ "magic": "RT_DEV_BINARY_MAGIC_ELF_AIVEC",
+ "memoryStamping": [],
+ "opParaSize": 64,
+ "parameters": [
+  null,
+  null,
+  null
+ ],
+ "sha256": "169a663fa0f20b8517a886b04ddc03a682d0752407381197f9a4e309e6667ae7",
+ "workspace": {
+  "num": 1,
+  "size": [
+   -1
+  ],
+  "type": [
+   0
+  ]
+ },
+ "kernelList": [
+  {
+   "kernelName": "HcPreInvRms_698bcb6f52ef8589299a756885a2af28_1000"
+  },
+  {
+   "kernelName": "HcPreInvRms_698bcb6f52ef8589299a756885a2af28_1001"
+  }
+ ],
+ "optionalInputMode": "gen_placeholder",
+ "optionalOutputMode": "gen_placeholder",
+ "supportSuperKernel": 1,
+ "compileInfo": {},
+ "supportInfo": {
+  "implMode": "high_performance",
+  "int64Mode": false,
+  "simplifiedKeyMode": 0,
+  "simplifiedKey": [
+   "HcPreInvRms/d=0,p=1/27,2/0,2",
+   "HcPreInvRms/d=0,p=0/27,2/0,2",
+   "HcPreInvRms/d=1,p=1/27,2/0,2",
+   "HcPreInvRms/d=1,p=0/27,2/0,2"
+  ],
+  "optionalInputMode": "gen_placeholder",
+  "optionalOutputMode": "gen_placeholder",
+  "staticKey": "0e95855f20c13972a6727b75f08c49a6056c5c6ba37e7265ee3acd7b85ccf8b0,eb4c41860893c2697752e930cfd1a1f3296e8824677a36b7ec509ad77fae8115",
+  "inputs": [
+   {
+    "name": "x",
+    "index": 0,
+    "dtype": "bfloat16",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "y",
+    "index": 0,
+    "dtype": "float32",
+    "format": "ND",
+    "paramType": "required",
+    "shape": [
+     -2
+    ],
+    "format_match_mode": "FormatAgnostic"
+   }
+  ],
+  "attrs": [
+   {
+    "name": "epsilon",
+    "dtype": "float",
+    "value": 0.0
+   }
+  ],
+  "opMode": "dynamic",
+  "deterministic": "ignore"
+ },
+ "filePath": "ascend910b/bin/hc_pre_inv_rms/HcPreInvRms_698bcb6f52ef8589299a756885a2af28.json"
+}

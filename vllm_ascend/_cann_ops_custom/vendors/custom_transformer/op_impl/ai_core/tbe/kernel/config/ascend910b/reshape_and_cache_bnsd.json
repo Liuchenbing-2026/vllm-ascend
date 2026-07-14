@@ -1,0 +1,238 @@
+{
+  "binList": [
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "ReshapeAndCacheBnsd/d=0,p=1/4,2/4,2/3,2/3,2/4,2",
+        "ReshapeAndCacheBnsd/d=0,p=0/4,2/4,2/3,2/3,2/4,2",
+        "ReshapeAndCacheBnsd/d=1,p=1/4,2/4,2/3,2/3,2/4,2",
+        "ReshapeAndCacheBnsd/d=1,p=0/4,2/4,2/3,2/3,2/4,2"
+      ],
+      "staticKey": "4f0e469867b5b25e24453d5c2ab0343aa9e3f659cd5a55c0708946bdd9ba0c11,a1ee8c144bd31511639895ec09aa7e442ec2c4a2f2f02d7202cb21bcc24389cf",
+      "inputs": [
+        {
+          "name": "keyIn",
+          "index": 0,
+          "dtype": "uint8",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "keyCacheIn",
+          "index": 1,
+          "dtype": "uint8",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "slotMapping",
+          "index": 2,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "seqLen",
+          "index": 3,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "keyCacheOut",
+          "index": 0,
+          "dtype": "uint8",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_69cf40a071c531b49b5be27bfaa4fab0.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "ReshapeAndCacheBnsd/d=0,p=1/1,2/1,2/3,2/3,2/1,2",
+        "ReshapeAndCacheBnsd/d=0,p=0/1,2/1,2/3,2/3,2/1,2",
+        "ReshapeAndCacheBnsd/d=1,p=1/1,2/1,2/3,2/3,2/1,2",
+        "ReshapeAndCacheBnsd/d=1,p=0/1,2/1,2/3,2/3,2/1,2"
+      ],
+      "staticKey": "682c37aa85aa4440012c38ba1a9aeef2d52c3a80ccccf25c86fe01a4ce66fffb,14efd1f4433bc09558cb16b9d3dbe0b580679ec68fddeddfb9341dd79e37dac0",
+      "inputs": [
+        {
+          "name": "keyIn",
+          "index": 0,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "keyCacheIn",
+          "index": 1,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "slotMapping",
+          "index": 2,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "seqLen",
+          "index": 3,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "keyCacheOut",
+          "index": 0,
+          "dtype": "float16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_98ba07b04b816b84e9cf8396047a724b.json"
+      }
+    },
+    {
+      "implMode": "high_performance",
+      "int64Mode": false,
+      "simplifiedKeyMode": 0,
+      "simplifiedKey": [
+        "ReshapeAndCacheBnsd/d=0,p=1/27,2/27,2/3,2/3,2/27,2",
+        "ReshapeAndCacheBnsd/d=0,p=0/27,2/27,2/3,2/3,2/27,2",
+        "ReshapeAndCacheBnsd/d=1,p=1/27,2/27,2/3,2/3,2/27,2",
+        "ReshapeAndCacheBnsd/d=1,p=0/27,2/27,2/3,2/3,2/27,2"
+      ],
+      "staticKey": "6c76d91f8a987ef97194a6b94b3413ff2ec74f765dfe4b62ce239028080ab211,2e1ae51a8e75adaf82f3af856ebd3e53ad9be9bca94afb962c9e9741f1fe4f8f",
+      "inputs": [
+        {
+          "name": "keyIn",
+          "index": 0,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "keyCacheIn",
+          "index": 1,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "slotMapping",
+          "index": 2,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        },
+        {
+          "name": "seqLen",
+          "index": 3,
+          "dtype": "int32",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "keyCacheOut",
+          "index": 0,
+          "dtype": "bfloat16",
+          "format": "ND",
+          "paramType": "required",
+          "shape": [
+            -2
+          ],
+          "format_match_mode": "FormatAgnostic"
+        }
+      ],
+      "opMode": "dynamic",
+      "optionalInputMode": "gen_placeholder",
+      "deterministic": "ignore",
+      "optionalOutputMode": "gen_placeholder",
+      "binInfo": {
+        "jsonFilePath": "ascend910b/reshape_and_cache_bnsd/ReshapeAndCacheBnsd_cbfb6aa81347796329c7283318b41e8c.json"
+      }
+    }
+  ]
+}
