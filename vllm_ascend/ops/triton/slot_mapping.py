@@ -73,12 +73,17 @@ def _slot_mapping_kernel(
         offsets = block_id * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < n_tokens
         req = tl.load(req_indices_ptr + offsets, mask=mask, other=0)  # int32
-        pos = tl.load(positions_ptr + offsets, mask=mask, other=0)  # int64
-        logical_block = pos // BLOCK_SIZE_KV
-        bt_idx = req.to(tl.int64) * bt_row_stride + logical_block  # int64
+        # Cast positions to int32 up front and keep ALL index math in int32.
+        # Ascend has no native int64 vector ALU, so int64 //, %, * get emulated
+        # scalar-wise (per element) and the kernel goes scalar-bound. pos,
+        # bt_idx and slot all fit int32 for realistic configs, so this is safe;
+        # it also makes the block_table gather use int32 (not int64) addressing.
+        pos = tl.load(positions_ptr + offsets, mask=mask, other=0).to(tl.int32)
+        logical_block = pos // BLOCK_SIZE_KV  # int32
+        bt_idx = req * bt_row_stride + logical_block  # int32 index
         block_number = tl.load(block_table_ptr + bt_idx, mask=mask, other=0)  # int32
-        slot = block_number.to(tl.int64) * BLOCK_SIZE_KV + pos % BLOCK_SIZE_KV
-        tl.store(slot_mapping_ptr + offsets, slot.to(tl.int32), mask=mask)
+        slot = block_number * BLOCK_SIZE_KV + pos % BLOCK_SIZE_KV  # int32
+        tl.store(slot_mapping_ptr + offsets, slot, mask=mask)
 
 
 @triton.jit(do_not_specialize=["n_tokens", "bt_row_stride"])
@@ -101,16 +106,19 @@ def _fused_position_slot_mapping_kernel(
         offsets = block_id * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
         mask = offsets < n_tokens
         req = tl.load(req_indices_ptr + offsets, mask=mask, other=0)  # int32
-        # positions = num_computed_tokens[req] + query_pos  (gather + add)
-        ctx = tl.load(num_computed_tokens_ptr + req, mask=mask, other=0)  # int64
-        qp = tl.load(query_pos_ptr + offsets, mask=mask, other=0)  # int64
-        pos = ctx + qp
-        tl.store(positions_ptr + offsets, pos, mask=mask)
-        logical_block = pos // BLOCK_SIZE_KV
-        bt_idx = req.to(tl.int64) * bt_row_stride + logical_block
-        block_number = tl.load(block_table_ptr + bt_idx, mask=mask, other=0)
-        slot = block_number.to(tl.int64) * BLOCK_SIZE_KV + pos % BLOCK_SIZE_KV
-        tl.store(slot_mapping_ptr + offsets, slot.to(tl.int32), mask=mask)
+        # positions = num_computed_tokens[req] + query_pos. Cast to int32 so
+        # all index math stays on the vector ALU (int64 -> scalar-emulated).
+        ctx = tl.load(num_computed_tokens_ptr + req, mask=mask, other=0).to(tl.int32)
+        qp = tl.load(query_pos_ptr + offsets, mask=mask, other=0).to(tl.int32)
+        pos = ctx + qp  # int32
+        # positions output is int64 (vLLM convention): a contiguous vector
+        # store+cast, not scalar arithmetic.
+        tl.store(positions_ptr + offsets, pos.to(tl.int64), mask=mask)
+        logical_block = pos // BLOCK_SIZE_KV  # int32
+        bt_idx = req * bt_row_stride + logical_block  # int32 index
+        block_number = tl.load(block_table_ptr + bt_idx, mask=mask, other=0)  # int32
+        slot = block_number * BLOCK_SIZE_KV + pos % BLOCK_SIZE_KV  # int32
+        tl.store(slot_mapping_ptr + offsets, slot, mask=mask)
 
 
 def compute_slot_mapping(
