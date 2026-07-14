@@ -176,6 +176,8 @@ class AscendConfig:
             "VLLM_ASCEND_ENABLE_FUSED_MC2",
             ascend_envs.VLLM_ASCEND_ENABLE_FUSED_MC2,
         )
+        if self.enable_fused_mc2 not in (0, 1, 2):
+            raise ValueError(f"enable_fused_mc2 must be 0, 1, or 2, got {self.enable_fused_mc2}")
         self.enable_mlapo = self._get_config_value(
             additional_config,
             "enable_mlapo",
@@ -301,6 +303,20 @@ class AscendConfig:
             )
         if self.mega_moe_max_tokens <= 0:
             raise ValueError(f"mega_moe_max_tokens must be a positive integer, got {self.mega_moe_max_tokens}")
+
+        # Zero selects the documented worst-case receive capacity derived from
+        # scheduler capacity, EP size, top-k, and local expert count.
+        self.mega_moe_max_recv_tokens = additional_config.get("mega_moe_max_recv_tokens", 0)
+        if not isinstance(self.mega_moe_max_recv_tokens, int):
+            raise ValueError(
+                "mega_moe_max_recv_tokens must be an integer, got "
+                f"{type(self.mega_moe_max_recv_tokens).__name__}: {self.mega_moe_max_recv_tokens}"
+            )
+        if self.mega_moe_max_recv_tokens < 0:
+            raise ValueError(
+                "mega_moe_max_recv_tokens must be greater than or equal to 0, got "
+                f"{self.mega_moe_max_recv_tokens}"
+            )
 
         # Whether to use NPU device group for DP metadata all_reduce.
         # "True": use NPU device group, "False" (default): use CPU group.

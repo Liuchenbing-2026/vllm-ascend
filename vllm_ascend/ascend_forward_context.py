@@ -31,6 +31,84 @@ class MoECommType(Enum):
     FUSED_MC2 = 3
 
 
+_CANN_MEGAMOE_SUPPORTED_EP_SIZES = {2, 4, 8, 16, 32}
+_CANN_MEGAMOE_SUPPORTED_QUANT_NAMES = {
+    "w8a8",
+    "w8a8_dynamic",
+    "quanttype.w8a8",
+}
+
+
+def _get_cann_megamoe_quant_name(vllm_config: VllmConfig, quant_type: Any) -> str | None:
+    if quant_type is not None:
+        return str(getattr(quant_type, "name", quant_type)).lower()
+
+    quant_config = getattr(vllm_config, "quant_config", None)
+    quant_description = getattr(quant_config, "quant_description", None)
+    if not isinstance(quant_description, dict):
+        return None
+
+    quant_values = {str(value).lower() for value in quant_description.values()}
+    if "w8a8_dynamic" in quant_values:
+        return "w8a8_dynamic"
+    if "w8a8" in quant_values:
+        return "w8a8"
+    return None
+
+
+def _cann_megamoe_supported_by_config(
+    vllm_config: VllmConfig,
+    quant_type: Any,
+    is_draft_model: bool,
+) -> bool:
+    if is_draft_model:
+        return False
+
+    ascend_config = get_ascend_config()
+    if ascend_config.enable_fused_mc2 != 2:
+        return False
+    if getattr(ascend_config.eplb_config, "dynamic_eplb", False):
+        return False
+
+    ep_world_size = get_ep_group().world_size
+    if ep_world_size not in _CANN_MEGAMOE_SUPPORTED_EP_SIZES:
+        return False
+
+    model_config = vllm_config.model_config
+    hf_text_config = model_config.hf_text_config
+    hidden_size = getattr(hf_text_config, "hidden_size", None)
+    if hidden_size is None:
+        hidden_size = model_config.get_hidden_size()
+    intermediate_hidden = getattr(hf_text_config, "moe_intermediate_size", None)
+    num_topk = getattr(
+        hf_text_config,
+        "num_experts_per_tok",
+        getattr(hf_text_config, "top_k_experts", None),
+    )
+    if intermediate_hidden is None or num_topk is None:
+        return False
+
+    hidden_size = int(hidden_size)
+    intermediate_hidden = int(intermediate_hidden)
+    num_topk = int(num_topk)
+    num_experts = int(model_config.get_num_experts())
+    if num_experts % ep_world_size != 0:
+        return False
+    num_experts_per_rank = num_experts // ep_world_size
+
+    if hidden_size < 1024 or hidden_size > 8192 or hidden_size % 512 != 0:
+        return False
+    if intermediate_hidden < 1024 or intermediate_hidden > 8192 or intermediate_hidden % 512 != 0:
+        return False
+    if num_topk < 1 or num_topk > 16:
+        return False
+    if num_experts_per_rank < 1 or num_experts_per_rank > 128:
+        return False
+
+    quant_name = _get_cann_megamoe_quant_name(vllm_config, quant_type)
+    return quant_name in _CANN_MEGAMOE_SUPPORTED_QUANT_NAMES
+
+
 _MRV2_IN_PROFILE_RUN: ContextVar[bool] = ContextVar("_MRV2_IN_PROFILE_RUN", default=False)
 
 
@@ -203,7 +281,11 @@ def set_mc2_tokens_capacity(vllm_config, max_num_reqs, uniform_decode_query_len)
     global _mc2_tokens_capacity
     if _mc2_tokens_capacity is not None:
         return
-    if get_ascend_config().enable_prefill_mc2:
+    ascend_config = get_ascend_config()
+    cann_megamoe_a2 = (
+        ascend_config.enable_fused_mc2 == 2 and get_ascend_device_type() == AscendDeviceType.A2
+    )
+    if cann_megamoe_a2 or ascend_config.enable_prefill_mc2:
         max_num_tokens = vllm_config.scheduler_config.max_num_batched_tokens
     elif vllm_config.compilation_config.cudagraph_capture_sizes:
         max_num_tokens = vllm_config.compilation_config.max_cudagraph_capture_size
@@ -212,8 +294,10 @@ def set_mc2_tokens_capacity(vllm_config, max_num_reqs, uniform_decode_query_len)
     tp_size = vllm_config.parallel_config.tensor_parallel_size
     # Use integer arithmetic for ceiling division.
     num_tokens_per_tp_rank = (max_num_tokens + tp_size - 1) // tp_size
-    # NOTE: To save memory, we cap the max number of tokens to 512.
-    num_tokens_per_tp_rank = min(num_tokens_per_tp_rank, 512)
+    # CANN MegaMoe supports up to 4096 tokens per rank. Keep the historical
+    # 512-token cap for legacy MC2 implementations.
+    per_rank_limit = 4096 if cann_megamoe_a2 else 512
+    num_tokens_per_tp_rank = min(num_tokens_per_tp_rank, per_rank_limit)
     _mc2_tokens_capacity = num_tokens_per_tp_rank * tp_size
 
 
@@ -240,8 +324,17 @@ def get_mc2_mask():
 def _select_a2_moe_comm_method(
     num_tokens: int,
     vllm_config: VllmConfig,
+    quant_type: Any,
     mc2_tokens_capacity: int,
+    is_draft_model: bool,
 ) -> MoECommType:
+    if num_tokens <= mc2_tokens_capacity and _cann_megamoe_supported_by_config(
+        vllm_config,
+        quant_type,
+        is_draft_model,
+    ):
+        return MoECommType.FUSED_MC2
+
     num_experts = vllm_config.model_config.get_num_experts()
     ep_world_size = (
         vllm_config.parallel_config.world_size_across_dp // vllm_config.parallel_config.pipeline_parallel_size
@@ -306,8 +399,9 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
 
     1. Non-MoE models return `None`.
     2. Without expert parallel, fall back to all-gather.
-    3. On A2 with expert parallel, pick MC2 when tokens fit the MC2 capacity
-       and the DP size is large enough; otherwise use all-gather.
+    3. On A2 with expert parallel, MC2 mode 2 selects CANN MegaMoe for a
+       supported W8A8 main model. Other configurations retain legacy MC2 or
+       all-gather selection.
     4. On A3 with expert parallel, prefer fused MC2 when using w8a8_dynamic
        quantization with small EP size, no dynamic_eplb, and not in MTP
        mode; otherwise use MC2 within capacity or all-to-all.
@@ -341,7 +435,13 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
     if not vllm_config.parallel_config.enable_expert_parallel or get_ep_group().world_size == 1:
         moe_comm_type = MoECommType.ALLGATHER
     elif soc_version == AscendDeviceType.A2:
-        moe_comm_type = _select_a2_moe_comm_method(num_tokens, vllm_config, mc2_tokens_capacity)
+        moe_comm_type = _select_a2_moe_comm_method(
+            num_tokens,
+            vllm_config,
+            quant_type,
+            mc2_tokens_capacity,
+            is_draft_model,
+        )
     elif soc_version == AscendDeviceType.A3:
         moe_comm_type = _select_a3_moe_comm_method(
             num_tokens,

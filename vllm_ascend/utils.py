@@ -1088,6 +1088,116 @@ def npu_stream_switch(target_stream: torch.npu.Stream, *, enabled: bool = True):
     return torch.npu.stream(target_stream)
 
 
+def resolve_cann_megamoe_max_recv_tokens(
+    num_max_tokens_per_rank: int,
+    ep_world_size: int,
+    num_topk: int,
+    num_experts_per_rank: int,
+) -> int:
+    """Resolve the rank-invariant CANN MegaMoe receive capacity."""
+    upper_bound = num_max_tokens_per_rank * ep_world_size * min(num_topk, num_experts_per_rank)
+    configured = get_ascend_config().mega_moe_max_recv_tokens
+    if configured == 0:
+        return upper_bound
+    if configured > upper_bound:
+        raise ValueError(
+            "mega_moe_max_recv_tokens exceeds the documented CANN MegaMoe upper bound: "
+            f"configured={configured}, upper_bound={upper_bound}."
+        )
+    return configured
+
+
+def get_cann_megamoe_dummy_token_capacity(num_experts: int, num_topk: int) -> int:
+    """Reserve enough rows for rank 0 to route to every expert once."""
+    if num_topk < 1:
+        raise ValueError(f"CANN MegaMoe requires num_topk to be positive, got {num_topk}.")
+    if num_experts < num_topk:
+        raise ValueError(
+            "CANN MegaMoe dummy routing requires num_experts >= num_topk, got "
+            f"num_experts={num_experts}, num_topk={num_topk}."
+        )
+    return math.ceil(num_experts / num_topk)
+
+
+def calculate_cann_megamoe_hccl_buffer_size() -> int:
+    """Return the A2 CANN MegaMoe HCCL buffer size in MB."""
+    from cann_ops_transformer.ops import get_mega_moe_ccl_buffer_size
+    from vllm.config import get_current_vllm_config
+
+    vllm_config = get_current_vllm_config()
+    model_config = vllm_config.model_config
+    hf_text_config = model_config.hf_text_config
+    parallel_config = vllm_config.parallel_config
+
+    ep_world_size = parallel_config.world_size_across_dp // parallel_config.pipeline_parallel_size
+    tp_size = parallel_config.tensor_parallel_size
+    num_experts = int(model_config.get_num_experts())
+    num_topk = int(
+        getattr(
+            hf_text_config,
+            "num_experts_per_tok",
+            getattr(hf_text_config, "top_k_experts", 0),
+        )
+    )
+    hidden = getattr(hf_text_config, "hidden_size", None)
+    if hidden is None:
+        hidden = model_config.get_hidden_size()
+    hidden = int(hidden)
+
+    base_num_max_tokens_per_rank = math.ceil(vllm_config.scheduler_config.max_num_batched_tokens / tp_size)
+    dummy_token_capacity = get_cann_megamoe_dummy_token_capacity(num_experts, num_topk)
+    num_max_tokens_per_rank = base_num_max_tokens_per_rank + dummy_token_capacity
+    if num_max_tokens_per_rank < 1 or num_max_tokens_per_rank > 4096:
+        raise ValueError(
+            "CANN MegaMoe requires num_max_tokens_per_rank in [1, 4096], got "
+            f"{num_max_tokens_per_rank} from base={base_num_max_tokens_per_rank}, "
+            f"dummy_capacity={dummy_token_capacity}, max_num_batched_tokens="
+            f"{vllm_config.scheduler_config.max_num_batched_tokens}, and tp_size={tp_size}."
+        )
+    if ep_world_size not in {2, 4, 8, 16, 32}:
+        raise ValueError(f"CANN MegaMoe only supports EP sizes 2, 4, 8, 16, and 32, got {ep_world_size}.")
+    if num_experts % ep_world_size != 0:
+        raise ValueError(f"num_experts={num_experts} must be divisible by ep_world_size={ep_world_size}.")
+    if num_topk < 1 or num_topk > 16:
+        raise ValueError(f"CANN MegaMoe requires num_topk in [1, 16], got {num_topk}.")
+
+    num_experts_per_rank = num_experts // ep_world_size
+    max_recv_token_num = resolve_cann_megamoe_max_recv_tokens(
+        num_max_tokens_per_rank,
+        ep_world_size,
+        num_topk,
+        num_experts_per_rank,
+    )
+    buffer_size_mb = int(
+        get_mega_moe_ccl_buffer_size(
+            ep_world_size,
+            num_experts,
+            num_max_tokens_per_rank,
+            num_topk,
+            hidden,
+            max_recv_token_num=max_recv_token_num,
+            dispatch_quant_mode=2,
+            dispatch_quant_out_dtype=torch.int8,
+        )
+    )
+    if buffer_size_mb <= 0:
+        raise RuntimeError(f"get_mega_moe_ccl_buffer_size returned invalid size {buffer_size_mb} MB.")
+
+    logger.info_once(
+        "CANN MegaMoe HCCL buffer: ep=%d experts=%d topk=%d hidden=%d "
+        "max_tokens_per_rank=%d dummy_tokens=%d max_recv_tokens=%d buffer=%d MB",
+        ep_world_size,
+        num_experts,
+        num_topk,
+        hidden,
+        num_max_tokens_per_rank,
+        dummy_token_capacity,
+        max_recv_token_num,
+        buffer_size_mb,
+    )
+    return buffer_size_mb
+
+
 def create_hccl_pg_options(group_name: str):
     options = torch_npu._C._distributed_c10d.ProcessGroupHCCL.Options()
     hccl_config = get_hccl_config_for_pg_options(group_name) or {}
@@ -1106,10 +1216,15 @@ def get_hccl_config_for_pg_options(group_name: str) -> dict | None:
     Returns:
         HCCL pg_options or None for mc2 group
     """
-    # FIXME: Current mc2 operators only perform communication space partitioning
-    # based on HCCL_BUFFSIZE configuration. Using pg_options with mc2 group would
-    # result in memory misalignment problems.
+    # Legacy MC2 operators partition communication space from HCCL_BUFFSIZE and
+    # must not receive a per-group override. A2 CANN MegaMoe requires its
+    # device-derived buffer size before the MC2 group is created.
     if group_name and "mc2" in group_name:
+        if (
+            get_ascend_config().enable_fused_mc2 == 2
+            and get_ascend_device_type() == AscendDeviceType.A2
+        ):
+            return {"hccl_buffer_size": calculate_cann_megamoe_hccl_buffer_size()}
         return None
     hccl_config_map = {
         "dp": {"hccl_buffer_size": calculate_dp_buffer_size()},
