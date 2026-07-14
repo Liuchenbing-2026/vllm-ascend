@@ -7,6 +7,7 @@ import torch
 
 from vllm_ascend.ascend_forward_context import _cann_megamoe_supported_by_config
 from vllm_ascend.ops.fused_moe.moe_comm_method import (
+    FusedMC2CommImpl,
     _append_cann_megamoe_dummy_tokens,
     _normalize_cann_megamoe_activation,
 )
@@ -76,10 +77,72 @@ def check_a2_selection_guard() -> None:
         assert not _cann_megamoe_supported_by_config(vllm_config, "w8a8", True)
 
 
+def check_cross_rank_contract() -> None:
+    impl = FusedMC2CommImpl.__new__(FusedMC2CommImpl)
+    impl._cann_megamoe_call_index = 0
+    impl._cann_megamoe_last_contract_signature = None
+    impl._cann_megamoe_contract_check = True
+    impl.moe_config = SimpleNamespace(num_experts=8)
+    impl.token_dispatcher = SimpleNamespace(ep_rank_id=0, ep_world_size=2)
+
+    hidden_states = torch.ones((6, 4), dtype=torch.bfloat16)
+    topk_ids = torch.tensor(
+        [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3]],
+        dtype=torch.int32,
+    )
+    topk_weights = torch.full((6, 2), 0.5, dtype=torch.float32)
+    active_mask = torch.ones(6, dtype=torch.int8)
+
+    def gather_matching(output, input_tensor, group=None):
+        del group
+        output.copy_(input_tensor.repeat(2))
+
+    with (
+        patch(
+            "vllm_ascend.ops.fused_moe.moe_comm_method.get_mc2_group",
+            return_value=SimpleNamespace(device_group=None),
+        ),
+        patch("torch.distributed.all_gather_into_tensor", side_effect=gather_matching),
+    ):
+        call_index, _ = impl._check_cann_megamoe_contract(
+            hidden_states,
+            topk_ids,
+            topk_weights,
+            active_mask,
+        )
+        assert call_index == 0
+
+    def gather_mismatched(output, input_tensor, group=None):
+        del group
+        remote = input_tensor.clone()
+        remote[2] += 1
+        output.copy_(torch.cat((input_tensor, remote)))
+
+    with (
+        patch(
+            "vllm_ascend.ops.fused_moe.moe_comm_method.get_mc2_group",
+            return_value=SimpleNamespace(device_group=None),
+        ),
+        patch("torch.distributed.all_gather_into_tensor", side_effect=gather_mismatched),
+    ):
+        try:
+            impl._check_cann_megamoe_contract(
+                hidden_states,
+                topk_ids,
+                topk_weights,
+                active_mask,
+            )
+        except RuntimeError as exc:
+            assert "identical call order and num_tokens" in str(exc)
+        else:
+            raise AssertionError("Expected a cross-rank MegaMoe contract mismatch.")
+
+
 def main() -> None:
     check_dummy_routing()
     check_capacity_helpers()
     check_a2_selection_guard()
+    check_cross_rank_contract()
     assert _normalize_cann_megamoe_activation("silu") == "swiglu"
     print("A2 MegaMoe helper checks: PASS", flush=True)
 

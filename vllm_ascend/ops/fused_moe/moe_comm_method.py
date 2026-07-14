@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -341,6 +342,10 @@ class FusedMC2CommImpl(MoECommMethod):
         super().__init__(moe_config)
         self._cann_megamoe_ops = None
         self._cann_symm_buffers = {}
+        self._cann_megamoe_call_index = 0
+        self._cann_megamoe_last_contract_signature = None
+        self._cann_megamoe_contract_check = os.getenv("VLLM_ASCEND_MEGAMOE_CONTRACT_CHECK", "0") == "1"
+        self._cann_megamoe_sync_after_call = os.getenv("VLLM_ASCEND_MEGAMOE_SYNC_AFTER_CALL", "0") == "1"
         enable_fused_mc2 = get_ascend_config().enable_fused_mc2
         if enable_fused_mc2 == _DISPATCH_FFN_COMBINE_MODE:
             self.expert_token_nums = torch.zeros([self.moe_config.num_local_experts], dtype=torch.int32, device="npu")
@@ -478,6 +483,95 @@ class FusedMC2CommImpl(MoECommMethod):
             self._cann_symm_buffers[key] = sym_buffer
         return self._cann_symm_buffers[key]
 
+    def _check_cann_megamoe_contract(
+        self,
+        hidden_states: torch.Tensor,
+        topk_ids: torch.Tensor,
+        topk_weights: torch.Tensor,
+        x_active_mask: torch.Tensor,
+    ) -> tuple[int, bool]:
+        """Validate the documented A2 cross-rank MegaMoe call contract."""
+        call_index = self._cann_megamoe_call_index
+        self._cann_megamoe_call_index += 1
+        if not self._cann_megamoe_contract_check:
+            return call_index, False
+
+        if hidden_states.dim() != 2:
+            raise ValueError(f"CANN MegaMoe x must be 2D, got shape={tuple(hidden_states.shape)}.")
+        num_tokens, hidden = map(int, hidden_states.shape)
+        if topk_ids.dim() != 2 or topk_weights.dim() != 2:
+            raise ValueError(
+                "CANN MegaMoe topk tensors must be 2D: "
+                f"ids={tuple(topk_ids.shape)}, weights={tuple(topk_weights.shape)}."
+            )
+        if topk_ids.shape != topk_weights.shape or int(topk_ids.shape[0]) != num_tokens:
+            raise ValueError(
+                "CANN MegaMoe x/topk shapes disagree: "
+                f"x={tuple(hidden_states.shape)}, ids={tuple(topk_ids.shape)}, "
+                f"weights={tuple(topk_weights.shape)}."
+            )
+        if x_active_mask.dtype != torch.int8 or tuple(x_active_mask.shape) != (num_tokens,):
+            raise ValueError(
+                "CANN MegaMoe x_active_mask must be INT8 with shape (num_tokens,): "
+                f"dtype={x_active_mask.dtype}, shape={tuple(x_active_mask.shape)}, num_tokens={num_tokens}."
+            )
+
+        num_topk = int(topk_ids.shape[1])
+        num_experts = int(self.moe_config.num_experts)
+        invalid_ids = int(((topk_ids < 0) | (topk_ids >= num_experts)).sum().item())
+        sorted_ids = torch.sort(topk_ids, dim=1).values
+        duplicate_rows = int((sorted_ids[:, 1:] == sorted_ids[:, :-1]).any(dim=1).sum().item())
+        if invalid_ids or duplicate_rows:
+            raise ValueError(
+                "CANN MegaMoe topk_ids violate the documented range/uniqueness contract: "
+                f"invalid_ids={invalid_ids}, duplicate_rows={duplicate_rows}, experts={num_experts}."
+            )
+
+        active_tokens = int(x_active_mask.sum(dtype=torch.int64).item())
+        layer_index = int(getattr(_EXTRA_CTX, "moe_layer_index", -1))
+        ep_rank = int(self.token_dispatcher.ep_rank_id)
+        ep_world = int(self.token_dispatcher.ep_world_size)
+        local_contract = torch.tensor(
+            [call_index, layer_index, num_tokens, hidden, num_topk, int(x_active_mask.numel())],
+            dtype=torch.int64,
+            device=hidden_states.device,
+        )
+        gathered = torch.empty(local_contract.numel() * ep_world, dtype=torch.int64, device=hidden_states.device)
+
+        signature = (num_tokens, active_tokens)
+        should_trace = call_index < 4 or call_index % 64 == 0 or signature != self._cann_megamoe_last_contract_signature
+        if should_trace:
+            logger.warning(
+                "CANN MegaMoe contract before: ep_rank=%d call=%d layer=%d tokens=%d active=%d "
+                "hidden=%d topk=%d",
+                ep_rank,
+                call_index,
+                layer_index,
+                num_tokens,
+                active_tokens,
+                hidden,
+                num_topk,
+            )
+
+        torch.distributed.all_gather_into_tensor(
+            gathered,
+            local_contract,
+            group=get_mc2_group().device_group,
+        )
+        contracts = gathered.view(ep_world, -1)
+        reference = contracts[0]
+        mismatch = (contracts != reference).any(dim=1)
+        if bool(mismatch.any().item()):
+            contract_rows = contracts.cpu().tolist()
+            raise RuntimeError(
+                "CANN MegaMoe A2 requires identical call order and num_tokens on every EP rank; "
+                f"contracts={contract_rows}. Columns are "
+                "[call_index, layer_index, num_tokens, hidden, num_topk, mask_length]."
+            )
+
+        self._cann_megamoe_last_contract_signature = signature
+        return call_index, should_trace
+
     def _apply_cann_megamoe(
         self,
         fused_experts_input: MoEFusedExpertsInput,
@@ -537,6 +631,12 @@ class FusedMC2CommImpl(MoECommMethod):
                 int(self.token_dispatcher.ep_rank_id),
             )
         )
+        call_index, should_trace = self._check_cann_megamoe_contract(
+            hidden_states,
+            topk_ids,
+            topk_weights,
+            x_active_mask,
+        )
         activation_clamp = fused_experts_input.swiglu_limit if fused_experts_input.swiglu_limit > 0 else None
         output, expert_tokens = mega_moe(
             hidden_states,
@@ -551,6 +651,15 @@ class FusedMC2CommImpl(MoECommMethod):
             activation=_normalize_cann_megamoe_activation(fused_experts_input.activation),
             activation_clamp=activation_clamp,
         )
+        if self._cann_megamoe_sync_after_call:
+            torch.npu.synchronize()
+        if should_trace:
+            logger.warning(
+                "CANN MegaMoe contract after: ep_rank=%d call=%d output_tokens=%d",
+                self.token_dispatcher.ep_rank_id,
+                call_index,
+                int(output.shape[0]),
+            )
         return output[:original_num_tokens], expert_tokens
 
     def fused_experts(
