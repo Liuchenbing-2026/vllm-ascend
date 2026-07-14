@@ -231,22 +231,7 @@ class TestDraftAclGraphBoundary:
         assert reason == "DSpark draft ACLGraph does not yet support LoRA"
         proposer.vllm_config.lora_config = None
 
-        proposer.vllm_config.model_config = SimpleNamespace(is_multimodal_model=True)
-        reason = AscendDsparkProposer._draft_aclgraph_disabled_reason(proposer)
-        assert reason == "DSpark draft ACLGraph does not support multimodal inputs"
-        proposer.vllm_config.model_config.is_multimodal_model = False
-
-        proposer.enable_enpu = True
-        reason = AscendDsparkProposer._draft_aclgraph_disabled_reason(proposer)
-        assert reason == "DSpark draft ACLGraph does not yet support ENPU update ordering"
-        proposer.enable_enpu = False
-
-        proposer.runner = SimpleNamespace(enable_enpu=True)
-        reason = AscendDsparkProposer._draft_aclgraph_disabled_reason(proposer)
-        assert reason == "DSpark draft ACLGraph does not yet support ENPU update ordering"
-        proposer.runner.enable_enpu = False
-
-    def test_fused_graph_wrapper_uses_merged_eagle_update_order(
+    def test_fused_graph_wrapper_declares_caller_owned_update_order(
         self,
         monkeypatch,
     ):
@@ -295,9 +280,9 @@ class TestDraftAclGraphBoundary:
             is AscendDsparkProposer._run_dspark_model_and_sampler_tail_from_graph_buffers
         )
         assert wrapper_calls[0]["runtime_mode"] == dspark_proposer_module.CUDAGraphMode.FULL
-        assert wrapper_calls[0]["use_eagle"] is True
+        assert wrapper_calls[0]["use_eagle"] is False
         assert wrapper_calls[0]["enable_enpu"] is False
-        assert "caller_orders_graph_update" not in wrapper_calls[0]
+        assert wrapper_calls[0]["caller_orders_graph_update"] is True
         assert proposer.use_cuda_graph is True
         assert proposer._dspark_use_replicated_markov_w1 is True
         assert replicated_w1_calls == [True]
@@ -318,6 +303,8 @@ class TestDraftAclGraphBoundary:
             lambda self, model: None,
         )
         monkeypatch.setattr(dspark_proposer_module, "ACLGraphWrapper", make_wrapper)
+        monkeypatch.setattr(dspark_proposer_module.torch.npu, "Stream", lambda: object())
+
         proposer = object.__new__(AscendDsparkProposer)
         proposer.use_cuda_graph = True
         proposer._dspark_enable_draft_aclgraph = True
@@ -327,28 +314,10 @@ class TestDraftAclGraphBoundary:
 
         AscendDsparkProposer.load_model(proposer, object())
 
-        assert wrapper_calls == []
-        assert proposer.use_cuda_graph is False
-        assert proposer._dspark_enable_draft_aclgraph is False
-        assert proposer._dspark_graph_runnable_uses_buffers is False
+        assert len(wrapper_calls) == 1
+        assert wrapper_calls[0][0].__func__ is AscendDsparkProposer._run_dspark_model_from_graph_buffers
         assert proposer._dspark_sampler_tail_graph_enabled is False
         assert proposer._dspark_use_replicated_markov_w1 is False
-
-    def test_only_uniform_target_decode_selects_dspark_full_graph(self):
-        proposer = SimpleNamespace()
-
-        assert AscendDsparkProposer._draft_uniform_decode(
-            proposer,
-            SimpleNamespace(uniform=True),
-        )
-        assert not AscendDsparkProposer._draft_uniform_decode(
-            proposer,
-            SimpleNamespace(uniform=False),
-        )
-        assert not AscendDsparkProposer._draft_uniform_decode(
-            proposer,
-            SimpleNamespace(),
-        )
 
     def test_capture_sizes_use_anchor_plus_num_speculative_tokens(
         self,
@@ -474,92 +443,6 @@ class TestDraftAclGraphBoundary:
         torch.testing.assert_close(proposer.input_ids[9:], input_suffix)
         torch.testing.assert_close(proposer.positions[9:], position_suffix)
         torch.testing.assert_close(proposer._slot_mapping_buffer[9:], slot_mapping_suffix)
-
-    def test_context_padding_uses_descriptor_capacity_without_truncation(self):
-        hidden = torch.arange(16, dtype=torch.float32).view(8, 2)
-        positions = torch.arange(100, 108, dtype=torch.int32)
-        slots = torch.arange(200, 208, dtype=torch.int32)
-        proposer = SimpleNamespace(
-            _dflash_hidden_states=hidden,
-            _context_positions_buffer=positions,
-            _context_slot_mapping_buffer=slots,
-            _dspark_graph_context_inputs=None,
-        )
-        prefix = tuple(tensor[:3].clone() for tensor in (hidden, positions, slots))
-        suffix = tuple(tensor[6:].clone() for tensor in (hidden, positions, slots))
-        pointers = tuple(tensor.data_ptr() for tensor in (hidden, positions, slots))
-
-        prepared = AscendDsparkProposer._prepare_dspark_graph_context_inputs(
-            proposer,
-            num_context=3,
-            graph_capacity=6,
-        )
-
-        assert prepared is True
-        for actual, expected in zip((hidden[:3], positions[:3], slots[:3]), prefix):
-            torch.testing.assert_close(actual, expected)
-        assert hidden[3:6].eq(0).all()
-        assert positions[3:6].tolist() == [0, 0, 0]
-        assert slots[3:6].tolist() == [-1, -1, -1]
-        for actual, expected in zip((hidden[6:], positions[6:], slots[6:]), suffix):
-            torch.testing.assert_close(actual, expected)
-        assert proposer._dspark_graph_context_inputs is not None
-        assert tuple(tensor.shape[0] for tensor in proposer._dspark_graph_context_inputs) == (6, 6, 6)
-        assert tuple(tensor.data_ptr() for tensor in proposer._dspark_graph_context_inputs) == pointers
-
-        before_overflow = tuple(tensor.clone() for tensor in (hidden, positions, slots))
-        assert not AscendDsparkProposer._prepare_dspark_graph_context_inputs(
-            proposer,
-            num_context=7,
-            graph_capacity=6,
-        )
-        assert proposer._dspark_graph_context_inputs is None
-        for actual, expected in zip((hidden, positions, slots), before_overflow):
-            torch.testing.assert_close(actual, expected)
-
-    def test_fused_graph_capacity_fails_closed_for_dynamic_modes(self):
-        descriptor = SimpleNamespace(
-            num_tokens=6,
-            num_reqs=2,
-            uniform=True,
-            has_lora=False,
-        )
-        forward_context = SimpleNamespace(batch_descriptor=descriptor)
-        proposer = SimpleNamespace(
-            _dspark_sampler_tail_graph_enabled=True,
-            _draft_aclgraph_disabled_reason=lambda: None,
-            num_speculative_tokens=2,
-            _dflash_num_context=4,
-            _dflash_hidden_states=torch.zeros(8, 2),
-            _context_positions_buffer=torch.zeros(8, dtype=torch.int32),
-            _context_slot_mapping_buffer=torch.zeros(8, dtype=torch.int32),
-        )
-
-        def capacity(**overrides):
-            values = {
-                "forward_context": forward_context,
-                "num_input_tokens": 6,
-                "batch_size": 1,
-                "num_actual_query_tokens": 3,
-                "is_prefill": 0,
-            }
-            values.update(overrides)
-            return AscendDsparkProposer._dspark_fused_graph_capacity(proposer, **values)
-
-        assert capacity() == 6
-        assert capacity(is_prefill=1) is None
-        assert capacity(is_prefill=torch.tensor(0)) is None
-        assert capacity(num_input_tokens=5) is None
-        assert capacity(num_actual_query_tokens=2) is None
-
-        descriptor.uniform = False
-        assert capacity() is None
-        descriptor.uniform = True
-        descriptor.has_lora = True
-        assert capacity() is None
-        descriptor.has_lora = False
-        proposer._dflash_num_context = 7
-        assert capacity() is None
 
     def test_dummy_second_dispatch_broadcasts_graph_size_to_all_dp_ranks(
         self,
@@ -712,18 +595,10 @@ class TestDraftAclGraphBoundary:
         )
         assert persistent_indices.tolist() == [1, 4, 7, 9, 0, 0, 11, 10]
 
-    def test_fused_graph_callable_runs_context_backbone_then_sampler_tail(self):
+    def test_fused_graph_callable_runs_backbone_then_sampler_tail(self):
         events = []
         model_inputs = {"input_ids": torch.tensor([1, 2])}
-        context_inputs = (
-            torch.tensor([[11.0], [12.0]]),
-            torch.tensor([5, 6], dtype=torch.int32),
-            torch.tensor([7, 8], dtype=torch.int32),
-        )
         last_hidden_states = torch.tensor([[3.0], [4.0]])
-
-        def precompute_context(*inputs):
-            events.append(("context_kv", inputs))
 
         def run_model(**kwargs):
             events.append(("backbone", kwargs))
@@ -734,8 +609,6 @@ class TestDraftAclGraphBoundary:
             return torch.tensor([[7, 8]], dtype=torch.int64)
 
         proposer = SimpleNamespace(
-            model=SimpleNamespace(precompute_and_store_context_kv=precompute_context),
-            _dspark_graph_context_inputs=context_inputs,
             _dspark_graph_model_inputs=model_inputs,
             _run_dspark_model=run_model,
             _run_dspark_model_from_graph_buffers=lambda: run_model(**model_inputs),
@@ -745,11 +618,10 @@ class TestDraftAclGraphBoundary:
 
         output = AscendDsparkProposer._run_dspark_model_and_sampler_tail_from_graph_buffers(proposer)
 
-        assert events[0] == ("context_kv", context_inputs)
-        assert events[1][0] == "backbone"
-        assert events[1][1]["input_ids"] is model_inputs["input_ids"]
-        assert events[2][0] == "sampler_tail"
-        torch.testing.assert_close(events[2][1], last_hidden_states)
+        assert events[0][0] == "backbone"
+        assert events[0][1]["input_ids"] is model_inputs["input_ids"]
+        assert events[1][0] == "sampler_tail"
+        torch.testing.assert_close(events[1][1], last_hidden_states)
         torch.testing.assert_close(output, torch.tensor([[7, 8]], dtype=torch.int64))
 
     def test_fused_graph_callable_accepts_non_tuple_backbone_output(self):
@@ -762,12 +634,6 @@ class TestDraftAclGraphBoundary:
             return torch.tensor([[7, 8]], dtype=torch.int64)
 
         proposer = SimpleNamespace(
-            model=SimpleNamespace(precompute_and_store_context_kv=lambda *inputs: None),
-            _dspark_graph_context_inputs=(
-                torch.empty(2, 1),
-                torch.empty(2, dtype=torch.int32),
-                torch.empty(2, dtype=torch.int32),
-            ),
             _dspark_graph_model_inputs=model_inputs,
             _run_dspark_model=lambda **kwargs: last_hidden_states,
             _run_dspark_model_from_graph_buffers=lambda: last_hidden_states,
@@ -852,10 +718,8 @@ class TestDraftAclGraphBoundary:
         torch.testing.assert_close(fourth, torch.tensor([4.0]))
         assert log_messages == [
             f"Captured DSpark draft backbone ACLGraph for {descriptor}",
-            f"Captured DSpark context-KV ACLGraph for {descriptor}",
             f"Captured DSpark sampler-tail ACLGraph for {descriptor}",
             f"Replayed DSpark draft backbone ACLGraph for {descriptor}",
-            f"Replayed DSpark context-KV ACLGraph for {descriptor}",
             f"Replayed DSpark sampler-tail ACLGraph for {descriptor}",
         ]
         assert proposer._dspark_logged_capture_keys == {descriptor}
@@ -869,81 +733,83 @@ class TestDraftAclGraphBoundary:
     ):
         events = []
         model_inputs = {
-            "input_ids": torch.tensor([7, 8, 9, 10, 11, 12]),
-            "positions": torch.tensor([3, 4, 5, 6, 7, 8], dtype=torch.int32),
-            "inputs_embeds": None,
+            "input_ids": torch.tensor([7, 8, 9, 10]),
+            "positions": torch.tensor([3, 4, 5, 6], dtype=torch.int32),
         }
         graph_output = torch.tensor([[101, 102], [901, 902]], dtype=torch.int64)
         graph_runner = object()
 
-        def graph_capacity(*args):
-            events.append(("capacity", *args[1:]))
-            return 6
-
-        def prepare_context(num_context, graph_capacity):
-            events.append(("context_inputs", num_context, graph_capacity))
-            return True
-
         def pad_query_buffers(num_actual_tokens, num_input_tokens):
             events.append(("pad", num_actual_tokens, num_input_tokens))
 
+        def synchronize_before_update():
+            events.append(("barrier",))
+
         def build_model_inputs(num_input_tokens):
-            events.append(("query_inputs", num_input_tokens))
+            events.append(("context_kv", num_input_tokens))
             return model_inputs
 
         def run_prepared(run_model, prepared_inputs):
             events.append(("model", run_model, prepared_inputs))
             return graph_output
 
+        def update_graph_params(forward_context, num_input_tokens, metadata):
+            events.append(
+                (
+                    "graph_update",
+                    forward_context.cudagraph_runtime_mode,
+                    num_input_tokens,
+                    metadata,
+                )
+            )
+
         proposer = SimpleNamespace(
             use_cuda_graph=True,
             _dspark_enable_draft_aclgraph=True,
-            _dspark_fused_graph_replay_enqueued=False,
             _dspark_backbone_runnable=graph_runner,
             _dspark_sampler_tail_graph_enabled=True,
             num_speculative_tokens=2,
-            _dflash_num_context=4,
-            _dspark_graph_context_inputs=None,
-            _dspark_fused_graph_capacity=graph_capacity,
-            _prepare_dspark_graph_context_inputs=prepare_context,
             _pad_dspark_query_buffers=pad_query_buffers,
-            _build_dspark_graph_model_inputs=build_model_inputs,
+            _synchronize_before_dspark_graph_update=synchronize_before_update,
+            build_model_inputs_first_pass=build_model_inputs,
+            _update_full_graph_params=update_graph_params,
             _run_prepared_dspark_model=run_prepared,
         )
-        descriptor = SimpleNamespace(num_tokens=6, num_reqs=2, uniform=True, has_lora=False)
         monkeypatch.setattr(
             dspark_proposer_module,
             "get_forward_context",
             lambda: SimpleNamespace(
                 cudagraph_runtime_mode=dspark_proposer_module.CUDAGraphMode.FULL,
-                batch_descriptor=descriptor,
             ),
         )
         monkeypatch.setattr(dspark_proposer_module, "lmhead_tp_enable", lambda: False)
 
         draft_tokens = AscendDsparkProposer._run_merged_draft(
             proposer,
-            num_input_tokens=6,
+            num_input_tokens=8,
             batch_size=1,
             token_indices_to_sample=torch.tensor([1, 3], dtype=torch.int64),
             target_positions=torch.empty(0, dtype=torch.int32),
             inputs_embeds=None,
             multi_steps_attn_metadata=[],
-            num_tokens=3,
+            num_tokens=4,
         )
 
         assert [event[0] for event in events] == [
-            "capacity",
-            "context_inputs",
             "pad",
-            "query_inputs",
+            "barrier",
+            "context_kv",
+            "graph_update",
             "model",
         ]
-        assert events[1] == ("context_inputs", 4, 6)
-        assert events[2] == ("pad", 3, 6)
-        assert events[3] == ("query_inputs", 6)
+        assert events[2] == ("context_kv", 8)
+        assert events[3] == (
+            "graph_update",
+            dspark_proposer_module.CUDAGraphMode.FULL,
+            8,
+            [],
+        )
         assert events[4] == ("model", graph_runner, model_inputs)
-        assert proposer._dspark_fused_graph_replay_enqueued is True
         torch.testing.assert_close(
             draft_tokens,
             torch.tensor([[101, 102]], dtype=torch.int64),
@@ -953,7 +819,7 @@ class TestDraftAclGraphBoundary:
         self,
         monkeypatch,
     ):
-        descriptor = SimpleNamespace(num_tokens=6, num_reqs=2, uniform=True, has_lora=False)
+        descriptor = SimpleNamespace(num_reqs=2)
         hidden_states = torch.arange(6, dtype=torch.float32).view(6, 1)
         persistent_indices = torch.tensor([1, 2, 0, 0], dtype=torch.int64)
         persistent_indices_ptr = persistent_indices.data_ptr()
@@ -965,17 +831,14 @@ class TestDraftAclGraphBoundary:
         proposer = SimpleNamespace(
             use_cuda_graph=True,
             _dspark_enable_draft_aclgraph=True,
-            _dspark_fused_graph_replay_enqueued=False,
             _dspark_backbone_runnable=graph_runner,
             _dspark_sampler_tail_graph_enabled=True,
             num_speculative_tokens=2,
-            _dflash_num_context=3,
-            _dspark_graph_context_inputs=None,
             token_indices_to_sample=persistent_indices,
-            _dspark_fused_graph_capacity=lambda *args: 6,
-            _prepare_dspark_graph_context_inputs=lambda num_context, graph_capacity: True,
             _pad_dspark_query_buffers=lambda num_actual_tokens, num_input_tokens: None,
-            _build_dspark_graph_model_inputs=lambda num_input_tokens: {},
+            _synchronize_before_dspark_graph_update=lambda: None,
+            build_model_inputs_first_pass=lambda num_input_tokens: {},
+            _update_full_graph_params=lambda forward_context, num_input_tokens, metadata: None,
             _sample_parallel_draft_tokens=lambda selected: selected.to(torch.int64).view(2, 2),
         )
 
@@ -1016,7 +879,6 @@ class TestDraftAclGraphBoundary:
         assert replay_calls == [(graph_runner, {}), (graph_runner, {})]
         assert len(replay_descriptors) == 2
         assert all(replayed is descriptor for replayed in replay_descriptors)
-        assert proposer._dspark_fused_graph_replay_enqueued is True
         torch.testing.assert_close(first, torch.tensor([[1, 2]], dtype=torch.int64))
         torch.testing.assert_close(second, torch.tensor([[3, 4]], dtype=torch.int64))
 
@@ -1034,26 +896,19 @@ class TestDraftAclGraphBoundary:
         proposer = SimpleNamespace(
             use_cuda_graph=True,
             _dspark_enable_draft_aclgraph=True,
-            _dspark_fused_graph_replay_enqueued=False,
             _dspark_backbone_runnable=graph_runner,
             _dspark_sampler_tail_graph_enabled=True,
             num_speculative_tokens=2,
-            _dflash_num_context=0,
-            _dspark_graph_context_inputs=None,
-            _dspark_fused_graph_capacity=lambda *args: 6,
-            _prepare_dspark_graph_context_inputs=lambda num_context, graph_capacity: True,
             _pad_dspark_query_buffers=lambda num_actual_tokens, num_input_tokens: None,
-            _build_dspark_graph_model_inputs=lambda num_input_tokens: {},
+            _synchronize_before_dspark_graph_update=lambda: None,
+            build_model_inputs_first_pass=lambda num_input_tokens: {},
+            _update_full_graph_params=lambda forward_context, num_input_tokens, metadata: None,
             _run_prepared_dspark_model=run_prepared,
         )
-        descriptor = SimpleNamespace(num_tokens=6, num_reqs=2, uniform=True, has_lora=False)
         monkeypatch.setattr(
             dspark_proposer_module,
             "get_forward_context",
-            lambda: SimpleNamespace(
-                cudagraph_runtime_mode=dspark_proposer_module.CUDAGraphMode.FULL,
-                batch_descriptor=descriptor,
-            ),
+            lambda: SimpleNamespace(cudagraph_runtime_mode=dspark_proposer_module.CUDAGraphMode.FULL),
         )
         monkeypatch.setattr(dspark_proposer_module, "lmhead_tp_enable", lambda: False)
 
@@ -1069,40 +924,95 @@ class TestDraftAclGraphBoundary:
         )
 
         assert graph_calls == [(graph_runner, {})]
-        assert proposer._dspark_fused_graph_replay_enqueued is True
         assert draft_tokens.shape == (0, 2)
         assert draft_tokens.dtype == torch.int64
 
-    def test_graph_task_update_only_follows_an_enqueued_fused_replay(
+    def test_full_orchestrator_keeps_sampler_eager_without_tail_graph(
         self,
         monkeypatch,
     ):
-        updates = []
+        events = []
+        model_inputs = {
+            "input_ids": torch.tensor([7, 8, 9, 10]),
+            "positions": torch.tensor([3, 4, 5, 6], dtype=torch.int32),
+        }
+        model_output = torch.arange(16, dtype=torch.float32).view(8, 2)
+        graph_runner = object()
 
-        def base_update(_self, forward_context, num_input_tokens, metadata):
-            updates.append((forward_context.cudagraph_runtime_mode, num_input_tokens, metadata))
+        def pad_query_buffers(num_actual_tokens, num_input_tokens):
+            events.append(("pad", num_actual_tokens, num_input_tokens))
 
-        monkeypatch.setattr(
-            dspark_proposer_module.AscendDflashProposer,
-            "_update_full_graph_params_if_needed",
-            base_update,
+        def synchronize_before_update():
+            events.append(("barrier",))
+
+        def build_model_inputs(num_input_tokens):
+            events.append(("context_kv", num_input_tokens))
+            return model_inputs
+
+        def run_prepared(run_model, prepared_inputs):
+            events.append(("model", run_model, prepared_inputs))
+            return model_output
+
+        def update_graph_params(forward_context, num_input_tokens, metadata):
+            events.append(
+                (
+                    "graph_update",
+                    forward_context.cudagraph_runtime_mode,
+                    num_input_tokens,
+                    metadata,
+                )
+            )
+
+        def sample_markov(sample_hidden_states):
+            events.append(("markov", sample_hidden_states.clone()))
+            return torch.tensor([[101, 102]], dtype=torch.int64)
+
+        proposer = SimpleNamespace(
+            use_cuda_graph=True,
+            _dspark_enable_draft_aclgraph=True,
+            _dspark_backbone_runnable=graph_runner,
+            _dspark_sampler_tail_graph_enabled=False,
+            _pad_dspark_query_buffers=pad_query_buffers,
+            _synchronize_before_dspark_graph_update=synchronize_before_update,
+            build_model_inputs_first_pass=build_model_inputs,
+            _update_full_graph_params=update_graph_params,
+            _run_prepared_dspark_model=run_prepared,
+            model_returns_tuple=lambda: False,
+            _sample_parallel_draft_tokens=sample_markov,
         )
-        proposer = object.__new__(AscendDsparkProposer)
-        proposer.enable_enpu = False
-        proposer._dspark_fused_graph_replay_enqueued = False
-        full_context = SimpleNamespace(cudagraph_runtime_mode=dspark_proposer_module.CUDAGraphMode.FULL)
+        monkeypatch.setattr(
+            dspark_proposer_module,
+            "get_forward_context",
+            lambda: SimpleNamespace(
+                cudagraph_runtime_mode=dspark_proposer_module.CUDAGraphMode.FULL,
+            ),
+        )
+        monkeypatch.setattr(dspark_proposer_module, "lmhead_tp_enable", lambda: False)
 
-        AscendDsparkProposer._update_full_graph_params_if_needed(proposer, full_context, 6, ["metadata"])
-        assert updates == []
+        draft_tokens = AscendDsparkProposer._run_merged_draft(
+            proposer,
+            num_input_tokens=8,
+            batch_size=1,
+            token_indices_to_sample=torch.tensor([1, 3], dtype=torch.int64),
+            target_positions=torch.empty(0, dtype=torch.int32),
+            inputs_embeds=None,
+            multi_steps_attn_metadata=[],
+            num_tokens=4,
+        )
 
-        proposer._dspark_fused_graph_replay_enqueued = True
-        AscendDsparkProposer._update_full_graph_params_if_needed(proposer, full_context, 6, ["metadata"])
-        assert updates == [(dspark_proposer_module.CUDAGraphMode.FULL, 6, ["metadata"])]
-
-        proposer._dspark_fused_graph_replay_enqueued = False
-        eager_context = SimpleNamespace(cudagraph_runtime_mode=dspark_proposer_module.CUDAGraphMode.NONE)
-        AscendDsparkProposer._update_full_graph_params_if_needed(proposer, eager_context, 3, [])
-        assert updates[-1] == (dspark_proposer_module.CUDAGraphMode.NONE, 3, [])
+        assert [event[0] for event in events] == [
+            "pad",
+            "barrier",
+            "context_kv",
+            "graph_update",
+            "model",
+            "markov",
+        ]
+        torch.testing.assert_close(events[5][1], model_output[[1, 3]])
+        torch.testing.assert_close(
+            draft_tokens,
+            torch.tensor([[101, 102]], dtype=torch.int64),
+        )
 
 
 class TestUpdateDspark:
