@@ -337,10 +337,32 @@ class AscendDsparkProposer(AscendDflashProposer):
         self._dspark_use_local_vocab_argmax = bool(
             self._dspark_use_local_vocab_argmax and callable(supports_local_argmax) and supports_local_argmax()
         )
+        self._dspark_use_replicated_markov_w1 = False
         if self._dspark_use_local_vocab_argmax:
             logger.info(
                 "DSpark local-vocab argmax is enabled; full-vocab TP gathers for the base and Markov heads are skipped."
             )
+            enable_replicated_markov = getattr(
+                self.model,
+                "enable_replicated_markov_embedding",
+                None,
+            )
+            if callable(enable_replicated_markov):
+                fallback_reason = enable_replicated_markov()
+                if fallback_reason is None:
+                    self._dspark_use_replicated_markov_w1 = True
+                    logger.info(
+                        "DSpark replicated Markov W1 is enabled; sequential token lookups no longer use TP all-reduce."
+                    )
+                else:
+                    logger.warning(
+                        "DSpark replicated Markov W1 is unavailable (%s); retaining the exact vocab-parallel lookup.",
+                        fallback_reason,
+                    )
+            else:
+                logger.warning(
+                    "DSpark model has no replicated Markov W1 capability; retaining the exact vocab-parallel lookup."
+                )
 
         if enable_draft_aclgraph and not self._dspark_use_local_vocab_argmax:
             logger.warning(

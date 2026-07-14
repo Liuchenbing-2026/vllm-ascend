@@ -32,6 +32,7 @@ from vllm.config import VllmConfig
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
+    UnquantizedEmbeddingMethod,
     VocabParallelEmbedding,
 )
 from vllm.model_executor.models.qwen3_dflash import (
@@ -62,15 +63,99 @@ class DSparkMarkovHead(nn.Module):
         prefix: str,
     ) -> None:
         super().__init__()
-        self.markov_w1 = VocabParallelEmbedding(
-            vocab_size, markov_rank, prefix=maybe_prefix(prefix, "markov_w1")
-        )
-        self.markov_w2 = ParallelLMHead(
-            draft_vocab_size, markov_rank, prefix=maybe_prefix(prefix, "markov_w2")
-        )
+        self.markov_w1 = VocabParallelEmbedding(vocab_size, markov_rank, prefix=maybe_prefix(prefix, "markov_w1"))
+        self.markov_w2 = ParallelLMHead(draft_vocab_size, markov_rank, prefix=maybe_prefix(prefix, "markov_w2"))
+        # Populated once, after checkpoint loading, only when the proposer has
+        # selected the Qwen3-DSpark local-vocab argmax path.  Keeping this as a
+        # plain runtime tensor preserves the checkpoint/state-dict and
+        # layerwise-reload metadata contracts while giving ACLGraph a stable
+        # lookup-table address.
+        self._replicated_markov_w1: torch.Tensor | None = None
+
+    def enable_replicated_w1(self, *, refresh: bool = False) -> str | None:
+        """Replicate the loaded W1 vocab shards once on every rank.
+
+        Returns ``None`` when the replicated lookup is ready, otherwise a
+        deterministic reason for retaining the original vocab-parallel
+        embedding.  Collective failures deliberately propagate: continuing
+        after only a subset of ranks completes the gather is unsafe.
+        """
+        existing_replica = self._replicated_markov_w1
+        if existing_replica is not None and not refresh:
+            return None
+
+        embedding = self.markov_w1
+        weight = getattr(embedding, "weight", None)
+        if not isinstance(weight, torch.Tensor) or weight.ndim != 2:
+            return "markov_w1 must expose a two-dimensional tensor weight"
+        if type(getattr(embedding, "quant_method", None)) is not UnquantizedEmbeddingMethod:
+            return "markov_w1 replication requires the unquantized embedding method"
+        if weight.dtype not in (torch.bfloat16, torch.float16, torch.float32):
+            return "markov_w1 replication requires an unquantized BF16, FP16, or FP32 checkpoint weight"
+        if int(getattr(embedding, "num_added_embeddings", 0)) != 0:
+            return "markov_w1 replication does not support added-vocabulary rows"
+
+        group = getattr(embedding, "comm_group", None)
+        all_gather = getattr(group, "all_gather", None)
+        world_size = int(getattr(group, "world_size", 0))
+        rank_in_group = int(getattr(group, "rank_in_group", -1))
+        tp_size = int(getattr(embedding, "tp_size", 0))
+        tp_rank = int(getattr(embedding, "tp_rank", -1))
+        if not callable(all_gather) or world_size <= 0:
+            return "markov_w1 has no usable tensor-parallel all-gather group"
+        if world_size != tp_size or rank_in_group != tp_rank:
+            return "markov_w1 loader shard metadata does not match its communication group"
+
+        rows_per_rank = int(getattr(embedding, "num_embeddings_per_partition", 0))
+        padded_rows = int(getattr(embedding, "num_embeddings_padded", 0))
+        org_vocab_size = int(getattr(embedding, "org_vocab_size", 0))
+        embedding_dim = int(getattr(embedding, "embedding_dim", 0))
+        expected_local_shape = (rows_per_rank, embedding_dim)
+        if tuple(weight.shape) != expected_local_shape:
+            return (
+                "markov_w1 local weight shape does not match loader metadata: "
+                f"weight={tuple(weight.shape)}, expected={expected_local_shape}"
+            )
+        if padded_rows != rows_per_rank * world_size:
+            return "markov_w1 padded vocabulary is not evenly sharded across its group"
+        if org_vocab_size != padded_rows:
+            return "markov_w1 replication requires a vocabulary with no padding rows"
+
+        expected_full_shape = (padded_rows, embedding_dim)
+        if existing_replica is not None and (
+            tuple(existing_replica.shape) != expected_full_shape
+            or existing_replica.dtype != weight.dtype
+            or existing_replica.device != weight.device
+        ):
+            return "markov_w1 reload cannot refresh the existing ACLGraph-stable replica"
+
+        replicated = all_gather(weight.detach(), dim=0)
+        if not isinstance(replicated, torch.Tensor) or tuple(replicated.shape) != expected_full_shape:
+            actual_shape = getattr(replicated, "shape", None)
+            return (
+                "markov_w1 all-gather returned an unexpected shape: "
+                f"weight={actual_shape}, expected={expected_full_shape}"
+            )
+        if replicated.dtype != weight.dtype or replicated.device != weight.device:
+            return "markov_w1 all-gather changed the checkpoint weight dtype or device"
+
+        # all_gather is rank ordered, matching the loader's contiguous padded
+        # vocab shards.  No token-id remap is needed when there are no added
+        # vocab rows (guarded above).
+        replicated = replicated.contiguous()
+        if existing_replica is None:
+            self._replicated_markov_w1 = replicated
+        else:
+            # Layerwise reload must retain the address captured by ACLGraph.
+            # Refresh in place after gathering the newly loaded shards.
+            with torch.no_grad():
+                existing_replica.copy_(replicated)
+        return None
 
     def embed(self, token_ids: torch.Tensor) -> torch.Tensor:
         """r-dim Markov embedding of ``token_ids`` ([B] -> [B, r])."""
+        if self._replicated_markov_w1 is not None:
+            return nn.functional.embedding(token_ids, self._replicated_markov_w1)
         return self.markov_w1(token_ids)
 
     def bias(self, markov_embed: torch.Tensor, logits_processor) -> torch.Tensor:
@@ -88,9 +173,7 @@ class Qwen3DSparkModel(DFlashQwen3Model):
         start_layer_id: int = 0,
         prefix: str = "",
     ) -> None:
-        super().__init__(
-            vllm_config=vllm_config, start_layer_id=start_layer_id, prefix=prefix
-        )
+        super().__init__(vllm_config=vllm_config, start_layer_id=start_layer_id, prefix=prefix)
         config = self.config
         draft_vocab_size = getattr(config, "draft_vocab_size", None) or config.vocab_size
         self.markov_head = DSparkMarkovHead(
@@ -161,12 +244,9 @@ class Qwen3DSparkForCausalLM(DFlashQwen3ForCausalLM):
             callable(getattr(self.logits_processor, "get_local_logits", None))
             and base_group is not None
             and markov_group is not None
-            and base.num_org_embeddings_per_partition
-            == markov.num_org_embeddings_per_partition
-            and base_indices.org_vocab_start_index
-            == markov_indices.org_vocab_start_index
-            and base_indices.org_vocab_end_index
-            == markov_indices.org_vocab_end_index
+            and base.num_org_embeddings_per_partition == markov.num_org_embeddings_per_partition
+            and base_indices.org_vocab_start_index == markov_indices.org_vocab_start_index
+            and base_indices.org_vocab_end_index == markov_indices.org_vocab_end_index
             and base.num_added_embeddings_per_partition == 0
             and markov.num_added_embeddings_per_partition == 0
             and base_group.world_size == markov_group.world_size
@@ -182,6 +262,10 @@ class Qwen3DSparkForCausalLM(DFlashQwen3ForCausalLM):
 
     def markov_embed(self, token_ids: torch.Tensor) -> torch.Tensor:
         return self.model.markov_head.embed(token_ids)
+
+    def enable_replicated_markov_embedding(self) -> str | None:
+        """Enable exact local W1 lookup after all checkpoint shards load."""
+        return self.model.markov_head.enable_replicated_w1()
 
     def markov_bias(self, markov_embed: torch.Tensor) -> torch.Tensor:
         return self.model.markov_head.bias(markov_embed, self.logits_processor)
@@ -202,7 +286,9 @@ class Qwen3DSparkForCausalLM(DFlashQwen3ForCausalLM):
         return get_local_logits(markov_embed, markov_w2)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]):
+        refresh_replicated_w1 = self.model.markov_head._replicated_markov_w1 is not None
         model_weights = {}
+        includes_markov_w1 = False
         includes_embed_tokens = False
         includes_lm_head = False
         includes_draft_id_mapping = False
@@ -215,6 +301,8 @@ class Qwen3DSparkForCausalLM(DFlashQwen3ForCausalLM):
                 includes_draft_id_mapping = True
             elif "lm_head" not in name:
                 name = "model." + name
+            if "markov_head.markov_w1.weight" in name:
+                includes_markov_w1 = True
             if "embed_tokens" in name:
                 includes_embed_tokens = True
             if "lm_head" in name:
@@ -236,3 +324,7 @@ class Qwen3DSparkForCausalLM(DFlashQwen3ForCausalLM):
         loader = AutoWeightsLoader(self, skip_prefixes=None, skip_substrs=skip_substrs)
         loader.load_weights(model_weights.items())
         self.model._build_fused_kv_buffers()
+        if refresh_replicated_w1 and includes_markov_w1:
+            fallback_reason = self.model.markov_head.enable_replicated_w1(refresh=True)
+            if fallback_reason is not None:
+                raise RuntimeError(f"failed to refresh the replicated Markov W1 after weight reload: {fallback_reason}")

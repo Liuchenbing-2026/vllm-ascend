@@ -22,9 +22,11 @@ from types import SimpleNamespace
 import torch
 import torch.nn as nn
 from vllm.logger import logger as vllm_logger
+from vllm.model_executor.layers.vocab_parallel_embedding import UnquantizedEmbeddingMethod
 
 import vllm_ascend.spec_decode.dspark_proposer as dspark_proposer_module
 from vllm_ascend import envs
+from vllm_ascend.models.qwen3_dspark import DSparkMarkovHead
 from vllm_ascend.patch.platform.patch_speculators_dspark import update_dspark
 from vllm_ascend.patch.worker.patch_qwen3_dflash import (
     _dspark_debug_model_forward,
@@ -49,6 +51,127 @@ GLM52_SPECULATOR_CONFIG = {
     "confidence_head_with_markov": True,
     "target_hidden_size": None,
 }
+
+
+class _FakeShardedMarkovW1(nn.Module):
+    def __init__(
+        self,
+        local_weight: torch.Tensor,
+        shards: list[torch.Tensor],
+        *,
+        rank: int,
+        num_added_embeddings: int = 0,
+    ) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(local_weight.clone(), requires_grad=False)
+        self.tp_size = len(shards)
+        self.tp_rank = rank
+        self.num_embeddings_per_partition = local_weight.shape[0]
+        self.num_embeddings_padded = local_weight.shape[0] * len(shards)
+        self.org_vocab_size = self.num_embeddings_padded
+        self.embedding_dim = local_weight.shape[1]
+        self.num_added_embeddings = num_added_embeddings
+        self.quant_method = UnquantizedEmbeddingMethod()
+        self.gather_calls = 0
+        self.forward_calls = 0
+
+        def all_gather(weight: torch.Tensor, dim: int) -> torch.Tensor:
+            self.gather_calls += 1
+            assert dim == 0
+            torch.testing.assert_close(weight, self.weight)
+            return torch.cat(shards, dim=dim)
+
+        self.comm_group = SimpleNamespace(
+            world_size=len(shards),
+            rank_in_group=rank,
+            all_gather=all_gather,
+        )
+
+    def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
+        self.forward_calls += 1
+        return nn.functional.embedding(token_ids, self.weight)
+
+
+def _make_markov_head_with_w1(embedding: nn.Module) -> DSparkMarkovHead:
+    head = object.__new__(DSparkMarkovHead)
+    nn.Module.__init__(head)
+    head.markov_w1 = embedding
+    head._replicated_markov_w1 = None
+    return head
+
+
+class TestReplicatedMarkovW1:
+    def test_gathers_loaded_shards_once_and_uses_exact_local_lookup(self):
+        shards = [
+            torch.arange(0, 12, dtype=torch.bfloat16).view(3, 4),
+            torch.arange(12, 24, dtype=torch.bfloat16).view(3, 4),
+        ]
+        embedding = _FakeShardedMarkovW1(shards[1], shards, rank=1)
+        head = _make_markov_head_with_w1(embedding)
+
+        assert head.enable_replicated_w1() is None
+        replicated = head._replicated_markov_w1
+        assert replicated is not None
+        first_address = replicated.data_ptr()
+        torch.testing.assert_close(replicated, torch.cat(shards))
+        assert embedding.gather_calls == 1
+
+        # Re-enabling must preserve the captured graph address and avoid a
+        # second model-load collective.
+        assert head.enable_replicated_w1() is None
+        assert head._replicated_markov_w1.data_ptr() == first_address
+        assert embedding.gather_calls == 1
+
+        shards[0] = shards[0] + 100
+        shards[1] = shards[1] + 100
+        assert head.enable_replicated_w1(refresh=True) is None
+        assert head._replicated_markov_w1.data_ptr() == first_address
+        torch.testing.assert_close(head._replicated_markov_w1, torch.cat(shards))
+        assert embedding.gather_calls == 2
+
+        token_ids = torch.tensor([0, 4, 5])
+        torch.testing.assert_close(
+            head.embed(token_ids),
+            torch.cat(shards)[token_ids],
+        )
+        assert embedding.forward_calls == 0
+
+        # The runtime replica must not become a checkpoint key.
+        assert set(head.state_dict()) == {"markov_w1.weight"}
+
+    def test_added_vocab_falls_back_before_collective(self):
+        full_weight = torch.arange(0, 24, dtype=torch.float32).view(6, 4)
+        embedding = _FakeShardedMarkovW1(
+            full_weight,
+            [full_weight],
+            rank=0,
+            num_added_embeddings=1,
+        )
+        head = _make_markov_head_with_w1(embedding)
+
+        reason = head.enable_replicated_w1()
+
+        assert reason == "markov_w1 replication does not support added-vocabulary rows"
+        assert head._replicated_markov_w1 is None
+        assert embedding.gather_calls == 0
+        torch.testing.assert_close(head.embed(torch.tensor([2])), full_weight[[2]])
+        assert embedding.forward_calls == 1
+
+    def test_quantized_embedding_falls_back_before_collective(self):
+        local_weight = torch.arange(0, 12, dtype=torch.bfloat16).view(3, 4)
+        embedding = _FakeShardedMarkovW1(
+            local_weight,
+            [local_weight],
+            rank=0,
+        )
+        embedding.quant_method = SimpleNamespace()
+        head = _make_markov_head_with_w1(embedding)
+
+        reason = head.enable_replicated_w1()
+
+        assert reason == "markov_w1 replication requires the unquantized embedding method"
+        assert head._replicated_markov_w1 is None
+        assert embedding.gather_calls == 0
 
 
 class TestDraftAclGraphBoundary:
@@ -154,10 +277,12 @@ class TestDraftAclGraphBoundary:
         proposer._dspark_enable_draft_aclgraph = True
         proposer.vllm_config = object()
         proposer.enable_enpu = False
+        replicated_w1_calls = []
         proposer.model = SimpleNamespace(
             compute_draft_local_logits=lambda hidden_states: hidden_states,
             markov_local_bias=lambda markov_embed: markov_embed,
             supports_local_markov_argmax=lambda: True,
+            enable_replicated_markov_embedding=lambda: replicated_w1_calls.append(True),
         )
 
         AscendDsparkProposer.load_model(proposer, object())
@@ -174,6 +299,8 @@ class TestDraftAclGraphBoundary:
         assert wrapper_calls[0]["enable_enpu"] is False
         assert "caller_orders_graph_update" not in wrapper_calls[0]
         assert proposer.use_cuda_graph is True
+        assert proposer._dspark_use_replicated_markov_w1 is True
+        assert replicated_w1_calls == [True]
 
     def test_sampler_tail_graph_falls_back_without_local_vocab_capability(
         self,
@@ -205,6 +332,7 @@ class TestDraftAclGraphBoundary:
         assert proposer._dspark_enable_draft_aclgraph is False
         assert proposer._dspark_graph_runnable_uses_buffers is False
         assert proposer._dspark_sampler_tail_graph_enabled is False
+        assert proposer._dspark_use_replicated_markov_w1 is False
 
     def test_only_uniform_target_decode_selects_dspark_full_graph(self):
         proposer = SimpleNamespace()
