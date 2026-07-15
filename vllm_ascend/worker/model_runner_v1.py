@@ -3062,7 +3062,7 @@ class NPUModelRunner(GPUModelRunner):
                     and self.ascend_config.enable_fused_mc2 == 2
                     and (
                         (
-                            os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS", "0") == "1"
+                            os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH", "1") == "1"
                             and not dp_tokens_are_uniform
                         )
                         or (
@@ -3072,10 +3072,11 @@ class NPUModelRunner(GPUModelRunner):
                     )
                 )
                 if unsafe_dp_megamoe_graph:
-                    # Positive mixed DP token counts are represented by the
-                    # MegaMoe active mask. A fully idle DP rank changes the
-                    # collective participation contract, so run that tail step
-                    # eagerly and let the per-layer guard use standard MC2.
+                    # ACL graph replay is only stable for uniform DP token
+                    # counts. Positive mixed counts leave the graph but remain
+                    # eligible for eager MegaMoe through x_active_mask. A fully
+                    # idle DP rank is handled by the per-layer standard-MC2
+                    # fallback.
                     cudagraph_mode = CUDAGraphMode.NONE
                     batch_descriptor = BatchDescriptor(num_tokens_padded)
                 else:

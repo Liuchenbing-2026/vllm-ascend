@@ -111,6 +111,11 @@ env_variables: dict[str, Callable[[], Any]] = {
     "VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS": lambda: bool(
         int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS", "0"))
     ),
+    # ACL graph replay requires the same active-token shape across DP ranks.
+    # Mixed positive counts remain valid for eager MegaMoe through x_active_mask.
+    "VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH", "1"))
+    ),
     "VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS": lambda: bool(
         int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS", "1"))
     ),

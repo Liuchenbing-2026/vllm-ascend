@@ -11,6 +11,7 @@ from vllm_ascend.ascend_forward_context import (
     _cann_megamoe_supported_by_config,
     _select_a2_moe_comm_method,
 )
+from vllm_ascend.envs import env_variables
 from vllm_ascend.ops.fused_moe.moe_comm_method import (
     FusedMC2CommImpl,
     _append_cann_megamoe_dummy_tokens,
@@ -106,6 +107,13 @@ def check_a2_min_tokens_selection() -> None:
     ):
         assert _select_a2_moe_comm_method(511, vllm_config, "w8a8", 4096, False) == MoECommType.MC2
         assert _select_a2_moe_comm_method(512, vllm_config, "w8a8", 4096, False) == MoECommType.FUSED_MC2
+
+
+def check_dp_policy_defaults() -> None:
+    with patch.dict(os.environ, {}, clear=True):
+        assert not env_variables["VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS"]()
+        assert env_variables["VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH"]()
+        assert env_variables["VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS"]()
 
 
 def check_cross_rank_contract() -> None:
@@ -318,6 +326,7 @@ def main() -> None:
     check_capacity_helpers()
     check_a2_selection_guard()
     check_a2_min_tokens_selection()
+    check_dp_policy_defaults()
     check_cross_rank_contract()
     check_route_fallback_guard()
     assert _normalize_cann_megamoe_activation("silu") == "swiglu"
