@@ -2,10 +2,8 @@ import numpy as np
 import torch
 from vllm.distributed import get_dcp_group, get_pcp_group
 from vllm.utils.math_utils import cdiv
-from vllm.v1.attention.backends.utils import PAD_SLOT_ID
 from vllm.v1.kv_cache_interface import KVCacheGroupSpec, MambaSpec, UniformTypeKVCacheSpecs
 from vllm.v1.utils import CpuGpuBuffer
-from vllm.v1.worker.block_table import _compute_slot_mapping_kernel
 from vllm.v1.worker.cp_utils import get_total_cp_world_size
 
 
@@ -143,36 +141,26 @@ class BlockTable:
 
     def compute_slot_mapping(
         self,
-        num_reqs: int,
-        query_start_loc: torch.Tensor,
-        positions: torch.Tensor,
+        req_indices_or_num_reqs: np.ndarray | int,
+        positions_or_query_start_loc: np.ndarray | torch.Tensor,
+        positions: torch.Tensor | None = None,
     ) -> None:
-        num_tokens = positions.shape[0]
-        total_cp_world_size = self.pcp_world_size * self.dcp_world_size
-        total_cp_rank = self.pcp_rank * self.dcp_world_size + self.dcp_rank
-        if self.dcp_world_size * self.pcp_world_size > 1:
+        if positions is None:
+            req_indices = req_indices_or_num_reqs
+            positions = positions_or_query_start_loc
+        else:
+            num_reqs = int(req_indices_or_num_reqs)
+            query_start_loc = positions_or_query_start_loc
+            assert isinstance(query_start_loc, torch.Tensor)
+            num_tokens = positions.shape[0]
             req_indices = torch.repeat_interleave(
                 torch.arange(num_reqs, dtype=torch.int32, device=query_start_loc.device),
                 query_start_loc[1:] - query_start_loc[:-1],
                 output_size=num_tokens,
             )
-            self._compute_pcp_dcp_slot_mapping(req_indices, positions)
-        else:
-            _compute_slot_mapping_kernel[(num_reqs + 1,)](
-                num_tokens,
-                self.max_num_batched_tokens,
-                query_start_loc,
-                positions,
-                self.block_table.gpu,
-                self.block_table.gpu.stride(0),
-                self.block_size,
-                self.slot_mapping.gpu,
-                TOTAL_CP_WORLD_SIZE=total_cp_world_size,
-                TOTAL_CP_RANK=total_cp_rank,
-                CP_KV_CACHE_INTERLEAVE_SIZE=self.cp_kv_cache_interleave_size,
-                PAD_ID=PAD_SLOT_ID,
-                BLOCK_SIZE=1024,
-            )
+        assert isinstance(req_indices, (np.ndarray, torch.Tensor))
+        assert isinstance(positions, (np.ndarray, torch.Tensor))
+        self.compute_slot_mapping_draft(req_indices, positions)
 
     def compute_slot_mapping_draft(
         self,
@@ -192,6 +180,8 @@ class BlockTable:
             if not isinstance(positions, torch.Tensor):
                 positions = torch.from_numpy(positions)
             self._compute_pcp_dcp_slot_mapping(req_indices, positions)
+            if req_indices.device.type == "cpu":
+                self.slot_mapping.copy_to_gpu(req_indices.shape[0])
         else:
             if isinstance(req_indices, torch.Tensor):
                 if req_indices.device.type != "cpu":
@@ -412,9 +402,9 @@ class MultiGroupBlockTable:
 
     def compute_slot_mapping(
         self,
-        num_reqs: int,
-        query_start_loc: torch.Tensor,
-        positions: torch.Tensor,
+        req_indices_or_num_reqs: np.ndarray | int,
+        positions_or_query_start_loc: np.ndarray | torch.Tensor,
+        positions: torch.Tensor | None = None,
         positions_compressed_list: list[np.ndarray] | None = None,
         req_indices_compressed_list: list[np.ndarray] | None = None,
     ) -> None:
@@ -424,7 +414,11 @@ class MultiGroupBlockTable:
             if positions_compressed_list and req_indices_compressed_list:
                 block_table.compute_slot_mapping_draft(req_indices_compressed_list[i], positions_compressed_list[i])
             else:
-                block_table.compute_slot_mapping(num_reqs, query_start_loc, positions)
+                block_table.compute_slot_mapping(
+                    req_indices_or_num_reqs,
+                    positions_or_query_start_loc,
+                    positions,
+                )
 
     def compute_slot_mapping_draft(
         self,

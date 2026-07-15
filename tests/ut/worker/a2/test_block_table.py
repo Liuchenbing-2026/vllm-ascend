@@ -18,8 +18,6 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import torch
-
-# import vllm.utils.cpu_triton_utils as cpu_tl
 from vllm.distributed.parallel_state import GroupCoordinator
 
 from tests.ut.base import TestBase
@@ -44,13 +42,13 @@ class TestBlockTableComputeSlotMapping(TestBase):
         self.kernel_sizes = [128]
         self._skip_triton_kernel = True
 
-    def create_block_table(self, dcp_world_size, dcp_rank, pcp_world_size, pcp_rank, cp_kv_cache_interleave_size):
+    def create_block_table(self, dcp_world_size, dcp_rank, pcp_world_size,
+                           pcp_rank, cp_kv_cache_interleave_size):
         """Helper method to create BlockTable with mocked distributed groups"""
 
-        with (
-            patch("vllm_ascend.worker.block_table.get_dcp_group") as mock_get_dcp_group,
-            patch("vllm_ascend.worker.block_table.get_pcp_group") as mock_get_pcp_group,
-        ):
+        with patch('vllm_ascend.worker.block_table.get_dcp_group') as mock_get_dcp_group, \
+             patch('vllm_ascend.worker.block_table.get_pcp_group') as mock_get_pcp_group:
+
             # Mock DCP group
             mock_dcp_group = MagicMock(spec=GroupCoordinator)
             mock_dcp_group.world_size = dcp_world_size
@@ -74,8 +72,7 @@ class TestBlockTableComputeSlotMapping(TestBase):
                 device=self.device,
                 kernel_sizes=self.kernel_sizes,
                 cp_kv_cache_interleave_size=cp_kv_cache_interleave_size,
-                num_speculative_tokens=0,
-            )
+                num_speculative_tokens=0)
 
             return block_table
 
@@ -83,10 +80,13 @@ class TestBlockTableComputeSlotMapping(TestBase):
         """Helper method to populate block table with test data"""
         # Add block IDs for each request
         for i in range(num_reqs):
-            block_ids = list(range(i * 4, (i + 1) * 4))  # [0,1,2,3], [4,5,6,7], etc.
+            block_ids = list(range(i * 4,
+                                   (i + 1) * 4))  # [0,1,2,3], [4,5,6,7], etc.
             block_table.add_row(block_ids, i)
 
-    def _test_slot_mapping_for_ranks(self, dcp_world_size, pcp_world_size, cp_kv_cache_interleave_size, test_configs):
+    def _test_slot_mapping_for_ranks(self, dcp_world_size, pcp_world_size,
+                                     cp_kv_cache_interleave_size,
+                                     test_configs):
         """Helper method to test slot_mapping across multiple ranks
 
         Args:
@@ -98,79 +98,20 @@ class TestBlockTableComputeSlotMapping(TestBase):
         for dcp_rank, pcp_rank, req_indices, positions, expected_result in test_configs:
             with self.subTest(dcp_rank=dcp_rank, pcp_rank=pcp_rank):
                 block_table = self.create_block_table(
-                    dcp_world_size, dcp_rank, pcp_world_size, pcp_rank, cp_kv_cache_interleave_size
-                )
+                    dcp_world_size, dcp_rank, pcp_world_size, pcp_rank,
+                    cp_kv_cache_interleave_size)
 
                 num_reqs = max(req_indices) + 1 if len(req_indices) > 0 else 1
                 self.setup_block_table_data(block_table, num_reqs=num_reqs)
 
-                # Build query_start_loc [num_reqs + 1] from req_indices.
-                # query_start_loc holds the cumulative token count per request,
-                # e.g. req_indices=[0,0,1,1] -> query_start_loc=[0,2,4].
-                num_tokens = len(positions)
-                counts = np.bincount(req_indices, minlength=num_reqs)
-                query_start_loc_np = np.concatenate([[0], np.cumsum(counts)]).astype(np.int32)
-                _query_start_loc = torch.from_numpy(query_start_loc_np)
+                block_table.compute_slot_mapping(req_indices, positions)
 
-                # positions must be a torch int64 tensor to match the
-                # _compute_slot_mapping_kernel's positions_ptr type.
-                _positions_tensor = torch.from_numpy(positions.astype(np.int64))
-                # Triton kernel requires NPU device; mock it and compute on CPU
-                with patch.object(block_table, "compute_slot_mapping"):
-                    slot_mapping = block_table.slot_mapping.cpu
-                    total_cp_world_size = pcp_world_size * dcp_world_size
-                    total_cp_rank = pcp_rank * dcp_world_size + dcp_rank
-                    bs = block_table.physical_block_size
-                    interleave = cp_kv_cache_interleave_size
-                    for token_idx in range(num_tokens):
-                        req_idx = req_indices[token_idx]
-                        pos = int(positions[token_idx])
-                        num_blocks_row = int(block_table.num_blocks_per_row[req_idx])
-                        block_ids = block_table.block_table.cpu[req_idx].tolist()
-                        if total_cp_world_size <= 1 and interleave <= 1:
-                            block_idx = pos // bs
-                            offset = pos % bs
-                            if block_idx < num_blocks_row:
-                                slot_val = block_ids[block_idx] * bs + offset
-                            else:
-                                slot_val = -1
-                        elif interleave <= 1:
-                            if pos % total_cp_world_size != total_cp_rank:
-                                slot_val = -1
-                            else:
-                                local_pos = pos // total_cp_world_size
-                                block_idx = local_pos // bs
-                                offset = local_pos % bs
-                                if block_idx < num_blocks_row:
-                                    slot_val = block_ids[block_idx] * bs + offset
-                                else:
-                                    slot_val = -1
-                        else:
-                            virtual_block = interleave * total_cp_world_size
-                            chunk_idx = pos // virtual_block
-                            pos_in_chunk = pos % virtual_block
-                            rank_in_chunk = pos_in_chunk // interleave
-                            if rank_in_chunk != total_cp_rank:
-                                slot_val = -1
-                            else:
-                                local_pos = chunk_idx * interleave + (pos_in_chunk % interleave)
-                                block_idx = local_pos // bs
-                                offset = local_pos % bs
-                                if block_idx < num_blocks_row:
-                                    slot_val = block_ids[block_idx] * bs + offset
-                                else:
-                                    slot_val = -1
-                        slot_mapping[token_idx] = slot_val
-
-                actual_result = block_table.slot_mapping.np[:num_tokens]
-
+                actual_result = block_table.slot_mapping.np[:len(positions)]
                 np.testing.assert_array_equal(
-                    actual_result,
-                    expected_result,
+                    actual_result, expected_result,
                     f"DCP={dcp_world_size}, PCP={pcp_world_size}, "
                     f"interleave={cp_kv_cache_interleave_size}, "
-                    f"dcp_rank={dcp_rank}, pcp_rank={pcp_rank}",
-                )
+                    f"dcp_rank={dcp_rank}, pcp_rank={pcp_rank}")
 
     def test_compute_slot_mapping_dcp1_pcp1_interleave1(self):
         """Test compute_slot_mapping with DCP=1, PCP=1, interleave_size=1
@@ -197,9 +138,10 @@ class TestBlockTableComputeSlotMapping(TestBase):
             (0, 0, req_indices, positions, expected_result),
         ]
 
-        self._test_slot_mapping_for_ranks(
-            dcp_world_size=1, pcp_world_size=1, cp_kv_cache_interleave_size=1, test_configs=test_configs
-        )
+        self._test_slot_mapping_for_ranks(dcp_world_size=1,
+                                          pcp_world_size=1,
+                                          cp_kv_cache_interleave_size=1,
+                                          test_configs=test_configs)
 
     def test_compute_slot_mapping_dcp4_pcp2_interleave1(self):
         """Test compute_slot_mapping with DCP=4, PCP=2, interleave_size=1
@@ -242,12 +184,15 @@ class TestBlockTableComputeSlotMapping(TestBase):
         for pcp_rank in range(2):
             for dcp_rank in range(4):
                 current_rank = 4 * pcp_rank + dcp_rank
-                expected_result = np.array(rank_expectations[current_rank], dtype=np.int32)
-                test_configs.append((dcp_rank, pcp_rank, req_indices, positions, expected_result))
+                expected_result = np.array(rank_expectations[current_rank],
+                                           dtype=np.int32)
+                test_configs.append((dcp_rank, pcp_rank, req_indices,
+                                     positions, expected_result))
 
-        self._test_slot_mapping_for_ranks(
-            dcp_world_size=4, pcp_world_size=2, cp_kv_cache_interleave_size=1, test_configs=test_configs
-        )
+        self._test_slot_mapping_for_ranks(dcp_world_size=4,
+                                          pcp_world_size=2,
+                                          cp_kv_cache_interleave_size=1,
+                                          test_configs=test_configs)
 
     def test_compute_slot_mapping_dcp4_pcp2_interleave128(self):
         """Test compute_slot_mapping with DCP=4, PCP=2, interleave_size=128
@@ -301,13 +246,14 @@ class TestBlockTableComputeSlotMapping(TestBase):
                     expected_result = [-1] * 130
 
                 test_configs.append(
-                    (dcp_rank, pcp_rank, req_indices, positions, np.array(expected_result, dtype=np.int32))
-                )
+                    (dcp_rank, pcp_rank, req_indices, positions,
+                     np.array(expected_result, dtype=np.int32)))
 
-        self._test_slot_mapping_for_ranks(
-            dcp_world_size=4, pcp_world_size=2, cp_kv_cache_interleave_size=128, test_configs=test_configs
-        )
+        self._test_slot_mapping_for_ranks(dcp_world_size=4,
+                                          pcp_world_size=2,
+                                          cp_kv_cache_interleave_size=128,
+                                          test_configs=test_configs)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()
