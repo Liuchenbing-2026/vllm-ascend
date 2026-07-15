@@ -103,7 +103,7 @@ env_variables: dict[str, Callable[[], Any]] = {
     # starting at one and mixed active-token counts through x_active_mask.
     "VLLM_ASCEND_MEGAMOE_MIN_TOKENS": lambda: int(os.getenv("VLLM_ASCEND_MEGAMOE_MIN_TOKENS", "1")),
     "VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT": lambda: int(
-        os.getenv("VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT", "0")
+        os.getenv("VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT", "1792")
     ),
     "VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS": lambda: bool(
         int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS", "0"))

@@ -205,14 +205,33 @@ def check_route_fallback_guard() -> None:
     assert (active_min, active_max) == (0, 0)
 
     impl._cann_megamoe_max_tokens_per_expert = 1792
+    with (
+        patch(
+            "vllm_ascend.ops.fused_moe.moe_comm_method.get_mc2_group",
+            return_value=SimpleNamespace(device_group=None),
+        ),
+        patch(
+            "torch.distributed.all_reduce",
+            side_effect=AssertionError("decode-sized route must not synchronize"),
+        ),
+    ):
+        should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(
+            fused_input, topk_ids
+        )
+        assert not should_fallback
+        assert max_count == 0
+        assert (active_min, active_max) == (0, 0)
+
     impl._cann_megamoe_require_uniform_dp_tokens = True
+    fused_input = SimpleNamespace(routing=SimpleNamespace(mc2_mask=torch.ones(256, dtype=torch.int8)))
+    topk_ids = torch.tensor([[0, 1], [2, 3]], dtype=torch.int32).repeat(128, 1)
 
     with (
         patch(
             "vllm_ascend.ops.fused_moe.moe_comm_method.get_mc2_group",
             return_value=SimpleNamespace(device_group=None),
         ),
-        patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([2, 0, 2, 0])),
+        patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([256, 0, 256, 0])),
         patch("torch.distributed.all_reduce", side_effect=set_max_count(1792)),
     ):
         should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(
@@ -220,14 +239,14 @@ def check_route_fallback_guard() -> None:
         )
         assert not should_fallback
         assert max_count == 1792
-        assert (active_min, active_max) == (2, 2)
+        assert (active_min, active_max) == (256, 256)
 
     with (
         patch(
             "vllm_ascend.ops.fused_moe.moe_comm_method.get_mc2_group",
             return_value=SimpleNamespace(device_group=None),
         ),
-        patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([2, 0, 2, 0])),
+        patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([256, 0, 256, 0])),
         patch("torch.distributed.all_reduce", side_effect=set_max_count(1793)),
     ):
         should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(
@@ -235,7 +254,7 @@ def check_route_fallback_guard() -> None:
         )
         assert should_fallback
         assert max_count == 1793
-        assert (active_min, active_max) == (2, 2)
+        assert (active_min, active_max) == (256, 256)
         assert impl._cann_megamoe_fallback_count == 1
 
     with (
@@ -243,7 +262,7 @@ def check_route_fallback_guard() -> None:
             "vllm_ascend.ops.fused_moe.moe_comm_method.get_mc2_group",
             return_value=SimpleNamespace(device_group=None),
         ),
-        patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([1, 0, 2, 0])),
+        patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([128, 0, 256, 0])),
         patch("torch.distributed.all_reduce", side_effect=set_max_count(128)),
     ):
         should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(
@@ -251,7 +270,7 @@ def check_route_fallback_guard() -> None:
         )
         assert should_fallback
         assert max_count == 128
-        assert (active_min, active_max) == (1, 2)
+        assert (active_min, active_max) == (128, 256)
         assert impl._cann_megamoe_fallback_count == 2
         assert impl._cann_megamoe_uniform_dp_fallback_count == 1
         assert impl._cann_megamoe_expert_threshold_fallback_count == 1

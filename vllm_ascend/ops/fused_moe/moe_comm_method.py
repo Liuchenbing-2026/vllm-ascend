@@ -353,7 +353,7 @@ class FusedMC2CommImpl(MoECommMethod):
         self._cann_megamoe_trace_every_call = os.getenv("VLLM_ASCEND_MEGAMOE_TRACE_EVERY_CALL", "0") == "1"
         self._cann_megamoe_sync_after_call = os.getenv("VLLM_ASCEND_MEGAMOE_SYNC_AFTER_CALL", "0") == "1"
         self._cann_megamoe_max_tokens_per_expert = int(
-            os.getenv("VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT", "0")
+            os.getenv("VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT", "1792")
         )
         if self._cann_megamoe_max_tokens_per_expert < 0:
             raise ValueError(
@@ -437,18 +437,27 @@ class FusedMC2CommImpl(MoECommMethod):
         max_tokens_per_expert = 0
         route_is_overloaded = False
         if threshold > 0:
-            active_topk_ids = topk_ids if x_active_mask is None else topk_ids[x_active_mask.bool()]
-            recv_counts = torch.bincount(
-                active_topk_ids.reshape(-1),
-                minlength=int(self.moe_config.num_experts),
-            ).to(torch.int64)
-            torch.distributed.all_reduce(
-                recv_counts,
-                op=torch.distributed.ReduceOp.SUM,
-                group=group,
+            # A single expert cannot receive more than every routed assignment.
+            # Decode-sized batches fit below the A2 safety threshold by shape,
+            # so avoid a per-layer synchronization on that hot path. Large
+            # prefill batches still use the exact global count before deciding
+            # whether to fall back to standard MC2.
+            route_upper_bound = (
+                int(topk_ids.shape[0]) * int(self.token_dispatcher.ep_world_size) * int(topk_ids.shape[1])
             )
-            max_tokens_per_expert = int(recv_counts.max().item())
-            route_is_overloaded = max_tokens_per_expert > threshold
+            if route_upper_bound > threshold:
+                active_topk_ids = topk_ids if x_active_mask is None else topk_ids[x_active_mask.bool()]
+                recv_counts = torch.bincount(
+                    active_topk_ids.reshape(-1),
+                    minlength=int(self.moe_config.num_experts),
+                ).to(torch.int64)
+                torch.distributed.all_reduce(
+                    recv_counts,
+                    op=torch.distributed.ReduceOp.SUM,
+                    group=group,
+                )
+                max_tokens_per_expert = int(recv_counts.max().item())
+                route_is_overloaded = max_tokens_per_expert > threshold
 
         should_fallback = dp_tokens_are_mixed or route_is_overloaded
         if should_fallback:
