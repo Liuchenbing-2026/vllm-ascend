@@ -101,15 +101,18 @@ env_variables: dict[str, Callable[[], Any]] = {
     "VLLM_ASCEND_ENABLE_FUSED_MC2": lambda: int(os.getenv("VLLM_ASCEND_ENABLE_FUSED_MC2", "0")),
     # A2 MegaMoe fault-isolation controls. The operator supports token counts
     # starting at one and represents inactive padding through x_active_mask.
-    # vLLM DP ranks can stop at different decode steps, so mixed active-token
-    # counts fall back to standard MC2 by default to keep collective call order
-    # stable across the EP group.
+    # vLLM DP ranks can stop at different decode steps. Positive mixed counts
+    # remain supported through x_active_mask, while a fully idle DP rank falls
+    # back to standard MC2 by default to keep collective call order stable.
     "VLLM_ASCEND_MEGAMOE_MIN_TOKENS": lambda: int(os.getenv("VLLM_ASCEND_MEGAMOE_MIN_TOKENS", "1")),
     "VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT": lambda: int(
         os.getenv("VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT", "1792")
     ),
     "VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS": lambda: bool(
-        int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS", "1"))
+        int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS", "0"))
+    ),
+    "VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS", "1"))
     ),
     "VLLM_ASCEND_MEGAMOE_STATS_INTERVAL": lambda: int(
         os.getenv("VLLM_ASCEND_MEGAMOE_STATS_INTERVAL", "1024")

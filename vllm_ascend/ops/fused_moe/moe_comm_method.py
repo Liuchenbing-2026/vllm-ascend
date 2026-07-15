@@ -362,10 +362,14 @@ class FusedMC2CommImpl(MoECommMethod):
             )
         uniform_dp_tokens = os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS")
         if uniform_dp_tokens is None:
-            uniform_dp_tokens = os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_ACTIVE_TOKENS", "1")
+            uniform_dp_tokens = os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_ACTIVE_TOKENS", "0")
         self._cann_megamoe_require_uniform_dp_tokens = uniform_dp_tokens == "1"
+        self._cann_megamoe_require_nonzero_dp_tokens = (
+            os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS", "1") == "1"
+        )
         self._cann_megamoe_fallback_count = 0
         self._cann_megamoe_uniform_dp_fallback_count = 0
+        self._cann_megamoe_idle_dp_fallback_count = 0
         self._cann_megamoe_expert_threshold_fallback_count = 0
         self._cann_megamoe_operator_call_count = 0
         self._cann_megamoe_small_shape_call_count = 0
@@ -399,7 +403,11 @@ class FusedMC2CommImpl(MoECommMethod):
         topk_ids: torch.Tensor,
     ) -> tuple[bool, int, int, int]:
         threshold = self._cann_megamoe_max_tokens_per_expert
-        if threshold == 0 and not self._cann_megamoe_require_uniform_dp_tokens:
+        if (
+            threshold == 0
+            and not self._cann_megamoe_require_uniform_dp_tokens
+            and not self._cann_megamoe_require_nonzero_dp_tokens
+        ):
             return False, 0, 0, 0
 
         x_active_mask = fused_experts_input.routing.mc2_mask
@@ -408,7 +416,8 @@ class FusedMC2CommImpl(MoECommMethod):
 
         dp_token_min = dp_token_max = 0
         dp_tokens_are_mixed = False
-        if self._cann_megamoe_require_uniform_dp_tokens:
+        dp_has_idle_rank = False
+        if self._cann_megamoe_require_uniform_dp_tokens or self._cann_megamoe_require_nonzero_dp_tokens:
             try:
                 is_graph_build = bool(_EXTRA_CTX.capturing)
             except AssertionError:
@@ -444,6 +453,7 @@ class FusedMC2CommImpl(MoECommMethod):
                 dp_token_min = int(active_tokens_by_dp.min().item())
                 dp_token_max = int(active_tokens_by_dp.max().item())
                 dp_tokens_are_mixed = dp_token_min != dp_token_max
+                dp_has_idle_rank = dp_token_min == 0
 
         max_tokens_per_expert = 0
         route_is_overloaded = False
@@ -470,10 +480,13 @@ class FusedMC2CommImpl(MoECommMethod):
                 max_tokens_per_expert = int(recv_counts.max().item())
                 route_is_overloaded = max_tokens_per_expert > threshold
 
-        should_fallback = dp_tokens_are_mixed or route_is_overloaded
+        mixed_dp_fallback = self._cann_megamoe_require_uniform_dp_tokens and dp_tokens_are_mixed
+        idle_dp_fallback = self._cann_megamoe_require_nonzero_dp_tokens and dp_has_idle_rank
+        should_fallback = mixed_dp_fallback or idle_dp_fallback or route_is_overloaded
         if should_fallback:
             self._cann_megamoe_fallback_count += 1
-            self._cann_megamoe_uniform_dp_fallback_count += int(dp_tokens_are_mixed)
+            self._cann_megamoe_uniform_dp_fallback_count += int(mixed_dp_fallback)
+            self._cann_megamoe_idle_dp_fallback_count += int(idle_dp_fallback)
             self._cann_megamoe_expert_threshold_fallback_count += int(route_is_overloaded)
             if self.token_dispatcher.ep_rank_id == 0 and (
                 self._cann_megamoe_fallback_count <= 4 or self._cann_megamoe_fallback_count % 64 == 0
@@ -481,7 +494,8 @@ class FusedMC2CommImpl(MoECommMethod):
                 logger.warning(
                     "CANN MegaMoe route fallback: dp_token_min=%d dp_token_max=%d "
                     "max_tokens_per_expert=%d threshold=%d "
-                    "fallback_count=%d uniform_dp_fallbacks=%d expert_threshold_fallbacks=%d; "
+                    "fallback_count=%d uniform_dp_fallbacks=%d idle_dp_fallbacks=%d "
+                    "expert_threshold_fallbacks=%d; "
                     "using standard MC2 for this layer",
                     dp_token_min,
                     dp_token_max,
@@ -489,6 +503,7 @@ class FusedMC2CommImpl(MoECommMethod):
                     threshold,
                     self._cann_megamoe_fallback_count,
                     self._cann_megamoe_uniform_dp_fallback_count,
+                    self._cann_megamoe_idle_dp_fallback_count,
                     self._cann_megamoe_expert_threshold_fallback_count,
                 )
         return should_fallback, max_tokens_per_expert, dp_token_min, dp_token_max

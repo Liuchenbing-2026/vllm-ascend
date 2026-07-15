@@ -174,8 +174,10 @@ def check_route_fallback_guard() -> None:
     impl = FusedMC2CommImpl.__new__(FusedMC2CommImpl)
     impl._cann_megamoe_max_tokens_per_expert = 0
     impl._cann_megamoe_require_uniform_dp_tokens = False
+    impl._cann_megamoe_require_nonzero_dp_tokens = False
     impl._cann_megamoe_fallback_count = 0
     impl._cann_megamoe_uniform_dp_fallback_count = 0
+    impl._cann_megamoe_idle_dp_fallback_count = 0
     impl._cann_megamoe_expert_threshold_fallback_count = 0
     impl.moe_config = SimpleNamespace(num_experts=8)
     impl.token_dispatcher = SimpleNamespace(ep_rank_id=0, ep_world_size=4)
@@ -274,6 +276,41 @@ def check_route_fallback_guard() -> None:
         assert impl._cann_megamoe_fallback_count == 2
         assert impl._cann_megamoe_uniform_dp_fallback_count == 1
         assert impl._cann_megamoe_expert_threshold_fallback_count == 1
+
+    impl._cann_megamoe_require_uniform_dp_tokens = False
+    impl._cann_megamoe_require_nonzero_dp_tokens = True
+    with (
+        patch(
+            "vllm_ascend.ops.fused_moe.moe_comm_method.get_mc2_group",
+            return_value=SimpleNamespace(device_group=None),
+        ),
+        patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([128, 0, 256, 0])),
+        patch("torch.distributed.all_reduce", side_effect=set_max_count(128)),
+    ):
+        should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(
+            fused_input, topk_ids
+        )
+        assert not should_fallback
+        assert max_count == 128
+        assert (active_min, active_max) == (128, 256)
+        assert impl._cann_megamoe_fallback_count == 2
+
+    with (
+        patch(
+            "vllm_ascend.ops.fused_moe.moe_comm_method.get_mc2_group",
+            return_value=SimpleNamespace(device_group=None),
+        ),
+        patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([0, 0, 256, 0])),
+        patch("torch.distributed.all_reduce", side_effect=set_max_count(128)),
+    ):
+        should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(
+            fused_input, topk_ids
+        )
+        assert should_fallback
+        assert max_count == 128
+        assert (active_min, active_max) == (0, 256)
+        assert impl._cann_megamoe_fallback_count == 3
+        assert impl._cann_megamoe_idle_dp_fallback_count == 1
 
 
 def main() -> None:
