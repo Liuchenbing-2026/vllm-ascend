@@ -88,6 +88,16 @@ def check_a2_min_tokens_selection() -> None:
         parallel_config=SimpleNamespace(world_size_across_dp=32, pipeline_parallel_size=1),
     )
     with (
+        patch.dict(os.environ, {}, clear=True),
+        patch(
+            "vllm_ascend.ascend_forward_context._cann_megamoe_supported_by_config",
+            return_value=True,
+        ),
+    ):
+        assert _select_a2_moe_comm_method(1, vllm_config, "w8a8", 4096, False) == MoECommType.FUSED_MC2
+        assert _select_a2_moe_comm_method(4096, vllm_config, "w8a8", 4096, False) == MoECommType.FUSED_MC2
+
+    with (
         patch.dict(os.environ, {"VLLM_ASCEND_MEGAMOE_MIN_TOKENS": "512"}),
         patch(
             "vllm_ascend.ascend_forward_context._cann_megamoe_supported_by_config",
@@ -162,9 +172,11 @@ def check_cross_rank_contract() -> None:
 
 def check_route_fallback_guard() -> None:
     impl = FusedMC2CommImpl.__new__(FusedMC2CommImpl)
-    impl._cann_megamoe_max_tokens_per_expert = 1792
-    impl._cann_megamoe_require_uniform_dp_tokens = True
+    impl._cann_megamoe_max_tokens_per_expert = 0
+    impl._cann_megamoe_require_uniform_dp_tokens = False
     impl._cann_megamoe_fallback_count = 0
+    impl._cann_megamoe_uniform_dp_fallback_count = 0
+    impl._cann_megamoe_expert_threshold_fallback_count = 0
     impl.moe_config = SimpleNamespace(num_experts=8)
     impl.token_dispatcher = SimpleNamespace(ep_rank_id=0, ep_world_size=4)
     impl.prepare_finalize = SimpleNamespace(tp_size=2)
@@ -186,6 +198,14 @@ def check_route_fallback_guard() -> None:
             output.copy_(torch.tensor(counts, dtype=output.dtype))
 
         return all_gather
+
+    should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(fused_input, topk_ids)
+    assert not should_fallback
+    assert max_count == 0
+    assert (active_min, active_max) == (0, 0)
+
+    impl._cann_megamoe_max_tokens_per_expert = 1792
+    impl._cann_megamoe_require_uniform_dp_tokens = True
 
     with (
         patch(
@@ -233,6 +253,8 @@ def check_route_fallback_guard() -> None:
         assert max_count == 128
         assert (active_min, active_max) == (1, 2)
         assert impl._cann_megamoe_fallback_count == 2
+        assert impl._cann_megamoe_uniform_dp_fallback_count == 1
+        assert impl._cann_megamoe_expert_threshold_fallback_count == 1
 
 
 def main() -> None:

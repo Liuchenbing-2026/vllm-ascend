@@ -329,7 +329,10 @@ def _select_a2_moe_comm_method(
     mc2_tokens_capacity: int,
     is_draft_model: bool,
 ) -> MoECommType:
-    cann_megamoe_min_tokens = int(os.getenv("VLLM_ASCEND_MEGAMOE_MIN_TOKENS", "512"))
+    # The A2 operator contract accepts num_max_tokens_per_rank in [1, 4096].
+    # Keep an override for fault isolation, but do not impose an undocumented
+    # production threshold that excludes decode-sized batches.
+    cann_megamoe_min_tokens = int(os.getenv("VLLM_ASCEND_MEGAMOE_MIN_TOKENS", "1"))
     if cann_megamoe_min_tokens < 1:
         raise ValueError(
             "VLLM_ASCEND_MEGAMOE_MIN_TOKENS must be greater than or equal to 1, got "

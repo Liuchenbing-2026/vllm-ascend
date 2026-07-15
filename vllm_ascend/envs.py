@@ -99,6 +99,18 @@ env_variables: dict[str, Callable[[], Any]] = {
     # 2: A2 W8A8 uses CANN MegaMoe; other supported platforms retain the
     # `dispatch_gmm_combine_decode` path.
     "VLLM_ASCEND_ENABLE_FUSED_MC2": lambda: int(os.getenv("VLLM_ASCEND_ENABLE_FUSED_MC2", "0")),
+    # A2 MegaMoe fault-isolation controls. The operator supports token counts
+    # starting at one and mixed active-token counts through x_active_mask.
+    "VLLM_ASCEND_MEGAMOE_MIN_TOKENS": lambda: int(os.getenv("VLLM_ASCEND_MEGAMOE_MIN_TOKENS", "1")),
+    "VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT": lambda: int(
+        os.getenv("VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT", "0")
+    ),
+    "VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS", "0"))
+    ),
+    "VLLM_ASCEND_MEGAMOE_STATS_INTERVAL": lambda: int(
+        os.getenv("VLLM_ASCEND_MEGAMOE_STATS_INTERVAL", "1024")
+    ),
     # DEPRECATED: VLLM_ASCEND_BALANCE_SCHEDULING env var will be removed in a future release.
     # Use --additional-config '{"enable_balance_scheduling": true}' instead.
     "VLLM_ASCEND_BALANCE_SCHEDULING": lambda: bool(int(os.getenv("VLLM_ASCEND_BALANCE_SCHEDULING", "0"))),

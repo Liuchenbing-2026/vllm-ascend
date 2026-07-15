@@ -353,7 +353,7 @@ class FusedMC2CommImpl(MoECommMethod):
         self._cann_megamoe_trace_every_call = os.getenv("VLLM_ASCEND_MEGAMOE_TRACE_EVERY_CALL", "0") == "1"
         self._cann_megamoe_sync_after_call = os.getenv("VLLM_ASCEND_MEGAMOE_SYNC_AFTER_CALL", "0") == "1"
         self._cann_megamoe_max_tokens_per_expert = int(
-            os.getenv("VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT", "1792")
+            os.getenv("VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT", "0")
         )
         if self._cann_megamoe_max_tokens_per_expert < 0:
             raise ValueError(
@@ -362,9 +362,20 @@ class FusedMC2CommImpl(MoECommMethod):
             )
         uniform_dp_tokens = os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS")
         if uniform_dp_tokens is None:
-            uniform_dp_tokens = os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_ACTIVE_TOKENS", "1")
+            uniform_dp_tokens = os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_ACTIVE_TOKENS", "0")
         self._cann_megamoe_require_uniform_dp_tokens = uniform_dp_tokens == "1"
         self._cann_megamoe_fallback_count = 0
+        self._cann_megamoe_uniform_dp_fallback_count = 0
+        self._cann_megamoe_expert_threshold_fallback_count = 0
+        self._cann_megamoe_operator_call_count = 0
+        self._cann_megamoe_small_shape_call_count = 0
+        self._cann_megamoe_seen_small_token_shapes: set[int] = set()
+        self._cann_megamoe_stats_interval = int(os.getenv("VLLM_ASCEND_MEGAMOE_STATS_INTERVAL", "1024"))
+        if self._cann_megamoe_stats_interval < 0:
+            raise ValueError(
+                "VLLM_ASCEND_MEGAMOE_STATS_INTERVAL must be greater than or equal to 0, got "
+                f"{self._cann_megamoe_stats_interval}."
+            )
         enable_fused_mc2 = get_ascend_config().enable_fused_mc2
         if enable_fused_mc2 == _DISPATCH_FFN_COMBINE_MODE:
             self.expert_token_nums = torch.zeros([self.moe_config.num_local_experts], dtype=torch.int32, device="npu")
@@ -388,6 +399,9 @@ class FusedMC2CommImpl(MoECommMethod):
         topk_ids: torch.Tensor,
     ) -> tuple[bool, int, int, int]:
         threshold = self._cann_megamoe_max_tokens_per_expert
+        if threshold == 0 and not self._cann_megamoe_require_uniform_dp_tokens:
+            return False, 0, 0, 0
+
         x_active_mask = fused_experts_input.routing.mc2_mask
         device = topk_ids.device
         group = get_mc2_group().device_group
@@ -439,20 +453,50 @@ class FusedMC2CommImpl(MoECommMethod):
         should_fallback = dp_tokens_are_mixed or route_is_overloaded
         if should_fallback:
             self._cann_megamoe_fallback_count += 1
+            self._cann_megamoe_uniform_dp_fallback_count += int(dp_tokens_are_mixed)
+            self._cann_megamoe_expert_threshold_fallback_count += int(route_is_overloaded)
             if self.token_dispatcher.ep_rank_id == 0 and (
                 self._cann_megamoe_fallback_count <= 4 or self._cann_megamoe_fallback_count % 64 == 0
             ):
                 logger.warning(
                     "CANN MegaMoe route fallback: dp_token_min=%d dp_token_max=%d "
                     "max_tokens_per_expert=%d threshold=%d "
-                    "fallback_count=%d; using standard MC2 for this layer",
+                    "fallback_count=%d uniform_dp_fallbacks=%d expert_threshold_fallbacks=%d; "
+                    "using standard MC2 for this layer",
                     dp_token_min,
                     dp_token_max,
                     max_tokens_per_expert,
                     threshold,
                     self._cann_megamoe_fallback_count,
+                    self._cann_megamoe_uniform_dp_fallback_count,
+                    self._cann_megamoe_expert_threshold_fallback_count,
                 )
         return should_fallback, max_tokens_per_expert, dp_token_min, dp_token_max
+
+    def _record_cann_megamoe_operator_call(self, num_tokens_per_rank: int) -> None:
+        self._cann_megamoe_operator_call_count += 1
+        is_small_shape = num_tokens_per_rank <= 64
+        if is_small_shape:
+            self._cann_megamoe_small_shape_call_count += 1
+        first_small_shape = is_small_shape and num_tokens_per_rank not in self._cann_megamoe_seen_small_token_shapes
+        if first_small_shape:
+            self._cann_megamoe_seen_small_token_shapes.add(num_tokens_per_rank)
+
+        interval = self._cann_megamoe_stats_interval
+        should_log = (
+            self._cann_megamoe_operator_call_count <= 4
+            or first_small_shape
+            or (interval > 0 and self._cann_megamoe_operator_call_count % interval == 0)
+        )
+        if self.token_dispatcher.ep_rank_id == 0 and should_log:
+            logger.info(
+                "CANN MegaMoe operator call: calls=%d tokens_per_rank=%d small_shape_calls=%d "
+                "standard_mc2_fallbacks=%d",
+                self._cann_megamoe_operator_call_count,
+                num_tokens_per_rank,
+                self._cann_megamoe_small_shape_call_count,
+                self._cann_megamoe_fallback_count,
+            )
 
     def _load_cann_megamoe_ops(self):
         if self._cann_megamoe_ops is None:
@@ -766,6 +810,7 @@ class FusedMC2CommImpl(MoECommMethod):
                 int(self.token_dispatcher.ep_rank_id),
             )
         )
+        self._record_cann_megamoe_operator_call(original_num_tokens)
         call_index, should_trace = self._check_cann_megamoe_contract(
             hidden_states,
             topk_ids,
