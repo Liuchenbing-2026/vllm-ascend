@@ -321,6 +321,10 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         )
         fused_scale_flag = fused_mc2_selected and (enable_fused_mc2 == 1 or cann_megamoe_flag)
         fused_scale_bias_flag = fused_mc2_selected and enable_fused_mc2 == 1
+        fallback_w1 = None
+        fallback_w1_scale = None
+        fallback_w2 = None
+        fallback_w2_scale = None
         if self.dynamic_eplb:
             w1 = layer.w13_weight_list
             w1_scale = layer.fused_w1_scale_list if fused_scale_flag else layer.w13_weight_scale_fp32_list
@@ -331,6 +335,10 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
             w1_scale = layer.cann_megamoe_fused_w1_scale_list
             w2 = layer.cann_megamoe_w2_weight_list
             w2_scale = layer.cann_megamoe_fused_w2_scale_list
+            fallback_w1 = [layer.w13_weight]
+            fallback_w1_scale = [layer.w13_weight_scale_fp32]
+            fallback_w2 = [layer.w2_weight]
+            fallback_w2_scale = [layer.w2_weight_scale]
         else:
             w1 = [layer.w13_weight]
             w1_scale = [layer.fused_w1_scale] if fused_scale_flag else [layer.w13_weight_scale_fp32]
@@ -360,6 +368,10 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
                 w2_scale=w2_scale,
                 w1_scale_bias=w1_scale_bias,
                 w2_scale_bias=w2_scale_bias,
+                fallback_w1=fallback_w1,
+                fallback_w1_scale=fallback_w1_scale,
+                fallback_w2=fallback_w2,
+                fallback_w2_scale=fallback_w2_scale,
                 swiglu_limit=layer.swiglu_limit,
             )
         )

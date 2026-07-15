@@ -146,6 +146,10 @@ def build_fused_experts_input(
     w2_scale_bias: list[torch.Tensor] | torch.Tensor | None = None,
     w1_offset: torch.Tensor | None = None,
     w2_offset: torch.Tensor | None = None,
+    fallback_w1: torch.Tensor | list[torch.Tensor] | None = None,
+    fallback_w2: torch.Tensor | list[torch.Tensor] | None = None,
+    fallback_w1_scale: torch.Tensor | list[torch.Tensor] | None = None,
+    fallback_w2_scale: torch.Tensor | list[torch.Tensor] | None = None,
     swiglu_limit: float | None = 0.0,
 ) -> MoEFusedExpertsInput:
     if not vllm_version_is("0.23.0") and swiglu_limit is None:
@@ -167,6 +171,10 @@ def build_fused_experts_input(
             w2_scale_bias=w2_scale_bias,
             w1_offset=w1_offset,
             w2_offset=w2_offset,
+            fallback_w1=fallback_w1,
+            fallback_w2=fallback_w2,
+            fallback_w1_scale=fallback_w1_scale,
+            fallback_w2_scale=fallback_w2_scale,
         ),
         routing=MoERoutingParams(
             expert_map=expert_map,
@@ -215,6 +223,7 @@ def build_mlp_compute_input(
     fused_experts_input: MoEFusedExpertsInput,
     token_dispatch_output: MoETokenDispatchOutput[TMoECombineMetadata],
     use_fusion_ops: bool,
+    force_mc2: bool = False,
 ) -> MoEMlpComputeInput:
     if fused_experts_input.quant.is_mxfp and fused_experts_input.quant.mxfp is None:
         raise ValueError("fused_experts_input.quant.mxfp is required for MXFP quant types.")
@@ -240,6 +249,7 @@ def build_mlp_compute_input(
         activation=fused_experts_input.activation,
         need_trans=fused_experts_input.need_trans,
         dynamic_eplb=fused_experts_input.dynamic_eplb,
+        force_mc2=force_mc2,
         swiglu_limit=fused_experts_input.swiglu_limit,
     )
 

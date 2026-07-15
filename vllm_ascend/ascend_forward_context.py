@@ -1,4 +1,5 @@
 import math
+import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from enum import Enum
@@ -328,7 +329,13 @@ def _select_a2_moe_comm_method(
     mc2_tokens_capacity: int,
     is_draft_model: bool,
 ) -> MoECommType:
-    if num_tokens <= mc2_tokens_capacity and _cann_megamoe_supported_by_config(
+    cann_megamoe_min_tokens = int(os.getenv("VLLM_ASCEND_MEGAMOE_MIN_TOKENS", "512"))
+    if cann_megamoe_min_tokens < 1:
+        raise ValueError(
+            "VLLM_ASCEND_MEGAMOE_MIN_TOKENS must be greater than or equal to 1, got "
+            f"{cann_megamoe_min_tokens}."
+        )
+    if cann_megamoe_min_tokens <= num_tokens <= mc2_tokens_capacity and _cann_megamoe_supported_by_config(
         vllm_config,
         quant_type,
         is_draft_model,

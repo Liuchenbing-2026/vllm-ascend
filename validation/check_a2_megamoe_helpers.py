@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 
+import os
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import torch
 
-from vllm_ascend.ascend_forward_context import _cann_megamoe_supported_by_config
+from vllm_ascend.ascend_forward_context import (
+    MoECommType,
+    _cann_megamoe_supported_by_config,
+    _select_a2_moe_comm_method,
+)
 from vllm_ascend.ops.fused_moe.moe_comm_method import (
     FusedMC2CommImpl,
     _append_cann_megamoe_dummy_tokens,
@@ -77,11 +82,28 @@ def check_a2_selection_guard() -> None:
         assert not _cann_megamoe_supported_by_config(vllm_config, "w8a8", True)
 
 
+def check_a2_min_tokens_selection() -> None:
+    vllm_config = SimpleNamespace(
+        model_config=SimpleNamespace(get_num_experts=lambda: 256),
+        parallel_config=SimpleNamespace(world_size_across_dp=32, pipeline_parallel_size=1),
+    )
+    with (
+        patch.dict(os.environ, {"VLLM_ASCEND_MEGAMOE_MIN_TOKENS": "512"}),
+        patch(
+            "vllm_ascend.ascend_forward_context._cann_megamoe_supported_by_config",
+            return_value=True,
+        ),
+    ):
+        assert _select_a2_moe_comm_method(511, vllm_config, "w8a8", 4096, False) == MoECommType.MC2
+        assert _select_a2_moe_comm_method(512, vllm_config, "w8a8", 4096, False) == MoECommType.FUSED_MC2
+
+
 def check_cross_rank_contract() -> None:
     impl = FusedMC2CommImpl.__new__(FusedMC2CommImpl)
     impl._cann_megamoe_call_index = 0
     impl._cann_megamoe_last_contract_signature = None
     impl._cann_megamoe_contract_check = True
+    impl._cann_megamoe_trace_every_call = False
     impl.moe_config = SimpleNamespace(num_experts=8)
     impl.token_dispatcher = SimpleNamespace(ep_rank_id=0, ep_world_size=2)
 
@@ -138,11 +160,88 @@ def check_cross_rank_contract() -> None:
             raise AssertionError("Expected a cross-rank MegaMoe contract mismatch.")
 
 
+def check_route_fallback_guard() -> None:
+    impl = FusedMC2CommImpl.__new__(FusedMC2CommImpl)
+    impl._cann_megamoe_max_tokens_per_expert = 1792
+    impl._cann_megamoe_require_uniform_dp_tokens = True
+    impl._cann_megamoe_fallback_count = 0
+    impl.moe_config = SimpleNamespace(num_experts=8)
+    impl.token_dispatcher = SimpleNamespace(ep_rank_id=0, ep_world_size=4)
+    impl.prepare_finalize = SimpleNamespace(tp_size=2)
+
+    fused_input = SimpleNamespace(routing=SimpleNamespace(mc2_mask=torch.ones(2, dtype=torch.int8)))
+    topk_ids = torch.tensor([[0, 1], [2, 3]], dtype=torch.int32)
+
+    def set_max_count(max_count):
+        def all_reduce(counts, op=None, group=None):
+            del op, group
+            counts.zero_()
+            counts[0] = max_count
+
+        return all_reduce
+
+    def set_active_counts(counts):
+        def all_gather(output, input_tensor, group=None):
+            del input_tensor, group
+            output.copy_(torch.tensor(counts, dtype=output.dtype))
+
+        return all_gather
+
+    with (
+        patch(
+            "vllm_ascend.ops.fused_moe.moe_comm_method.get_mc2_group",
+            return_value=SimpleNamespace(device_group=None),
+        ),
+        patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([2, 0, 2, 0])),
+        patch("torch.distributed.all_reduce", side_effect=set_max_count(1792)),
+    ):
+        should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(
+            fused_input, topk_ids
+        )
+        assert not should_fallback
+        assert max_count == 1792
+        assert (active_min, active_max) == (2, 2)
+
+    with (
+        patch(
+            "vllm_ascend.ops.fused_moe.moe_comm_method.get_mc2_group",
+            return_value=SimpleNamespace(device_group=None),
+        ),
+        patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([2, 0, 2, 0])),
+        patch("torch.distributed.all_reduce", side_effect=set_max_count(1793)),
+    ):
+        should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(
+            fused_input, topk_ids
+        )
+        assert should_fallback
+        assert max_count == 1793
+        assert (active_min, active_max) == (2, 2)
+        assert impl._cann_megamoe_fallback_count == 1
+
+    with (
+        patch(
+            "vllm_ascend.ops.fused_moe.moe_comm_method.get_mc2_group",
+            return_value=SimpleNamespace(device_group=None),
+        ),
+        patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([1, 0, 2, 0])),
+        patch("torch.distributed.all_reduce", side_effect=set_max_count(128)),
+    ):
+        should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(
+            fused_input, topk_ids
+        )
+        assert should_fallback
+        assert max_count == 128
+        assert (active_min, active_max) == (1, 2)
+        assert impl._cann_megamoe_fallback_count == 2
+
+
 def main() -> None:
     check_dummy_routing()
     check_capacity_helpers()
     check_a2_selection_guard()
+    check_a2_min_tokens_selection()
     check_cross_rank_contract()
+    check_route_fallback_guard()
     assert _normalize_cann_megamoe_activation("silu") == "swiglu"
     print("A2 MegaMoe helper checks: PASS", flush=True)
 

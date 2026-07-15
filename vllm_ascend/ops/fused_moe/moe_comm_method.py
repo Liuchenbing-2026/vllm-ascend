@@ -18,7 +18,7 @@ from __future__ import annotations
 import importlib
 import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import torch
 from vllm.logger import logger
@@ -32,6 +32,7 @@ from vllm_ascend.ops.fused_moe.moe_runtime_args import (
     MoEFusedExpertsInput,
     MoEMlpComputeInput,
     MoEPrepareOutput,
+    MoEWeights,
     build_mlp_compute_input,
     build_token_dispatch_input,
 )
@@ -193,6 +194,9 @@ class MoECommMethod(ABC):
     def fused_experts(
         self,
         fused_experts_input: MoEFusedExpertsInput,
+        *,
+        use_fusion_ops: bool | None = None,
+        force_mc2: bool = False,
     ):
         # Check constraints
         assert fused_experts_input.hidden_states.dtype in [
@@ -221,7 +225,8 @@ class MoECommMethod(ABC):
         mlp_compute_input = build_mlp_compute_input(
             fused_experts_input=fused_experts_input,
             token_dispatch_output=token_dispatch_output,
-            use_fusion_ops=self.use_fusion_ops,
+            use_fusion_ops=self.use_fusion_ops if use_fusion_ops is None else use_fusion_ops,
+            force_mc2=force_mc2,
         )
 
         mlp_output, before_gmm2_evt = self._apply_mlp(mlp_compute_input)
@@ -345,7 +350,21 @@ class FusedMC2CommImpl(MoECommMethod):
         self._cann_megamoe_call_index = 0
         self._cann_megamoe_last_contract_signature = None
         self._cann_megamoe_contract_check = os.getenv("VLLM_ASCEND_MEGAMOE_CONTRACT_CHECK", "0") == "1"
+        self._cann_megamoe_trace_every_call = os.getenv("VLLM_ASCEND_MEGAMOE_TRACE_EVERY_CALL", "0") == "1"
         self._cann_megamoe_sync_after_call = os.getenv("VLLM_ASCEND_MEGAMOE_SYNC_AFTER_CALL", "0") == "1"
+        self._cann_megamoe_max_tokens_per_expert = int(
+            os.getenv("VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT", "1792")
+        )
+        if self._cann_megamoe_max_tokens_per_expert < 0:
+            raise ValueError(
+                "VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT must be greater than or equal to 0, got "
+                f"{self._cann_megamoe_max_tokens_per_expert}."
+            )
+        uniform_dp_tokens = os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS")
+        if uniform_dp_tokens is None:
+            uniform_dp_tokens = os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_ACTIVE_TOKENS", "1")
+        self._cann_megamoe_require_uniform_dp_tokens = uniform_dp_tokens == "1"
+        self._cann_megamoe_fallback_count = 0
         enable_fused_mc2 = get_ascend_config().enable_fused_mc2
         if enable_fused_mc2 == _DISPATCH_FFN_COMBINE_MODE:
             self.expert_token_nums = torch.zeros([self.moe_config.num_local_experts], dtype=torch.int32, device="npu")
@@ -362,6 +381,78 @@ class FusedMC2CommImpl(MoECommMethod):
 
     def _get_prepare_finalize(self):
         return PrepareAndFinalizeWithMC2(self.moe_config)
+
+    def _cann_megamoe_should_fallback(
+        self,
+        fused_experts_input: MoEFusedExpertsInput,
+        topk_ids: torch.Tensor,
+    ) -> tuple[bool, int, int, int]:
+        threshold = self._cann_megamoe_max_tokens_per_expert
+        x_active_mask = fused_experts_input.routing.mc2_mask
+        device = topk_ids.device
+        group = get_mc2_group().device_group
+
+        dp_token_min = dp_token_max = 0
+        dp_tokens_are_mixed = False
+        if self._cann_megamoe_require_uniform_dp_tokens:
+            local_active_tokens = int(topk_ids.shape[0])
+            if x_active_mask is not None:
+                local_active_tokens = int(x_active_mask.sum(dtype=torch.int64).item())
+            local_active_tokens_tensor = torch.tensor([local_active_tokens], dtype=torch.int64, device=device)
+            active_tokens_by_rank = torch.empty(
+                int(self.token_dispatcher.ep_world_size),
+                dtype=torch.int64,
+                device=device,
+            )
+            torch.distributed.all_gather_into_tensor(
+                active_tokens_by_rank,
+                local_active_tokens_tensor,
+                group=group,
+            )
+            tp_size = int(self.prepare_finalize.tp_size)
+            if active_tokens_by_rank.numel() % tp_size != 0:
+                raise RuntimeError(
+                    "CANN MegaMoe fallback guard requires EP world size divisible by TP size: "
+                    f"ep_world_size={active_tokens_by_rank.numel()} tp_size={tp_size}."
+                )
+            active_tokens_by_dp = active_tokens_by_rank.view(-1, tp_size).sum(dim=1)
+            dp_token_min = int(active_tokens_by_dp.min().item())
+            dp_token_max = int(active_tokens_by_dp.max().item())
+            dp_tokens_are_mixed = dp_token_min != dp_token_max
+
+        max_tokens_per_expert = 0
+        route_is_overloaded = False
+        if threshold > 0:
+            active_topk_ids = topk_ids if x_active_mask is None else topk_ids[x_active_mask.bool()]
+            recv_counts = torch.bincount(
+                active_topk_ids.reshape(-1),
+                minlength=int(self.moe_config.num_experts),
+            ).to(torch.int64)
+            torch.distributed.all_reduce(
+                recv_counts,
+                op=torch.distributed.ReduceOp.SUM,
+                group=group,
+            )
+            max_tokens_per_expert = int(recv_counts.max().item())
+            route_is_overloaded = max_tokens_per_expert > threshold
+
+        should_fallback = dp_tokens_are_mixed or route_is_overloaded
+        if should_fallback:
+            self._cann_megamoe_fallback_count += 1
+            if self.token_dispatcher.ep_rank_id == 0 and (
+                self._cann_megamoe_fallback_count <= 4 or self._cann_megamoe_fallback_count % 64 == 0
+            ):
+                logger.warning(
+                    "CANN MegaMoe route fallback: dp_token_min=%d dp_token_max=%d "
+                    "max_tokens_per_expert=%d threshold=%d "
+                    "fallback_count=%d; using standard MC2 for this layer",
+                    dp_token_min,
+                    dp_token_max,
+                    max_tokens_per_expert,
+                    threshold,
+                    self._cann_megamoe_fallback_count,
+                )
+        return should_fallback, max_tokens_per_expert, dp_token_min, dp_token_max
 
     def _load_cann_megamoe_ops(self):
         if self._cann_megamoe_ops is None:
@@ -539,7 +630,37 @@ class FusedMC2CommImpl(MoECommMethod):
         gathered = torch.empty(local_contract.numel() * ep_world, dtype=torch.int64, device=hidden_states.device)
 
         signature = (num_tokens, active_tokens)
-        should_trace = call_index < 4 or call_index % 64 == 0 or signature != self._cann_megamoe_last_contract_signature
+        should_trace = (
+            self._cann_megamoe_trace_every_call
+            or call_index < 4
+            or call_index % 64 == 0
+            or signature != self._cann_megamoe_last_contract_signature
+        )
+        active_tokens_by_rank = None
+        global_recv_counts = None
+        global_nonfinite_weights = None
+        if self._cann_megamoe_trace_every_call:
+            local_active_tokens = torch.tensor([active_tokens], dtype=torch.int64, device=hidden_states.device)
+            active_tokens_by_rank = torch.empty(ep_world, dtype=torch.int64, device=hidden_states.device)
+            torch.distributed.all_gather_into_tensor(
+                active_tokens_by_rank,
+                local_active_tokens,
+                group=get_mc2_group().device_group,
+            )
+
+            active_topk_ids = topk_ids[x_active_mask.bool()]
+            global_recv_counts = torch.bincount(active_topk_ids.reshape(-1), minlength=num_experts).to(torch.int64)
+            torch.distributed.all_reduce(
+                global_recv_counts,
+                op=torch.distributed.ReduceOp.SUM,
+                group=get_mc2_group().device_group,
+            )
+            global_nonfinite_weights = (~torch.isfinite(topk_weights)).sum(dtype=torch.int64)
+            torch.distributed.all_reduce(
+                global_nonfinite_weights,
+                op=torch.distributed.ReduceOp.SUM,
+                group=get_mc2_group().device_group,
+            )
         if should_trace:
             logger.warning(
                 "CANN MegaMoe contract before: ep_rank=%d call=%d layer=%d tokens=%d active=%d "
@@ -552,6 +673,20 @@ class FusedMC2CommImpl(MoECommMethod):
                 hidden,
                 num_topk,
             )
+            if self._cann_megamoe_trace_every_call and ep_rank == 0:
+                assert active_tokens_by_rank is not None
+                assert global_recv_counts is not None
+                assert global_nonfinite_weights is not None
+                logger.warning(
+                    "CANN MegaMoe route before: call=%d active_by_rank=%s zero_recv_experts=%d "
+                    "min_recv=%d max_recv=%d nonfinite_weights=%d",
+                    call_index,
+                    active_tokens_by_rank.cpu().tolist(),
+                    int((global_recv_counts == 0).sum().item()),
+                    int(global_recv_counts.min().item()),
+                    int(global_recv_counts.max().item()),
+                    int(global_nonfinite_weights.item()),
+                )
 
         torch.distributed.all_gather_into_tensor(
             gathered,
@@ -653,7 +788,7 @@ class FusedMC2CommImpl(MoECommMethod):
         )
         if self._cann_megamoe_sync_after_call:
             torch.npu.synchronize()
-        if should_trace:
+        if should_trace and (not self._cann_megamoe_trace_every_call or self.token_dispatcher.ep_rank_id == 0):
             logger.warning(
                 "CANN MegaMoe contract after: ep_rank=%d call=%d output_tokens=%d",
                 self.token_dispatcher.ep_rank_id,
@@ -706,6 +841,35 @@ class FusedMC2CommImpl(MoECommMethod):
             expert_tokens = self.expert_token_nums
         elif get_ascend_config().enable_fused_mc2 == _CANN_MEGAMOE_MODE:
             if get_ascend_device_type() == AscendDeviceType.A2:
+                should_fallback, _, _, _ = self._cann_megamoe_should_fallback(fused_experts_input, topk_ids)
+                if should_fallback:
+                    weights = fused_experts_input.weights
+                    if any(
+                        value is None
+                        for value in (
+                            weights.fallback_w1,
+                            weights.fallback_w2,
+                            weights.fallback_w1_scale,
+                            weights.fallback_w2_scale,
+                        )
+                    ):
+                        raise RuntimeError("CANN MegaMoe fallback requires standard MC2 weights and scales.")
+                    fallback_weights = MoEWeights(
+                        w1=weights.fallback_w1,
+                        w2=weights.fallback_w2,
+                        w1_bias=weights.w1_bias,
+                        w2_bias=weights.w2_bias,
+                        w1_scale=weights.fallback_w1_scale,
+                        w2_scale=weights.fallback_w2_scale,
+                        w1_offset=weights.w1_offset,
+                        w2_offset=weights.w2_offset,
+                    )
+                    fallback_input = replace(fused_experts_input, weights=fallback_weights)
+                    return super().fused_experts(
+                        fallback_input,
+                        use_fusion_ops=False,
+                        force_mc2=True,
+                    )
                 out, expert_tokens = self._apply_cann_megamoe(fused_experts_input, topk_ids)
             else:
                 assert fused_experts_input.routing.expert_map is not None, "expert_map cannot be None."
