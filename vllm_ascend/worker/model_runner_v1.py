@@ -681,6 +681,7 @@ class NPUModelRunner(GPUModelRunner):
     def _sync_metadata_across_dp(
         self,
         num_tokens: int,
+        actual_num_tokens: int | None = None,
         is_draft_model: bool = False,
         cudagraph_mode: CUDAGraphMode = CUDAGraphMode.NONE,
         allow_dp_padding: bool = False,
@@ -694,6 +695,9 @@ class NPUModelRunner(GPUModelRunner):
         if self.dp_size == 1:
             return num_tokens, None, cudagraph_mode, True
 
+        if actual_num_tokens is None:
+            actual_num_tokens = num_tokens
+
         if should_skip_allreduce_across_dp_group(self.vllm_config, is_draft_model):
             num_tokens_after_padding = torch.tensor([num_tokens] * self.dp_size, device="cpu", dtype=torch.int32)
             return num_tokens, num_tokens_after_padding, cudagraph_mode, True
@@ -706,9 +710,10 @@ class NPUModelRunner(GPUModelRunner):
             if self.ascend_config.dp_allreduce_on_npu
             else ("cpu", get_dp_group().cpu_group)
         )
-        packed_tensor = torch.zeros(2, self.dp_size, device=device_str, dtype=torch.int32)
+        packed_tensor = torch.zeros(3, self.dp_size, device=device_str, dtype=torch.int32)
         packed_tensor[0][self.dp_rank] = num_tokens
         packed_tensor[1][self.dp_rank] = cudagraph_mode.value
+        packed_tensor[2][self.dp_rank] = actual_num_tokens
         dist.all_reduce(packed_tensor, group=group)
         if device_str == "npu":
             packed_tensor = packed_tensor.cpu()
@@ -716,7 +721,10 @@ class NPUModelRunner(GPUModelRunner):
         # Unpack the results
         num_tokens_across_dp = packed_tensor[0, :]
         max_tokens_across_dp = int(num_tokens_across_dp.max().item())
-        dp_tokens_are_uniform = bool((num_tokens_across_dp == num_tokens_across_dp[0]).all().item())
+        actual_num_tokens_across_dp = packed_tensor[2, :]
+        dp_tokens_are_uniform = bool(
+            (actual_num_tokens_across_dp == actual_num_tokens_across_dp[0]).all().item()
+        )
         synced_cudagraph_mode = CUDAGraphMode(_post_process_cudagraph_mode(packed_tensor))
 
         # Create a tensor for num_tokens_after_padding
@@ -3024,6 +3032,7 @@ class NPUModelRunner(GPUModelRunner):
         if self.vllm_config.parallel_config.data_parallel_size > 1:
             _, num_tokens_across_dp, synced_cudagraph_mode, dp_tokens_are_uniform = self._sync_metadata_across_dp(
                 num_tokens=num_tokens_padded,
+                actual_num_tokens=num_tokens,
                 cudagraph_mode=cudagraph_mode,
                 allow_dp_padding=((cudagraph_mode != CUDAGraphMode.NONE)
                                   or enable_sp(self.vllm_config)
