@@ -19,6 +19,7 @@
 
 import logging
 import math
+import os
 import sys
 import time
 from collections import defaultdict
@@ -683,7 +684,7 @@ class NPUModelRunner(GPUModelRunner):
         is_draft_model: bool = False,
         cudagraph_mode: CUDAGraphMode = CUDAGraphMode.NONE,
         allow_dp_padding: bool = False,
-    ) -> tuple[int, torch.Tensor | None, CUDAGraphMode]:
+    ) -> tuple[int, torch.Tensor | None, CUDAGraphMode, bool]:
         # TODO: In vLLM, the only thing that needs to be synced is num_tokens, but in
         # our case, we still need to sync the other two flags as well. So we need to
         # include them in the all_reduce operation, and more over, we CANNOT skip it
@@ -691,11 +692,11 @@ class NPUModelRunner(GPUModelRunner):
         # FIXME: Restore the `or self.vllm_config.model_config.enforce_eager` here
         # immediately once the other two flags are no longer needed.
         if self.dp_size == 1:
-            return num_tokens, None, cudagraph_mode
+            return num_tokens, None, cudagraph_mode, True
 
         if should_skip_allreduce_across_dp_group(self.vllm_config, is_draft_model):
             num_tokens_after_padding = torch.tensor([num_tokens] * self.dp_size, device="cpu", dtype=torch.int32)
-            return num_tokens, num_tokens_after_padding, cudagraph_mode
+            return num_tokens, num_tokens_after_padding, cudagraph_mode, True
 
         # On certain devices, CPU-side all_reduce may return dirty data. 
         # When dp_allreduce_on_npu is True, route DP metadata
@@ -715,6 +716,7 @@ class NPUModelRunner(GPUModelRunner):
         # Unpack the results
         num_tokens_across_dp = packed_tensor[0, :]
         max_tokens_across_dp = int(num_tokens_across_dp.max().item())
+        dp_tokens_are_uniform = bool((num_tokens_across_dp == num_tokens_across_dp[0]).all().item())
         synced_cudagraph_mode = CUDAGraphMode(_post_process_cudagraph_mode(packed_tensor))
 
         # Create a tensor for num_tokens_after_padding
@@ -725,7 +727,7 @@ class NPUModelRunner(GPUModelRunner):
         else:
             num_tokens_after_padding = num_tokens_across_dp.cpu()
 
-        return max_tokens_across_dp, num_tokens_after_padding, synced_cudagraph_mode
+        return max_tokens_across_dp, num_tokens_after_padding, synced_cudagraph_mode, dp_tokens_are_uniform
 
     def get_model(self) -> nn.Module:
         # get raw model out of the aclgraph wrapper.
@@ -3020,7 +3022,7 @@ class NPUModelRunner(GPUModelRunner):
         # across ranks
         should_ubatch, num_tokens_across_dp = False, None
         if self.vllm_config.parallel_config.data_parallel_size > 1:
-            _, num_tokens_across_dp, synced_cudagraph_mode = self._sync_metadata_across_dp(
+            _, num_tokens_across_dp, synced_cudagraph_mode, dp_tokens_are_uniform = self._sync_metadata_across_dp(
                 num_tokens=num_tokens_padded,
                 cudagraph_mode=cudagraph_mode,
                 allow_dp_padding=((cudagraph_mode != CUDAGraphMode.NONE)
@@ -3033,11 +3035,26 @@ class NPUModelRunner(GPUModelRunner):
             if num_tokens_across_dp is not None:
                 dp_rank = self.parallel_config.data_parallel_rank
                 num_tokens_padded = int(num_tokens_across_dp[dp_rank].item())
-                # Re-dispatch with DP padding
-                cudagraph_mode, batch_descriptor = dispatch_cudagraph(
-                    num_tokens_padded,
-                    valid_modes={synced_cudagraph_mode},
+                mixed_dp_megamoe_tail = (
+                    get_ascend_device_type() == AscendDeviceType.A2
+                    and self.ascend_config.enable_fused_mc2 == 2
+                    and os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS", "1") == "1"
+                    and not dp_tokens_are_uniform
                 )
+                if mixed_dp_megamoe_tail:
+                    # A graph captures one fixed MoE communication path. When
+                    # DP ranks have different active-token counts, replaying a
+                    # uniform MegaMoe graph can hang at the decode tail. Run
+                    # this small mixed step eagerly so the per-layer guard can
+                    # select the proven standard MC2 fallback.
+                    cudagraph_mode = CUDAGraphMode.NONE
+                    batch_descriptor = BatchDescriptor(num_tokens_padded)
+                else:
+                    # Re-dispatch with DP padding
+                    cudagraph_mode, batch_descriptor = dispatch_cudagraph(
+                        num_tokens_padded,
+                        valid_modes={synced_cudagraph_mode},
+                    )
                 # Assert to make sure the agreed upon token count is correct otherwise
                 # num_tokens_across_dp will no-longer be valid
                 assert batch_descriptor.num_tokens == num_tokens_padded

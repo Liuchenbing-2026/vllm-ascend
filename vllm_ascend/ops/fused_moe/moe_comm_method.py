@@ -409,30 +409,41 @@ class FusedMC2CommImpl(MoECommMethod):
         dp_token_min = dp_token_max = 0
         dp_tokens_are_mixed = False
         if self._cann_megamoe_require_uniform_dp_tokens:
-            local_active_tokens = int(topk_ids.shape[0])
-            if x_active_mask is not None:
-                local_active_tokens = int(x_active_mask.sum(dtype=torch.int64).item())
-            local_active_tokens_tensor = torch.tensor([local_active_tokens], dtype=torch.int64, device=device)
-            active_tokens_by_rank = torch.empty(
-                int(self.token_dispatcher.ep_world_size),
-                dtype=torch.int64,
-                device=device,
-            )
-            torch.distributed.all_gather_into_tensor(
-                active_tokens_by_rank,
-                local_active_tokens_tensor,
-                group=group,
-            )
-            tp_size = int(self.prepare_finalize.tp_size)
-            if active_tokens_by_rank.numel() % tp_size != 0:
-                raise RuntimeError(
-                    "CANN MegaMoe fallback guard requires EP world size divisible by TP size: "
-                    f"ep_world_size={active_tokens_by_rank.numel()} tp_size={tp_size}."
+            try:
+                is_graph_build = bool(_EXTRA_CTX.capturing)
+            except AssertionError:
+                is_graph_build = False
+            is_graph_build = is_graph_build or torch.compiler.is_compiling()
+            if is_graph_build:
+                # The capture dummy batch is uniform across DP ranks. Reading
+                # x_active_mask with .item() here would issue a synchronous NPU
+                # copy, which ACL graph GLOBAL capture explicitly forbids.
+                dp_token_min = dp_token_max = int(topk_ids.shape[0])
+            else:
+                local_active_tokens = int(topk_ids.shape[0])
+                if x_active_mask is not None:
+                    local_active_tokens = int(x_active_mask.sum(dtype=torch.int64).item())
+                local_active_tokens_tensor = torch.tensor([local_active_tokens], dtype=torch.int64, device=device)
+                active_tokens_by_rank = torch.empty(
+                    int(self.token_dispatcher.ep_world_size),
+                    dtype=torch.int64,
+                    device=device,
                 )
-            active_tokens_by_dp = active_tokens_by_rank.view(-1, tp_size).sum(dim=1)
-            dp_token_min = int(active_tokens_by_dp.min().item())
-            dp_token_max = int(active_tokens_by_dp.max().item())
-            dp_tokens_are_mixed = dp_token_min != dp_token_max
+                torch.distributed.all_gather_into_tensor(
+                    active_tokens_by_rank,
+                    local_active_tokens_tensor,
+                    group=group,
+                )
+                tp_size = int(self.prepare_finalize.tp_size)
+                if active_tokens_by_rank.numel() % tp_size != 0:
+                    raise RuntimeError(
+                        "CANN MegaMoe fallback guard requires EP world size divisible by TP size: "
+                        f"ep_world_size={active_tokens_by_rank.numel()} tp_size={tp_size}."
+                    )
+                active_tokens_by_dp = active_tokens_by_rank.view(-1, tp_size).sum(dim=1)
+                dp_token_min = int(active_tokens_by_dp.min().item())
+                dp_token_max = int(active_tokens_by_dp.max().item())
+                dp_tokens_are_mixed = dp_token_min != dp_token_max
 
         max_tokens_per_expert = 0
         route_is_overloaded = False
