@@ -362,7 +362,7 @@ class FusedMC2CommImpl(MoECommMethod):
             )
         uniform_dp_tokens = os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS")
         if uniform_dp_tokens is None:
-            uniform_dp_tokens = os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_ACTIVE_TOKENS", "0")
+            uniform_dp_tokens = os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_ACTIVE_TOKENS", "1")
         self._cann_megamoe_require_uniform_dp_tokens = uniform_dp_tokens == "1"
         self._cann_megamoe_fallback_count = 0
         self._cann_megamoe_uniform_dp_fallback_count = 0
