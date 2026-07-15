@@ -452,8 +452,11 @@ class NPUModelRunner(GPUModelRunner):
             )
             # TODO(zhenwenqi) after https://github.com/vllm-project/vllm/pull/28988 is merged, we can delete this
             self.input_ids = self._make_buffer(max_buffer_num_tokens, dtype=torch.int32)
+            # Resize positions to accommodate PCP padding. Keep as plain GPU
+            # tensor (not CpuGpuBuffer) so upstream _preprocess can slice it.
             self.positions = torch.zeros(
-                max_buffer_num_tokens, dtype=torch.int64, device=self.device)
+                max_buffer_num_tokens, dtype=torch.int64, device=self.device
+            )
 
         self.sfa_dcp_replicated_indexer_size = 1
         if enable_sfa_dcp_replicated_indexer():
@@ -842,15 +845,24 @@ class NPUModelRunner(GPUModelRunner):
         self.with_prefill = with_prefill
 
         # Get positions.
-        cu_num_tokens = self._get_cumsum_and_arange(
-            num_scheduled_tokens, self.query_pos.np
-        )
+        # Use query_pos.np as output buffer for _get_cumsum_and_arange to avoid
+        # corrupting self.arange_np (which is used as both read source and would
+        # be overwritten if used as arange_out, causing aliasing bugs).
         positions_np = self._positions_np_buf[:total_num_scheduled_tokens]
+        cu_num_tokens = self._get_cumsum_and_arange(num_scheduled_tokens, self.query_pos.np)
         np.add(
             self.input_batch.num_computed_tokens_cpu[req_indices],
             self.query_pos.np[: cu_num_tokens[-1]],
-            out=positions_np,
+            out=positions_np
         )
+
+        if self.pcp_size <= 1:
+            self.input_batch.block_table.compute_slot_mapping_draft(
+                req_indices, positions_np
+            )
+            self.input_batch.block_table.commit_slot_mapping(
+                total_num_scheduled_tokens
+            )
 
         # For PCP, compute slot_mapping on GPU using pre-PCP-split positions.
         # Use blocking .to(device) to ensure data lands on GPU before PCP
@@ -1014,11 +1026,22 @@ class NPUModelRunner(GPUModelRunner):
             self.gdn_query_start_loc.np[num_reqs + 1 :].fill(cu_num_tokens[-1])
             self.gdn_query_start_loc.copy_to_gpu()
 
+        self.num_computed_tokens[:num_reqs].copy_(
+            self.input_batch.num_computed_tokens_cpu_tensor[:num_reqs],
+            non_blocking=True,
+        )
 
-        # Compute optimistic seq_lens (assumes all draft tokens from previous
-        # iteration accepted). Store in optimistic_seq_lens_cpu for use by
-        # _build_attention_metadata (max_seq_len) and discard_request_mask.
-        # seq_lens (GPU) will be computed later using the same optimistic values.
+        self.num_scheduled_tokens.np[:num_reqs] = num_scheduled_tokens
+        self.num_scheduled_tokens.copy_to_gpu(num_reqs)
+        num_scheduled_tokens_gpu = self.num_scheduled_tokens.gpu[:num_reqs]
+
+        self.seq_lens[:num_reqs] = (
+            self.num_computed_tokens[:num_reqs] + num_scheduled_tokens_gpu
+        )
+        self.seq_lens[num_reqs:].fill_(0)
+
+        # Compute optimistic seq_lens on CPU (assumes all draft tokens from
+        # previous iteration accepted). Used by _pool() and discard logic.
         torch.add(
             self.input_batch.num_computed_tokens_cpu_tensor[:num_reqs],
             torch.from_numpy(num_scheduled_tokens),
@@ -1028,6 +1051,9 @@ class NPUModelRunner(GPUModelRunner):
 
         # Fill unused with -1. Needed for reshape_and_cache in attention_cp
         self.query_start_loc.gpu[num_reqs + 1 :].fill_(-1)
+
+        # Build prev_positions mapping for async scheduling input_ids handling.
+        self._compute_prev_positions(num_reqs)
 
         # Copy the tensors to the NPU.
         self._prepare_input_ids(scheduler_output, num_reqs, total_num_scheduled_tokens, cu_num_tokens)
@@ -1056,6 +1082,12 @@ class NPUModelRunner(GPUModelRunner):
                 self.xdrope_positions.cpu[:, :total_num_scheduled_tokens],
                 non_blocking=True,
             )
+        else:
+            # Common case (1D positions)
+            self.positions[:total_num_scheduled_tokens].copy_(
+                self._positions_cpu_buf[:total_num_scheduled_tokens],
+                non_blocking=True,
+            )
 
         # Record the index of requests that should not be sampled,
         # so that we could clear the sampled tokens before returning
@@ -1073,7 +1105,7 @@ class NPUModelRunner(GPUModelRunner):
             )
             discard_requests_mask = original_seq_lens_np < num_tokens_np
         else:
-            discard_requests_mask = self.optimistic_seq_lens_cpu[:num_reqs].numpy() < num_tokens_np
+            discard_requests_mask = self.optimistic_seq_lens_cpu.numpy()[:num_reqs] < num_tokens_np
 
         discard_request_indices = np.nonzero(discard_requests_mask)[0]
         self.num_discarded_requests = len(discard_request_indices)
@@ -1229,15 +1261,6 @@ class NPUModelRunner(GPUModelRunner):
         if self._needs_seq_lens_cpu_sync and async_spec_decode_active:
             self._correct_optimistic_seq_lens_cpu(num_reqs)
 
-        # For non-PCP, compute slot_mapping on GPU. PCP slot_mapping was
-        # already computed on GPU before PCP split the positions.
-        if self.pcp_size <= 1:
-            self.input_batch.block_table.compute_slot_mapping(
-                num_reqs,
-                self.query_start_loc.gpu[: num_reqs + 1],
-                self.positions[:total_num_scheduled_tokens],
-            )
-
         if self.use_async_spec_decode and (self.uses_mrope or self.uses_xdrope_dim > 0):
             drift = self.num_computed_tokens[req_indices_gpu].to(
                 torch.int64
@@ -1274,12 +1297,11 @@ class NPUModelRunner(GPUModelRunner):
                 draft_token_ids,
             ) in scheduler_output.scheduled_spec_decode_tokens.items():
                 req_idx = self.input_batch.req_id_to_index[req_id]
-                draft_len = len(draft_token_ids)
-                num_draft_tokens[req_idx] = draft_len
+                num_draft_tokens[req_idx] = len(draft_token_ids)
                 if (self.is_kv_consumer and req_id in new_schedule_reqs) or \
                    (self.input_batch.num_computed_tokens_cpu[req_idx] >= \
                     self.input_batch.num_prompt_tokens[req_idx]):
-                    num_decode_draft_tokens[req_idx] = draft_len
+                    num_decode_draft_tokens[req_idx] = len(draft_token_ids)
                 else:
                     num_decode_draft_tokens[req_idx] = -1
 
@@ -1493,16 +1515,17 @@ class NPUModelRunner(GPUModelRunner):
         # Compute the logits indices.
         # [4, 1, 3, 1, 2]
         num_sampled_tokens = num_draft_tokens + 1
-        # Step 1.
-        # cu_num_sampled_tokens: [4, 5, 8, 9, 11]
-        # _arange_scratch[:11]: [0, 1, 2, 3, 0, 0, 1, 2, 0, 0, 1]
-        cu_num_sampled_tokens = self._get_cumsum_and_arange(
-            num_sampled_tokens, self._arange_scratch, cumsum_dtype=np.int32
-        )
-        # Step 2. [0, 0, 0, 0, 103, 104, 104, 104, 206, 207, 207]
+        # Step 1. [4, 5, 8, 9, 11]
+        cu_num_sampled_tokens = np.cumsum(num_sampled_tokens, dtype=np.int32)
+        total_num_sampled_tokens = cu_num_sampled_tokens[-1]
+        # Step 2. [0, 0, 0, 0, 4, 5, 5, 5, 8, 9, 9]
+        cumsums_offsets = np.repeat(cu_num_sampled_tokens - num_sampled_tokens, num_sampled_tokens)
+        # Step 3. [0, 1, 2, 3, 0, 0, 1, 2, 0, 0, 1]
+        arange = self.arange_np[:total_num_sampled_tokens] - cumsums_offsets
+        # Step 4. [0, 0, 0, 0, 103, 104, 104, 104, 206, 207, 207]
         logits_indices = np.repeat(cu_num_scheduled_tokens - num_sampled_tokens, num_sampled_tokens)
-        # Step 3. [0, 1, 2, 3, 103, 104, 105, 106, 206, 207, 208]
-        logits_indices += self._arange_scratch[: cu_num_sampled_tokens[-1]]
+        # Step 5. [0, 1, 2, 3, 103, 104, 105, 106, 206, 207, 208]
+        logits_indices += arange
 
         # while pcp > 1, decode results may contain padding (from pcp all-gather),
         # update logits_indices after getting draft_token_ids from ori logits_indices
@@ -1518,7 +1541,7 @@ class NPUModelRunner(GPUModelRunner):
             else:
                 cu_num_scheduled_tokens = cu_num_scheduled_tokens * self.pcp_size - num_pcp_pads
             logits_indices_pcp = np.repeat(cu_num_scheduled_tokens - num_sampled_tokens, num_sampled_tokens)
-            logits_indices_pcp += self._arange_scratch[: cu_num_sampled_tokens[-1]]
+            logits_indices_pcp += arange
             logits_indices_pcp = torch.from_numpy(logits_indices_pcp).pin_memory().to(self.device, non_blocking=True)
 
 
@@ -2129,14 +2152,6 @@ class NPUModelRunner(GPUModelRunner):
                         self.model.get_mamba_state_copy_func(),
                         preprocess_bufs,
                     )
-                    # preprocess_mamba resets num_accepted_tokens_cpu to 1
-                    # for requests whose state was copied to a new block.
-                    # Re-sync to GPU so the mamba kernel reads from the
-                    # correct initial state slot (init_token_idx = 0).
-                    self.num_accepted_tokens.np[:num_reqs] = (
-                        self.input_batch.num_accepted_tokens_cpu[:num_reqs]
-                    )
-                    self.num_accepted_tokens.copy_to_gpu(num_reqs)
 
                     if mamba_bufs.postprocess_align is not None:
                         mamba_utils.stage_postprocess_inputs_to_gpu(
@@ -2345,11 +2360,6 @@ class NPUModelRunner(GPUModelRunner):
                 batch_desc,
             )
             self.kv_connector_output = kv_connector_output
-
-        # Now the batch has been launched we can wait for corrections from the
-        # previous model forward without breaking async scheduling.
-        if deferred_state_corrections_fn:
-            deferred_state_corrections_fn()
         return None
 
     @torch.inference_mode()
@@ -3010,8 +3020,11 @@ class NPUModelRunner(GPUModelRunner):
             # window size when capturing to make sure the correct kernel is selected.
             max_seq_len = self.max_model_len
         else:
-            max_seq_len = self.optimistic_seq_lens_cpu.numpy()[:num_reqs].max().item()
-
+            max_seq_len = self.optimistic_seq_lens_cpu[:num_reqs].max().item()
+        if use_spec_decode and self.need_accepted_tokens:
+            self.num_accepted_tokens.np[:num_reqs] = self.input_batch.num_accepted_tokens_cpu[:num_reqs]
+            self.num_accepted_tokens.np[num_reqs:].fill(1)
+            self.num_accepted_tokens.copy_to_gpu()
 
         kv_cache_groups = self.kv_cache_config.kv_cache_groups
 
@@ -3115,10 +3128,9 @@ class NPUModelRunner(GPUModelRunner):
             _seq_lens_cpu=self.optimistic_seq_lens_cpu[:num_reqs_padded],
             seq_lens_cpu_upper_bound=self.optimistic_seq_lens_cpu[:num_reqs_padded],
             # TODO
-            seq_lens_cpu=seq_lens_cpu,
+            seq_lens_cpu=self.optimistic_seq_lens_cpu[:num_reqs_padded],
             # TODO
-            # num_computed_tokens_cpu=self.input_batch.num_computed_tokens_cpu_tensor[:num_reqs_padded],
-            num_computed_tokens_cpu=num_computed_tokens_cpu,
+            num_computed_tokens_cpu=self.input_batch.num_computed_tokens_cpu_tensor[:num_reqs_padded],
             num_reqs=num_reqs_padded,
             num_actual_tokens=num_tokens,
             max_query_len=max_query_len,
@@ -3447,8 +3459,7 @@ class NPUModelRunner(GPUModelRunner):
             self.optimistic_seq_lens_cpu[num_reqs:].fill_(0)
             self.seq_lens.copy_(self.optimistic_seq_lens_cpu, non_blocking=True)
 
-            cum_num_tokens = self._get_cumsum_and_arange(
-            num_scheduled_tokens, self.query_pos.np)
+            cum_num_tokens = self._get_cumsum_and_arange(num_scheduled_tokens, self.query_pos.np)
             self.query_start_loc.np[1 : num_reqs_padded + 1] = cum_num_tokens
             self.query_start_loc.copy_to_gpu()
             if self._has_gdn:
