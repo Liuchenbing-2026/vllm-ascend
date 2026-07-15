@@ -145,6 +145,9 @@ def check_npu_moe_gating_top_k(
     scoring_func: str = "softmax",
     custom_routing_function: Callable | None = None,
 ):
+    op_name = "moe_gating_top_k_hash" if scoring_func == "sqrtsoftplus" else "moe_gating_top_k"
+    if not hasattr(torch.ops._C_ascend, op_name):
+        return False
     if scoring_func == "sigmoid" and not renormalize:  # sigmoid + renorm=0 is not supported in current branch
         return False
     if custom_routing_function is not None:

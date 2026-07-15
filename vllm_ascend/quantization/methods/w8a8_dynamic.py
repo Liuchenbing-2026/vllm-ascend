@@ -32,6 +32,7 @@ from vllm_ascend.ops.fused_moe.moe_runtime_args import build_fused_experts_input
 from vllm_ascend.utils import (
     ACL_FORMAT_FRACTAL_NZ,
     AscendDeviceType,
+    enable_custom_op,
     enable_dsa_cp,
     get_ascend_device_type,
     maybe_trans_nz,
@@ -380,6 +381,9 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         return final_hidden_states
 
     def process_weights_after_loading(self, layer):
+        # Register optional routing kernels before the first compiled forward.
+        # Importing the extension from inside Dynamo tracing is unsupported.
+        enable_custom_op()
         layer.w13_weight.data = layer.w13_weight.data.transpose(1, 2).contiguous()
         layer.w2_weight.data = layer.w2_weight.data.transpose(1, 2).contiguous()
         # TODO(zzzzwwjj): Currently, `torch_npu.npu_grouped_matmul_swiglu_quant`
