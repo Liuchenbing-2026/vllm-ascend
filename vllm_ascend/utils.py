@@ -418,6 +418,13 @@ def enable_custom_op():
     if _CUSTOM_OP_ENABLED is not None:
         return _CUSTOM_OP_ENABLED
 
+    # Imports are unsupported while Dynamo is tracing. If the extension was
+    # not initialized before compilation, use the native fallback for this
+    # graph instead of turning a missing optional extension into a compile
+    # failure. A later eager call can still initialize custom ops normally.
+    if torch.compiler.is_compiling():
+        return False
+
     # There are some customed operators which aren't implemented
     # with batch invariant in vllm-ascend, we need to disable them.
     # FIXME(linfeng): Currently custom op compilation and execution are partially available
