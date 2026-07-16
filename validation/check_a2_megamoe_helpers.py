@@ -113,6 +113,7 @@ def check_dp_policy_defaults() -> None:
     with patch.dict(os.environ, {}, clear=True):
         assert not env_variables["VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS"]()
         assert env_variables["VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH"]()
+        assert not env_variables["VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE"]()
         assert env_variables["VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS"]()
 
 

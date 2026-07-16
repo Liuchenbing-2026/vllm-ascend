@@ -3061,7 +3061,8 @@ class NPUModelRunner(GPUModelRunner):
                     get_ascend_device_type() == AscendDeviceType.A2
                     and self.ascend_config.enable_fused_mc2 == 2
                     and (
-                        (
+                        os.getenv("VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE", "0") == "1"
+                        or (
                             os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH", "1") == "1"
                             and not dp_tokens_are_uniform
                         )
@@ -3072,11 +3073,11 @@ class NPUModelRunner(GPUModelRunner):
                     )
                 )
                 if unsafe_dp_megamoe_graph:
-                    # ACL graph replay is only stable for uniform DP token
-                    # counts. Positive mixed counts leave the graph but remain
-                    # eligible for eager MegaMoe through x_active_mask. A fully
-                    # idle DP rank is handled by the per-layer standard-MC2
-                    # fallback.
+                    # MegaMoe can be forced eager to isolate graph/eager
+                    # transition failures. Otherwise, ACL graph replay is only
+                    # used for uniform DP token counts. Positive mixed counts
+                    # remain eligible for eager MegaMoe through x_active_mask;
+                    # an idle DP rank uses the per-layer standard-MC2 fallback.
                     cudagraph_mode = CUDAGraphMode.NONE
                     batch_descriptor = BatchDescriptor(num_tokens_padded)
                 else:

@@ -116,6 +116,9 @@ env_variables: dict[str, Callable[[], Any]] = {
     "VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH": lambda: bool(
         int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH", "1"))
     ),
+    "VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE", "0"))
+    ),
     "VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS": lambda: bool(
         int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS", "1"))
     ),
