@@ -12,6 +12,26 @@ from vllm_ascend.ops.triton.spec_decode.utils import copy_and_expand_dflash_and_
 from vllm_ascend.spec_decode.eagle_proposer import AscendEagleProposer
 
 
+def resolve_dflash_draft_attn_causal(draft_hf_config) -> bool:
+    """Resolve whether the DFlash draft-block attention is causal.
+
+    Standard DFlash diffusion heads attend bidirectionally inside the draft
+    block. JetSpec-style heads (arXiv 2606.18394) are structurally DFlash with
+    ``dflash_config.causal: true`` and need an intra-block causal mask; running
+    them non-causal silently collapses the acceptance length.
+    """
+    try:
+        from vllm.model_executor.models.qwen3_dflash import (
+            dflash_has_any_non_causal,
+        )
+    except ImportError:
+        # vLLM without the per-layer causality API (pre-#47914, e.g. v0.24.0):
+        # causality is a plain config switch, absent means non-causal.
+        dflash_config = getattr(draft_hf_config, "dflash_config", None) or {}
+        return bool(dflash_config.get("causal", False))
+    return not dflash_has_any_non_causal(draft_hf_config)
+
+
 class AscendDflashProposer(AscendEagleProposer):
     def __init__(
         self,
@@ -27,6 +47,8 @@ class AscendDflashProposer(AscendEagleProposer):
 
         self.max_query_tokens = self.max_batch_size * (1 + self.num_speculative_tokens)
         self.max_positions = self.max_num_tokens + self.max_query_tokens
+
+        self.draft_attn_causal = resolve_dflash_draft_attn_causal(self.speculative_config.draft_model_config.hf_config)
 
         self._context_slot_mapping_buffer = torch.zeros(
             self.max_num_tokens,
@@ -143,7 +165,9 @@ class AscendDflashProposer(AscendEagleProposer):
         cad.max_query_len = num_query_per_req
         cad.max_seq_len = cad.max_seq_len + num_query_per_req
         cad.slot_mapping = query_slot_mapping
-        cad.causal = False
+        # JetSpec-style causal heads keep intra-block causal masking; the
+        # metadata builder derives the actual mask tensor from `causal`.
+        cad.causal = self.draft_attn_causal
         cad.attn_mask = None
         cad.attn_state = AscendAttentionState.ChunkedPrefill
 
@@ -192,7 +216,7 @@ class AscendDflashProposer(AscendEagleProposer):
                 max_seq_len=0,
                 slot_mapping=self._slot_mapping_buffer[:num_query_total],
                 attn_state=AscendAttentionState.ChunkedPrefill,
-                causal=False,
+                causal=self.draft_attn_causal,
                 is_prefilling=torch.zeros(num_reqs, dtype=torch.bool),
                 block_table_tensor=self.runner.input_batch.block_table[self.kv_cache_gid].get_device_tensor()[
                     :num_reqs
@@ -204,7 +228,11 @@ class AscendDflashProposer(AscendEagleProposer):
                 AscendAttentionState.ChunkedPrefill,
             )
 
-            attn_metadata_dflash.attn_mask = None
+            # Non-causal drafts run FIA with sparse_mode=0 and no mask; causal
+            # (JetSpec-style) drafts keep the mask built from `causal` above so
+            # graph capture records sparse_mode=3 with a valid mask tensor.
+            if not self.draft_attn_causal:
+                attn_metadata_dflash.attn_mask = None
             attn_metadata_dflash.attn_state = AscendAttentionState.ChunkedPrefill
 
             per_layer_attn_metadata = dict()

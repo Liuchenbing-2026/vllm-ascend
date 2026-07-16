@@ -33,6 +33,16 @@ DSPARK = {
     }
 }
 
+# JetSpec heads are causal DFlash drafters (arXiv 2606.18394); the official
+# checkpoint declares `dflash_config.causal_head`, which the NPU platform
+# translates to `causal` at config time.
+JETSPEC = {
+    "jetspec": {
+        "main": "Qwen/Qwen3-8B",
+        "spec": "JetSpec/jetspec-qwen3-8b",
+    }
+}
+
 BASELINES = {
     "eagle": [0.74, 0.44, 0.29],
     "eagle3": [0.68, 0.40, 0.18],

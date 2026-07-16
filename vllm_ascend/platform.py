@@ -408,6 +408,50 @@ class NPUPlatform(Platform):
             )
 
     @classmethod
+    def _adapt_jetspec_draft_config(cls, vllm_config: VllmConfig) -> None:
+        """Accept official JetSpec draft heads as-is via method="dflash".
+
+        JetSpec heads (hao-ai-lab/JetSpec) are structurally causal DFlash
+        drafters, but their configs spell the causality switch as
+        ``dflash_config.causal_head`` while vLLM only reads
+        ``dflash_config.causal`` — left untranslated, the draft silently runs
+        non-causal and the acceptance length collapses. vLLM also never reads
+        ``block_size``, so exceeding the trained block via
+        ``num_speculative_tokens`` degrades acceptance without any error.
+        """
+        speculative_config = vllm_config.speculative_config
+        if speculative_config is None or speculative_config.method != "dflash":
+            return
+        draft_model_config = getattr(speculative_config, "draft_model_config", None)
+        hf_config = getattr(draft_model_config, "hf_config", None)
+        dflash_config = getattr(hf_config, "dflash_config", None)
+        if not isinstance(dflash_config, dict):
+            return
+
+        if "causal_head" in dflash_config and "causal" not in dflash_config:
+            dflash_config["causal"] = dflash_config.pop("causal_head")
+            logger.info(
+                "Translated JetSpec-style `dflash_config.causal_head` to "
+                "`dflash_config.causal=%s` for the DFlash drafter.",
+                dflash_config["causal"],
+            )
+
+        block_size = dflash_config.get("block_size")
+        num_query_per_req = speculative_config.num_speculative_tokens + 1
+        if isinstance(block_size, int) and num_query_per_req > block_size:
+            logger.warning(
+                "DFlash drafter was trained with block_size=%d but "
+                "num_speculative_tokens=%d requests %d query slots per step "
+                "(1 anchor + K mask tokens). Slots beyond the trained block "
+                "fall outside the training distribution and degrade the "
+                "acceptance rate silently; set num_speculative_tokens<=%d.",
+                block_size,
+                speculative_config.num_speculative_tokens,
+                num_query_per_req,
+                block_size - 1,
+            )
+
+    @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
         from vllm_ascend.quantization.utils import maybe_auto_detect_quantization
 
@@ -425,6 +469,7 @@ class NPUPlatform(Platform):
 
         maybe_auto_detect_quantization(vllm_config)
 
+        cls._adapt_jetspec_draft_config(vllm_config)
         cls._validate_draft_decode_context_parallel_config(vllm_config)
         cls._validate_parallel_config(vllm_config)
 
