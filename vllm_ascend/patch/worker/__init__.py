@@ -27,6 +27,7 @@ from vllm_ascend.utils import is_310p, vllm_version_is
 # imported and the v2 worker stays dormant (the release uses the v1 runner).
 if vllm_version_is("0.23.0"):
     _V2_MODEL_RUNNER_SUPPORTED = False
+    import vllm_ascend.patch.worker.patch_lora_compile_wrapper  # noqa
 else:
     _V2_MODEL_RUNNER_SUPPORTED = True
 

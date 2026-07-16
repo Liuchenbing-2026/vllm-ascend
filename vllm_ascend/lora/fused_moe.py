@@ -199,6 +199,11 @@ class AscendFusedMoEWithLoRA(FusedMoEWithLoRA):
         self._enable_aux_cuda_stream = envs.VLLM_LORA_ENABLE_DUAL_STREAM
         self.moe_config = base_layer.moe_config
         self._w13_slices = 2 if base_layer.moe_config.is_act_and_mul else 1
+        # vLLM resolves shared-expert LoRA targets through the replacement
+        # wrapper after this module takes the base FusedMoE layer's place.
+        shared_experts = getattr(base_layer, "_shared_experts", None)
+        if shared_experts is not None:
+            self._shared_experts = shared_experts
 
     # ------------------------------------------------------------------
     # Mapping
