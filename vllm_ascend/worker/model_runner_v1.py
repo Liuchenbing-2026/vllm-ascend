@@ -2991,6 +2991,7 @@ class NPUModelRunner(GPUModelRunner):
         force_has_lora: bool | None = None,
         force_num_active_loras: int | None = None,
         num_encoder_reqs: int = 0,
+        is_graph_capturing: bool = False,
     ) -> tuple[CUDAGraphMode, BatchDescriptor, bool, torch.Tensor | None, CUDAGraphStat | None]:
         num_tokens_padded = self._pad_for_sequence_parallelism(num_tokens)
         is_all_decode = np.all(self.input_batch.num_computed_tokens_cpu[:num_reqs] > 0)
@@ -3061,7 +3062,10 @@ class NPUModelRunner(GPUModelRunner):
                     get_ascend_device_type() == AscendDeviceType.A2
                     and self.ascend_config.enable_fused_mc2 == 2
                     and (
-                        os.getenv("VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE", "0") == "1"
+                        (
+                            os.getenv("VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE", "0") == "1"
+                            and not is_graph_capturing
+                        )
                         or (
                             os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH", "1") == "1"
                             and not dp_tokens_are_uniform
@@ -3523,6 +3527,7 @@ class NPUModelRunner(GPUModelRunner):
             # LoRA state when determining the batch descriptor for capture
             force_has_lora=num_active_loras > 0,
             force_num_active_loras=num_active_loras,
+            is_graph_capturing=is_graph_capturing,
         )
         if self.use_cp:
             self.pcp_manager.init_batch_info(
