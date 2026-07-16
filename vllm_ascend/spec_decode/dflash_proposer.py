@@ -25,10 +25,17 @@ def resolve_dflash_draft_attn_causal(draft_hf_config) -> bool:
             dflash_has_any_non_causal,
         )
     except ImportError:
-        # vLLM without the per-layer causality API (pre-#47914, e.g. v0.24.0):
-        # causality is a plain config switch, absent means non-causal.
+        # vLLM without the `dflash_has_any_non_causal` helper (pre-#48167).
+        # Mirror the model-side per-layer resolution that these vLLMs already
+        # apply when building the draft layers (_resolve_layer_attention): an
+        # explicit `dflash_config.causal` wins; otherwise SWA layers are
+        # causal and any full-attention layer makes the draft non-causal.
         dflash_config = getattr(draft_hf_config, "dflash_config", None) or {}
-        return bool(dflash_config.get("causal", False))
+        causal = dflash_config.get("causal")
+        if causal is not None:
+            return bool(causal)
+        layer_types = getattr(draft_hf_config, "layer_types", None)
+        return bool(layer_types) and all(layer_type == "sliding_attention" for layer_type in layer_types)
     return not dflash_has_any_non_causal(draft_hf_config)
 
 

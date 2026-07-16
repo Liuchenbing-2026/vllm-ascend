@@ -23,6 +23,11 @@ class AscendDsparkProposer(AscendDflashProposer):
             runner=runner,
         )
 
+        # DSpark drafts are always non-causal; pin the inherited flag so the
+        # DFlash causality resolver can never flip this proposer's attention
+        # mode (set_inputs_first_pass below hardcodes causal=False to match).
+        self.draft_attn_causal = False
+
         # Initialize and establish static address for graph mode
         blk = 1 + self.num_speculative_tokens
         self._dspark_seed_buffer = torch.zeros(self.max_batch_size, dtype=torch.int64, device=device)

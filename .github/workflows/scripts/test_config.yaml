@@ -499,8 +499,10 @@
   base: spec_decode_base
   source_file_dependencies:
     - vllm_ascend/spec_decode/dflash_proposer.py
+    - vllm_ascend/platform.py
   tests:
     - tests/e2e/pull_request/one_card/spec_decode/test_dflash.py
+    - tests/e2e/pull_request/one_card/spec_decode/test_jetspec.py
 
 - name: spec_decode_dspark
   optional: false

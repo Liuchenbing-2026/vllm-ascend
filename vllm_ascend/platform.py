@@ -429,17 +429,34 @@ class NPUPlatform(Platform):
             return
 
         if "causal_head" in dflash_config and "causal" not in dflash_config:
-            dflash_config["causal"] = dflash_config.pop("causal_head")
+            # Keep `causal_head` in place so the hf_config stays faithful to
+            # the checkpoint; only `causal` is read downstream.
+            dflash_config["causal"] = dflash_config["causal_head"]
             logger.info(
                 "Translated JetSpec-style `dflash_config.causal_head` to "
                 "`dflash_config.causal=%s` for the DFlash drafter.",
                 dflash_config["causal"],
             )
 
+        if "causal" not in dflash_config:
+            # Guard against checkpoints that spell the causality switch some
+            # other way: silently running a causal head non-causal collapses
+            # the acceptance length without any error.
+            causal_like_keys = [key for key in dflash_config if "causal" in key.lower()]
+            if causal_like_keys:
+                logger.warning_once(
+                    "dflash_config has causality-looking key(s) %s that vLLM "
+                    "does not read (only `causal` is honored). If this draft "
+                    "head was trained with intra-block causal attention, it "
+                    "will silently run non-causal; set "
+                    "`dflash_config.causal: true` in the draft config.",
+                    causal_like_keys,
+                )
+
         block_size = dflash_config.get("block_size")
         num_query_per_req = speculative_config.num_speculative_tokens + 1
         if isinstance(block_size, int) and num_query_per_req > block_size:
-            logger.warning(
+            logger.warning_once(
                 "DFlash drafter was trained with block_size=%d but "
                 "num_speculative_tokens=%d requests %d query slots per step "
                 "(1 anchor + K mask tokens). Slots beyond the trained block "

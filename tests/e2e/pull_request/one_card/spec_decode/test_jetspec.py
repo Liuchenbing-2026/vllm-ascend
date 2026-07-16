@@ -12,18 +12,34 @@ from tests.e2e.pull_request.one_card.spec_decode.utils import JETSPEC, calculate
 # JetSpec block_size=16 -> 1 anchor + 15 mask slots per draft step.
 NUM_SPECULATIVE_TOKENS = 15
 
-# Conservative sanity floor for the mean acceptance length (1 + accepted /
-# drafts). The non-causal DFlash-b16 head scores ~2.9 on this prompt set; a
-# causal JetSpec head that beats it proves the causal draft path is wired
-# correctly. TODO(jetspec): replace with a calibrated per-position baseline
-# once measured on NPU hardware.
-MIN_ACCEPTANCE_LENGTH = 3.0
+# Sanity floor for the mean acceptance length (1 + accepted / drafts). The
+# non-causal DFlash-b16 head scores ~2.9 on this prompt set, so the floor must
+# sit clearly above it: if the causal draft wiring regresses (the head runs
+# non-causal again), acceptance falls back to the ~2.9 band and this must
+# fail, not ride on noise. JetSpec reports roughly 2x DFlash acceptance for
+# causal chain drafting. TODO(jetspec): replace with a calibrated
+# per-position baseline (like BASELINES["dflash"]) once measured on NPU.
+MIN_ACCEPTANCE_LENGTH = 3.5
 
 
 @pytest.mark.parametrize("method", JETSPEC.keys())
 def test_jetspec_acceptance(method: str):
     main_model_name = JETSPEC[method]["main"]
     spec_model_name = JETSPEC[method]["spec"]
+
+    # The whole adaptation rests on the official checkpoint spelling its
+    # causality switch as `dflash_config.causal_head` (translated to `causal`
+    # by the NPU platform hook). If the checkpoint changes shape, fail loudly
+    # here instead of silently running non-causal and riding on the
+    # acceptance floor below.
+    from transformers import PretrainedConfig
+
+    spec_config_dict, _ = PretrainedConfig.get_config_dict(spec_model_name)
+    spec_dflash_config = spec_config_dict.get("dflash_config") or {}
+    assert spec_dflash_config.get("causal_head") or spec_dflash_config.get("causal"), (
+        f"{spec_model_name} no longer declares dflash_config.causal_head/causal; "
+        "the JetSpec causality translation would silently no-op."
+    )
 
     tokenizer = AutoTokenizer.from_pretrained(
         main_model_name,
