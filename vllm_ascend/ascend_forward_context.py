@@ -40,6 +40,18 @@ _CANN_MEGAMOE_SUPPORTED_QUANT_NAMES = {
 }
 
 
+def _should_force_eager_megamoe_runtime(
+    ascend_config: Any,
+    is_graph_capturing: bool = False,
+) -> bool:
+    return (
+        not is_graph_capturing
+        and get_ascend_device_type() == AscendDeviceType.A2
+        and ascend_config.enable_fused_mc2 == 2
+        and os.getenv("VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE", "0") == "1"
+    )
+
+
 def _get_cann_megamoe_quant_name(vllm_config: VllmConfig, quant_type: Any) -> str | None:
     if quant_type is not None:
         return str(getattr(quant_type, "name", quant_type)).lower()

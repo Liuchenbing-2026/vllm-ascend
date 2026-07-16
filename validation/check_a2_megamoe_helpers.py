@@ -11,6 +11,7 @@ from vllm_ascend.ascend_forward_context import (
     _cann_megamoe_supported_by_config,
     _resolve_moe_comm_type,
     _select_a2_moe_comm_method,
+    _should_force_eager_megamoe_runtime,
     empty_dp_step_requires_dummy_forward,
 )
 from vllm_ascend.envs import env_variables
@@ -20,6 +21,7 @@ from vllm_ascend.ops.fused_moe.moe_comm_method import (
     _normalize_cann_megamoe_activation,
 )
 from vllm_ascend.utils import (
+    AscendDeviceType,
     get_cann_megamoe_dummy_token_capacity,
     resolve_cann_megamoe_max_recv_tokens,
 )
@@ -117,6 +119,49 @@ def check_dp_policy_defaults() -> None:
         assert env_variables["VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH"]()
         assert not env_variables["VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE"]()
         assert env_variables["VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS"]()
+
+
+def check_force_eager_megamoe_runtime() -> None:
+    config = SimpleNamespace(enable_fused_mc2=2)
+    with (
+        patch.dict(
+            os.environ,
+            {"VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE": "1"},
+            clear=True,
+        ),
+        patch(
+            "vllm_ascend.ascend_forward_context.get_ascend_device_type",
+            return_value=AscendDeviceType.A2,
+        ),
+    ):
+        assert _should_force_eager_megamoe_runtime(config)
+        assert not _should_force_eager_megamoe_runtime(
+            config,
+            is_graph_capturing=True,
+        )
+
+    with (
+        patch.dict(os.environ, {}, clear=True),
+        patch(
+            "vllm_ascend.ascend_forward_context.get_ascend_device_type",
+            return_value=AscendDeviceType.A2,
+        ),
+    ):
+        assert not _should_force_eager_megamoe_runtime(config)
+
+    config.enable_fused_mc2 = 0
+    with (
+        patch.dict(
+            os.environ,
+            {"VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE": "1"},
+            clear=True,
+        ),
+        patch(
+            "vllm_ascend.ascend_forward_context.get_ascend_device_type",
+            return_value=AscendDeviceType.A2,
+        ),
+    ):
+        assert not _should_force_eager_megamoe_runtime(config)
 
 
 def check_empty_dp_dummy_forward() -> None:
@@ -352,6 +397,7 @@ def main() -> None:
     check_a2_selection_guard()
     check_a2_min_tokens_selection()
     check_dp_policy_defaults()
+    check_force_eager_megamoe_runtime()
     check_empty_dp_dummy_forward()
     check_step_moe_comm_type_override()
     check_cross_rank_contract()

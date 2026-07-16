@@ -174,6 +174,7 @@ from vllm_ascend.worker.utils import AscendKVBlockZeroer
 
 from vllm_ascend.ascend_forward_context import (  # isort: skip
     MoECommType,
+    _should_force_eager_megamoe_runtime,
     empty_dp_step_requires_dummy_forward,
     get_mc2_tokens_capacity,
     select_moe_comm_method,
@@ -2387,6 +2388,9 @@ class NPUModelRunner(GPUModelRunner):
         # encoder inputs are present. Use eager for the first pass.
         num_encoder_reqs = len(scheduler_output.scheduled_encoder_inputs)
         has_encoder_input = self.model_config.is_encoder_decoder and num_encoder_reqs > 0
+        force_eager_megamoe_runtime = _should_force_eager_megamoe_runtime(
+            self.ascend_config
+        )
 
         # Run forward pass
         clear_kv_metadata = self.speculative_config is None
@@ -2402,7 +2406,7 @@ class NPUModelRunner(GPUModelRunner):
                 num_actual_tokens=scheduler_output.total_num_scheduled_tokens,
                 model_instance=self.model,
                 max_tokens_across_pcp=0 if self.pcp_size == 1 else self.pcp_manager.max_num_tokens_across_pcp,
-                skip_compiled=has_encoder_input,
+                skip_compiled=has_encoder_input or force_eager_megamoe_runtime,
                 has_sinks=self._has_sinks,
                 input_ids=input_ids,
                 eplb_heat_collection_status=self.eplb_heat_collection_status if self.dynamic_eplb else False,
@@ -3123,9 +3127,9 @@ class NPUModelRunner(GPUModelRunner):
                     get_ascend_device_type() == AscendDeviceType.A2
                     and self.ascend_config.enable_fused_mc2 == 2
                     and (
-                        (
-                            os.getenv("VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE", "0") == "1"
-                            and not is_graph_capturing
+                        _should_force_eager_megamoe_runtime(
+                            self.ascend_config,
+                            is_graph_capturing=is_graph_capturing,
                         )
                         or (
                             os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH", "1") == "1"
