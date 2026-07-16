@@ -174,6 +174,7 @@ from vllm_ascend.worker.utils import AscendKVBlockZeroer
 
 from vllm_ascend.ascend_forward_context import (  # isort: skip
     MoECommType,
+    external_dp_requires_dummy_forward,
     get_mc2_tokens_capacity,
     select_moe_comm_method,
     set_ascend_forward_context,
@@ -743,6 +744,25 @@ class NPUModelRunner(GPUModelRunner):
             dp_tokens_are_uniform,
             all_dp_ranks_have_tokens,
         )
+
+    def _run_empty_dp_dummy_forward(self, reason: str) -> bool:
+        """Keep external DP ranks aligned when a local step becomes empty."""
+        if not external_dp_requires_dummy_forward(
+            self.parallel_config.distributed_executor_backend,
+            self.parallel_config.data_parallel_size,
+        ):
+            return False
+
+        count = getattr(self, "_empty_dp_dummy_forward_count", 0) + 1
+        self._empty_dp_dummy_forward_count = count
+        if count <= 4 or count % 64 == 0:
+            logger.info(
+                "Running empty DP dummy forward: reason=%s count=%d",
+                reason,
+                count,
+            )
+        self._dummy_run(1)
+        return True
 
     def get_model(self) -> nn.Module:
         # get raw model out of the aclgraph wrapper.
@@ -2108,17 +2128,12 @@ class NPUModelRunner(GPUModelRunner):
                         return make_empty_encoder_model_runner_output(scheduler_output)
 
                 if not num_scheduled_tokens:
-                    if (
-                        self.parallel_config.distributed_executor_backend == "external_launcher"
-                        and self.parallel_config.data_parallel_size > 1
-                    ):
-                        # this is a corner case when both external launcher
-                        # and DP are enabled, num_scheduled_tokens could be
-                        # 0, and has_unfinished_requests in the outer loop
-                        # returns True. before returning early here we call
-                        # dummy run to ensure coordinate_batch_across_dp
-                        # is called into to avoid out of sync issues.
-                        self._dummy_run(1)
+                    # This is a corner case when both external launcher and DP
+                    # are enabled: has_unfinished_requests in the outer loop can
+                    # be true while this rank has no local tokens. The dummy run
+                    # keeps coordinate_batch_across_dp and model collectives in
+                    # the same call order on every DP rank.
+                    self._run_empty_dp_dummy_forward("pre-update-empty")
                     if not has_kv_transfer_group():
                         # Return empty ModelRunnerOutput if no work to do.
                         return EMPTY_MODEL_RUNNER_OUTPUT
@@ -2135,6 +2150,12 @@ class NPUModelRunner(GPUModelRunner):
                 tokens = [scheduler_output.num_scheduled_tokens[i] for i in req_ids]
                 if (scheduler_output.total_num_scheduled_tokens <= 0
                         or not tokens or sum(tokens) == 0):
+                    # _update_states() can remove the last local request after
+                    # the pre-update empty check above. External DP ranks must
+                    # still enter the same model step: CANN MegaMoe requires
+                    # identical cross-rank call order and num_tokens, and the
+                    # standard MC2 path also uses the EP-wide communicator.
+                    self._run_empty_dp_dummy_forward("post-update-empty")
                     if not has_kv_transfer_group():
                         return EMPTY_MODEL_RUNNER_OUTPUT
                     return self.kv_connector_no_forward(scheduler_output, self.vllm_config)

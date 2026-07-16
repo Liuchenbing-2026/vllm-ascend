@@ -113,6 +113,14 @@ def _cann_megamoe_supported_by_config(
 _MRV2_IN_PROFILE_RUN: ContextVar[bool] = ContextVar("_MRV2_IN_PROFILE_RUN", default=False)
 
 
+def external_dp_requires_dummy_forward(
+    distributed_executor_backend: str | None,
+    data_parallel_size: int,
+) -> bool:
+    """Return whether an empty rank must join an external-DP model step."""
+    return distributed_executor_backend == "external_launcher" and data_parallel_size > 1
+
+
 @contextmanager
 def override_mrv2_in_profile_run(enabled: bool):
     """Override MRv2's extra profile-run marker for one forward path.

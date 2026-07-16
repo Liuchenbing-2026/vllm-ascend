@@ -10,6 +10,7 @@ from vllm_ascend.ascend_forward_context import (
     MoECommType,
     _cann_megamoe_supported_by_config,
     _select_a2_moe_comm_method,
+    external_dp_requires_dummy_forward,
 )
 from vllm_ascend.envs import env_variables
 from vllm_ascend.ops.fused_moe.moe_comm_method import (
@@ -115,6 +116,12 @@ def check_dp_policy_defaults() -> None:
         assert env_variables["VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH"]()
         assert not env_variables["VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE"]()
         assert env_variables["VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS"]()
+
+
+def check_empty_dp_dummy_forward() -> None:
+    assert external_dp_requires_dummy_forward("external_launcher", 4)
+    assert not external_dp_requires_dummy_forward("external_launcher", 1)
+    assert not external_dp_requires_dummy_forward("mp", 4)
 
 
 def check_cross_rank_contract() -> None:
@@ -328,6 +335,7 @@ def main() -> None:
     check_a2_selection_guard()
     check_a2_min_tokens_selection()
     check_dp_policy_defaults()
+    check_empty_dp_dummy_forward()
     check_cross_rank_contract()
     check_route_fallback_guard()
     assert _normalize_cann_megamoe_activation("silu") == "swiglu"
