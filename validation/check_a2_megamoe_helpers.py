@@ -165,10 +165,9 @@ def check_force_eager_megamoe_runtime() -> None:
 
 
 def check_empty_dp_dummy_forward() -> None:
-    assert empty_dp_step_requires_dummy_forward("external_launcher", 4, False)
-    assert empty_dp_step_requires_dummy_forward("mp", 4, True)
-    assert not empty_dp_step_requires_dummy_forward("external_launcher", 1, True)
-    assert not empty_dp_step_requires_dummy_forward("mp", 4, False)
+    assert empty_dp_step_requires_dummy_forward("external_launcher", 4)
+    assert not empty_dp_step_requires_dummy_forward("external_launcher", 1)
+    assert not empty_dp_step_requires_dummy_forward("mp", 4)
 
 
 def check_step_moe_comm_type_override() -> None:

@@ -748,14 +748,9 @@ class NPUModelRunner(GPUModelRunner):
 
     def _run_empty_dp_dummy_forward(self, reason: str) -> bool:
         """Keep DP ranks aligned when a local step becomes empty."""
-        a2_megamoe_enabled = (
-            get_ascend_device_type() == AscendDeviceType.A2
-            and self.ascend_config.enable_fused_mc2 == 2
-        )
         if not empty_dp_step_requires_dummy_forward(
             self.parallel_config.distributed_executor_backend,
             self.parallel_config.data_parallel_size,
-            a2_megamoe_enabled,
         ):
             return False
 

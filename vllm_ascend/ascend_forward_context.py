@@ -128,12 +128,14 @@ _MRV2_IN_PROFILE_RUN: ContextVar[bool] = ContextVar("_MRV2_IN_PROFILE_RUN", defa
 def empty_dp_step_requires_dummy_forward(
     distributed_executor_backend: str | None,
     data_parallel_size: int,
-    a2_megamoe_enabled: bool,
 ) -> bool:
-    """Return whether an empty rank must join a data-parallel model step."""
-    return data_parallel_size > 1 and (
-        distributed_executor_backend == "external_launcher" or a2_megamoe_enabled
-    )
+    """Return whether execute_model must supply an empty-rank dummy forward.
+
+    The MP data-parallel EngineCore already follows an empty execute_model call
+    with execute_dummy_batch(). Running another dummy here would advance idle
+    ranks by two collectives while active ranks advance by one.
+    """
+    return distributed_executor_backend == "external_launcher" and data_parallel_size > 1
 
 
 def _resolve_moe_comm_type(
