@@ -113,12 +113,15 @@ def _cann_megamoe_supported_by_config(
 _MRV2_IN_PROFILE_RUN: ContextVar[bool] = ContextVar("_MRV2_IN_PROFILE_RUN", default=False)
 
 
-def external_dp_requires_dummy_forward(
+def empty_dp_step_requires_dummy_forward(
     distributed_executor_backend: str | None,
     data_parallel_size: int,
+    a2_megamoe_enabled: bool,
 ) -> bool:
-    """Return whether an empty rank must join an external-DP model step."""
-    return distributed_executor_backend == "external_launcher" and data_parallel_size > 1
+    """Return whether an empty rank must join a data-parallel model step."""
+    return data_parallel_size > 1 and (
+        distributed_executor_backend == "external_launcher" or a2_megamoe_enabled
+    )
 
 
 @contextmanager

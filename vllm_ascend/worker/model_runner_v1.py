@@ -174,7 +174,7 @@ from vllm_ascend.worker.utils import AscendKVBlockZeroer
 
 from vllm_ascend.ascend_forward_context import (  # isort: skip
     MoECommType,
-    external_dp_requires_dummy_forward,
+    empty_dp_step_requires_dummy_forward,
     get_mc2_tokens_capacity,
     select_moe_comm_method,
     set_ascend_forward_context,
@@ -746,10 +746,15 @@ class NPUModelRunner(GPUModelRunner):
         )
 
     def _run_empty_dp_dummy_forward(self, reason: str) -> bool:
-        """Keep external DP ranks aligned when a local step becomes empty."""
-        if not external_dp_requires_dummy_forward(
+        """Keep DP ranks aligned when a local step becomes empty."""
+        a2_megamoe_enabled = (
+            get_ascend_device_type() == AscendDeviceType.A2
+            and self.ascend_config.enable_fused_mc2 == 2
+        )
+        if not empty_dp_step_requires_dummy_forward(
             self.parallel_config.distributed_executor_backend,
             self.parallel_config.data_parallel_size,
+            a2_megamoe_enabled,
         ):
             return False
 
@@ -2128,11 +2133,10 @@ class NPUModelRunner(GPUModelRunner):
                         return make_empty_encoder_model_runner_output(scheduler_output)
 
                 if not num_scheduled_tokens:
-                    # This is a corner case when both external launcher and DP
-                    # are enabled: has_unfinished_requests in the outer loop can
-                    # be true while this rank has no local tokens. The dummy run
-                    # keeps coordinate_batch_across_dp and model collectives in
-                    # the same call order on every DP rank.
+                    # has_unfinished_requests in the outer loop can be true
+                    # while this rank has no local tokens. The dummy run keeps
+                    # coordinate_batch_across_dp and model collectives in the
+                    # same call order on every participating DP rank.
                     self._run_empty_dp_dummy_forward("pre-update-empty")
                     if not has_kv_transfer_group():
                         # Return empty ModelRunnerOutput if no work to do.
@@ -2151,8 +2155,8 @@ class NPUModelRunner(GPUModelRunner):
                 if (scheduler_output.total_num_scheduled_tokens <= 0
                         or not tokens or sum(tokens) == 0):
                     # _update_states() can remove the last local request after
-                    # the pre-update empty check above. External DP ranks must
-                    # still enter the same model step: CANN MegaMoe requires
+                    # the pre-update empty check above. DP ranks must still
+                    # enter the same model step: CANN MegaMoe requires
                     # identical cross-rank call order and num_tokens, and the
                     # standard MC2 path also uses the EP-wide communicator.
                     self._run_empty_dp_dummy_forward("post-update-empty")
