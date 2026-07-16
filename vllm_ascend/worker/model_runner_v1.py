@@ -766,8 +766,28 @@ class NPUModelRunner(GPUModelRunner):
                 reason,
                 count,
             )
-        self._dummy_run(1)
+        self._dummy_run(1, is_idle_dp_dummy=True)
         return True
+
+    def _get_step_moe_comm_type_override(
+        self,
+        all_dp_ranks_have_real_tokens: bool,
+    ) -> MoECommType | None:
+        if not (
+            get_ascend_device_type() == AscendDeviceType.A2
+            and self.ascend_config.enable_fused_mc2 == 2
+            and not all_dp_ranks_have_real_tokens
+        ):
+            return None
+
+        count = getattr(self, "_idle_dp_mc2_step_count", 0) + 1
+        self._idle_dp_mc2_step_count = count
+        if count <= 4 or count % 64 == 0:
+            logger.info(
+                "Using step-scoped standard MC2 for idle DP synchronization: count=%d",
+                count,
+            )
+        return MoECommType.MC2
 
     def get_model(self) -> nn.Module:
         # get raw model out of the aclgraph wrapper.
@@ -2193,6 +2213,7 @@ class NPUModelRunner(GPUModelRunner):
                     should_ubatch,
                     num_tokens_across_dp,
                     cudagraph_stats,
+                    all_dp_ranks_have_real_tokens,
                 ) = self._determine_batch_execution_and_padding(
                     num_tokens=num_tokens_unpadded,
                     num_reqs=num_reqs,
@@ -2201,6 +2222,9 @@ class NPUModelRunner(GPUModelRunner):
                     use_cascade_attn=cascade_attn_prefix_lens is not None,
                     force_eager=self.model_config.enforce_eager,
                     num_encoder_reqs=len(scheduler_output.scheduled_encoder_inputs),
+                )
+                moe_comm_type_override = self._get_step_moe_comm_type_override(
+                    all_dp_ranks_have_real_tokens
                 )
 
                 if logger.isEnabledFor(logging.DEBUG):
@@ -2382,6 +2406,7 @@ class NPUModelRunner(GPUModelRunner):
                 has_sinks=self._has_sinks,
                 input_ids=input_ids,
                 eplb_heat_collection_status=self.eplb_heat_collection_status if self.dynamic_eplb else False,
+                moe_comm_type_override=moe_comm_type_override,
             ),
             self.maybe_get_kv_connector_output(
                 scheduler_output,
@@ -3017,7 +3042,17 @@ class NPUModelRunner(GPUModelRunner):
         force_num_active_loras: int | None = None,
         num_encoder_reqs: int = 0,
         is_graph_capturing: bool = False,
-    ) -> tuple[CUDAGraphMode, BatchDescriptor, bool, torch.Tensor | None, CUDAGraphStat | None]:
+        actual_num_tokens: int | None = None,
+    ) -> tuple[
+        CUDAGraphMode,
+        BatchDescriptor,
+        bool,
+        torch.Tensor | None,
+        CUDAGraphStat | None,
+        bool,
+    ]:
+        if actual_num_tokens is None:
+            actual_num_tokens = num_tokens
         num_tokens_padded = self._pad_for_sequence_parallelism(num_tokens)
         is_all_decode = np.all(self.input_batch.num_computed_tokens_cpu[:num_reqs] > 0)
         uniform_decode = (
@@ -3062,6 +3097,7 @@ class NPUModelRunner(GPUModelRunner):
         # Extra coordination when running data-parallel since we need to coordinate
         # across ranks
         should_ubatch, num_tokens_across_dp = False, None
+        all_dp_ranks_have_tokens = num_tokens > 0
         if self.vllm_config.parallel_config.data_parallel_size > 1:
             (
                 _,
@@ -3071,7 +3107,7 @@ class NPUModelRunner(GPUModelRunner):
                 all_dp_ranks_have_tokens,
             ) = self._sync_metadata_across_dp(
                 num_tokens=num_tokens_padded,
-                actual_num_tokens=num_tokens,
+                actual_num_tokens=actual_num_tokens,
                 cudagraph_mode=cudagraph_mode,
                 allow_dp_padding=((cudagraph_mode != CUDAGraphMode.NONE)
                                   or enable_sp(self.vllm_config)
@@ -3105,8 +3141,8 @@ class NPUModelRunner(GPUModelRunner):
                     # MegaMoe can be forced eager to isolate graph/eager
                     # transition failures. Otherwise, ACL graph replay is only
                     # used for uniform DP token counts. Positive mixed counts
-                    # remain eligible for eager MegaMoe through x_active_mask;
-                    # an idle DP rank uses the per-layer standard-MC2 fallback.
+                    # remain eligible for eager MegaMoe through x_active_mask.
+                    # An idle DP rank selects standard MC2 for the whole step.
                     cudagraph_mode = CUDAGraphMode.NONE
                     batch_descriptor = BatchDescriptor(num_tokens_padded)
                 else:
@@ -3133,6 +3169,7 @@ class NPUModelRunner(GPUModelRunner):
             should_ubatch,
             num_tokens_across_dp,
             cudagraph_stats,
+            all_dp_ranks_have_tokens,
         )
 
     def _build_attention_metadata(
@@ -3487,6 +3524,7 @@ class NPUModelRunner(GPUModelRunner):
         num_active_loras: int = 0,
         profile_seq_lens: int | None = None,
         profile_cpp: bool = False,
+        is_idle_dp_dummy: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # only support eager mode and piecewise graph now
         assert cudagraph_runtime_mode is None or cudagraph_runtime_mode.valid_runtime_modes()
@@ -3534,7 +3572,14 @@ class NPUModelRunner(GPUModelRunner):
         self.query_lens = torch.from_numpy(num_scheduled_tokens)
         num_tokens_unpadded = int(num_scheduled_tokens.sum())
         num_sampled_tokens = np.ones(num_reqs, dtype=np.int32)
-        _cudagraph_mode, batch_desc, _, num_tokens_across_dp, _ = self._determine_batch_execution_and_padding(
+        (
+            _cudagraph_mode,
+            batch_desc,
+            _,
+            num_tokens_across_dp,
+            _,
+            all_dp_ranks_have_real_tokens,
+        ) = self._determine_batch_execution_and_padding(
             num_tokens=num_tokens_unpadded,
             num_reqs=num_reqs,
             num_scheduled_tokens_np=num_scheduled_tokens,
@@ -3553,6 +3598,10 @@ class NPUModelRunner(GPUModelRunner):
             force_has_lora=num_active_loras > 0,
             force_num_active_loras=num_active_loras,
             is_graph_capturing=is_graph_capturing,
+            actual_num_tokens=0 if is_idle_dp_dummy else num_tokens_unpadded,
+        )
+        moe_comm_type_override = self._get_step_moe_comm_type_override(
+            all_dp_ranks_have_real_tokens
         )
         if self.use_cp:
             self.pcp_manager.init_batch_info(
@@ -3736,6 +3785,7 @@ class NPUModelRunner(GPUModelRunner):
                 has_sinks = self._has_sinks,
                 input_ids=input_ids,
                 eplb_heat_collection_status=self.eplb_heat_collection_status if self.dynamic_eplb else False,
+                moe_comm_type_override=moe_comm_type_override,
             ):
                 outputs = self._model_forward(
                     num_tokens_padded, input_ids, positions, intermediate_tensors, inputs_embeds

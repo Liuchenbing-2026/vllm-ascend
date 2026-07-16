@@ -9,6 +9,7 @@ import torch
 from vllm_ascend.ascend_forward_context import (
     MoECommType,
     _cann_megamoe_supported_by_config,
+    _resolve_moe_comm_type,
     _select_a2_moe_comm_method,
     empty_dp_step_requires_dummy_forward,
 )
@@ -123,6 +124,21 @@ def check_empty_dp_dummy_forward() -> None:
     assert empty_dp_step_requires_dummy_forward("mp", 4, True)
     assert not empty_dp_step_requires_dummy_forward("external_launcher", 1, True)
     assert not empty_dp_step_requires_dummy_forward("mp", 4, False)
+
+
+def check_step_moe_comm_type_override() -> None:
+    config = SimpleNamespace()
+    with patch(
+        "vllm_ascend.ascend_forward_context.select_moe_comm_method",
+        side_effect=AssertionError("override must bypass dynamic selection"),
+    ):
+        assert _resolve_moe_comm_type(1, config, False, MoECommType.MC2) == MoECommType.MC2
+
+    with patch(
+        "vllm_ascend.ascend_forward_context.select_moe_comm_method",
+        return_value=MoECommType.FUSED_MC2,
+    ):
+        assert _resolve_moe_comm_type(1, config, False, None) == MoECommType.FUSED_MC2
 
 
 def check_cross_rank_contract() -> None:
@@ -337,6 +353,7 @@ def main() -> None:
     check_a2_min_tokens_selection()
     check_dp_policy_defaults()
     check_empty_dp_dummy_forward()
+    check_step_moe_comm_type_override()
     check_cross_rank_contract()
     check_route_fallback_guard()
     assert _normalize_cann_megamoe_activation("silu") == "swiglu"
