@@ -175,6 +175,7 @@ from vllm_ascend.worker.utils import AscendKVBlockZeroer
 from vllm_ascend.ascend_forward_context import (  # isort: skip
     MoECommType,
     _should_force_eager_megamoe_runtime,
+    _should_skip_compiled_megamoe_profile,
     _should_skip_compiled_megamoe_runtime,
     empty_dp_step_requires_dummy_forward,
     get_mc2_tokens_capacity,
@@ -3823,6 +3824,10 @@ class NPUModelRunner(GPUModelRunner):
                 aclgraph_runtime_mode=cudagraph_runtime_mode,
                 batch_descriptor=batch_desc,
                 model_instance=self.model,
+                skip_compiled=_should_skip_compiled_megamoe_profile(
+                    self.ascend_config,
+                    is_profile=is_profile,
+                ),
                 has_sinks = self._has_sinks,
                 input_ids=input_ids,
                 eplb_heat_collection_status=self.eplb_heat_collection_status if self.dynamic_eplb else False,

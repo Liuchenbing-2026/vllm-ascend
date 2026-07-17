@@ -12,6 +12,7 @@ from vllm_ascend.ascend_forward_context import (
     _resolve_moe_comm_type,
     _select_a2_moe_comm_method,
     _should_force_eager_megamoe_runtime,
+    _should_skip_compiled_megamoe_profile,
     _should_skip_compiled_megamoe_runtime,
     empty_dp_step_requires_dummy_forward,
 )
@@ -213,6 +214,23 @@ def check_selective_compiled_megamoe_runtime() -> None:
             config,
             decode_graph_safe=False,
         )
+
+
+def check_eager_megamoe_profile() -> None:
+    config = SimpleNamespace(enable_fused_mc2=2)
+    with patch(
+        "vllm_ascend.ascend_forward_context.get_ascend_device_type",
+        return_value=AscendDeviceType.A2,
+    ):
+        assert _should_skip_compiled_megamoe_profile(config, is_profile=True)
+        assert not _should_skip_compiled_megamoe_profile(config, is_profile=False)
+
+    config.enable_fused_mc2 = 0
+    with patch(
+        "vllm_ascend.ascend_forward_context.get_ascend_device_type",
+        return_value=AscendDeviceType.A2,
+    ):
+        assert not _should_skip_compiled_megamoe_profile(config, is_profile=True)
 
 
 def check_empty_dp_dummy_forward() -> None:
@@ -449,6 +467,7 @@ def main() -> None:
     check_dp_policy_defaults()
     check_force_eager_megamoe_runtime()
     check_selective_compiled_megamoe_runtime()
+    check_eager_megamoe_profile()
     check_empty_dp_dummy_forward()
     check_step_moe_comm_type_override()
     check_cross_rank_contract()

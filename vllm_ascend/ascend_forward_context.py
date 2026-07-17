@@ -69,6 +69,18 @@ def _should_skip_compiled_megamoe_runtime(
     return not decode_graph_safe
 
 
+def _should_skip_compiled_megamoe_profile(
+    ascend_config: Any,
+    is_profile: bool,
+) -> bool:
+    """Keep A2 MegaMoe memory profiling off NPUGraphEx runtime streams."""
+    return (
+        is_profile
+        and get_ascend_device_type() == AscendDeviceType.A2
+        and ascend_config.enable_fused_mc2 == 2
+    )
+
+
 def _get_cann_megamoe_quant_name(vllm_config: VllmConfig, quant_type: Any) -> str | None:
     if quant_type is not None:
         return str(getattr(quant_type, "name", quant_type)).lower()
