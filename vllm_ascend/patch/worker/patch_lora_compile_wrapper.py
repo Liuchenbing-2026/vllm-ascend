@@ -52,17 +52,24 @@ _ORIGINAL_INIT = getattr(
 _BASELINE_VERIFIED = False
 
 
-def _verify_vllm_wrapper_baseline() -> None:
-    global _BASELINE_VERIFIED
-    if _BASELINE_VERIFIED:
-        return
+def _wrapper_source_sha256() -> tuple[str, str]:
+    """Return the installed vLLM wrapper path and its content hash."""
 
     wrapper_path = inspect.getsourcefile(wrapper_module)
     if wrapper_path is None:
         raise RuntimeError("Cannot locate vLLM compilation wrapper source")
 
     with open(wrapper_path, "rb") as wrapper_file:
-        actual_sha256 = hashlib.sha256(wrapper_file.read()).hexdigest()
+        wrapper_sha256 = hashlib.sha256(wrapper_file.read()).hexdigest()
+    return wrapper_path, wrapper_sha256
+
+
+def _verify_vllm_wrapper_baseline() -> None:
+    global _BASELINE_VERIFIED
+    if _BASELINE_VERIFIED:
+        return
+
+    wrapper_path, actual_sha256 = _wrapper_source_sha256()
     if actual_sha256 != _SUPPORTED_WRAPPER_SHA256:
         raise RuntimeError(
             "The Ascend LoRA dual-graph patch requires the unmodified vLLM "
