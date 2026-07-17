@@ -1192,6 +1192,15 @@ class NPUModelRunner(GPUModelRunner):
                 positions_ready_on_device=False,
             )
 
+        use_fused_triton_slot_mapping = (
+            not self.use_cp
+            and not self.use_compress
+            and not self.uses_mrope
+            and self.uses_xdrope_dim == 0
+            and not cp_async_rebuild.positions_ready_on_device
+            and not cp_async_rebuild.rebuilt
+        )
+
         if cp_async_rebuild.positions_ready_on_device:
             pass
         elif self.pcp_size > 1 or cp_async_rebuild.rebuilt:
@@ -1203,6 +1212,13 @@ class NPUModelRunner(GPUModelRunner):
                     positions_np[:total_num_scheduled_tokens]
                 ).to(self.device),
                 non_blocking=True,
+            )
+        elif use_fused_triton_slot_mapping:
+            self.input_batch.block_table.compute_positions_and_slot_mapping_triton(
+                req_indices_gpu,
+                self.num_computed_tokens,
+                self.query_pos.gpu[:total_num_scheduled_tokens],
+                self.positions[:total_num_scheduled_tokens],
             )
         else:
             self.positions[:total_num_scheduled_tokens] = (
@@ -1229,12 +1245,10 @@ class NPUModelRunner(GPUModelRunner):
         if self._needs_seq_lens_cpu_sync and async_spec_decode_active:
             self._correct_optimistic_seq_lens_cpu(num_reqs)
 
-        # For non-PCP, compute slot_mapping on GPU. PCP slot_mapping was
-        # already computed on GPU before PCP split the positions.
-        if self.pcp_size <= 1:
-            self.input_batch.block_table.compute_slot_mapping(
-                num_reqs,
-                self.query_start_loc.gpu[: num_reqs + 1],
+        # For non-PCP, compute slot_mapping with the optimized Triton kernel.
+        if self.pcp_size <= 1 and not use_fused_triton_slot_mapping:
+            self.input_batch.block_table.compute_slot_mapping_triton(
+                req_indices_gpu,
                 self.positions[:total_num_scheduled_tokens],
             )
 

@@ -8,6 +8,11 @@ from vllm.v1.utils import CpuGpuBuffer
 from vllm.v1.worker.block_table import _compute_slot_mapping_kernel
 from vllm.v1.worker.cp_utils import get_total_cp_world_size
 
+from vllm_ascend.ops.triton.slot_mapping import (
+    compute_positions_and_slot_mapping as compute_positions_and_slot_mapping_triton,
+    compute_slot_mapping as compute_slot_mapping_triton,
+)
+
 
 class BlockTable:
     def __init__(
@@ -173,6 +178,40 @@ class BlockTable:
                 PAD_ID=PAD_SLOT_ID,
                 BLOCK_SIZE=1024,
             )
+
+    def compute_slot_mapping_triton(
+        self,
+        req_indices: torch.Tensor,
+        positions: torch.Tensor,
+    ) -> None:
+        if self.dcp_world_size * self.pcp_world_size > 1:
+            raise ValueError("Triton slot mapping is only enabled without context parallelism.")
+        compute_slot_mapping_triton(
+            req_indices,
+            positions,
+            self.block_table.gpu,
+            self.slot_mapping.gpu,
+            self.block_size,
+        )
+
+    def compute_positions_and_slot_mapping_triton(
+        self,
+        req_indices: torch.Tensor,
+        num_computed_tokens: torch.Tensor,
+        query_pos: torch.Tensor,
+        positions: torch.Tensor,
+    ) -> None:
+        if self.dcp_world_size * self.pcp_world_size > 1:
+            raise ValueError("Fused Triton slot mapping is only enabled without context parallelism.")
+        compute_positions_and_slot_mapping_triton(
+            req_indices,
+            num_computed_tokens,
+            query_pos,
+            self.block_table.gpu,
+            positions,
+            self.slot_mapping.gpu,
+            self.block_size,
+        )
 
     def compute_slot_mapping_draft(
         self,
@@ -425,6 +464,30 @@ class MultiGroupBlockTable:
                 block_table.compute_slot_mapping_draft(req_indices_compressed_list[i], positions_compressed_list[i])
             else:
                 block_table.compute_slot_mapping(num_reqs, query_start_loc, positions)
+
+    def compute_slot_mapping_triton(
+        self,
+        req_indices: torch.Tensor,
+        positions: torch.Tensor,
+    ) -> None:
+        for block_table in self.block_tables:
+            if block_table.is_mamba_group:
+                continue
+            block_table.compute_slot_mapping_triton(req_indices, positions)
+
+    def compute_positions_and_slot_mapping_triton(
+        self,
+        req_indices: torch.Tensor,
+        num_computed_tokens: torch.Tensor,
+        query_pos: torch.Tensor,
+        positions: torch.Tensor,
+    ) -> None:
+        for block_table in self.block_tables:
+            if block_table.is_mamba_group:
+                continue
+            block_table.compute_positions_and_slot_mapping_triton(
+                req_indices, num_computed_tokens, query_pos, positions
+            )
 
     def compute_slot_mapping_draft(
         self,
