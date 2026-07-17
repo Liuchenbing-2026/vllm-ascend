@@ -3795,8 +3795,7 @@ class NPUModelRunner(GPUModelRunner):
                     break
             if self.drafter:
                 logger.info("Loading drafter model...")
-                if self.vllm_config.quant_config is not None:
-                    patch_load_weights(self.vllm_config)
+                patch_load_weights(self.vllm_config)
                 with get_tp_context(self.drafter):
                     self.drafter.load_model(self.model)
 
@@ -3878,17 +3877,20 @@ class NPUModelRunner(GPUModelRunner):
         )
 
     def _get_eagle3_aux_layers_from_config(self) -> tuple[int, ...] | None:
-        # add additional logic for dspark-config
+        aux_layers = super()._get_eagle3_aux_layers_from_config()
+        if aux_layers:
+            return aux_layers
+
+        # Older DSpark configs may only expose the model-facing target layer
+        # IDs. Those IDs use the DFlash/DSpark zero-based convention, while
+        # target hidden-state capture expects the original auxiliary layer IDs.
         if not (self.speculative_config and self.speculative_config.draft_model_config):
             return None
         hf_config = self.speculative_config.draft_model_config.hf_config
-        if hasattr(hf_config, 'target_layer_ids'):
-            layer_ids = [
-                i for i in (hf_config.target_layer_ids or [])
-            ]
-            if layer_ids and isinstance(layer_ids, (list, tuple)):
-                return tuple(layer_ids)
-        return super()._get_eagle3_aux_layers_from_config()
+        layer_ids = getattr(hf_config, "target_layer_ids", None)
+        if layer_ids and isinstance(layer_ids, (list, tuple)):
+            return tuple(int(layer_id) + 1 for layer_id in layer_ids)
+        return None
 
     def _start_dump_data(self) -> None:
         if self.debugger is None or self._debugger_started:
