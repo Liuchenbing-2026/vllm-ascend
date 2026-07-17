@@ -1,11 +1,13 @@
+import os
 from typing import Any
 
 import torch
 from vllm.config import CUDAGraphMode, VllmConfig
-from vllm.forward_context import ForwardContext
+from vllm.forward_context import BatchDescriptor, ForwardContext
 from vllm.v1.attention.backends.utils import CommonAttentionMetadata
 
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
+from vllm_ascend.compilation.acl_graph import ACLGraphWrapper
 from vllm_ascend.ops.triton.spec_decode.utils import copy_and_expand_dflash_and_dspark_inputs_kernel_single_grid
 from vllm_ascend.spec_decode.dflash_proposer import AscendDflashProposer
 
@@ -39,7 +41,75 @@ class AscendDsparkProposer(AscendDflashProposer):
         self._dspark_query_tokens_per_req = blk
         self._dspark_seed_buffer = torch.zeros(self.max_batch_size, dtype=torch.int64, device=device)
         self._dspark_draft_buffer = torch.zeros((self.max_batch_size, blk), dtype=torch.int64, device=device)
+        self._dspark_context_kv_graph: ACLGraphWrapper | None = None
         self._dspark_context_kv_precomputed = False
+
+    def _use_dspark_context_kv_bucket_graph(
+        self,
+        forward_context: ForwardContext,
+    ) -> bool:
+        return (
+            self.use_cuda_graph
+            and forward_context.cudagraph_runtime_mode == CUDAGraphMode.FULL
+            and os.getenv(
+                "VLLM_ASCEND_ENABLE_GLM_DSPARK_CONTEXT_KV_BUCKET_GRAPH",
+                "0",
+            ).lower()
+            in ("1", "true", "yes", "on")
+        )
+
+    def _get_dspark_context_kv_bucket(self, num_context: int) -> int | None:
+        if num_context <= 0 or num_context > self.max_query_tokens:
+            return None
+        bucket_width = self._dspark_query_tokens_per_req
+        return min(
+            self.max_query_tokens,
+            ((num_context + bucket_width - 1) // bucket_width) * bucket_width,
+        )
+
+    def _precompute_padded_context_kv(
+        self,
+        context_states: torch.Tensor,
+        context_positions: torch.Tensor,
+        context_slot_mapping: torch.Tensor,
+    ) -> torch.Tensor:
+        self.model.precompute_and_store_context_kv(
+            context_states,
+            context_positions,
+            context_slot_mapping,
+        )
+        return context_states
+
+    def _precompute_context_kv_bucket_graph(
+        self,
+        forward_context: ForwardContext,
+    ) -> bool:
+        bucket = self._get_dspark_context_kv_bucket(self._dflash_num_context)
+        if bucket is None:
+            return False
+
+        if self._dspark_context_kv_graph is None:
+            self._dspark_context_kv_graph = ACLGraphWrapper(
+                self._precompute_padded_context_kv,
+                self.vllm_config,
+                runtime_mode=CUDAGraphMode.FULL,
+                use_eagle=self.use_eagle,
+                enable_enpu=self.enable_enpu,
+            )
+
+        query_batch_descriptor = forward_context.batch_descriptor
+        forward_context.batch_descriptor = BatchDescriptor(num_tokens=bucket)
+        try:
+            self._dspark_context_kv_graph(
+                self._dflash_hidden_states[:bucket],
+                self._context_positions_buffer[:bucket],
+                self._context_slot_mapping_buffer[:bucket],
+            )
+        finally:
+            forward_context.batch_descriptor = query_batch_descriptor
+
+        self._dspark_context_kv_precomputed = True
+        return True
 
     def _precompute_live_context_kv(self) -> None:
         num_context = self._dflash_num_context
@@ -57,12 +127,42 @@ class AscendDsparkProposer(AscendDflashProposer):
             context_slots[valid_context].to(torch.int32).contiguous(),
         )
 
+    def _initialize_graph_padding(
+        self,
+        num_context: int,
+        num_query_total: int,
+    ) -> None:
+        context_bucket = num_context
+        if os.getenv(
+            "VLLM_ASCEND_ENABLE_GLM_DSPARK_CONTEXT_KV_BUCKET_GRAPH",
+            "0",
+        ).lower() in ("1", "true", "yes", "on"):
+            context_bucket = (
+                self._get_dspark_context_kv_bucket(num_context) or num_context
+            )
+
+        if context_bucket > num_context:
+            self._dflash_hidden_states[num_context:context_bucket].zero_()
+            self._context_positions_buffer[num_context:context_bucket].zero_()
+            self._context_slot_mapping_buffer[num_context:context_bucket].fill_(-1)
+
+        if self.max_query_tokens > num_query_total:
+            self.input_ids[num_query_total : self.max_query_tokens].fill_(
+                self.parallel_drafting_token_id
+            )
+            self.positions[num_query_total : self.max_query_tokens].zero_()
+            self._slot_mapping_buffer[num_query_total : self.max_query_tokens].fill_(-1)
+
     def prepare_dspark_context_kv_for_graph(
         self,
         forward_context: ForwardContext,
     ) -> bool:
         if not self.use_cuda_graph or forward_context.cudagraph_runtime_mode != CUDAGraphMode.FULL:
             return False
+
+        if self._use_dspark_context_kv_bucket_graph(forward_context):
+            if self._precompute_context_kv_bucket_graph(forward_context):
+                return True
 
         self._precompute_live_context_kv()
         self._dspark_context_kv_precomputed = True
@@ -131,12 +231,7 @@ class AscendDsparkProposer(AscendDflashProposer):
         num_context = target_token_ids.shape[0]
         self._dflash_num_context = num_context
         if self.use_cuda_graph:
-            self._dflash_hidden_states[: self.max_query_tokens].zero_()
-            self._context_positions_buffer[: self.max_query_tokens].zero_()
-            self._context_slot_mapping_buffer[: self.max_query_tokens].fill_(-1)
-            self.input_ids.fill_(self.parallel_drafting_token_id)
-            self.positions.zero_()
-            self._slot_mapping_buffer.fill_(-1)
+            self._initialize_graph_padding(num_context, num_query_total)
         else:
             self._context_positions_buffer[:num_context].fill_(-1)
             self._context_slot_mapping_buffer[:num_context].fill_(-1)
