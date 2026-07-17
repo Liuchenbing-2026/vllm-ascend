@@ -3887,6 +3887,11 @@ class NPUModelRunner(GPUModelRunner):
         if not (self.speculative_config and self.speculative_config.draft_model_config):
             return None
         hf_config = self.speculative_config.draft_model_config.hf_config
+
+        layer_ids = getattr(hf_config, "aux_hidden_state_layer_ids", None)
+        if layer_ids and isinstance(layer_ids, (list, tuple)):
+            return tuple(int(layer_id) for layer_id in layer_ids)
+
         layer_ids = getattr(hf_config, "target_layer_ids", None)
         if layer_ids and isinstance(layer_ids, (list, tuple)):
             return tuple(int(layer_id) + 1 for layer_id in layer_ids)

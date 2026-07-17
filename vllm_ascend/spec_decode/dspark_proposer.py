@@ -2,10 +2,9 @@ from typing import Any
 
 import torch
 from vllm.config import CUDAGraphMode, VllmConfig
-from vllm.forward_context import get_forward_context
+from vllm.forward_context import ForwardContext
 from vllm.v1.attention.backends.utils import CommonAttentionMetadata
 
-from vllm_ascend.ascend_forward_context import set_ascend_forward_context
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.ops.triton.spec_decode.utils import copy_and_expand_dflash_and_dspark_inputs_kernel_single_grid
 from vllm_ascend.spec_decode.dflash_proposer import AscendDflashProposer
@@ -40,20 +39,64 @@ class AscendDsparkProposer(AscendDflashProposer):
         self._dspark_query_tokens_per_req = blk
         self._dspark_seed_buffer = torch.zeros(self.max_batch_size, dtype=torch.int64, device=device)
         self._dspark_draft_buffer = torch.zeros((self.max_batch_size, blk), dtype=torch.int64, device=device)
+        self._dspark_context_kv_precomputed = False
+
+    def _precompute_live_context_kv(self) -> None:
+        num_context = self._dflash_num_context
+        context_states = self._dflash_hidden_states[:num_context]
+        context_positions = self._context_positions_buffer[:num_context]
+        context_slots = self._context_slot_mapping_buffer[:num_context]
+
+        # Rejected verifier rows have no valid draft-cache destination. Keep
+        # this filtering outside the query ACL graph so graph replay preserves
+        # the same cache semantics as the correct eager path.
+        valid_context = context_slots >= 0
+        self.model.precompute_and_store_context_kv(
+            context_states[valid_context].contiguous(),
+            context_positions[valid_context].contiguous(),
+            context_slots[valid_context].to(torch.int32).contiguous(),
+        )
+
+    def prepare_dspark_context_kv_for_graph(
+        self,
+        forward_context: ForwardContext,
+    ) -> bool:
+        if not self.use_cuda_graph or forward_context.cudagraph_runtime_mode != CUDAGraphMode.FULL:
+            return False
+
+        self._precompute_live_context_kv()
+        self._dspark_context_kv_precomputed = True
+        return True
+
+    def _stabilize_padded_graph_metadata(
+        self,
+        common_attn_metadata: CommonAttentionMetadata,
+        actual_num_reqs: int,
+        padded_num_reqs: int,
+    ) -> None:
+        if padded_num_reqs <= actual_num_reqs:
+            return
+
+        common_attn_metadata.seq_lens[actual_num_reqs:padded_num_reqs].fill_(1)
+        for attr_name in ("_seq_lens_cpu", "seq_lens_cpu"):
+            seq_lens_cpu = getattr(common_attn_metadata, attr_name, None)
+            if seq_lens_cpu is None:
+                continue
+            seq_lens_cpu = self._adjust_tensor(seq_lens_cpu, padded_num_reqs)
+            seq_lens_cpu[actual_num_reqs:padded_num_reqs].fill_(1)
+            setattr(common_attn_metadata, attr_name, seq_lens_cpu)
+
+        if hasattr(common_attn_metadata, "actual_seq_lengths_q"):
+            common_attn_metadata.actual_seq_lengths_q = [
+                self._dspark_query_tokens_per_req
+            ] * padded_num_reqs
 
     def build_model_inputs_first_pass(
         self,
         num_input_tokens: int,
     ) -> dict[str, Any]:
-        num_context = self._dflash_num_context
-        if get_forward_context().cudagraph_runtime_mode == CUDAGraphMode.FULL:
-            num_context = num_input_tokens
-
-        self.model.precompute_and_store_context_kv(
-            self._dflash_hidden_states[:num_context],
-            self._context_positions_buffer[:num_context],
-            self._context_slot_mapping_buffer[:num_context],
-        )
+        if not self._dspark_context_kv_precomputed:
+            self._precompute_live_context_kv()
 
         return {
             "input_ids": self.input_ids[:num_input_tokens],
@@ -120,10 +163,9 @@ class AscendDsparkProposer(AscendDflashProposer):
         if target_positions.dim() != 1:
             raise NotImplementedError("DSpark proposer only supports 1-D positions")
 
-        # Recompute every context slot from its absolute position. Rejected
-        # rows deliberately keep their real slots: the new query block writes
-        # the same positions immediately afterward, while negative slots are
-        # not safe for Ascend's direct scatter-cache hook or ACL graph capture.
+        # Recompute context and query slots from absolute positions. Rejected
+        # context rows remain invalid and are filtered before the context K/V
+        # cache write, matching the eager path exactly.
         copy_and_expand_dflash_and_dspark_inputs_kernel_single_grid[1,](
             # Inputs
             next_token_ids_ptr=next_token_ids,
@@ -153,20 +195,7 @@ class AscendDsparkProposer(AscendDflashProposer):
             HAS_NUM_REJECTED=has_num_rejected,
             SAMPLE_FROM_ANCHOR=False,
             RECOMPUTE_CONTEXT_SLOTS=True,
-            MASK_REJECTED_CONTEXT_SLOTS=False,
         )
-
-        if self.use_cuda_graph and num_context < self.max_query_tokens:
-            # The captured graph reads a fixed context shape. Redirect padded
-            # rows to the first new query slot, which is overwritten by the
-            # query forward before it can be observed by a later iteration.
-            context_tail = slice(num_context, self.max_query_tokens)
-            self._context_slot_mapping_buffer[context_tail].copy_(
-                self._slot_mapping_buffer[:1].expand(self.max_query_tokens - num_context)
-            )
-            self._context_positions_buffer[context_tail].copy_(
-                self.positions[:1].expand(self.max_query_tokens - num_context)
-            )
 
         # Build attn_metadata
         query_slot_mapping = self._slot_mapping_buffer[:num_query_total]
@@ -212,66 +241,3 @@ class AscendDsparkProposer(AscendDflashProposer):
         cad.attn_state = AscendAttentionState.ChunkedPrefill
 
         return num_query_total, token_indices_to_sample, cad, None
-
-    @torch.inference_mode()
-    def dummy_run(
-        self,
-        num_tokens: int,
-        num_reqs: int = 0,
-        num_tokens_across_dp: torch.Tensor | None = None,
-        aclgraph_runtime_mode: CUDAGraphMode = CUDAGraphMode.NONE,
-        batch_descriptor=None,
-        dummy_compute_logits=lambda hidden_states: None,
-        is_profile=False,
-        **kwargs,
-    ) -> None:
-        # DSpark uses one anchor query plus one query per speculative token.
-        num_query_per_req = self._dspark_query_tokens_per_req
-        num_query_total = num_reqs * num_query_per_req
-        num_query_tokens = min(num_query_total if num_reqs > 0 else num_tokens, self.max_query_tokens)
-
-        (
-            num_input_tokens,
-            num_tokens_across_dp,
-            _,
-        ) = self.runner._sync_metadata_across_dp(num_query_tokens, is_draft_model=True)
-
-        if not self.use_cuda_graph:
-            aclgraph_runtime_mode = CUDAGraphMode.NONE
-
-        context_positions = self._context_positions_buffer[:num_input_tokens]
-        context_states = self.hidden_states[:num_input_tokens]
-
-        self.token_indices_to_sample.fill_(0)
-
-        with set_ascend_forward_context(
-            None,
-            self.vllm_config,
-            num_tokens=num_input_tokens,
-            num_tokens_across_dp=num_tokens_across_dp,
-            num_actual_tokens=num_input_tokens,
-            in_profile_run=is_profile,
-            batch_descriptor=batch_descriptor,
-            aclgraph_runtime_mode=aclgraph_runtime_mode,
-            is_draft_model=True,
-            draft_attn_metadatas=[],
-        ):
-            if is_profile:
-                self.model.precompute_and_store_context_kv(context_states, context_positions)
-                self.model(
-                    input_ids=self.input_ids[:num_query_total],
-                    positions=self._get_positions(num_query_total),
-                    inputs_embeds=None,
-                )
-
-            else:
-                self._dflash_num_context = num_input_tokens
-                self._runnable(
-                    num_input_tokens=num_input_tokens,
-                    batch_size=num_reqs,
-                    token_indices_to_sample=self.token_indices_to_sample[: num_reqs * self.num_speculative_tokens],
-                    target_positions=self._get_positions(num_input_tokens),
-                    inputs_embeds=None,
-                    multi_steps_attn_metadata=[],
-                    num_tokens=num_input_tokens,
-                )
