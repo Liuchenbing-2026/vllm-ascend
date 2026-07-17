@@ -52,6 +52,23 @@ def _should_force_eager_megamoe_runtime(
     )
 
 
+def _should_skip_compiled_megamoe_runtime(
+    ascend_config: Any,
+    decode_graph_safe: bool,
+    is_graph_capturing: bool = False,
+) -> bool:
+    """Keep only validated uniform A2 MegaMoe decode steps compiled."""
+    if (
+        is_graph_capturing
+        or get_ascend_device_type() != AscendDeviceType.A2
+        or ascend_config.enable_fused_mc2 != 2
+    ):
+        return False
+    if _should_force_eager_megamoe_runtime(ascend_config):
+        return True
+    return not decode_graph_safe
+
+
 def _get_cann_megamoe_quant_name(vllm_config: VllmConfig, quant_type: Any) -> str | None:
     if quant_type is not None:
         return str(getattr(quant_type, "name", quant_type)).lower()

@@ -175,6 +175,7 @@ from vllm_ascend.worker.utils import AscendKVBlockZeroer
 from vllm_ascend.ascend_forward_context import (  # isort: skip
     MoECommType,
     _should_force_eager_megamoe_runtime,
+    _should_skip_compiled_megamoe_runtime,
     empty_dp_step_requires_dummy_forward,
     get_mc2_tokens_capacity,
     select_moe_comm_method,
@@ -345,6 +346,8 @@ class NPUModelRunner(GPUModelRunner):
 
         # Ascend-specific configurations
         self.ascend_config = get_ascend_config()
+        self._a2_megamoe_decode_graph_safe = False
+        self._a2_megamoe_runtime_paths_seen: set[str] = set()
         set_weight_prefetch_method(self.ascend_config.weight_prefetch_config)
 
         # Dump / PrecisionDebugger configuration now comes from AscendConfig
@@ -2383,9 +2386,33 @@ class NPUModelRunner(GPUModelRunner):
         # encoder inputs are present. Use eager for the first pass.
         num_encoder_reqs = len(scheduler_output.scheduled_encoder_inputs)
         has_encoder_input = self.model_config.is_encoder_decoder and num_encoder_reqs > 0
-        force_eager_megamoe_runtime = _should_force_eager_megamoe_runtime(
-            self.ascend_config
+        decode_graph_safe = (
+            self._a2_megamoe_decode_graph_safe
+            and cudagraph_mode != CUDAGraphMode.NONE
         )
+        skip_compiled_megamoe_runtime = _should_skip_compiled_megamoe_runtime(
+            self.ascend_config,
+            decode_graph_safe=decode_graph_safe,
+        )
+        if (
+            get_ascend_device_type() == AscendDeviceType.A2
+            and self.ascend_config.enable_fused_mc2 == 2
+        ):
+            runtime_path = (
+                "decode-graph"
+                if decode_graph_safe
+                else "eager-fallback"
+            )
+            if runtime_path not in self._a2_megamoe_runtime_paths_seen:
+                logger.info(
+                    "A2 MegaMoe runtime path selected: path=%s cudagraph_mode=%s "
+                    "skip_compiled=%s moe_comm_override=%s",
+                    runtime_path,
+                    cudagraph_mode,
+                    skip_compiled_megamoe_runtime,
+                    moe_comm_type_override,
+                )
+                self._a2_megamoe_runtime_paths_seen.add(runtime_path)
 
         # Run forward pass
         clear_kv_metadata = self.speculative_config is None
@@ -2401,7 +2428,7 @@ class NPUModelRunner(GPUModelRunner):
                 num_actual_tokens=scheduler_output.total_num_scheduled_tokens,
                 model_instance=self.model,
                 max_tokens_across_pcp=0 if self.pcp_size == 1 else self.pcp_manager.max_num_tokens_across_pcp,
-                skip_compiled=has_encoder_input or force_eager_megamoe_runtime,
+                skip_compiled=has_encoder_input or skip_compiled_megamoe_runtime,
                 has_sinks=self._has_sinks,
                 input_ids=input_ids,
                 eplb_heat_collection_status=self.eplb_heat_collection_status if self.dynamic_eplb else False,
@@ -3050,6 +3077,7 @@ class NPUModelRunner(GPUModelRunner):
         CUDAGraphStat | None,
         bool,
     ]:
+        self._a2_megamoe_decode_graph_safe = False
         if actual_num_tokens is None:
             actual_num_tokens = num_tokens
         num_tokens_padded = self._pad_for_sequence_parallelism(num_tokens)
@@ -3096,6 +3124,7 @@ class NPUModelRunner(GPUModelRunner):
         # Extra coordination when running data-parallel since we need to coordinate
         # across ranks
         should_ubatch, num_tokens_across_dp = False, None
+        dp_tokens_are_uniform = True
         all_dp_ranks_have_tokens = num_tokens > 0
         if self.vllm_config.parallel_config.data_parallel_size > 1:
             (
@@ -3153,6 +3182,19 @@ class NPUModelRunner(GPUModelRunner):
                 # Assert to make sure the agreed upon token count is correct otherwise
                 # num_tokens_across_dp will no-longer be valid
                 assert batch_descriptor.num_tokens == num_tokens_padded
+        self._a2_megamoe_decode_graph_safe = (
+            get_ascend_device_type() == AscendDeviceType.A2
+            and self.ascend_config.enable_fused_mc2 == 2
+            and uniform_decode
+            and (is_graph_capturing or is_all_decode)
+            and dp_tokens_are_uniform
+            and all_dp_ranks_have_tokens
+            and cudagraph_mode != CUDAGraphMode.NONE
+            and not _should_force_eager_megamoe_runtime(
+                self.ascend_config,
+                is_graph_capturing=is_graph_capturing,
+            )
+        )
         cudagraph_stats = None
         if self.vllm_config.observability_config.cudagraph_metrics:
             cudagraph_stats = CUDAGraphStat(

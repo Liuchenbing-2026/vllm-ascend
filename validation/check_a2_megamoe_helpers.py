@@ -12,6 +12,7 @@ from vllm_ascend.ascend_forward_context import (
     _resolve_moe_comm_type,
     _select_a2_moe_comm_method,
     _should_force_eager_megamoe_runtime,
+    _should_skip_compiled_megamoe_runtime,
     empty_dp_step_requires_dummy_forward,
 )
 from vllm_ascend.envs import env_variables
@@ -162,6 +163,56 @@ def check_force_eager_megamoe_runtime() -> None:
         ),
     ):
         assert not _should_force_eager_megamoe_runtime(config)
+
+
+def check_selective_compiled_megamoe_runtime() -> None:
+    config = SimpleNamespace(enable_fused_mc2=2)
+    with (
+        patch.dict(os.environ, {}, clear=True),
+        patch(
+            "vllm_ascend.ascend_forward_context.get_ascend_device_type",
+            return_value=AscendDeviceType.A2,
+        ),
+    ):
+        assert not _should_skip_compiled_megamoe_runtime(
+            config,
+            decode_graph_safe=True,
+        )
+        assert _should_skip_compiled_megamoe_runtime(
+            config,
+            decode_graph_safe=False,
+        )
+
+    with (
+        patch.dict(
+            os.environ,
+            {"VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE": "1"},
+            clear=True,
+        ),
+        patch(
+            "vllm_ascend.ascend_forward_context.get_ascend_device_type",
+            return_value=AscendDeviceType.A2,
+        ),
+    ):
+        assert _should_skip_compiled_megamoe_runtime(
+            config,
+            decode_graph_safe=True,
+        )
+        assert not _should_skip_compiled_megamoe_runtime(
+            config,
+            decode_graph_safe=False,
+            is_graph_capturing=True,
+        )
+
+    config.enable_fused_mc2 = 0
+    with patch(
+        "vllm_ascend.ascend_forward_context.get_ascend_device_type",
+        return_value=AscendDeviceType.A2,
+    ):
+        assert not _should_skip_compiled_megamoe_runtime(
+            config,
+            decode_graph_safe=False,
+        )
 
 
 def check_empty_dp_dummy_forward() -> None:
@@ -397,6 +448,7 @@ def main() -> None:
     check_a2_min_tokens_selection()
     check_dp_policy_defaults()
     check_force_eager_megamoe_runtime()
+    check_selective_compiled_megamoe_runtime()
     check_empty_dp_dummy_forward()
     check_step_moe_comm_type_override()
     check_cross_rank_contract()
