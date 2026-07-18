@@ -108,6 +108,9 @@ env_variables: dict[str, Callable[[], Any]] = {
     "VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT": lambda: int(
         os.getenv("VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT", "1792")
     ),
+    "VLLM_ASCEND_MEGAMOE_FALLBACK_LAYER_INDICES": lambda: os.getenv(
+        "VLLM_ASCEND_MEGAMOE_FALLBACK_LAYER_INDICES", ""
+    ),
     "VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS": lambda: bool(
         int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS", "0"))
     ),

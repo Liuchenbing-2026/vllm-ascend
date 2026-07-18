@@ -21,7 +21,9 @@ from vllm_ascend.envs import env_variables
 from vllm_ascend.ops.fused_moe.moe_comm_method import (
     FusedMC2CommImpl,
     _append_cann_megamoe_dummy_tokens,
+    _get_cann_megamoe_layer_index,
     _normalize_cann_megamoe_activation,
+    _parse_cann_megamoe_fallback_layer_indices,
 )
 from vllm_ascend.utils import (
     AscendDeviceType,
@@ -358,6 +360,8 @@ def check_route_fallback_guard() -> None:
     impl._cann_megamoe_uniform_dp_fallback_count = 0
     impl._cann_megamoe_idle_dp_fallback_count = 0
     impl._cann_megamoe_expert_threshold_fallback_count = 0
+    impl._cann_megamoe_layer_fallback_count = 0
+    impl._cann_megamoe_fallback_layer_indices = set()
     impl.moe_config = SimpleNamespace(num_experts=8)
     impl.token_dispatcher = SimpleNamespace(ep_rank_id=0, ep_world_size=4)
     impl.prepare_finalize = SimpleNamespace(tp_size=2)
@@ -497,6 +501,34 @@ def check_route_fallback_guard() -> None:
         assert impl._cann_megamoe_fallback_count == 3
         assert impl._cann_megamoe_idle_dp_fallback_count == 1
 
+    impl._cann_megamoe_require_uniform_dp_tokens = False
+    impl._cann_megamoe_require_nonzero_dp_tokens = False
+    impl._cann_megamoe_max_tokens_per_expert = 0
+    impl._cann_megamoe_fallback_layer_indices = {17}
+    with patch(
+        "vllm_ascend.ops.fused_moe.moe_comm_method._EXTRA_CTX",
+        SimpleNamespace(moe_layer_index=17),
+    ):
+        should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(
+            fused_input, topk_ids
+        )
+    assert should_fallback
+    assert max_count == 0
+    assert (active_min, active_max) == (0, 0)
+    assert impl._cann_megamoe_layer_fallback_count == 1
+
+
+def check_fallback_layer_parser() -> None:
+    assert _parse_cann_megamoe_fallback_layer_indices("") == set()
+    assert _parse_cann_megamoe_fallback_layer_indices("17, 3,17") == {3, 17}
+    assert _get_cann_megamoe_layer_index() == -1
+    try:
+        _parse_cann_megamoe_fallback_layer_indices("-1")
+    except ValueError as exc:
+        assert "non-negative integers" in str(exc)
+    else:
+        raise AssertionError("Expected negative fallback layer index to fail.")
+
 
 def main() -> None:
     check_dummy_routing()
@@ -512,6 +544,7 @@ def main() -> None:
     check_step_fallback_reason()
     check_cross_rank_contract()
     check_route_fallback_guard()
+    check_fallback_layer_parser()
     assert _normalize_cann_megamoe_activation("silu") == "swiglu"
     print("A2 MegaMoe helper checks: PASS", flush=True)
 

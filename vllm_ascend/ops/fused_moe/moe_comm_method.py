@@ -77,6 +77,30 @@ def _normalize_cann_megamoe_activation(activation: str) -> str:
     raise ValueError(f"CANN MegaMoe only supports SwiGLU, got activation={activation!r}.")
 
 
+def _parse_cann_megamoe_fallback_layer_indices(value: str) -> set[int]:
+    indices = set()
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        index = int(item)
+        if index < 0:
+            raise ValueError(
+                "VLLM_ASCEND_MEGAMOE_FALLBACK_LAYER_INDICES must contain "
+                f"non-negative integers, got {index}."
+            )
+        indices.add(index)
+    return indices
+
+
+def _get_cann_megamoe_layer_index() -> int:
+    try:
+        raw_layer_index = getattr(_EXTRA_CTX, "moe_layer_index", -1)
+    except AssertionError:
+        return -1
+    return -1 if raw_layer_index is None else int(raw_layer_index)
+
+
 def _append_cann_megamoe_dummy_tokens(
     hidden_states: torch.Tensor,
     topk_ids: torch.Tensor,
@@ -371,6 +395,10 @@ class FusedMC2CommImpl(MoECommMethod):
         self._cann_megamoe_uniform_dp_fallback_count = 0
         self._cann_megamoe_idle_dp_fallback_count = 0
         self._cann_megamoe_expert_threshold_fallback_count = 0
+        self._cann_megamoe_layer_fallback_count = 0
+        self._cann_megamoe_fallback_layer_indices = _parse_cann_megamoe_fallback_layer_indices(
+            os.getenv("VLLM_ASCEND_MEGAMOE_FALLBACK_LAYER_INDICES", "")
+        )
         self._cann_megamoe_operator_call_count = 0
         self._cann_megamoe_small_shape_call_count = 0
         self._cann_megamoe_seen_small_token_shapes: set[int] = set()
@@ -406,11 +434,14 @@ class FusedMC2CommImpl(MoECommMethod):
         mixed_dp_fallback: bool,
         idle_dp_fallback: bool,
         route_is_overloaded: bool,
+        layer_fallback: bool = False,
+        layer_index: int = -1,
     ) -> None:
         self._cann_megamoe_fallback_count += 1
         self._cann_megamoe_uniform_dp_fallback_count += int(mixed_dp_fallback)
         self._cann_megamoe_idle_dp_fallback_count += int(idle_dp_fallback)
         self._cann_megamoe_expert_threshold_fallback_count += int(route_is_overloaded)
+        self._cann_megamoe_layer_fallback_count += int(layer_fallback)
         if self.token_dispatcher.ep_rank_id == 0 and (
             self._cann_megamoe_fallback_count <= 4
             or self._cann_megamoe_fallback_count % 64 == 0
@@ -418,6 +449,7 @@ class FusedMC2CommImpl(MoECommMethod):
             logger.warning(
                 "CANN MegaMoe route fallback: dp_token_min=%d dp_token_max=%d "
                 "max_tokens_per_expert=%d threshold=%d "
+                "layer_index=%d layer_fallbacks=%d "
                 "fallback_count=%d uniform_dp_fallbacks=%d idle_dp_fallbacks=%d "
                 "expert_threshold_fallbacks=%d; "
                 "using standard MC2 for this layer",
@@ -425,6 +457,8 @@ class FusedMC2CommImpl(MoECommMethod):
                 dp_token_max,
                 max_tokens_per_expert,
                 self._cann_megamoe_max_tokens_per_expert,
+                layer_index,
+                self._cann_megamoe_layer_fallback_count,
                 self._cann_megamoe_fallback_count,
                 self._cann_megamoe_uniform_dp_fallback_count,
                 self._cann_megamoe_idle_dp_fallback_count,
@@ -437,6 +471,19 @@ class FusedMC2CommImpl(MoECommMethod):
         topk_ids: torch.Tensor,
     ) -> tuple[bool, int, int, int]:
         threshold = self._cann_megamoe_max_tokens_per_expert
+        layer_index = _get_cann_megamoe_layer_index()
+        if layer_index in self._cann_megamoe_fallback_layer_indices:
+            self._record_cann_megamoe_fallback(
+                dp_token_min=0,
+                dp_token_max=0,
+                max_tokens_per_expert=0,
+                mixed_dp_fallback=False,
+                idle_dp_fallback=False,
+                route_is_overloaded=False,
+                layer_fallback=True,
+                layer_index=layer_index,
+            )
+            return True, 0, 0, 0
         if (
             threshold == 0
             and not self._cann_megamoe_require_uniform_dp_tokens
@@ -499,6 +546,7 @@ class FusedMC2CommImpl(MoECommMethod):
                 mixed_dp_fallback=mixed_dp_fallback,
                 idle_dp_fallback=idle_dp_fallback,
                 route_is_overloaded=False,
+                layer_index=layer_index,
             )
             return True, 0, dp_token_min, dp_token_max
 
@@ -535,6 +583,7 @@ class FusedMC2CommImpl(MoECommMethod):
                 mixed_dp_fallback=False,
                 idle_dp_fallback=False,
                 route_is_overloaded=True,
+                layer_index=layer_index,
             )
         return route_is_overloaded, max_tokens_per_expert, dp_token_min, dp_token_max
 
@@ -728,7 +777,7 @@ class FusedMC2CommImpl(MoECommMethod):
             )
 
         active_tokens = int(x_active_mask.sum(dtype=torch.int64).item())
-        layer_index = int(getattr(_EXTRA_CTX, "moe_layer_index", -1))
+        layer_index = _get_cann_megamoe_layer_index()
         ep_rank = int(self.token_dispatcher.ep_rank_id)
         ep_world = int(self.token_dispatcher.ep_world_size)
         local_contract = torch.tensor(
