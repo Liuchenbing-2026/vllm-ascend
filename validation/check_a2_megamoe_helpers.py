@@ -8,6 +8,7 @@ import torch
 
 from vllm_ascend.ascend_forward_context import (
     MoECommType,
+    _get_a2_megamoe_step_fallback_reason,
     _cann_megamoe_supported_by_config,
     _resolve_moe_comm_type,
     _select_a2_moe_comm_method,
@@ -254,6 +255,38 @@ def check_step_moe_comm_type_override() -> None:
         assert _resolve_moe_comm_type(1, config, False, None) == MoECommType.FUSED_MC2
 
 
+def check_step_fallback_reason() -> None:
+    config = SimpleNamespace(enable_fused_mc2=2)
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS": "1",
+                "VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS": "1",
+            },
+            clear=True,
+        ),
+        patch(
+            "vllm_ascend.ascend_forward_context.get_ascend_device_type",
+            return_value=AscendDeviceType.A2,
+        ),
+    ):
+        assert _get_a2_megamoe_step_fallback_reason(config, True, True) is None
+        assert _get_a2_megamoe_step_fallback_reason(config, False, True) == "non-uniform-dp-tokens"
+        assert _get_a2_megamoe_step_fallback_reason(config, True, False) == "idle-dp-rank"
+        assert (
+            _get_a2_megamoe_step_fallback_reason(config, False, False)
+            == "non-uniform-dp-tokens,idle-dp-rank"
+        )
+
+    config.enable_fused_mc2 = 0
+    with patch(
+        "vllm_ascend.ascend_forward_context.get_ascend_device_type",
+        return_value=AscendDeviceType.A2,
+    ):
+        assert _get_a2_megamoe_step_fallback_reason(config, False, False) is None
+
+
 def check_cross_rank_contract() -> None:
     impl = FusedMC2CommImpl.__new__(FusedMC2CommImpl)
     impl._cann_megamoe_call_index = 0
@@ -411,13 +444,16 @@ def check_route_fallback_guard() -> None:
             return_value=SimpleNamespace(device_group=None),
         ),
         patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([128, 0, 256, 0])),
-        patch("torch.distributed.all_reduce", side_effect=set_max_count(128)),
+        patch(
+            "torch.distributed.all_reduce",
+            side_effect=AssertionError("mixed DP fallback must short-circuit route synchronization"),
+        ),
     ):
         should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(
             fused_input, topk_ids
         )
         assert should_fallback
-        assert max_count == 128
+        assert max_count == 0
         assert (active_min, active_max) == (128, 256)
         assert impl._cann_megamoe_fallback_count == 2
         assert impl._cann_megamoe_uniform_dp_fallback_count == 1
@@ -447,13 +483,16 @@ def check_route_fallback_guard() -> None:
             return_value=SimpleNamespace(device_group=None),
         ),
         patch("torch.distributed.all_gather_into_tensor", side_effect=set_active_counts([0, 0, 256, 0])),
-        patch("torch.distributed.all_reduce", side_effect=set_max_count(128)),
+        patch(
+            "torch.distributed.all_reduce",
+            side_effect=AssertionError("idle DP fallback must short-circuit route synchronization"),
+        ),
     ):
         should_fallback, max_count, active_min, active_max = impl._cann_megamoe_should_fallback(
             fused_input, topk_ids
         )
         assert should_fallback
-        assert max_count == 128
+        assert max_count == 0
         assert (active_min, active_max) == (0, 256)
         assert impl._cann_megamoe_fallback_count == 3
         assert impl._cann_megamoe_idle_dp_fallback_count == 1
@@ -470,6 +509,7 @@ def main() -> None:
     check_eager_megamoe_profile()
     check_empty_dp_dummy_forward()
     check_step_moe_comm_type_override()
+    check_step_fallback_reason()
     check_cross_rank_contract()
     check_route_fallback_guard()
     assert _normalize_cann_megamoe_activation("silu") == "swiglu"

@@ -174,6 +174,7 @@ from vllm_ascend.worker.utils import AscendKVBlockZeroer
 
 from vllm_ascend.ascend_forward_context import (  # isort: skip
     MoECommType,
+    _get_a2_megamoe_step_fallback_reason,
     _should_force_eager_megamoe_runtime,
     _should_skip_compiled_megamoe_profile,
     _should_skip_compiled_megamoe_runtime,
@@ -771,20 +772,24 @@ class NPUModelRunner(GPUModelRunner):
 
     def _get_step_moe_comm_type_override(
         self,
+        dp_tokens_are_uniform: bool,
         all_dp_ranks_have_real_tokens: bool,
     ) -> MoECommType | None:
-        if not (
-            get_ascend_device_type() == AscendDeviceType.A2
-            and self.ascend_config.enable_fused_mc2 == 2
-            and not all_dp_ranks_have_real_tokens
-        ):
+        reason = _get_a2_megamoe_step_fallback_reason(
+            self.ascend_config,
+            dp_tokens_are_uniform,
+            all_dp_ranks_have_real_tokens,
+        )
+        if reason is None:
             return None
 
-        count = getattr(self, "_idle_dp_mc2_step_count", 0) + 1
-        self._idle_dp_mc2_step_count = count
+        count = getattr(self, "_a2_megamoe_mc2_step_count", 0) + 1
+        self._a2_megamoe_mc2_step_count = count
         if count <= 4 or count % 64 == 0:
             logger.info(
-                "Using step-scoped standard MC2 for idle DP synchronization: count=%d",
+                "Using step-scoped standard MC2 for A2 MegaMoe fallback: "
+                "reason=%s count=%d",
+                reason,
                 count,
             )
         return MoECommType.MC2
@@ -2213,6 +2218,7 @@ class NPUModelRunner(GPUModelRunner):
                     should_ubatch,
                     num_tokens_across_dp,
                     cudagraph_stats,
+                    dp_tokens_are_uniform,
                     all_dp_ranks_have_real_tokens,
                 ) = self._determine_batch_execution_and_padding(
                     num_tokens=num_tokens_unpadded,
@@ -2224,6 +2230,7 @@ class NPUModelRunner(GPUModelRunner):
                     num_encoder_reqs=len(scheduler_output.scheduled_encoder_inputs),
                 )
                 moe_comm_type_override = self._get_step_moe_comm_type_override(
+                    dp_tokens_are_uniform,
                     all_dp_ranks_have_real_tokens
                 )
 
@@ -3077,6 +3084,7 @@ class NPUModelRunner(GPUModelRunner):
         torch.Tensor | None,
         CUDAGraphStat | None,
         bool,
+        bool,
     ]:
         self._a2_megamoe_decode_graph_safe = False
         if actual_num_tokens is None:
@@ -3211,6 +3219,7 @@ class NPUModelRunner(GPUModelRunner):
             should_ubatch,
             num_tokens_across_dp,
             cudagraph_stats,
+            dp_tokens_are_uniform,
             all_dp_ranks_have_tokens,
         )
 
@@ -3620,6 +3629,7 @@ class NPUModelRunner(GPUModelRunner):
             _,
             num_tokens_across_dp,
             _,
+            dp_tokens_are_uniform,
             all_dp_ranks_have_real_tokens,
         ) = self._determine_batch_execution_and_padding(
             num_tokens=num_tokens_unpadded,
@@ -3643,6 +3653,7 @@ class NPUModelRunner(GPUModelRunner):
             actual_num_tokens=0 if is_idle_dp_dummy else num_tokens_unpadded,
         )
         moe_comm_type_override = self._get_step_moe_comm_type_override(
+            dp_tokens_are_uniform,
             all_dp_ranks_have_real_tokens
         )
         if self.use_cp:

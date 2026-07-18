@@ -397,6 +397,40 @@ class FusedMC2CommImpl(MoECommMethod):
     def _get_prepare_finalize(self):
         return PrepareAndFinalizeWithMC2(self.moe_config)
 
+    def _record_cann_megamoe_fallback(
+        self,
+        *,
+        dp_token_min: int,
+        dp_token_max: int,
+        max_tokens_per_expert: int,
+        mixed_dp_fallback: bool,
+        idle_dp_fallback: bool,
+        route_is_overloaded: bool,
+    ) -> None:
+        self._cann_megamoe_fallback_count += 1
+        self._cann_megamoe_uniform_dp_fallback_count += int(mixed_dp_fallback)
+        self._cann_megamoe_idle_dp_fallback_count += int(idle_dp_fallback)
+        self._cann_megamoe_expert_threshold_fallback_count += int(route_is_overloaded)
+        if self.token_dispatcher.ep_rank_id == 0 and (
+            self._cann_megamoe_fallback_count <= 4
+            or self._cann_megamoe_fallback_count % 64 == 0
+        ):
+            logger.warning(
+                "CANN MegaMoe route fallback: dp_token_min=%d dp_token_max=%d "
+                "max_tokens_per_expert=%d threshold=%d "
+                "fallback_count=%d uniform_dp_fallbacks=%d idle_dp_fallbacks=%d "
+                "expert_threshold_fallbacks=%d; "
+                "using standard MC2 for this layer",
+                dp_token_min,
+                dp_token_max,
+                max_tokens_per_expert,
+                self._cann_megamoe_max_tokens_per_expert,
+                self._cann_megamoe_fallback_count,
+                self._cann_megamoe_uniform_dp_fallback_count,
+                self._cann_megamoe_idle_dp_fallback_count,
+                self._cann_megamoe_expert_threshold_fallback_count,
+            )
+
     def _cann_megamoe_should_fallback(
         self,
         fused_experts_input: MoEFusedExpertsInput,
@@ -455,6 +489,19 @@ class FusedMC2CommImpl(MoECommMethod):
                 dp_tokens_are_mixed = dp_token_min != dp_token_max
                 dp_has_idle_rank = dp_token_min == 0
 
+        mixed_dp_fallback = self._cann_megamoe_require_uniform_dp_tokens and dp_tokens_are_mixed
+        idle_dp_fallback = self._cann_megamoe_require_nonzero_dp_tokens and dp_has_idle_rank
+        if mixed_dp_fallback or idle_dp_fallback:
+            self._record_cann_megamoe_fallback(
+                dp_token_min=dp_token_min,
+                dp_token_max=dp_token_max,
+                max_tokens_per_expert=0,
+                mixed_dp_fallback=mixed_dp_fallback,
+                idle_dp_fallback=idle_dp_fallback,
+                route_is_overloaded=False,
+            )
+            return True, 0, dp_token_min, dp_token_max
+
         max_tokens_per_expert = 0
         route_is_overloaded = False
         if threshold > 0:
@@ -480,33 +527,16 @@ class FusedMC2CommImpl(MoECommMethod):
                 max_tokens_per_expert = int(recv_counts.max().item())
                 route_is_overloaded = max_tokens_per_expert > threshold
 
-        mixed_dp_fallback = self._cann_megamoe_require_uniform_dp_tokens and dp_tokens_are_mixed
-        idle_dp_fallback = self._cann_megamoe_require_nonzero_dp_tokens and dp_has_idle_rank
-        should_fallback = mixed_dp_fallback or idle_dp_fallback or route_is_overloaded
-        if should_fallback:
-            self._cann_megamoe_fallback_count += 1
-            self._cann_megamoe_uniform_dp_fallback_count += int(mixed_dp_fallback)
-            self._cann_megamoe_idle_dp_fallback_count += int(idle_dp_fallback)
-            self._cann_megamoe_expert_threshold_fallback_count += int(route_is_overloaded)
-            if self.token_dispatcher.ep_rank_id == 0 and (
-                self._cann_megamoe_fallback_count <= 4 or self._cann_megamoe_fallback_count % 64 == 0
-            ):
-                logger.warning(
-                    "CANN MegaMoe route fallback: dp_token_min=%d dp_token_max=%d "
-                    "max_tokens_per_expert=%d threshold=%d "
-                    "fallback_count=%d uniform_dp_fallbacks=%d idle_dp_fallbacks=%d "
-                    "expert_threshold_fallbacks=%d; "
-                    "using standard MC2 for this layer",
-                    dp_token_min,
-                    dp_token_max,
-                    max_tokens_per_expert,
-                    threshold,
-                    self._cann_megamoe_fallback_count,
-                    self._cann_megamoe_uniform_dp_fallback_count,
-                    self._cann_megamoe_idle_dp_fallback_count,
-                    self._cann_megamoe_expert_threshold_fallback_count,
-                )
-        return should_fallback, max_tokens_per_expert, dp_token_min, dp_token_max
+        if route_is_overloaded:
+            self._record_cann_megamoe_fallback(
+                dp_token_min=dp_token_min,
+                dp_token_max=dp_token_max,
+                max_tokens_per_expert=max_tokens_per_expert,
+                mixed_dp_fallback=False,
+                idle_dp_fallback=False,
+                route_is_overloaded=True,
+            )
+        return route_is_overloaded, max_tokens_per_expert, dp_token_min, dp_token_max
 
     def _record_cann_megamoe_operator_call(self, num_tokens_per_rank: int) -> None:
         self._cann_megamoe_operator_call_count += 1

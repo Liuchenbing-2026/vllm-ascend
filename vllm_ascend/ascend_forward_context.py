@@ -167,6 +167,31 @@ def empty_dp_step_requires_dummy_forward(
     return distributed_executor_backend == "external_launcher" and data_parallel_size > 1
 
 
+def _get_a2_megamoe_step_fallback_reason(
+    ascend_config: Any,
+    dp_tokens_are_uniform: bool,
+    all_dp_ranks_have_tokens: bool,
+) -> str | None:
+    if (
+        get_ascend_device_type() != AscendDeviceType.A2
+        or ascend_config.enable_fused_mc2 != 2
+    ):
+        return None
+
+    reasons = []
+    if (
+        os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS", "0") == "1"
+        and not dp_tokens_are_uniform
+    ):
+        reasons.append("non-uniform-dp-tokens")
+    if (
+        os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS", "1") == "1"
+        and not all_dp_ranks_have_tokens
+    ):
+        reasons.append("idle-dp-rank")
+    return ",".join(reasons) or None
+
+
 def _resolve_moe_comm_type(
     max_num_tokens: int,
     vllm_config: VllmConfig,
