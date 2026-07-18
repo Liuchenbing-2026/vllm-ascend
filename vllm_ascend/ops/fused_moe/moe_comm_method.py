@@ -861,15 +861,29 @@ class FusedMC2CommImpl(MoECommMethod):
                 assert active_tokens_by_rank is not None
                 assert global_recv_counts is not None
                 assert global_nonfinite_weights is not None
+                recv_counts_cpu = global_recv_counts.cpu()
+                local_expert_counts = recv_counts_cpu.view(ep_world, -1).sum(dim=1)
+                top_count = min(16, num_experts)
+                top_counts, top_experts = torch.topk(recv_counts_cpu, k=top_count)
                 logger.warning(
                     "CANN MegaMoe route before: call=%d active_by_rank=%s zero_recv_experts=%d "
-                    "min_recv=%d max_recv=%d nonfinite_weights=%d",
+                    "min_recv=%d max_recv=%d count_eq_1=%d count_le_2=%d count_le_4=%d "
+                    "count_le_8=%d count_le_16=%d local_expert_sums=%s top_experts=%s "
+                    "nonfinite_weights=%d recv_counts=%s",
                     call_index,
                     active_tokens_by_rank.cpu().tolist(),
-                    int((global_recv_counts == 0).sum().item()),
-                    int(global_recv_counts.min().item()),
-                    int(global_recv_counts.max().item()),
+                    int((recv_counts_cpu == 0).sum().item()),
+                    int(recv_counts_cpu.min().item()),
+                    int(recv_counts_cpu.max().item()),
+                    int((recv_counts_cpu == 1).sum().item()),
+                    int((recv_counts_cpu <= 2).sum().item()),
+                    int((recv_counts_cpu <= 4).sum().item()),
+                    int((recv_counts_cpu <= 8).sum().item()),
+                    int((recv_counts_cpu <= 16).sum().item()),
+                    local_expert_counts.tolist(),
+                    list(zip(top_experts.tolist(), top_counts.tolist())),
                     int(global_nonfinite_weights.item()),
+                    recv_counts_cpu.tolist(),
                 )
 
         torch.distributed.all_gather_into_tensor(
