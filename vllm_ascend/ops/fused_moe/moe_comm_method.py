@@ -108,8 +108,14 @@ def _append_cann_megamoe_dummy_tokens(
     x_active_mask: torch.Tensor | None,
     num_experts: int,
     ep_rank_id: int,
+    ep_world_size: int,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
-    """Route zero-weight rows from EP rank 0 so every expert is active."""
+    """Distribute zero-weight rows across EP ranks so every expert is active."""
+    if ep_world_size < 1 or not 0 <= ep_rank_id < ep_world_size:
+        raise ValueError(
+            "CANN MegaMoe dummy routing requires a valid EP rank: "
+            f"ep_rank_id={ep_rank_id}, ep_world_size={ep_world_size}."
+        )
     num_topk = int(topk_ids.shape[-1])
     dummy_token_capacity = get_cann_megamoe_dummy_token_capacity(num_experts, num_topk)
     total_dummy_routes = dummy_token_capacity * num_topk
@@ -132,12 +138,12 @@ def _append_cann_megamoe_dummy_tokens(
     topk_weights = torch.cat((topk_weights, dummy_topk_weights), dim=0)
     if x_active_mask is None:
         x_active_mask = torch.ones(original_num_tokens, dtype=torch.int8, device=hidden_states.device)
-    dummy_mask = torch.full(
-        (dummy_token_capacity,),
-        1 if ep_rank_id == 0 else 0,
-        dtype=x_active_mask.dtype,
+    dummy_row_indices = torch.arange(
+        dummy_token_capacity,
+        dtype=torch.int64,
         device=x_active_mask.device,
     )
+    dummy_mask = (dummy_row_indices.remainder(ep_world_size) == ep_rank_id).to(x_active_mask.dtype)
     x_active_mask = torch.cat((x_active_mask, dummy_mask), dim=0)
     return hidden_states, topk_ids, topk_weights, x_active_mask, original_num_tokens
 
@@ -922,6 +928,7 @@ class FusedMC2CommImpl(MoECommMethod):
                 x_active_mask,
                 int(self.moe_config.num_experts),
                 int(self.token_dispatcher.ep_rank_id),
+                int(self.token_dispatcher.ep_world_size),
             )
         )
         self._record_cann_megamoe_operator_call(original_num_tokens)

@@ -37,7 +37,11 @@ def check_dummy_routing() -> None:
     topk_ids = torch.tensor([[0, 1], [2, 3]], dtype=torch.int32)
     topk_weights = torch.full((2, 2), 0.5, dtype=torch.float32)
 
-    for ep_rank, expected_dummy_mask in ((0, 1), (1, 0)):
+    all_dummy_masks = []
+    for ep_rank, expected_dummy_mask in (
+        (0, [1, 0, 1, 0]),
+        (1, [0, 1, 0, 1]),
+    ):
         output = _append_cann_megamoe_dummy_tokens(
             hidden_states,
             topk_ids,
@@ -45,16 +49,19 @@ def check_dummy_routing() -> None:
             None,
             num_experts=8,
             ep_rank_id=ep_rank,
+            ep_world_size=2,
         )
         output_hidden, output_ids, output_weights, output_mask, original_tokens = output
         assert original_tokens == 2
         assert output_hidden.shape == (6, 4)
         assert output_ids.shape == (6, 2)
         assert output_weights.shape == (6, 2)
-        assert output_mask.tolist() == [1, 1] + [expected_dummy_mask] * 4
+        assert output_mask.tolist() == [1, 1] + expected_dummy_mask
+        all_dummy_masks.append(output_mask[2:])
         assert torch.count_nonzero(output_hidden[2:]).item() == 0
         assert torch.count_nonzero(output_weights[2:]).item() == 0
         assert set(output_ids[2:].reshape(-1).tolist()) == set(range(8))
+    assert torch.stack(all_dummy_masks).sum(dim=0).tolist() == [1, 1, 1, 1]
 
 
 def check_capacity_helpers() -> None:
