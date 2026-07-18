@@ -59,7 +59,7 @@ def check_dummy_routing() -> None:
         assert output_mask.tolist() == [1, 1] + expected_dummy_mask
         all_dummy_masks.append(output_mask[2:])
         assert torch.all(output_hidden[2:] == 1)
-        assert torch.count_nonzero(output_weights[2:]).item() == 0
+        assert torch.allclose(output_weights[2:], torch.full_like(output_weights[2:], 0.5))
         assert set(output_ids[2:].reshape(-1).tolist()) == set(range(8))
     assert torch.stack(all_dummy_masks).sum(dim=0).tolist() == [1, 1, 1, 1]
 
