@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import importlib
+import math
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
@@ -110,28 +111,37 @@ def _append_cann_megamoe_dummy_tokens(
     ep_rank_id: int,
     ep_world_size: int,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
-    """Distribute zero-weight rows across EP ranks so every expert is active."""
+    """Append equal-size local sentinels that cover all experts globally."""
     if ep_world_size < 1 or not 0 <= ep_rank_id < ep_world_size:
         raise ValueError(
             "CANN MegaMoe dummy routing requires a valid EP rank: "
             f"ep_rank_id={ep_rank_id}, ep_world_size={ep_world_size}."
         )
     num_topk = int(topk_ids.shape[-1])
-    dummy_token_capacity = get_cann_megamoe_dummy_token_capacity(num_experts, num_topk)
-    total_dummy_routes = dummy_token_capacity * num_topk
-    dummy_topk_ids = torch.arange(total_dummy_routes, dtype=topk_ids.dtype, device=topk_ids.device)
-    dummy_topk_ids = dummy_topk_ids.remainder(num_experts).view(dummy_token_capacity, num_topk)
+    global_dummy_capacity = get_cann_megamoe_dummy_token_capacity(num_experts, num_topk)
+    local_dummy_capacity = math.ceil(global_dummy_capacity / ep_world_size)
+    global_dummy_rows = ep_rank_id * local_dummy_capacity + torch.arange(
+        local_dummy_capacity,
+        dtype=topk_ids.dtype,
+        device=topk_ids.device,
+    )
+    dummy_topk_ids = global_dummy_rows[:, None] * num_topk + torch.arange(
+        num_topk,
+        dtype=topk_ids.dtype,
+        device=topk_ids.device,
+    )
+    dummy_topk_ids = dummy_topk_ids.remainder(num_experts)
     # A8W8 dispatch derives a per-token scale from max(abs(x)). Keep the
     # sentinel activation nonzero so dummy rows never produce a zero scale.
     # Use normalized positive router weights so each sentinel is a fully valid
     # MoE token; all sentinel outputs are cropped before returning.
     dummy_hidden_states = torch.ones(
-        (dummy_token_capacity, hidden_states.shape[-1]),
+        (local_dummy_capacity, hidden_states.shape[-1]),
         dtype=hidden_states.dtype,
         device=hidden_states.device,
     )
     dummy_topk_weights = torch.full(
-        (dummy_token_capacity, num_topk),
+        (local_dummy_capacity, num_topk),
         1.0 / num_topk,
         dtype=topk_weights.dtype,
         device=topk_weights.device,
@@ -143,12 +153,11 @@ def _append_cann_megamoe_dummy_tokens(
     topk_weights = torch.cat((topk_weights, dummy_topk_weights), dim=0)
     if x_active_mask is None:
         x_active_mask = torch.ones(original_num_tokens, dtype=torch.int8, device=hidden_states.device)
-    dummy_row_indices = torch.arange(
-        dummy_token_capacity,
-        dtype=torch.int64,
+    dummy_mask = torch.ones(
+        local_dummy_capacity,
+        dtype=x_active_mask.dtype,
         device=x_active_mask.device,
     )
-    dummy_mask = (dummy_row_indices.remainder(ep_world_size) == ep_rank_id).to(x_active_mask.dtype)
     x_active_mask = torch.cat((x_active_mask, dummy_mask), dim=0)
     return hidden_states, topk_ids, topk_weights, x_active_mask, original_num_tokens
 
@@ -410,6 +419,7 @@ class FusedMC2CommImpl(MoECommMethod):
         self._cann_megamoe_fallback_layer_indices = _parse_cann_megamoe_fallback_layer_indices(
             os.getenv("VLLM_ASCEND_MEGAMOE_FALLBACK_LAYER_INDICES", "")
         )
+        self._cann_megamoe_all_tokens_active = False
         self._cann_megamoe_operator_call_count = 0
         self._cann_megamoe_small_shape_call_count = 0
         self._cann_megamoe_seen_small_token_shapes: set[int] = set()
@@ -482,6 +492,7 @@ class FusedMC2CommImpl(MoECommMethod):
         topk_ids: torch.Tensor,
     ) -> tuple[bool, int, int, int]:
         threshold = self._cann_megamoe_max_tokens_per_expert
+        self._cann_megamoe_all_tokens_active = fused_experts_input.routing.mc2_mask is None
         layer_index = _get_cann_megamoe_layer_index()
         if layer_index in self._cann_megamoe_fallback_layer_indices:
             self._record_cann_megamoe_fallback(
@@ -520,6 +531,7 @@ class FusedMC2CommImpl(MoECommMethod):
                 # x_active_mask with .item() here would issue a synchronous NPU
                 # copy, which ACL graph GLOBAL capture explicitly forbids.
                 dp_token_min = dp_token_max = int(topk_ids.shape[0])
+                self._cann_megamoe_all_tokens_active = True
             else:
                 local_active_tokens = int(topk_ids.shape[0])
                 if x_active_mask is not None:
@@ -544,6 +556,9 @@ class FusedMC2CommImpl(MoECommMethod):
                 active_tokens_by_dp = active_tokens_by_rank.view(-1, tp_size).sum(dim=1)
                 dp_token_min = int(active_tokens_by_dp.min().item())
                 dp_token_max = int(active_tokens_by_dp.max().item())
+                self._cann_megamoe_all_tokens_active = bool(
+                    torch.all(active_tokens_by_rank == int(topk_ids.shape[0])).item()
+                )
                 dp_tokens_are_mixed = dp_token_min != dp_token_max
                 dp_has_idle_rank = dp_token_min == 0
 
@@ -953,7 +968,7 @@ class FusedMC2CommImpl(MoECommMethod):
             sym_buffer,
             l1_weights_sf=weight_scales1,
             l2_weights_sf=weight_scales2,
-            x_active_mask=x_active_mask,
+            x_active_mask=None if self._cann_megamoe_all_tokens_active else x_active_mask,
             activation=_normalize_cann_megamoe_activation(fused_experts_input.activation),
             activation_clamp=activation_clamp,
         )

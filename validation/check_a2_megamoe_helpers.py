@@ -37,10 +37,10 @@ def check_dummy_routing() -> None:
     topk_ids = torch.tensor([[0, 1], [2, 3]], dtype=torch.int32)
     topk_weights = torch.full((2, 2), 0.5, dtype=torch.float32)
 
-    all_dummy_masks = []
-    for ep_rank, expected_dummy_mask in (
-        (0, [1, 0, 1, 0]),
-        (1, [0, 1, 0, 1]),
+    all_dummy_ids = []
+    for ep_rank, expected_dummy_ids in (
+        (0, [[0, 1], [2, 3]]),
+        (1, [[4, 5], [6, 7]]),
     ):
         output = _append_cann_megamoe_dummy_tokens(
             hidden_states,
@@ -53,15 +53,15 @@ def check_dummy_routing() -> None:
         )
         output_hidden, output_ids, output_weights, output_mask, original_tokens = output
         assert original_tokens == 2
-        assert output_hidden.shape == (6, 4)
-        assert output_ids.shape == (6, 2)
-        assert output_weights.shape == (6, 2)
-        assert output_mask.tolist() == [1, 1] + expected_dummy_mask
-        all_dummy_masks.append(output_mask[2:])
+        assert output_hidden.shape == (4, 4)
+        assert output_ids.shape == (4, 2)
+        assert output_weights.shape == (4, 2)
+        assert output_mask.tolist() == [1, 1, 1, 1]
+        assert output_ids[2:].tolist() == expected_dummy_ids
+        all_dummy_ids.extend(output_ids[2:].reshape(-1).tolist())
         assert torch.all(output_hidden[2:] == 1)
         assert torch.allclose(output_weights[2:], torch.full_like(output_weights[2:], 0.5))
-        assert set(output_ids[2:].reshape(-1).tolist()) == set(range(8))
-    assert torch.stack(all_dummy_masks).sum(dim=0).tolist() == [1, 1, 1, 1]
+    assert set(all_dummy_ids) == set(range(8))
 
 
 def check_capacity_helpers() -> None:
