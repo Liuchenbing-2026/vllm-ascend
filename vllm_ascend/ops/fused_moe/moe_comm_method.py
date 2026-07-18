@@ -693,7 +693,7 @@ class FusedMC2CommImpl(MoECommMethod):
 
         hidden = int(self.moe_config.hidden_dim)
         intermediate_hidden = int(self.moe_config.intermediate_size_per_partition)
-        max_recv_token_num = resolve_cann_megamoe_max_recv_tokens(
+        buffer_max_recv_token_num = resolve_cann_megamoe_max_recv_tokens(
             num_max_tokens_per_rank,
             ep_world_size,
             num_topk,
@@ -706,7 +706,7 @@ class FusedMC2CommImpl(MoECommMethod):
                 num_max_tokens_per_rank,
                 num_topk,
                 hidden,
-                max_recv_token_num=max_recv_token_num,
+                max_recv_token_num=buffer_max_recv_token_num,
                 dispatch_quant_mode=_CANN_MEGAMOE_DISPATCH_QUANT_MODE,
                 dispatch_quant_out_dtype=torch.int8,
             )
@@ -718,7 +718,7 @@ class FusedMC2CommImpl(MoECommMethod):
             id(group),
             num_experts,
             num_max_tokens_per_rank,
-            max_recv_token_num,
+            buffer_max_recv_token_num,
             num_topk,
             hidden,
             intermediate_hidden,
@@ -728,13 +728,13 @@ class FusedMC2CommImpl(MoECommMethod):
             logger.info(
                 "CANN MegaMoe sym-buffer alloc: ep_rank=%s ep_world=%d "
                 "experts=%d max_tokens_per_rank=%d dummy_tokens=%d "
-                "max_recv_tokens=%d buffer=%d MB",
+                "buffer_max_recv_tokens=%d runtime_max_recv_tokens=auto buffer=%d MB",
                 self.token_dispatcher.ep_rank_id,
                 ep_world_size,
                 num_experts,
                 num_max_tokens_per_rank,
                 get_cann_megamoe_dummy_token_capacity(num_experts, num_topk),
-                max_recv_token_num,
+                buffer_max_recv_token_num,
                 required_buffer_mb,
             )
             sym_buffer = get_symm_buffer(
@@ -744,7 +744,10 @@ class FusedMC2CommImpl(MoECommMethod):
                 num_topk,
                 hidden,
                 intermediate_hidden,
-                max_recv_token_num=max_recv_token_num,
+                # CANN constrains max_recv_token_num by the current x.shape[0],
+                # not by the larger buffer capacity. Let the operator derive the
+                # per-call value while HCCL remains sized for the worst case.
+                max_recv_token_num=0,
                 dispatch_quant_mode=_CANN_MEGAMOE_DISPATCH_QUANT_MODE,
                 dispatch_quant_out_dtype=torch.int8,
             )
