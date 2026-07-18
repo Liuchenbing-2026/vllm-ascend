@@ -121,7 +121,10 @@ def _append_cann_megamoe_dummy_tokens(
     total_dummy_routes = dummy_token_capacity * num_topk
     dummy_topk_ids = torch.arange(total_dummy_routes, dtype=topk_ids.dtype, device=topk_ids.device)
     dummy_topk_ids = dummy_topk_ids.remainder(num_experts).view(dummy_token_capacity, num_topk)
-    dummy_hidden_states = torch.zeros(
+    # A8W8 dispatch derives a per-token scale from max(abs(x)). Keep the
+    # sentinel activation nonzero so dummy rows never produce a zero scale;
+    # zero router weights still make their combined outputs inert.
+    dummy_hidden_states = torch.ones(
         (dummy_token_capacity, hidden_states.shape[-1]),
         dtype=hidden_states.dtype,
         device=hidden_states.device,
