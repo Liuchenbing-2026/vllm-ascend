@@ -96,10 +96,38 @@ env_variables: dict[str, Callable[[], Any]] = {
     # 0, or not set: default ALLTOALL and MC2 will be used.
     # 1: ALLTOALL and MC2 might be replaced by `dispatch_ffn_combine` operator.
     # `dispatch_ffn_combine` can be used only for moe layer with W8A8, EP<=32, non-mtp, non-dynamic-eplb.
-    # 2: MC2 might be replaced by `dispatch_gmm_combine_decode` operator.
-    # `dispatch_gmm_combine_decode` can be used only for **decode node** moe layer
-    # with W8A8. And MTP layer must be W8A8.
+    # 2: A2 W8A8 uses CANN MegaMoe; other supported platforms retain the
+    # `dispatch_gmm_combine_decode` path.
     "VLLM_ASCEND_ENABLE_FUSED_MC2": lambda: int(os.getenv("VLLM_ASCEND_ENABLE_FUSED_MC2", "0")),
+    # A2 MegaMoe fault-isolation controls. The operator supports token counts
+    # starting at one and represents inactive padding through x_active_mask.
+    # vLLM DP ranks can stop at different decode steps. Positive mixed counts
+    # remain supported through x_active_mask, while a fully idle DP rank falls
+    # back to standard MC2 by default to keep collective call order stable.
+    "VLLM_ASCEND_MEGAMOE_MIN_TOKENS": lambda: int(os.getenv("VLLM_ASCEND_MEGAMOE_MIN_TOKENS", "1")),
+    "VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT": lambda: int(
+        os.getenv("VLLM_ASCEND_MEGAMOE_MAX_TOKENS_PER_EXPERT", "1792")
+    ),
+    "VLLM_ASCEND_MEGAMOE_FALLBACK_LAYER_INDICES": lambda: os.getenv(
+        "VLLM_ASCEND_MEGAMOE_FALLBACK_LAYER_INDICES", ""
+    ),
+    "VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_TOKENS", "0"))
+    ),
+    # ACL graph replay requires the same active-token shape across DP ranks.
+    # Mixed positive counts remain valid for eager MegaMoe through x_active_mask.
+    "VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_UNIFORM_DP_GRAPH", "1"))
+    ),
+    "VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_MEGAMOE_FORCE_EAGER_DECODE", "0"))
+    ),
+    "VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_MEGAMOE_REQUIRE_NONZERO_DP_TOKENS", "1"))
+    ),
+    "VLLM_ASCEND_MEGAMOE_STATS_INTERVAL": lambda: int(
+        os.getenv("VLLM_ASCEND_MEGAMOE_STATS_INTERVAL", "1024")
+    ),
     # DEPRECATED: VLLM_ASCEND_BALANCE_SCHEDULING env var will be removed in a future release.
     # Use --additional-config '{"enable_balance_scheduling": true}' instead.
     "VLLM_ASCEND_BALANCE_SCHEDULING": lambda: bool(int(os.getenv("VLLM_ASCEND_BALANCE_SCHEDULING", "0"))),

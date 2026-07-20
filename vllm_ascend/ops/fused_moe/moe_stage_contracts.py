@@ -53,6 +53,10 @@ class MoEWeights:
     w2_scale_bias: torch.Tensor | list[torch.Tensor] | None = None
     w1_offset: torch.Tensor | None = None
     w2_offset: torch.Tensor | None = None
+    fallback_w1: torch.Tensor | list[torch.Tensor] | None = None
+    fallback_w2: torch.Tensor | list[torch.Tensor] | None = None
+    fallback_w1_scale: torch.Tensor | list[torch.Tensor] | None = None
+    fallback_w2_scale: torch.Tensor | list[torch.Tensor] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +144,7 @@ class MoEMlpComputeInput:
     activation: str = "silu"
     need_trans: bool = False
     dynamic_eplb: bool = False
+    force_mc2: bool = False
     swiglu_limit: float = 0.0
 
 
