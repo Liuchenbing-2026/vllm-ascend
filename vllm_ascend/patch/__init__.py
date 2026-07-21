@@ -808,6 +808,26 @@
 #    Future Plan:
 #       Remove this patch when vLLM aligns with the latest main.
 #
+# ** 11a. File: worker/patch_lora_compile_wrapper.py**
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.compilation.wrapper.TorchCompileWithNoGuardsWrapper`
+#    Why:
+#       Dropping non-shape Dynamo guards after the first trace prevents a
+#       LoRA-specialized service from retaining independent base and adapter
+#       full graphs. Reusing one callable either mixes graph resources or
+#       forces the base path back to eager execution.
+#    How:
+#       Extend the compile wrapper before model loading and create separate
+#       LoRA, base, and one-token-base compiled callables. The vLLM source tree
+#       remains unmodified, and a source hash check limits the patch to verified
+#       vLLM baselines.
+#    Related PR (if no, explain why):
+#       No. The generic multi-variant compile-wrapper design still needs to be
+#       discussed upstream.
+#    Future Plan:
+#       Remove this patch after vLLM provides independent compile variants for
+#       base and LoRA graph specialization.
+#
 # ** 12. File: worker/patch_mamba_utils.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.v1.worker.mamba_utils.batch_memcpy_kernel = batch_memcpy_kernel`
