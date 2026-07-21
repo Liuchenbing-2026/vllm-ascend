@@ -43,15 +43,10 @@
 #
 # Safety: only touches the real-adapter load path (dummy LoRAs already use
 # model names); leaves keys untouched if no prefix is detected (already-aligned
-# plain text models); never raises into the serving path. Disable with
-# VLLM_ASCEND_LORA_VLM_PREFIX=0.
+# plain text models); never raises into the serving path.
 # ---------------------------------------------------------------------------
-import os
-
 from vllm.logger import logger
 from vllm.lora.worker_manager import WorkerLoRAManager
-
-_ENABLED = os.environ.get("VLLM_ASCEND_LORA_VLM_PREFIX", "1") not in ("0", "", "false", "False")
 
 _orig_load_adapter = WorkerLoRAManager._load_adapter
 
@@ -110,5 +105,4 @@ def _load_adapter(self, lora_request):
     return lora
 
 
-if _ENABLED:
-    WorkerLoRAManager._load_adapter = _load_adapter
+WorkerLoRAManager._load_adapter = _load_adapter

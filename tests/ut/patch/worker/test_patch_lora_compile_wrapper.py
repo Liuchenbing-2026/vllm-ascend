@@ -95,6 +95,7 @@ def test_specialized_init_creates_base_variants(monkeypatch):
 
     def original_init(self, compile_prefix, is_encoder):
         assert patch_module.envs.VLLM_USE_BYTECODE_HOOK is False
+        assert patch_module.envs.VLLM_USE_AOT_COMPILE is False
         self._compiled_callable = "lora"
         self.first_compile = True
         self.evaluate_guards = False
@@ -108,11 +109,12 @@ def test_specialized_init_creates_base_variants(monkeypatch):
     monkeypatch.setattr(patch_module, "_ORIGINAL_INIT", original_init)
     monkeypatch.setattr(patch_module.torch, "compile", fake_compile)
     monkeypatch.setattr(patch_module.envs, "VLLM_USE_BYTECODE_HOOK", True)
-    monkeypatch.setattr(patch_module.envs, "VLLM_USE_AOT_COMPILE", False)
+    monkeypatch.setattr(patch_module.envs, "VLLM_USE_AOT_COMPILE", True)
 
     patch_module._patched_init(model)
 
     assert patch_module.envs.VLLM_USE_BYTECODE_HOOK is True
+    assert patch_module.envs.VLLM_USE_AOT_COMPILE is False
     assert model.specialize_lora is True
     assert model.use_bytecode_hook is False
     assert backend_prefixes == [("base", False), ("base_one", False)]
@@ -120,16 +122,49 @@ def test_specialized_init_creates_base_variants(monkeypatch):
     assert model._base_one_compiled_callable.callable_fn.__func__.__code__.co_name == "forward_base_one"
 
 
-def test_specialized_init_rejects_aot(monkeypatch):
-    config = SimpleNamespace(
-        lora_config=object(),
-        compilation_config=SimpleNamespace(cudagraph_specialize_lora=True),
-    )
-    monkeypatch.setattr(patch_module, "get_current_vllm_config", lambda: config)
+def test_disable_aot_compile_for_lora_is_idempotent(monkeypatch):
     monkeypatch.setattr(patch_module.envs, "VLLM_USE_AOT_COMPILE", True)
 
-    with pytest.raises(RuntimeError, match="VLLM_USE_AOT_COMPILE=0"):
-        patch_module._patched_init(SimpleNamespace())
+    patch_module._disable_aot_compile_for_lora()
+    patch_module._disable_aot_compile_for_lora()
+
+    assert patch_module.envs.VLLM_USE_AOT_COMPILE is False
+
+
+def test_specialized_init_skips_speculative_draft(monkeypatch):
+    class CompilationConfig:
+        cudagraph_specialize_lora = True
+
+    config = SimpleNamespace(
+        lora_config=object(),
+        compilation_config=CompilationConfig(),
+    )
+
+    class EagleModelMixin:
+        pass
+
+    class DraftModel(EagleModelMixin):
+        def forward(self, value):
+            return value
+
+    model = DraftModel()
+
+    def original_init(self, compile_prefix, is_encoder):
+        self._compiled_callable = "draft"
+        self.first_compile = True
+        self.evaluate_guards = False
+
+    monkeypatch.setattr(patch_module, "get_current_vllm_config", lambda: config)
+    monkeypatch.setattr(patch_module, "_ORIGINAL_INIT", original_init)
+    monkeypatch.setattr(patch_module.envs, "VLLM_USE_BYTECODE_HOOK", False)
+    monkeypatch.setattr(patch_module.envs, "VLLM_USE_AOT_COMPILE", True)
+
+    patch_module._patched_init(model)
+
+    assert model.specialize_lora is False
+    assert model._compiled_callable == "draft"
+    assert patch_module.envs.VLLM_USE_AOT_COMPILE is False
+    assert not hasattr(model, "_base_compiled_callable")
 
 
 @pytest.mark.parametrize(
@@ -138,6 +173,7 @@ def test_specialized_init_rejects_aot(monkeypatch):
         (True, 8, "lora"),
         (False, 8, "base"),
         (False, 1, "base_one"),
+        (None, 8, "lora"),
     ],
 )
 def test_compiled_callable_routing(monkeypatch, has_lora, num_tokens, expected):
@@ -162,7 +198,7 @@ def test_compiled_callable_routing(monkeypatch, has_lora, num_tokens, expected):
         _punica_has_lora=lambda: has_lora,
         _call_with_optional_nvtx_range=lambda fn, *args, **kwargs: fn(*args, **kwargs),
     )
-    descriptor = SimpleNamespace(has_lora=has_lora, num_tokens=num_tokens)
+    descriptor = SimpleNamespace(has_lora=bool(has_lora), num_tokens=num_tokens)
     monkeypatch.setattr(patch_module, "is_forward_context_available", lambda: True)
     monkeypatch.setattr(
         patch_module,

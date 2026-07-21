@@ -95,6 +95,18 @@ def _without_bytecode_hook():
             delattr(envs, "VLLM_USE_BYTECODE_HOOK")
 
 
+def _disable_aot_compile_for_lora() -> None:
+    """Keep vLLM's outer compile decorator on the non-AOT LoRA path."""
+
+    if not envs.VLLM_USE_AOT_COMPILE:
+        return
+    envs.VLLM_USE_AOT_COMPILE = False
+    logger.warning_once(
+        "Ascend LoRA dual-graph specialization automatically disabled "
+        "vLLM AOT compilation for this worker process."
+    )
+
+
 def _clone_forward(self: Any, suffix: str) -> MethodType:
     """Return a bound forward with an independent Dynamo code identity."""
 
@@ -115,19 +127,26 @@ def _clone_forward(self: Any, suffix: str) -> MethodType:
     return MethodType(cloned_func, self)
 
 
+def _is_speculative_draft_model(model: Any) -> bool:
+    """Return whether this compiled module is an Eagle/MTP draft model."""
+
+    return any(base.__name__ == "EagleModelMixin" for base in type(model).__mro__)
+
+
 def _patched_init(
     self: Any,
     compile_prefix: str = "",
     is_encoder: bool = False,
 ) -> None:
     vllm_config = get_current_vllm_config()
-    specialize_lora = bool(
+    lora_specialization_enabled = bool(
         vllm_config.lora_config is not None and vllm_config.compilation_config.cudagraph_specialize_lora
     )
+    specialize_lora = lora_specialization_enabled and not _is_speculative_draft_model(self)
     use_bytecode_hook = envs.VLLM_USE_BYTECODE_HOOK and not specialize_lora
 
-    if specialize_lora and envs.VLLM_USE_AOT_COMPILE:
-        raise RuntimeError("Ascend base/LoRA dual-graph specialization requires VLLM_USE_AOT_COMPILE=0.")
+    if lora_specialization_enabled:
+        _disable_aot_compile_for_lora()
 
     if specialize_lora:
         _verify_vllm_wrapper_baseline()
@@ -228,11 +247,12 @@ def _patched_call(self: Any, *args: Any, **kwargs: Any) -> Any:
     use_base_callable = False
     if self.specialize_lora and is_forward_context_available():
         batch_descriptor = get_forward_context().batch_descriptor
-        has_lora = batch_descriptor.has_lora if batch_descriptor is not None else True
         punica_has_lora = self._punica_has_lora()
-        if punica_has_lora is not None:
-            has_lora = punica_has_lora
-        if not has_lora:
+        # Speculative draft models share the target's global LoRA config but
+        # do not contain Punica wrappers. Keep those models on their original
+        # compiled callable instead of routing them into a target-only base
+        # graph with a different input signature.
+        if punica_has_lora is False:
             use_base_callable = True
             if batch_descriptor is not None and batch_descriptor.num_tokens == 1:
                 compiled_callable = self._base_one_compiled_callable
