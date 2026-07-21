@@ -25,7 +25,7 @@ from vllm.logger import logger
 from vllm.model_executor.layers.fused_moe import FusedMoEConfig
 
 from vllm_ascend.ascend_config import get_ascend_config
-from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType
+from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType, _is_a2_megamoe_enabled
 from vllm_ascend.distributed.parallel_state import get_mc2_group
 from vllm_ascend.ops.fused_moe.moe_mlp import unified_apply_mlp
 from vllm_ascend.ops.fused_moe.moe_runtime_args import (
@@ -49,10 +49,8 @@ from vllm_ascend.ops.fused_moe.token_dispatcher import (
 )
 from vllm_ascend.quantization.quant_type import QuantType
 from vllm_ascend.utils import (
-    AscendDeviceType,
-    get_ascend_device_type,
+    get_cann_megamoe_buffer_params,
     get_cann_megamoe_dummy_token_capacity,
-    resolve_cann_megamoe_max_recv_tokens,
 )
 
 _DISPATCH_FFN_COMBINE_MODE = 1
@@ -359,12 +357,13 @@ class FusedMC2CommImpl(MoECommMethod):
         super().__init__(moe_config)
         self._cann_megamoe_ops = None
         self._cann_symm_buffers = {}
-        enable_fused_mc2 = get_ascend_config().enable_fused_mc2
+        ascend_config = get_ascend_config()
+        enable_fused_mc2 = ascend_config.enable_fused_mc2
         if enable_fused_mc2 == _DISPATCH_FFN_COMBINE_MODE:
             self.expert_token_nums = torch.zeros([self.moe_config.num_local_experts], dtype=torch.int32, device="npu")
         else:
             self.expert_token_nums = None
-        if enable_fused_mc2 == _CANN_MEGAMOE_MODE and get_ascend_device_type() == AscendDeviceType.A2:
+        if _is_a2_megamoe_enabled(ascend_config):
             self._load_cann_megamoe_ops()
 
     def pad_and_split_input_ids(self, input_ids):
@@ -408,35 +407,22 @@ class FusedMC2CommImpl(MoECommMethod):
         group = get_mc2_group().device_group
         ep_world_size = int(self.token_dispatcher.ep_world_size)
         num_experts = int(self.moe_config.num_experts)
-        if num_experts % ep_world_size != 0:
-            raise ValueError(f"num_experts={num_experts} must be divisible by ep_world_size={ep_world_size}.")
-        num_local_experts = num_experts // ep_world_size
+        num_topk = int(topk_ids.shape[-1])
+        buffer_params = get_cann_megamoe_buffer_params(
+            int(self.token_dispatcher.max_num_tokens_per_rank),
+            ep_world_size,
+            num_experts,
+            num_topk,
+        )
+        num_max_tokens_per_rank, num_local_experts, dummy_token_capacity, buffer_max_recv_token_num = buffer_params
         if len(weight1) != num_local_experts or len(weight2) != num_local_experts:
             raise ValueError(
                 "CANN MegaMoe requires one weight tensor per local expert: "
                 f"expected={num_local_experts}, w1={len(weight1)}, w2={len(weight2)}."
             )
 
-        base_num_max_tokens_per_rank = int(self.token_dispatcher.max_num_tokens_per_rank)
-        num_topk = int(topk_ids.shape[-1])
-        num_max_tokens_per_rank = base_num_max_tokens_per_rank + get_cann_megamoe_dummy_token_capacity(
-            num_experts,
-            num_topk,
-        )
-        if num_max_tokens_per_rank < 1 or num_max_tokens_per_rank > 4096:
-            raise ValueError(
-                "CANN MegaMoe requires num_max_tokens_per_rank in [1, 4096], got "
-                f"{num_max_tokens_per_rank}."
-            )
-
         hidden = int(self.moe_config.hidden_dim)
         intermediate_hidden = int(self.moe_config.intermediate_size_per_partition)
-        buffer_max_recv_token_num = resolve_cann_megamoe_max_recv_tokens(
-            num_max_tokens_per_rank,
-            ep_world_size,
-            num_topk,
-            num_local_experts,
-        )
         required_buffer_mb = int(
             get_buffer_size(
                 ep_world_size,
@@ -471,7 +457,7 @@ class FusedMC2CommImpl(MoECommMethod):
                 ep_world_size,
                 num_experts,
                 num_max_tokens_per_rank,
-                get_cann_megamoe_dummy_token_capacity(num_experts, num_topk),
+                dummy_token_capacity,
                 buffer_max_recv_token_num,
                 required_buffer_mb,
             )
@@ -592,7 +578,8 @@ class FusedMC2CommImpl(MoECommMethod):
             topk_ids = fused_experts_input.routing.log2phy[topk_ids]
 
         expert_tokens = None
-        if get_ascend_config().enable_fused_mc2 == _DISPATCH_FFN_COMBINE_MODE:
+        ascend_config = get_ascend_config()
+        if ascend_config.enable_fused_mc2 == _DISPATCH_FFN_COMBINE_MODE:
             assert not (
                 fused_experts_input.weights.w1_scale_bias is None or fused_experts_input.weights.w2_scale_bias is None
             ), "w1_scale_bias and w2_scale_bias cannot be None when enable_fused_mc2=1."
@@ -609,15 +596,15 @@ class FusedMC2CommImpl(MoECommMethod):
                 bias2=fused_experts_input.weights.w2_scale_bias,
                 probs=fused_experts_input.topk_weights.to(torch.float32),
                 group=self.token_dispatcher.moe_all_to_all_group_name,
-                max_output_size=get_ascend_config().mega_moe_max_tokens,
+                max_output_size=ascend_config.mega_moe_max_tokens,
                 swiglu_limit=fused_experts_input.swiglu_limit,
                 x_active_mask=fused_experts_input.routing.mc2_mask,
                 out=out,
                 expert_token_nums=self.expert_token_nums,
             )
             expert_tokens = self.expert_token_nums
-        elif get_ascend_config().enable_fused_mc2 == _CANN_MEGAMOE_MODE:
-            if get_ascend_device_type() == AscendDeviceType.A2:
+        elif ascend_config.enable_fused_mc2 == _CANN_MEGAMOE_MODE:
+            if _is_a2_megamoe_enabled(ascend_config):
                 out, expert_tokens = self._apply_cann_megamoe(fused_experts_input, topk_ids)
             else:
                 assert fused_experts_input.routing.expert_map is not None, "expert_map cannot be None."
@@ -637,7 +624,7 @@ class FusedMC2CommImpl(MoECommMethod):
                     global_bs=self.token_dispatcher.global_bs,
                 )
         else:
-            raise ValueError(f"Wrong value of {get_ascend_config().enable_fused_mc2=}")
+            raise ValueError(f"Wrong value of enable_fused_mc2={ascend_config.enable_fused_mc2}")
         return FusedExpertsResult(
             routed_out=out, expert_tokens=expert_tokens, swiglu_limit=fused_experts_input.swiglu_limit
         )

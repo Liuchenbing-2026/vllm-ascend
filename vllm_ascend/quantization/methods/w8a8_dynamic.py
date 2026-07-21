@@ -24,17 +24,15 @@ from vllm.config import CompilationMode, get_current_vllm_config
 from vllm.logger import logger
 
 from vllm_ascend.ascend_config import get_ascend_config
-from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType
+from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType, _is_a2_megamoe_enabled
 from vllm_ascend.distributed.parallel_state import get_mc2_group
 from vllm_ascend.flash_common3_context import get_flash_common3_context
 from vllm_ascend.ops.fused_moe.experts_selector import select_experts, zero_experts_compute
 from vllm_ascend.ops.fused_moe.moe_runtime_args import build_fused_experts_input
 from vllm_ascend.utils import (
     ACL_FORMAT_FRACTAL_NZ,
-    AscendDeviceType,
     enable_custom_op,
     enable_dsa_cp,
-    get_ascend_device_type,
     maybe_trans_nz,
 )
 
@@ -314,12 +312,9 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
 
         moe_comm_method = _EXTRA_CTX.moe_comm_method
         fused_mc2_selected = _EXTRA_CTX.moe_comm_type == MoECommType.FUSED_MC2
-        enable_fused_mc2 = get_ascend_config().enable_fused_mc2 if fused_mc2_selected else 0
-        cann_megamoe_flag = (
-            fused_mc2_selected
-            and enable_fused_mc2 == 2
-            and get_ascend_device_type() == AscendDeviceType.A2
-        )
+        ascend_config = get_ascend_config() if fused_mc2_selected else None
+        enable_fused_mc2 = ascend_config.enable_fused_mc2 if ascend_config else 0
+        cann_megamoe_flag = fused_mc2_selected and _is_a2_megamoe_enabled(ascend_config)
         fused_scale_flag = fused_mc2_selected and (enable_fused_mc2 == 1 or cann_megamoe_flag)
         fused_scale_bias_flag = fused_mc2_selected and enable_fused_mc2 == 1
         if self.dynamic_eplb:
@@ -385,12 +380,9 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         layer.w2_weight_scale.data = layer.w2_weight_scale.data.view(layer.w2_weight_scale.data.shape[0], -1)
         layer.w2_weight_offset.data = layer.w2_weight_offset.data.view(layer.w2_weight_offset.data.shape[0], -1)
 
-        cann_megamoe_enabled = (
-            get_ascend_config().enable_fused_mc2 == 2
-            and get_ascend_device_type() == AscendDeviceType.A2
-            and not self.dynamic_eplb
-        )
-        enable_int_fused_mc2 = get_ascend_config().enable_fused_mc2 == 1 or cann_megamoe_enabled
+        ascend_config = get_ascend_config()
+        cann_megamoe_enabled = _is_a2_megamoe_enabled(ascend_config) and not self.dynamic_eplb
+        enable_int_fused_mc2 = ascend_config.enable_fused_mc2 == 1 or cann_megamoe_enabled
         if enable_int_fused_mc2:
             layer.fused_w1_scale = scale_from_float_to_int64(layer.w13_weight_scale.data)
             layer.fused_w2_scale = scale_from_float_to_int64(layer.w2_weight_scale.data)

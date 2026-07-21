@@ -1095,14 +1095,29 @@ def npu_stream_switch(target_stream: torch.npu.Stream, *, enabled: bool = True):
     return torch.npu.stream(target_stream)
 
 
-def resolve_cann_megamoe_max_recv_tokens(
-    num_max_tokens_per_rank: int,
+def get_cann_megamoe_buffer_params(
+    base_num_max_tokens_per_rank: int,
     ep_world_size: int,
+    num_experts: int,
     num_topk: int,
-    num_experts_per_rank: int,
-) -> int:
-    """Return the documented rank-invariant worst-case receive bound."""
-    return num_max_tokens_per_rank * ep_world_size * min(num_topk, num_experts_per_rank)
+) -> tuple[int, int, int, int]:
+    """Return max tokens, local experts, dummy rows, and receive bound."""
+    dummy_token_capacity = get_cann_megamoe_dummy_token_capacity(num_experts, num_topk)
+    num_max_tokens_per_rank = base_num_max_tokens_per_rank + dummy_token_capacity
+    if not 1 <= num_max_tokens_per_rank <= 4096:
+        raise ValueError(
+            "CANN MegaMoe requires num_max_tokens_per_rank in [1, 4096], got "
+            f"{num_max_tokens_per_rank}."
+        )
+    if ep_world_size not in {2, 4, 8, 16, 32}:
+        raise ValueError(f"CANN MegaMoe only supports EP sizes 2, 4, 8, 16, and 32, got {ep_world_size}.")
+    if num_experts % ep_world_size != 0:
+        raise ValueError(f"num_experts={num_experts} must be divisible by ep_world_size={ep_world_size}.")
+    if num_topk > 16:
+        raise ValueError(f"CANN MegaMoe requires num_topk in [1, 16], got {num_topk}.")
+    num_experts_per_rank = num_experts // ep_world_size
+    max_recv_token_num = num_max_tokens_per_rank * ep_world_size * min(num_topk, num_experts_per_rank)
+    return num_max_tokens_per_rank, num_experts_per_rank, dummy_token_capacity, max_recv_token_num
 
 
 def get_cann_megamoe_dummy_token_capacity(num_experts: int, num_topk: int) -> int:
@@ -1142,30 +1157,13 @@ def calculate_cann_megamoe_hccl_buffer_size() -> int:
         hidden = model_config.get_hidden_size()
     hidden = int(hidden)
 
-    base_num_max_tokens_per_rank = math.ceil(vllm_config.scheduler_config.max_num_batched_tokens / tp_size)
-    dummy_token_capacity = get_cann_megamoe_dummy_token_capacity(num_experts, num_topk)
-    num_max_tokens_per_rank = base_num_max_tokens_per_rank + dummy_token_capacity
-    if num_max_tokens_per_rank < 1 or num_max_tokens_per_rank > 4096:
-        raise ValueError(
-            "CANN MegaMoe requires num_max_tokens_per_rank in [1, 4096], got "
-            f"{num_max_tokens_per_rank} from base={base_num_max_tokens_per_rank}, "
-            f"dummy_capacity={dummy_token_capacity}, max_num_batched_tokens="
-            f"{vllm_config.scheduler_config.max_num_batched_tokens}, and tp_size={tp_size}."
-        )
-    if ep_world_size not in {2, 4, 8, 16, 32}:
-        raise ValueError(f"CANN MegaMoe only supports EP sizes 2, 4, 8, 16, and 32, got {ep_world_size}.")
-    if num_experts % ep_world_size != 0:
-        raise ValueError(f"num_experts={num_experts} must be divisible by ep_world_size={ep_world_size}.")
-    if num_topk < 1 or num_topk > 16:
-        raise ValueError(f"CANN MegaMoe requires num_topk in [1, 16], got {num_topk}.")
-
-    num_experts_per_rank = num_experts // ep_world_size
-    max_recv_token_num = resolve_cann_megamoe_max_recv_tokens(
-        num_max_tokens_per_rank,
+    buffer_params = get_cann_megamoe_buffer_params(
+        math.ceil(vllm_config.scheduler_config.max_num_batched_tokens / tp_size),
         ep_world_size,
+        num_experts,
         num_topk,
-        num_experts_per_rank,
     )
+    num_max_tokens_per_rank, _, dummy_token_capacity, max_recv_token_num = buffer_params
     buffer_size_mb = int(
         get_mega_moe_ccl_buffer_size(
             ep_world_size,

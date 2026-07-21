@@ -1,7 +1,7 @@
 import torch
 
 from vllm_ascend.ops.fused_moe.moe_comm_method import _append_cann_megamoe_dummy_tokens
-from vllm_ascend.utils import resolve_cann_megamoe_max_recv_tokens
+from vllm_ascend.utils import get_cann_megamoe_buffer_params
 
 
 def test_dummy_routes_cover_all_experts_across_ep_ranks():
@@ -34,4 +34,4 @@ def test_dummy_routes_cover_all_experts_across_ep_ranks():
 
 
 def test_receive_bound_uses_documented_worst_case():
-    assert resolve_cann_megamoe_max_recv_tokens(512, 32, 8, 8) == 131072
+    assert get_cann_megamoe_buffer_params(480, 32, 256, 8) == (512, 8, 32, 131072)

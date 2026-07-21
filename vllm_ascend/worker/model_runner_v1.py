@@ -173,10 +173,7 @@ from vllm_ascend.worker.utils import AscendKVBlockZeroer
 
 from vllm_ascend.ascend_forward_context import (  # isort: skip
     MoECommType,
-    _get_a2_megamoe_step_fallback_reason,
-    _should_skip_compiled_megamoe_profile,
-    _should_skip_compiled_megamoe_runtime,
-    empty_dp_step_requires_dummy_forward,
+    _is_a2_megamoe_enabled,
     get_mc2_tokens_capacity,
     select_moe_comm_method,
     set_ascend_forward_context,
@@ -750,24 +747,17 @@ class NPUModelRunner(GPUModelRunner):
 
     def _run_empty_dp_dummy_forward(self) -> None:
         """Keep DP ranks aligned when a local step becomes empty."""
-        if not empty_dp_step_requires_dummy_forward(
-            self.parallel_config.distributed_executor_backend,
-            self.parallel_config.data_parallel_size,
+        if (
+            self.parallel_config.distributed_executor_backend == "external_launcher"
+            and self.parallel_config.data_parallel_size > 1
         ):
-            return
-        self._dummy_run(1, is_idle_dp_dummy=True)
+            self._dummy_run(1, is_idle_dp_dummy=True)
 
-    def _get_step_moe_comm_type_override(
-        self,
-        dp_tokens_are_uniform: bool,
-        all_dp_ranks_have_real_tokens: bool,
-    ) -> MoECommType | None:
-        fallback_reason = _get_a2_megamoe_step_fallback_reason(
-            self.ascend_config,
-            dp_tokens_are_uniform,
-            all_dp_ranks_have_real_tokens,
+    def _get_step_moe_comm_type_override(self) -> MoECommType | None:
+        needs_fallback = _is_a2_megamoe_enabled(self.ascend_config) and (
+            not self._dp_tokens_are_uniform or not self._all_dp_ranks_have_tokens
         )
-        return MoECommType.MC2 if fallback_reason is not None else None
+        return MoECommType.MC2 if needs_fallback else None
 
     def get_model(self) -> nn.Module:
         # get raw model out of the aclgraph wrapper.
@@ -2202,10 +2192,7 @@ class NPUModelRunner(GPUModelRunner):
                     force_eager=self.model_config.enforce_eager,
                     num_encoder_reqs=len(scheduler_output.scheduled_encoder_inputs),
                 )
-                moe_comm_type_override = self._get_step_moe_comm_type_override(
-                    self._dp_tokens_are_uniform,
-                    self._all_dp_ranks_have_tokens,
-                )
+                moe_comm_type_override = self._get_step_moe_comm_type_override()
 
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
@@ -2367,10 +2354,8 @@ class NPUModelRunner(GPUModelRunner):
         # encoder inputs are present. Use eager for the first pass.
         num_encoder_reqs = len(scheduler_output.scheduled_encoder_inputs)
         has_encoder_input = self.model_config.is_encoder_decoder and num_encoder_reqs > 0
-        decode_graph_safe = self._a2_megamoe_decode_graph_safe and cudagraph_mode != CUDAGraphMode.NONE
-        skip_compiled_megamoe_runtime = _should_skip_compiled_megamoe_runtime(
-            self.ascend_config,
-            decode_graph_safe=decode_graph_safe,
+        skip_compiled_megamoe_runtime = _is_a2_megamoe_enabled(self.ascend_config) and not (
+            self._a2_megamoe_decode_graph_safe and cudagraph_mode != CUDAGraphMode.NONE
         )
 
         # Run forward pass
@@ -3097,11 +3082,7 @@ class NPUModelRunner(GPUModelRunner):
             if num_tokens_across_dp is not None:
                 dp_rank = self.parallel_config.data_parallel_rank
                 num_tokens_padded = int(num_tokens_across_dp[dp_rank].item())
-                unsafe_dp_megamoe_graph = (
-                    get_ascend_device_type() == AscendDeviceType.A2
-                    and self.ascend_config.enable_fused_mc2 == 2
-                    and (not self._dp_tokens_are_uniform or not self._all_dp_ranks_have_tokens)
-                )
+                unsafe_dp_megamoe_graph = self._get_step_moe_comm_type_override() is not None
                 if unsafe_dp_megamoe_graph:
                     # Non-uniform or idle DP steps use standard MC2 and eager
                     # execution so every rank follows the same collective path.
@@ -3117,8 +3098,7 @@ class NPUModelRunner(GPUModelRunner):
                 # num_tokens_across_dp will no-longer be valid
                 assert batch_descriptor.num_tokens == num_tokens_padded
         self._a2_megamoe_decode_graph_safe = (
-            get_ascend_device_type() == AscendDeviceType.A2
-            and self.ascend_config.enable_fused_mc2 == 2
+            _is_a2_megamoe_enabled(self.ascend_config)
             and uniform_decode
             and (is_graph_capturing or is_all_decode)
             and self._dp_tokens_are_uniform
@@ -3569,10 +3549,7 @@ class NPUModelRunner(GPUModelRunner):
             is_graph_capturing=is_graph_capturing,
             actual_num_tokens=0 if is_idle_dp_dummy else num_tokens_unpadded,
         )
-        moe_comm_type_override = self._get_step_moe_comm_type_override(
-            self._dp_tokens_are_uniform,
-            self._all_dp_ranks_have_tokens,
-        )
+        moe_comm_type_override = self._get_step_moe_comm_type_override()
         if self.use_cp:
             self.pcp_manager.init_batch_info(
                 num_scheduled_tokens,
@@ -3752,10 +3729,7 @@ class NPUModelRunner(GPUModelRunner):
                 aclgraph_runtime_mode=cudagraph_runtime_mode,
                 batch_descriptor=batch_desc,
                 model_instance=self.model,
-                skip_compiled=_should_skip_compiled_megamoe_profile(
-                    self.ascend_config,
-                    is_profile=is_profile,
-                ),
+                skip_compiled=is_profile and _is_a2_megamoe_enabled(self.ascend_config),
                 has_sinks = self._has_sinks,
                 input_ids=input_ids,
                 eplb_heat_collection_status=self.eplb_heat_collection_status if self.dynamic_eplb else False,

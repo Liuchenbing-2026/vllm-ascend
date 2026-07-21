@@ -39,30 +39,8 @@ _CANN_MEGAMOE_SUPPORTED_QUANT_NAMES = {
 }
 
 
-def _should_skip_compiled_megamoe_runtime(
-    ascend_config: Any,
-    decode_graph_safe: bool,
-    is_graph_capturing: bool = False,
-) -> bool:
-    """Keep only validated uniform A2 MegaMoe decode steps compiled."""
-    return (
-        not is_graph_capturing
-        and get_ascend_device_type() == AscendDeviceType.A2
-        and ascend_config.enable_fused_mc2 == 2
-        and not decode_graph_safe
-    )
-
-
-def _should_skip_compiled_megamoe_profile(
-    ascend_config: Any,
-    is_profile: bool,
-) -> bool:
-    """Keep A2 MegaMoe memory profiling off NPUGraphEx runtime streams."""
-    return (
-        is_profile
-        and get_ascend_device_type() == AscendDeviceType.A2
-        and ascend_config.enable_fused_mc2 == 2
-    )
+def _is_a2_megamoe_enabled(ascend_config: Any) -> bool:
+    return get_ascend_device_type() == AscendDeviceType.A2 and ascend_config.enable_fused_mc2 == 2
 
 
 def _get_cann_megamoe_quant_name(vllm_config: VllmConfig, quant_type: Any) -> str | None:
@@ -75,11 +53,7 @@ def _get_cann_megamoe_quant_name(vllm_config: VllmConfig, quant_type: Any) -> st
         return None
 
     quant_values = {str(value).lower() for value in quant_description.values()}
-    if "w8a8_dynamic" in quant_values:
-        return "w8a8_dynamic"
-    if "w8a8" in quant_values:
-        return "w8a8"
-    return None
+    return next((name for name in ("w8a8_dynamic", "w8a8") if name in quant_values), None)
 
 
 def _cann_megamoe_supported_by_config(
@@ -91,9 +65,7 @@ def _cann_megamoe_supported_by_config(
         return False
 
     ascend_config = get_ascend_config()
-    if ascend_config.enable_fused_mc2 != 2:
-        return False
-    if getattr(ascend_config.eplb_config, "dynamic_eplb", False):
+    if not _is_a2_megamoe_enabled(ascend_config) or getattr(ascend_config.eplb_config, "dynamic_eplb", False):
         return False
 
     ep_world_size = get_ep_group().world_size
@@ -122,63 +94,19 @@ def _cann_megamoe_supported_by_config(
         return False
     num_experts_per_rank = num_experts // ep_world_size
 
-    if hidden_size < 1024 or hidden_size > 8192 or hidden_size % 512 != 0:
-        return False
-    if intermediate_hidden < 1024 or intermediate_hidden > 8192 or intermediate_hidden % 512 != 0:
-        return False
-    if num_topk < 1 or num_topk > 16:
-        return False
-    if num_experts_per_rank < 1 or num_experts_per_rank > 128:
-        return False
-
     quant_name = _get_cann_megamoe_quant_name(vllm_config, quant_type)
-    return quant_name in _CANN_MEGAMOE_SUPPORTED_QUANT_NAMES
+    return (
+        1024 <= hidden_size <= 8192
+        and hidden_size % 512 == 0
+        and 1024 <= intermediate_hidden <= 8192
+        and intermediate_hidden % 512 == 0
+        and 1 <= num_topk <= 16
+        and 1 <= num_experts_per_rank <= 128
+        and quant_name in _CANN_MEGAMOE_SUPPORTED_QUANT_NAMES
+    )
 
 
 _MRV2_IN_PROFILE_RUN: ContextVar[bool] = ContextVar("_MRV2_IN_PROFILE_RUN", default=False)
-
-
-def empty_dp_step_requires_dummy_forward(
-    distributed_executor_backend: str | None,
-    data_parallel_size: int,
-) -> bool:
-    """Return whether execute_model must supply an empty-rank dummy forward.
-
-    The MP data-parallel EngineCore already follows an empty execute_model call
-    with execute_dummy_batch(). Running another dummy here would advance idle
-    ranks by two collectives while active ranks advance by one.
-    """
-    return distributed_executor_backend == "external_launcher" and data_parallel_size > 1
-
-
-def _get_a2_megamoe_step_fallback_reason(
-    ascend_config: Any,
-    dp_tokens_are_uniform: bool,
-    all_dp_ranks_have_tokens: bool,
-) -> str | None:
-    if (
-        get_ascend_device_type() != AscendDeviceType.A2
-        or ascend_config.enable_fused_mc2 != 2
-    ):
-        return None
-
-    reasons = []
-    if not dp_tokens_are_uniform:
-        reasons.append("non-uniform-dp-tokens")
-    if not all_dp_ranks_have_tokens:
-        reasons.append("idle-dp-rank")
-    return ",".join(reasons) or None
-
-
-def _resolve_moe_comm_type(
-    max_num_tokens: int,
-    vllm_config: VllmConfig,
-    is_draft_model: bool,
-    override: MoECommType | None,
-) -> MoECommType | None:
-    if override is not None:
-        return override
-    return select_moe_comm_method(max_num_tokens, vllm_config, is_draft_model)
 
 
 @contextmanager
@@ -243,11 +171,10 @@ def set_ascend_forward_context(
         from vllm_ascend.ops.fused_moe.moe_comm_method import get_moe_comm_method
 
         max_num_tokens = int(num_tokens_across_dp.max().item()) if num_tokens_across_dp is not None else num_tokens
-        moe_comm_type = _resolve_moe_comm_type(
-            max_num_tokens,
-            vllm_config,
-            is_draft_model,
-            moe_comm_type_override,
+        moe_comm_type = (
+            moe_comm_type_override
+            if moe_comm_type_override is not None
+            else select_moe_comm_method(max_num_tokens, vllm_config, is_draft_model)
         )
 
         forward_context.moe_comm_type = moe_comm_type
@@ -357,9 +284,7 @@ def set_mc2_tokens_capacity(vllm_config, max_num_reqs, uniform_decode_query_len)
     if _mc2_tokens_capacity is not None:
         return
     ascend_config = get_ascend_config()
-    cann_megamoe_a2 = (
-        ascend_config.enable_fused_mc2 == 2 and get_ascend_device_type() == AscendDeviceType.A2
-    )
+    cann_megamoe_a2 = _is_a2_megamoe_enabled(ascend_config)
     if cann_megamoe_a2 or ascend_config.enable_prefill_mc2:
         max_num_tokens = vllm_config.scheduler_config.max_num_batched_tokens
     elif vllm_config.compilation_config.cudagraph_capture_sizes:
