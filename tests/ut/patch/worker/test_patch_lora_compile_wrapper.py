@@ -39,6 +39,20 @@ def test_vllm_wrapper_baseline_matches():
     patch_module._verify_vllm_wrapper_baseline()
 
 
+def test_apply_patch_keeps_vllm_source_unchanged():
+    source_before = patch_module._wrapper_source_sha256()
+
+    patch_module.apply_patch()
+    patch_module.apply_patch()
+
+    assert patch_module._wrapper_source_sha256() == source_before
+    assert source_before[1] == patch_module._SUPPORTED_WRAPPER_SHA256
+    assert getattr(
+        patch_module.TorchCompileWithNoGuardsWrapper,
+        patch_module._PATCH_MARKER,
+    )
+
+
 def test_clone_forward_uses_independent_code_objects():
     class Model:
         def forward(self, value):
