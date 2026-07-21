@@ -34,7 +34,6 @@ from vllm_ascend.ops.triton.fla.chunk import chunk_gated_delta_rule
 from vllm_ascend.ops.triton.fla.fused_qkvzba_split_reshape import fused_qkvzba_split_reshape_cat
 from vllm_ascend.ops.triton.fla.utils import clear_ssm_states
 from vllm_ascend.ops.triton.mamba.causal_conv1d import extract_last_width
-from vllm_ascend.utils import weak_ref_tensors
 
 
 def to_int64_tuple(tensor: torch.Tensor) -> tuple[int, ...]:

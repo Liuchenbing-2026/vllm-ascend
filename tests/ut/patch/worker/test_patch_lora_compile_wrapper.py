@@ -20,13 +20,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import vllm
-from packaging.version import Version
 
 import vllm_ascend
-
-if Version(vllm.__version__).base_version != "0.23.0":
-    pytest.skip("release compatibility patch targets vLLM 0.23.0", allow_module_level=True)
 
 patch_path = Path(vllm_ascend.__file__).parent / "patch" / "worker" / "patch_lora_compile_wrapper.py"
 patch_spec = spec_from_file_location("test_lora_compile_wrapper_patch", patch_path)

@@ -16,13 +16,14 @@
 
 """Keep base and LoRA full graphs in separate vLLM compile variants.
 
-vLLM 0.23.0 drops non-shape Dynamo guards after the first trace. With LoRA
-specialization enabled, that makes base and adapter requests reuse one compiled
-callable. Ascend needs independent callables because each variant owns a
-different ACL Graph and graph-task resource set.
+The vLLM compile wrapper at commit 54503ece drops non-shape Dynamo guards after
+the first trace. With LoRA specialization enabled, that makes base and adapter
+requests reuse one compiled callable. Ascend needs independent callables because
+each variant owns a different ACL Graph and graph-task resource set.
 
-This worker patch keeps the vLLM wheel unchanged and extends its compile wrapper
-before model loading. It is imported only by the vLLM 0.23.0 compatibility path.
+This worker patch keeps the vLLM source tree unchanged and extends its compile
+wrapper before model loading. A source hash check prevents it from running on an
+unverified vLLM baseline.
 """
 
 import hashlib
@@ -41,7 +42,8 @@ from vllm.logger import init_logger
 
 logger = init_logger(__name__)
 
-_SUPPORTED_WRAPPER_SHA256 = "361ddf8ce90e2d2bb3dfa0e563b15cc04bf7d5d2215137bd8abe9e1966537af7"
+_SUPPORTED_VLLM_COMMIT = "54503ecec0f3ac31e5ecfc5f28652e4cc42307b5"
+_SUPPORTED_WRAPPER_SHA256 = "c1b1fca679ea16aa07a696831a810c0d531da2bb0ea32dd6f1a95cdaef36de07"
 _PATCH_MARKER = "_vllm_ascend_lora_dual_graph_patch"
 _ORIGINAL_INIT_ATTR = "_vllm_ascend_lora_dual_graph_original_init"
 _ORIGINAL_INIT = getattr(
@@ -73,7 +75,7 @@ def _verify_vllm_wrapper_baseline() -> None:
     if actual_sha256 != _SUPPORTED_WRAPPER_SHA256:
         raise RuntimeError(
             "The Ascend LoRA dual-graph patch requires the unmodified vLLM "
-            "0.23.0 compilation wrapper. Expected SHA256 "
+            f"{_SUPPORTED_VLLM_COMMIT} compilation wrapper. Expected SHA256 "
             f"{_SUPPORTED_WRAPPER_SHA256}, got {actual_sha256} from {wrapper_path}."
         )
     _BASELINE_VERIFIED = True
@@ -293,7 +295,10 @@ def apply_patch() -> None:
     TorchCompileWithNoGuardsWrapper._punica_has_lora = _punica_has_lora
     TorchCompileWithNoGuardsWrapper._mark_variant_dynamic_inputs = _mark_variant_dynamic_inputs
     setattr(TorchCompileWithNoGuardsWrapper, _PATCH_MARKER, True)
-    logger.info_once("Applied Ascend vLLM 0.23.0 base/LoRA dual compile-graph patch")
+    logger.info_once(
+        "Applied Ascend vLLM %s base/LoRA dual compile-graph patch",
+        _SUPPORTED_VLLM_COMMIT[:8],
+    )
 
 
 apply_patch()
