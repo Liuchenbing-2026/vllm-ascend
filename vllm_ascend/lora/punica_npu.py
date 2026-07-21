@@ -3,11 +3,22 @@
 from collections.abc import Callable
 
 import torch
+from vllm.config import get_current_vllm_config_or_none
+from vllm.logger import logger
 from vllm.lora.punica_wrapper.punica_base import PunicaWrapperBase
 
-import vllm_ascend.envs as envs_ascend
 from vllm_ascend.lora.utils import refresh_all_lora_classes
 from vllm_ascend.utils import AscendDeviceType, get_ascend_device_type
+
+_QWEN35_BMM_EXPAND_SLICE_MODEL_TYPES = frozenset({"qwen3_5", "qwen3_5_moe"})
+
+
+def _current_model_type() -> str:
+    vllm_config = get_current_vllm_config_or_none()
+    if vllm_config is None:
+        return ""
+    hf_config = getattr(vllm_config.model_config, "hf_config", None)
+    return getattr(hf_config, "model_type", "")
 
 
 @torch.library.custom_op("vllm_ascend::moe_lora_bmm_expand_slice", mutates_args={"y"})
@@ -84,6 +95,10 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         PunicaWrapperBase.__init__(self, max_num_batched_tokens, max_batches, device)
         refresh_all_lora_classes()
         self.lora_config = kwargs.get("lora_config")
+        self._use_bmm_expand_slice = False
+        model_type = _current_model_type()
+        if model_type in _QWEN35_BMM_EXPAND_SLICE_MODEL_TYPES:
+            self.enable_bmm_expand_slice(f"model_type={model_type}")
         if get_ascend_device_type() == AscendDeviceType._310P or (
             self.lora_config is not None and self.lora_config.max_lora_rank >= 128
         ):
@@ -110,6 +125,17 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         self.sgmv_expand = sgmv_expand
         self.sgmv_expand_slice = sgmv_expand_slice
         self.sgmv_shrink = sgmv_shrink
+
+    def enable_bmm_expand_slice(self, reason: str) -> None:
+        if self._use_bmm_expand_slice:
+            return
+        self._use_bmm_expand_slice = True
+        logger.warning_once(
+            "Ascend LoRA automatically enabled the BMM expand-slice fallback "
+            "for %s. The fallback supports the model's stacked LoRA-B layout "
+            "but may be slower than the fused sgmv/bgmv kernel.",
+            reason,
+        )
 
     def _shrink_prefill(
         self,
@@ -177,7 +203,7 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         # No LoRA request, so return directly
         if self.no_lora:
             return
-        if envs_ascend.VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS:
+        if self._use_bmm_expand_slice:
             self._bmm_expand_slice(y, x, w_t_all, y_offset, y_slice_size, add_inputs)
             return
         self.sgmv_expand_slice(
@@ -199,7 +225,7 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         y_slice_size: int,
         add_inputs: bool,
     ):
-        if envs_ascend.VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS:
+        if self._use_bmm_expand_slice:
             self._bmm_expand_slice(y, x, w_t_all, y_offset, y_slice_size, add_inputs)
             return
         self.bgmv_expand_slice(
@@ -223,8 +249,8 @@ class PunicaWrapperNPU(PunicaWrapperBase):
     ):
         """Drop-in expand-slice replacement for shared-experts LoRA.
 
-        Replaces both sgmv_expand_slice and bgmv_expand_slice under
-        VLLM_ASCEND_MOE_LORA_ALLOW_SHARED_EXPERTS=1. It is dispatched through
+        Replaces both sgmv_expand_slice and bgmv_expand_slice when the model's
+        LoRA layout requires the compatibility path. It is dispatched through
         a mutating torch custom op so Dynamo fullgraph keeps it opaque instead
         of tracing the dynamic size nodes that trip vLLM graph splitting.
         """
