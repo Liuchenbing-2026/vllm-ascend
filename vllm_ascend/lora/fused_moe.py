@@ -43,10 +43,6 @@ from __future__ import annotations
 import torch
 from torch import nn
 from vllm import envs
-from vllm.distributed.parallel_state import (
-    get_tensor_model_parallel_rank,
-    get_tensor_model_parallel_world_size,
-)
 from vllm.logger import logger
 from vllm.lora.layers.base import BaseLayerWithLoRA
 from vllm.lora.layers.fused_moe import FusedMoE3DWithLoRA, FusedMoEWithLoRA
