@@ -18,7 +18,7 @@ Refer to [feature guide](../../user_guide/feature_guide/index.md) to get the fea
 
 ### 3.1 Model Weight
 
-Download the [Eco-Tech/Kimi-K3-w4a8](https://www.modelscope.cn/models/Eco-Tech/Kimi-K3-w4a8) ModelSlim W4A8 quantized weight from ModelScope. Deploying this weight requires at least 4 Atlas 800 A3 (64G × 16) nodes.
+Download the [Eco-Tech/Kimi-K3-w4a8](https://www.modelscope.cn/models/Eco-Tech/Kimi-K3-w4a8) ModelSlim W4A8 quantized weight from ModelScope. Deploying this weight requires at least 4 Atlas 800 A3 (64G × 16) nodes or 8 Atlas 800 A2 (64G × 8) nodes.
 
 The local implementation supports Kimi K3 ModelSlim quantization through `--quantization ascend`. For a checkpoint that already contains a `compressed-tensors` quantization configuration, omit `--quantization ascend` and let vLLM discover the quantization method from the checkpoint.
 
@@ -34,12 +34,13 @@ If you want to deploy multi-node environment, you need to verify multi-node comm
 
 ### 4.1 Docker Image Installation
 
-Kimi K3 is validated on Atlas 800 A3 (64G × 16). Select the image that matches the host operating system and start it on each node, referring to [using docker](../../installation.md#set-up-using-docker).
+Kimi K3 is validated on Atlas 800 A3 (64G × 16) and Atlas 800 A2 (64G × 8). Select the image that matches the target hardware and host operating system, and start it on each node, referring to [using docker](../../installation.md#set-up-using-docker).
 
-| Host operating system | Image |
+| Target environment | Image |
 | --- | --- |
-| Ubuntu | `quay.io/ascend/vllm-ascend:kimi-k3-a3` |
-| openEuler | `quay.io/ascend/vllm-ascend:kimi-k3-a3-openeuler` |
+| A3 Ubuntu | `quay.io/ascend/vllm-ascend:kimi-k3-a3` |
+| A3 openEuler | `quay.io/ascend/vllm-ascend:kimi-k3-a3-openeuler` |
+| A2 Ubuntu | [vLLM-Ascend-Kimi-k3-a2-ubuntu.tar.gz](http://xql-model.obs.cn-east-3.myhuaweicloud.com/images/vllm-atlas-day0/vLLM-Ascend-Kimi-k3-a2-ubuntu.tar.gz) |
 
 Run the following command on each node:
 
@@ -84,6 +85,49 @@ docker run --rm \
 
 After a successful docker run, you can verify the running container service by executing the `docker ps` command.
 
+For Atlas 800 A2, download and load the validated image archive on every node:
+
+```{code-block} bash
+wget -O vLLM-Ascend-Kimi-k3-a2-ubuntu.tar.gz \
+    http://xql-model.obs.cn-east-3.myhuaweicloud.com/images/vllm-atlas-day0/vLLM-Ascend-Kimi-k3-a2-ubuntu.tar.gz
+
+docker load -i vLLM-Ascend-Kimi-k3-a2-ubuntu.tar.gz
+
+export IMAGE=quay.io/ascend/vllm-ascend:vLLM-Ascend-Kimi-k3-a2-ubuntu
+export CONTAINER=kimi3_a2_ubuntu
+
+docker run -itd --privileged \
+    --name $CONTAINER \
+    --net=host \
+    --shm-size 500g \
+    --device=/dev/davinci0 \
+    --device=/dev/davinci1 \
+    --device=/dev/davinci2 \
+    --device=/dev/davinci3 \
+    --device=/dev/davinci4 \
+    --device=/dev/davinci5 \
+    --device=/dev/davinci6 \
+    --device=/dev/davinci7 \
+    --device=/dev/davinci_manager \
+    --device=/dev/hisi_hdc \
+    --device=/dev/devmm_svm \
+    -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+    -v /usr/local/Ascend/firmware:/usr/local/Ascend/firmware \
+    -v /usr/local/sbin/npu-smi:/usr/local/sbin/npu-smi \
+    -v /usr/local/sbin:/usr/local/sbin \
+    -v /etc/hccn.conf:/etc/hccn.conf \
+    -v /home:/home \
+    -v /data1:/data1 \
+    -v /data2:/data2 \
+    -v /data3:/data3 \
+    -v /opt:/opt \
+    -v /mnt:/mnt \
+    --entrypoint /bin/bash \
+    $IMAGE -lc 'sleep infinity'
+```
+
+The A2 image contains the validated vLLM and vLLM-Ascend build for the 896-expert model. Do not replace the image's vLLM-Ascend installation with an older source revision that can select the unsupported MC2 path for this expert count.
+
 ### 4.2 Source Code Installation
 
 If you don't want to use the docker image as above, you can also build all from source:
@@ -96,9 +140,9 @@ Kimi K3 configuration, multimodal processing, reasoning parsing, and tool parsin
 
 ## 5 Online Service Deployment
 
-### 5.1 Four-Node Mixed Deployment
+### 5.1 Four-Node P/D Co-Located Deployment
 
-The validated mixed deployment uses four Atlas 800 A3 (64G × 16) nodes. vLLM data parallelism spans the four nodes, each node runs one DP rank, and tensor parallelism uses all 16 NPUs in the node. The resulting topology is DP4/TP16/EP64.
+The validated P/D co-located deployment runs Prefill and Decode in the same service and uses four Atlas 800 A3 (64G × 16) nodes. vLLM data parallelism spans the four nodes, each node runs one DP rank, and tensor parallelism uses all 16 NPUs in the node. The resulting topology is DP4/TP16/EP64.
 
 Before starting the service:
 
@@ -272,13 +316,200 @@ curl http://<NODE0_LOCAL_IP>:<SERVICE_PORT>/v1/chat/completions \
 
 The service should return HTTP 200 and a `choices` field containing generated text.
 
-### 5.2 Sixteen-Node PD Separation Deployment
+### 5.2 Eight-Node A2 P/D Co-Located Deployment
+
+The validated Atlas 800 A2 P/D co-located deployment runs Prefill and Decode in the same service and uses eight nodes with eight 64 GB NPUs per node. Each node runs one data-parallel rank and uses all eight local NPUs for tensor parallelism. Expert parallelism spans all 64 NPUs, resulting in a DP8/TP8/EP64 topology.
+
+This deployment uses the A2 image archive from [Docker Image Installation](#41-docker-image-installation). Keep the vLLM-Ascend installation included in that image because it contains the validated AllGather fallback for the 896-expert Kimi K3 model on A2.
+
+The validated A2 image reports vLLM `0.23.0` and vLLM-Ascend commit `0c33eb3fd146030fbd1d4a0f65bec6cf114a3ab2`.
+
+Before starting the service:
+
+- Make the model directory visible at the same path in all eight containers.
+- Assign a unique data-parallel rank from `0` through `7` to each node.
+- Set `COMM_IP` to the communication address on the current node.
+- Set `HCCL_IFNAME` to the interface that owns `COMM_IP`.
+- Set `MASTER_IP` to the Rank 0 communication address on every node.
+- Use the same service port and data-parallel RPC port on every node.
+- Start all eight ranks in the same deployment window. Rank 0 hosts the data-parallel coordinator.
+
+Create `/opt/kimi-k3/node.env` in every `kimi3_a2_ubuntu` container. Replace the rank, address, interface, and model path for the current node:
+
+```shell
+RANK="<CURRENT_NODE_DP_RANK>"
+COMM_IP="<CURRENT_NODE_COMMUNICATION_IP>"
+HCCL_IFNAME="<CURRENT_NODE_COMMUNICATION_INTERFACE>"
+MASTER_IP="<RANK0_COMMUNICATION_IP>"
+NO_PROXY_EXTRA="<MANAGEMENT_AND_COMMUNICATION_NETWORKS>"
+
+VLLM_ASCEND_DIR=/vllm-workspace/vllm-ascend
+MODEL_PATH="<KIMI_K3_MODEL_PATH>"
+SERVED_MODEL_NAME=kimi-k3
+
+DP_SIZE=8
+TP_SIZE=8
+DP_RPC_PORT=39830
+SERVICE_PORT=8730
+
+MAX_MODEL_LEN=262144
+GPU_MEMORY_UTILIZATION=0.90
+SAFETENSORS_PREFETCH_NUM_THREADS=16
+```
+
+Create `/opt/kimi-k3/start_vllm.sh` in every container:
+
+```shell
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "${SCRIPT_DIR}/node.env"
+
+VLLM_ASCEND_DIR=${VLLM_ASCEND_DIR:-/vllm-workspace/vllm-ascend}
+CUSTOM_OP_ENV="${VLLM_ASCEND_DIR}/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/bin/set_env.bash"
+
+if [[ ! -d "${VLLM_ASCEND_DIR}/.git" ]]; then
+    echo "Missing vLLM-Ascend repository: ${VLLM_ASCEND_DIR}" >&2
+    exit 1
+fi
+if [[ ! -f "${CUSTOM_OP_ENV}" ]]; then
+    echo "Missing Kimi-K3 custom operator environment: ${CUSTOM_OP_ENV}" >&2
+    exit 1
+fi
+
+set +u
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+source "${CUSTOM_OP_ENV}"
+set -u
+
+unset ftp_proxy http_proxy https_proxy FTP_PROXY HTTP_PROXY HTTPS_PROXY
+unset HCCL_OP_EXPANSION_MODE
+export no_proxy="localhost,local,.local,${NO_PROXY_EXTRA}"
+
+export PYTHONPATH="${VLLM_ASCEND_DIR}:${PYTHONPATH:-}"
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export PHYSICAL_DEVICES=0,1,2,3,4,5,6,7
+export VLLM_HOST_IP="${COMM_IP}"
+export HCCL_IF_IP="${COMM_IP}"
+export GLOO_SOCKET_IFNAME="${HCCL_IFNAME}"
+export TP_SOCKET_IFNAME="${HCCL_IFNAME}"
+export HCCL_SOCKET_IFNAME="${HCCL_IFNAME}"
+export HCCL_CONNECT_TIMEOUT=1800
+export HCCL_EXEC_TIMEOUT=1800
+export HCCL_BUFFSIZE=256
+export HCCL_INTRA_ROCE_ENABLE=1
+
+export VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=30000
+export OMP_PROC_BIND=false
+export OMP_NUM_THREADS=10
+export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+export VLLM_LOGGING_LEVEL=INFO
+export TASK_QUEUE_ENABLE=1
+export TIKTOKEN_CACHE_DIR=/root/.cache/tiktoken-k3
+
+mkdir -p "${SCRIPT_DIR}/logs"
+echo $$ > "${SCRIPT_DIR}/vllm.pid"
+
+exec python -m vllm.entrypoints.cli.main serve \
+    "${MODEL_PATH}" \
+    --host 0.0.0.0 \
+    --port "${SERVICE_PORT}" \
+    --served-model-name "${SERVED_MODEL_NAME}" \
+    --trust-remote-code \
+    --tokenizer-mode kimi_k3 \
+    --language-model-only \
+    --mm-encoder-tp-mode data \
+    --skip-mm-profiling \
+    --limit-mm-per-prompt '{"vision_chunk":0}' \
+    --data-parallel-size "${DP_SIZE}" \
+    --data-parallel-rank "${RANK}" \
+    --data-parallel-address "${MASTER_IP}" \
+    --data-parallel-rpc-port "${DP_RPC_PORT}" \
+    --tensor-parallel-size "${TP_SIZE}" \
+    --enable-expert-parallel \
+    --dtype bfloat16 \
+    --quantization ascend \
+    --max-model-len "${MAX_MODEL_LEN}" \
+    --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}" \
+    --enable-prefix-caching \
+    --safetensors-load-strategy prefetch \
+    --safetensors-prefetch-num-threads "${SAFETENSORS_PREFETCH_NUM_THREADS}" \
+    --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[1,2,4,8,32]}' \
+    --enable-auto-tool-choice \
+    --reasoning-parser kimi_k3 \
+    --tool-call-parser kimi_k3 \
+    --additional-config '{"enable_flashcomm1":false,"ascend_compilation_config":{"enable_npugraph_ex":true,"enable_static_kernel":false},"enable_cpu_binding":true}'
+```
+
+Set permissions and verify the script on every node:
+
+```shell
+docker exec kimi3_a2_ubuntu chmod 600 /opt/kimi-k3/node.env
+docker exec kimi3_a2_ubuntu chmod 755 /opt/kimi-k3/start_vllm.sh
+docker exec kimi3_a2_ubuntu bash -n /opt/kimi-k3/start_vllm.sh
+```
+
+Start the service on all eight nodes:
+
+```shell
+docker exec -d kimi3_a2_ubuntu bash -lc \
+    'exec /opt/kimi-k3/start_vllm.sh > /opt/kimi-k3/logs/service.log 2>&1'
+```
+
+The first startup loads the model weights, compiles the graph, profiles the KV cache, and captures five decode graphs. Monitor the service log until it contains `Application startup complete`:
+
+```shell
+docker exec kimi3_a2_ubuntu tail -n 200 -f /opt/kimi-k3/logs/service.log
+```
+
+Verify every node locally. `--noproxy '*'` prevents a host proxy from intercepting the loopback request:
+
+```shell
+curl --noproxy '*' http://127.0.0.1:8730/v1/models
+```
+
+Every node should return HTTP 200 and report `kimi-k3` with `max_model_len` set to `262144`.
+
+Run a text-generation smoke test against any data-parallel endpoint:
+
+```shell
+curl --noproxy '*' http://127.0.0.1:8730/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model": "kimi-k3",
+        "messages": [{
+            "role": "user",
+            "content": "Hello, introduce yourself in one sentence."
+        }],
+        "temperature": 0,
+        "max_tokens": 128
+    }'
+```
+
+The service should return HTTP 200 with readable generated text. This request is a functional smoke test and does not replace dataset-based accuracy evaluation.
+
+Key A2 deployment parameters:
+
+| Parameter | Description |
+| --- | --- |
+| `--data-parallel-size 8` | Creates eight global data-parallel ranks across eight A2 nodes. |
+| `--data-parallel-rank` | Assigns the current node a unique rank from `0` through `7`. |
+| `--tensor-parallel-size 8` | Uses all eight NPUs on the current A2 node. |
+| `--enable-expert-parallel` | Distributes 896 experts across the 64-NPU EP group. |
+| `--max-model-len 262144` | Enables a 256K-token maximum context length. |
+| `--compilation-config` | Captures decode graphs for batch sizes `1`, `2`, `4`, `8`, and `32`. |
+| `enable_flashcomm1=false` | Uses the validated non-FlashComm1 A2 path. |
+| `enable_npugraph_ex=true` | Enables the validated Ascend graph compilation path. |
+| `HCCL_IF_IP` and socket interface variables | Bind HCCL, Gloo, and TP communication to the communication network. |
+
+### 5.3 Sixteen-Node PD Separation Deployment
 
 The validated PD separation topology uses 16 Atlas 800 A3 (64G × 16) nodes: eight Prefill nodes and eight Decode nodes. Both sides use DP8/TP16/PP1. Prefill nodes additionally use a memcache-backed KV pool.
 
 Refer to [PD Disaggregation with Mooncake](../features/pd_disaggregation_mooncake_multi_node.md) for the general service workflow and [KV Pool](../../user_guide/feature_guide/kv_pool.md) for memcache pool concepts.
 
-#### 5.2.1 Start the memcache MetaService
+#### 5.3.1 Start the memcache MetaService
 
 Start one MetaService instance before the Prefill engines:
 
@@ -289,7 +520,7 @@ python -c "from memcache_hybrid import MetaService; MetaService.main()"
 
 `mmc-meta.conf` configures MetaService and `mmc-local.conf` is loaded by every Prefill inference process. Run `pip show memcache_hybrid` to locate the installed package, copy the example files from `memcache_hybrid/config/`, and adapt them to the target environment.
 
-#### 5.2.2 Create the engine templates
+#### 5.3.2 Create the engine templates
 
 :::::{tab-set}
 :sync-group: pd-templates
@@ -465,7 +696,7 @@ vllm serve <KIMI_K3_MODEL_PATH> \
 ::::
 :::::
 
-#### 5.2.3 Start the engines
+#### 5.3.3 Start the engines
 
 Deploy `launch_online_dp.py` and the corresponding engine template on every node. The following example starts one local DP rank in a DP8/TP16/PP1 group:
 
@@ -618,7 +849,7 @@ python eval.py mmmu \
 
 ToolCall uses the JSONL data in `toolcall_benchmark/`. For the long-context validation, restart the four-node service with the following master-node values:
 
-| Parameter | Standard mixed deployment | ToolCall validation |
+| Parameter | Standard co-located deployment | ToolCall validation |
 | --- | ---: | ---: |
 | `--max-num-seqs` | 16 | 4 |
 | `--max-model-len` | 131027 | 286720 |
