@@ -70,6 +70,7 @@ import vllm_ascend.patch.worker.patch_v2.patch_attn_utils  # noqa
 
 import vllm_ascend.patch.worker.patch_v2.patch_eagle_speculator  # noqa
 import vllm_ascend.patch.worker.patch_v2.patch_dflash_speculator  # noqa
+import vllm_ascend.patch.worker.patch_v2.patch_draft_tokens_handler  # noqa
 
 # only patch routed experts capture in main2main.
 import vllm_ascend.patch.worker.patch_routed_experts_capture  # noqa

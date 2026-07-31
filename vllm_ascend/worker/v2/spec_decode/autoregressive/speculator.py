@@ -88,6 +88,10 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
         # draft model's input_batch. so we keep a reference here.
         self.input_batch: InputBatch | None = None
 
+        # Dynamic speculative decoding: per-step K set by the model runner in
+        # prepare_inputs (None = static num_speculative_steps).
+        self.dynamic_num_spec_tokens: int | None = None
+
     def init_cudagraph_manager(self, cudagraph_mode: CUDAGraphMode) -> None:
         super().init_cudagraph_manager(cudagraph_mode)
         # The Ascend graph managers are patched onto the upstream module and
@@ -95,6 +99,27 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
         # They need this speculator to update full-graph params, so set it here.
         self.prefill_cudagraph_manager.speculator = self
         self.decode_cudagraph_manager.speculator = self
+
+    @contextmanager
+    def _apply_dynamic_spec_steps(self):
+        """Temporarily shrink ``num_speculative_steps`` to the dynamic K.
+
+        Upstream ``propose``/``_multi_step_decode`` read
+        ``self.num_speculative_steps`` for the draft loop bound, so swapping it
+        for the duration of propose makes this step draft exactly K tokens.
+        The fused multi-step FULL graph cannot vary its step count, so the
+        platform downgrades cudagraph mode when dynamic SD is enabled.
+        """
+        num_steps = self.dynamic_num_spec_tokens
+        if num_steps is None or num_steps == self.num_speculative_steps:
+            yield False
+            return
+        original_num_steps = self.num_speculative_steps
+        self.num_speculative_steps = num_steps
+        try:
+            yield True
+        finally:
+            self.num_speculative_steps = original_num_steps
 
     def propose(
         self,
@@ -131,8 +156,8 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
         self.input_batch = input_batch
         # wrap build_attn_metadata to use Ascend attention metadata building.
         # so we can call super().propose() directly.
-        with build_attn_metadata_wrapper(), torch_gather_wrapper():
-            return super().propose(
+        with build_attn_metadata_wrapper(), torch_gather_wrapper(), self._apply_dynamic_spec_steps() as dynamic_k:
+            draft_tokens = super().propose(
                 input_batch,
                 attn_metadata,
                 slot_mappings,
@@ -150,6 +175,14 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
                 mm_inputs,
                 is_profile=is_profile,
             )
+        if dynamic_k:
+            # With a shrunk step count upstream may return a narrow slice
+            # (e.g. the num_speculative_steps == 1 early exit). execute_model
+            # assigns the result into the [max_num_reqs, K_max] req-state
+            # buffer, so always return the full-width rows; the
+            # DraftTokensHandler patch narrows the scheduling width instead.
+            return self.draft_tokens[: input_batch.num_reqs]
+        return draft_tokens
 
     def set_attn(
         self,

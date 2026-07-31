@@ -1219,3 +1219,20 @@
 #    Future Plan:
 #       Remove this patch when NPU support UVA.
 #
+# ** 34. File: worker/patch_v2/patch_draft_tokens_handler.py**
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.v1.worker.gpu.spec_decode.utils.DraftTokensHandler.set_draft_tokens`
+#    Why:
+#       Dynamic speculative decoding needs the per-step K to reach the
+#       scheduler, but upstream's v2 execute_model always hands the handler the
+#       full-width draft buffer and there is no hook to narrow it.
+#    How：
+#       Slice the draft tokens to `dynamic_num_spec_tokens` (set by the Ascend
+#       model runner each step) before delegating to the original method.
+#    Related PR (if no, explain why):
+#       Upstream MRV2 does not consume the scheduler's dynamic K at all yet;
+#       an upstream issue/PR should add a first-class hook.
+#    Future Plan:
+#       Remove this patch when upstream v2 execute_model honors
+#       `num_spec_tokens_to_schedule` natively.
+#

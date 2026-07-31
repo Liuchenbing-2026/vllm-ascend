@@ -733,12 +733,21 @@ class ProfilingChunkScheduler(Scheduler):
             (self.kv_cache_manager.take_new_block_ids() or None) if self.needs_kv_cache_zeroing else None
         )
 
+        # Dynamic speculative decoding: compute optimal K (mirrors the base
+        # scheduler). Without this field the v2 runner would clamp drafting to
+        # its default and dynamic K would silently not apply.
+        num_spec_tokens_to_schedule = self.num_spec_tokens
+        dynamic_sd_lookup = getattr(self, "dynamic_sd_lookup", None)
+        if dynamic_sd_lookup is not None and len(num_scheduled_tokens) > 0:
+            num_spec_tokens_to_schedule = dynamic_sd_lookup[len(num_scheduled_tokens)]
+
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=new_reqs_data,
             scheduled_cached_reqs=cached_reqs_data,
             num_scheduled_tokens=num_scheduled_tokens,
             total_num_scheduled_tokens=total_num_scheduled_tokens,
             scheduled_spec_decode_tokens=scheduled_spec_decode_tokens,
+            num_spec_tokens_to_schedule=num_spec_tokens_to_schedule,
             scheduled_encoder_inputs=scheduled_encoder_inputs,
             num_common_prefix_blocks=num_common_prefix_blocks,
             preempted_req_ids={req.request_id for req in preempted_reqs},

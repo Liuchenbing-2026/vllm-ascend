@@ -542,6 +542,28 @@ class NPUPlatform(Platform):
             )
             compilation_config.cudagraph_mode = cudagraph_mode
 
+        # Dynamic speculative decoding varies the draft step count per batch,
+        # which the fused multi-step FULL graph and the num_tokens-keyed ACL
+        # graph parameter tables cannot express yet.
+        speculative_config = vllm_config.speculative_config
+        if (
+            speculative_config is not None
+            and getattr(speculative_config, "uses_dynamic_speculative_decoding", None) is not None
+            and speculative_config.uses_dynamic_speculative_decoding()
+            and compilation_config.cudagraph_mode.has_full_cudagraphs()
+        ):
+            cudagraph_mode = (
+                CUDAGraphMode.PIECEWISE
+                if compilation_config.mode == CompilationMode.VLLM_COMPILE
+                else CUDAGraphMode.NONE
+            )
+            logger.info_once(
+                "Dynamic speculative decoding doesn't support %s on Ascend yet, fallback to %s.",
+                compilation_config.cudagraph_mode,
+                cudagraph_mode,
+            )
+            compilation_config.cudagraph_mode = cudagraph_mode
+
         # get custom compile backend for graph fusion
         compilation_config.oot_compiler = cls.get_compile_backend()
 

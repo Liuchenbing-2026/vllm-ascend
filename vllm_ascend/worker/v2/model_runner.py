@@ -18,6 +18,7 @@
 #
 
 from contextlib import contextmanager
+from functools import cached_property
 
 import numpy as np
 import torch
@@ -161,6 +162,15 @@ class NPUModelRunner(GPUModelRunner):
                 self._dummy_run(mc2_tokens_capacity, skip_attn=True, is_profile=True)
             super().profile_run()
 
+    @cached_property
+    def _dynamic_sd_enabled(self) -> bool:
+        speculative_config = self.vllm_config.speculative_config
+        return (
+            speculative_config is not None
+            and getattr(speculative_config, "uses_dynamic_speculative_decoding", None) is not None
+            and speculative_config.uses_dynamic_speculative_decoding()
+        )
+
     def prepare_inputs(
         self,
         scheduler_output: SchedulerOutput,
@@ -170,6 +180,16 @@ class NPUModelRunner(GPUModelRunner):
         npu attention backends need seq_lens_cpu to work.
         so we need to prepare seq_lens_cpu here.
         """
+        if self.speculator is not None and self._dynamic_sd_enabled:
+            # Dynamic speculative decoding: the scheduler computed the optimal
+            # K for this batch size; drafts proposed this step (verified by the
+            # next step) honor it. K=0 is clamped to 1 so the draft model's KV
+            # cache stays in sync with accepted tokens every step.
+            scheduled_k = getattr(scheduler_output, "num_spec_tokens_to_schedule", self.num_speculative_steps)
+            num_spec_tokens = max(1, min(int(scheduled_k), self.num_speculative_steps))
+            self.speculator.dynamic_num_spec_tokens = num_spec_tokens
+            self.draft_tokens_handler.dynamic_num_spec_tokens = num_spec_tokens
+
         num_tokens = scheduler_output.total_num_scheduled_tokens
         num_tokens_after_padding = batch_desc.num_tokens
         assert num_tokens > 0
