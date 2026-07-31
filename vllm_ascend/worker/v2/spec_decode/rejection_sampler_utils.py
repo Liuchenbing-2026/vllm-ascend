@@ -29,6 +29,10 @@ from vllm.v1.worker.gpu.spec_decode.rejection_sampler_utils import (
     _insert_resampled_kernel,
 )
 
+# Matches upstream vllm.v1.worker.gpu.sample.gumbel._TL_RAND_MIN: clamp for
+# tl.rand draws so u stays strictly positive and tl.log(u) is finite.
+_TL_RAND_MIN = tl.constexpr(4.6566127342e-10)
+
 
 @triton.jit
 def _npu_gumbel_block_argmax(
@@ -242,7 +246,7 @@ def _probabilistic_rejection_kernel(
     start_idx = tl.load(cu_num_logits_ptr + req_idx)
     end_idx = tl.load(cu_num_logits_ptr + req_idx + 1)
     num_tokens = end_idx - start_idx
-    seed = tl.load(seed_ptr + req_state_idx)  # noqa: F841
+    seed = tl.load(seed_ptr + req_state_idx)
     temp = tl.load(temp_ptr + req_state_idx).to(tl.float32)
 
     rejected_step = 0
@@ -284,8 +288,12 @@ def _probabilistic_rejection_kernel(
                     PADDED_VOCAB_NUM_BLOCKS,
                 )
                 target_log_prob = target_logit - target_lse
-                # NPU does not support tl_rand64; always accept the draft token.
-                u = tl.full([], 0.0, dtype=tl.float32)
+                # fp32 uniform draw, equivalent to upstream
+                # tl_rand32(seed, pos, includes_zero=False). NPU: cast pos to
+                # int32 to avoid uint64 in philox (NPU umulhi only supports
+                # int32/uint32).
+                pos = tl.load(pos_ptr + logit_idx).to(tl.int32)
+                u = tl.maximum(tl.rand(seed, pos), _TL_RAND_MIN)
                 if HAS_DRAFT_LOGITS:
                     draft_logit = tl.load(
                         draft_logits_ptr
@@ -350,9 +358,9 @@ def rejection_sample(
         raise NotImplementedError("FP64 rejection sampling is not supported on NPU.")
 
     if synthetic_conditional_rates is not None:
-        # Synthetic rejection sampling needs tl_rand64, which NPU Triton does
-        # not support. The greedy fallback below would silently use u=0.0 and
-        # produce wrong acceptance — refuse loudly instead.
+        # The NPU kernel does not implement the synthetic-mode branches
+        # (accept iff u < rate) yet — refuse loudly instead of silently
+        # running the standard probability-ratio test.
         raise NotImplementedError(
             "Synthetic rejection sampling is not supported on NPU yet; use rejection_sample_method='standard'."
         )
