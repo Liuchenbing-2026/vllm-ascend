@@ -218,6 +218,13 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
 
         # Capture all decode draft generation steps as a single graph.
         assert self.decode_cudagraph_manager is not None
+        # The announcement here covers nothing today: CudaGraphManager.capture
+        # drives warmup and the FULL pass alike with CUDAGraphMode.NONE, so no
+        # capture pass takes _multi_step_decode's run_fullgraph branch -- the
+        # only place these managers open a forward context of their own. Every
+        # pass instead reaches the model through _run_model, which announces the
+        # same buffer for itself. It is here for the capture pass that stops
+        # going through _run_model.
         with draft_forward_inputs(self.input_buffers), build_attn_metadata_wrapper():
             self.decode_cudagraph_manager.capture(
                 self._multi_step_decode,

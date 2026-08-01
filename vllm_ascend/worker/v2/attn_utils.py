@@ -228,10 +228,16 @@ def build_attn_metadata(
 
     # Sparse-attention builders index by num_input_tokens: DSA, DSA-CP and SFA
     # all slice positions and slot mappings with it, and AscendSFAImpl falls
-    # back to it for the topk token count. Callers that cannot supply it
-    # (upstream's draft-metadata path) leave it at 0, which empties those
-    # slices, so it defaults to the token count this call is building for --
-    # already the padded one at every v2 entry point.
+    # back to it for the topk token count. Leaving it at 0 empties those
+    # slices, so it defaults to the token count this call is building for.
+    # Only the two upstream draft-metadata callers reach that default --
+    # AutoRegressiveSpeculator._build_draft_attn_metadata and DFlash's
+    # _prepare_dflash_inputs_to_capture, both of which reach this function
+    # through the module-level rebinds in build_attn_metadata_wrapper and
+    # patch_dflash_speculator -- and both pass a padded token count.
+    # AscendModelState.prepare_attn never reaches it: it always supplies
+    # num_input_tokens explicitly, which is what keeps the count padded there,
+    # because its num_tokens is the UNPADDED one outside FULL cudagraph mode.
     if num_input_tokens <= 0:
         num_input_tokens = num_tokens
 
