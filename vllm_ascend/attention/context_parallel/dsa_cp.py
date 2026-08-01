@@ -152,8 +152,9 @@ M = TypeVar("M", bound=AscendDSAMetadata)
 class AscendDSACPMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
     # Does this backend/builder support ACL Graphs for attention (default: no).
     aclgraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
-    # See AscendDSAMetadataBuilder: `build` needs the sparse-attention kwargs
-    # and callers detect that without importing this module.
+    # See AscendDSAMetadataBuilder: `build` needs the sparse-attention kwargs,
+    # this attribute is the contract the v2 runner reads, and the v1 runner's
+    # isinstance tuples name this class explicitly. Both must stay in sync.
     requires_sparse_attention_kwargs: ClassVar[bool] = True
     hadamard = None
     start_pos_prefill: torch.Tensor

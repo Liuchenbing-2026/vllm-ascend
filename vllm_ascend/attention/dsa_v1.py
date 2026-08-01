@@ -433,6 +433,11 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
     # count and the group's block size on top of the common metadata. Declared
     # as a class attribute so callers can ask for it without importing this
     # module (and its device ops) just to run an isinstance check.
+    # This attribute is the contract the v2 runner reads
+    # (worker/v2/attn_utils.py build_attn_metadata); the v1 runner still
+    # isinstance-checks this class and AscendDSACPMetadataBuilder
+    # (worker/model_runner_v1.py _build_attention_metadata). A new builder needing
+    # these kwargs must set the attribute AND be added to the v1 tuples.
     requires_sparse_attention_kwargs: ClassVar[bool] = True
     hadamard = None
     start_pos_prefill: torch.Tensor | None = None
