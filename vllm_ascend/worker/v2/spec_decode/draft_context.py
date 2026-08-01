@@ -28,12 +28,26 @@ from vllm_ascend.ascend_forward_context import override_mrv2_forward_inputs
 def draft_forward_inputs(input_buffers: InputBuffers) -> Iterator[None]:
     """Announce a draft forward to the Ascend forward-context hook.
 
-    Every speculator's draft forward runs inside the announcement
+    A speculator's draft forward runs inside the announcement
     `NPUModelRunner.execute_model` makes for the target, which names the
     target's id buffer. Re-announcing here is what keeps a hash-routed MoE gate
     or an id-consuming expert selector from silently reading the target's tokens
-    during a draft forward, so it has to wrap every speculator's model call, not
-    just the autoregressive ones.
+    during a draft forward, so every speculator has to wrap the call that opens
+    the draft forward context -- `_run_model` -- and not only the autoregressive
+    ones do.
+
+    Wrapping `_run_model` is sufficient, not merely conventional: the hook that
+    reads this announcement runs only from `set_forward_context`, and the reads
+    of the fields it publishes (`ops/fused_moe/experts_selector.py`,
+    `ops/fused_moe/fused_moe.py` for `input_ids`; the attention impls for
+    `is_draft_model`) all go through `_EXTRA_CTX`, which asserts a live forward
+    context. The other draft-model calls a speculator makes -- DFlash/DSpark
+    `model.precompute_and_store_context_kv` and DSpark's `compute_draft_logits`
+    / `markov_embed` / `markov_bias` / `map_draft_to_target` -- open no forward
+    context of their own and run from `propose`, which upstream calls after the
+    target's `set_forward_context` block has exited. With no context open they
+    cannot reach a reader at all, so widening this wrapper around them would
+    announce into nothing. Re-check that if any of them ever opens a context.
 
     `input_buffers` is the drafter's own buffer set; the hook slices the id
     buffer down to the token count of the forward it is building for, which is
