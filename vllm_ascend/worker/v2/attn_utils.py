@@ -29,6 +29,7 @@ from vllm.model_executor.layers.attention import Attention
 from vllm.model_executor.layers.attention.mla_attention import MLAAttention
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.model_executor.layers.mamba.abstract import MambaBase
+from vllm.model_executor.models.extract_hidden_states import CacheOnlyAttentionLayer
 from vllm.v1.attention.backend import AttentionBackend
 from vllm.v1.kv_cache_interface import (
     AttentionSpec,
@@ -92,6 +93,16 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
             raise NotImplementedError(
                 f"Recurrent-state layer {layer_name} ({type(attn_module).__name__}) is not supported by the "
                 f"v2 model runner on Ascend. {_V2_UNSUPPORTED_HINT}"
+            )
+        if isinstance(attn_module, CacheOnlyAttentionLayer):
+            # HiddenStateCacheSpec pages hold one hidden-state vector per token,
+            # while _allocate_kv_cache / _reshape_kv_cache_v2 always carve a
+            # page into a K/V pair. v1 reshapes this layer through its own
+            # per-role path (_reshape_kv_cache_tensors), which v2 has no
+            # equivalent of.
+            raise NotImplementedError(
+                f"Hidden-state cache layer {layer_name} ({type(attn_module).__name__}) is not supported by the "
+                f"v2 model runner on Ascend; this covers the extract_hidden_states drafter. {_V2_UNSUPPORTED_HINT}"
             )
         # Attention layers that are neither Attention nor MLAAttention still own
         # KV state -- DeepSeek V4's DSA contributes DSAAttention plus its SWA,
