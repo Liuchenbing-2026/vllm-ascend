@@ -19,7 +19,6 @@
 
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
-from functools import lru_cache
 from typing import Any
 
 import numpy as np
@@ -52,20 +51,6 @@ from vllm_ascend.utils import calc_split_factor
 _ATTENTION_MASK_BUILDER = None
 
 _V2_UNSUPPORTED_HINT = "Run this model with VLLM_USE_V2_MODEL_RUNNER=0."
-
-
-@lru_cache(maxsize=1)
-def _dsa_metadata_builder_classes() -> tuple[type, ...]:
-    """Resolve the DSA metadata builder classes on first use.
-
-    Importing them at module scope would drag the DSA attention backend and its
-    device-op dependencies into every v2 startup, including models that have no
-    sparse attention at all.
-    """
-    from vllm_ascend.attention.context_parallel.dsa_cp import AscendDSACPMetadataBuilder
-    from vllm_ascend.attention.dsa_v1 import AscendDSAMetadataBuilder
-
-    return (AscendDSAMetadataBuilder, AscendDSACPMetadataBuilder)
 
 
 def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
@@ -260,7 +245,10 @@ def build_attn_metadata(
 
         for attn_group in attn_groups[i]:
             attn_metadata_builder = attn_group.get_metadata_builder(0)
-            is_dsa_builder = isinstance(attn_metadata_builder, _dsa_metadata_builder_classes())
+            # Duck-typed: importing the DSA builders here would drag the DSA
+            # attention backend and its device ops into the first metadata build
+            # of every v2 model, sparse attention or not.
+            is_dsa_builder = getattr(attn_metadata_builder, "requires_sparse_attention_kwargs", False)
             # DSA's builder requires kwargs that build_for_cudagraph_capture
             # cannot pass, so it builds the capture metadata the normal way.
             if for_cudagraph_capture and not is_dsa_builder:

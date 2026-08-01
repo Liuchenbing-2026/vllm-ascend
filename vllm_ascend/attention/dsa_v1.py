@@ -429,6 +429,11 @@ def build_dspark_swa_indices(
 class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
     # Does this backend/builder support ACL Graphs for attention (default: no).
     aclgraph_support: ClassVar[AttentionCGSupport] = AttentionCGSupport.UNIFORM_BATCH
+    # `build` needs the per-step sparse-attention memos, the unpadded request
+    # count and the group's block size on top of the common metadata. Declared
+    # as a class attribute so callers can ask for it without importing this
+    # module (and its device ops) just to run an isinstance check.
+    requires_sparse_attention_kwargs: ClassVar[bool] = True
     hadamard = None
     start_pos_prefill: torch.Tensor | None = None
     start_pos_decode: torch.Tensor | None = None
