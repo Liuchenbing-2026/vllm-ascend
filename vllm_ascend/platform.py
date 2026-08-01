@@ -46,7 +46,6 @@ from vllm_ascend.utils import (
     check_kv_extra_config,
     enable_sfa_dcp_replicated_indexer,
     get_ascend_device_type,
-    is_drafter_moe_model,
     is_moe_model,
     model_uses_sfa_sparse,
     refresh_block_size,
@@ -982,16 +981,14 @@ class NPUPlatform(Platform):
         # the performance may degrade due to the switching of
         # communication methods.
         mmrs_fusion = True
-        # The drafter may have a different architecture from the target, so the
-        # MoE check has to follow whichever model is running this forward.
-        is_context_moe_model = is_drafter_moe_model(vllm_config) if is_draft_model else is_moe_model(vllm_config)
-        if is_context_moe_model:
+        # Keyed on the target's architecture for draft forwards as well. v1
+        # switches a dense drafter under a MoE target to the non-SP branch, but
+        # this hook has always taken the target branch on v2, and a captured
+        # draft graph replays the padding the capture-time decision baked in;
+        # changing it needs a measurement on hardware, not a code symmetry.
+        if is_moe_model(vllm_config):
             flash_comm_v1_enabled = enable_sp(vllm_config) and num_tokens is not None
             mmrs_fusion = False
-        elif is_draft_model:
-            # For a dense drafter `sp` is redundant and is not compatible with
-            # `dp` and `graph`.
-            flash_comm_v1_enabled = False
         else:
             flash_comm_v1_enabled = enable_sp(vllm_config) and num_tokens is not None and num_tokens > 1000
         pad_size = 0
