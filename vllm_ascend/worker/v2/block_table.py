@@ -62,6 +62,21 @@ class AscendBlockTables(BlockTables):
             device=self.device,
         )
 
+    def gather_block_tables(
+        self,
+        idx_mapping: torch.Tensor,
+        num_reqs_padded: int,
+        out: tuple[torch.Tensor, ...] | None = None,
+        out_ptrs: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, ...]:
+        if self.num_kv_cache_groups == 0:
+            # Attention-free models (encoder-only pooling) own no KV cache
+            # group. CANN rejects a zero core dim with EE1003 where CUDA just
+            # no-ops a zero grid dim, so the launch has to be skipped.
+            block_tables = self.input_block_tables if out is None else out
+            return tuple(block_table[:num_reqs_padded] for block_table in block_tables)
+        return super().gather_block_tables(idx_mapping, num_reqs_padded, out, out_ptrs)
+
     def compute_slot_mappings(
         self,
         idx_mapping: torch.Tensor,
@@ -73,6 +88,9 @@ class AscendBlockTables(BlockTables):
         num_reqs = idx_mapping.shape[0]
         num_groups = self.num_kv_cache_groups
         slot_mappings = self.slot_mappings if out is None else out
+        if num_groups == 0:
+            # See gather_block_tables: CANN rejects a zero core dim (EE1003).
+            return slot_mappings[:, :num_tokens_padded]
         _compute_slot_mappings_kernel[(num_groups, num_reqs + 1)](
             slot_mappings.shape[1],
             idx_mapping,
