@@ -1145,12 +1145,11 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
         # MTP layers receive the full token set — otherwise only rank 0's
         # partition is valid and the rest of the buffer holds stale data,
         # leading to NaN values and low acceptance rate.
-        from vllm_ascend.ascend_forward_context import get_forward_context
+        from vllm_ascend.ascend_forward_context import _EXTRA_CTX
 
-        forward_ctx = get_forward_context()
-        if forward_ctx is not None and forward_ctx.flash_comm_v1_enabled:
+        if _EXTRA_CTX.flash_comm_v1_enabled:
             h_states_flat = tensor_model_parallel_all_gather(hidden_states.flatten(1), dim=0)
-            pad_size = forward_ctx.pad_size
+            pad_size = _EXTRA_CTX.pad_size
             if pad_size > 0:
                 h_states_flat = h_states_flat[:-pad_size]
             num_tokens = h_states_flat.shape[0]

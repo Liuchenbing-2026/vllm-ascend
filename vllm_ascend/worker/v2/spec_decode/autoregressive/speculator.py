@@ -34,6 +34,7 @@ from vllm.v1.worker.gpu.model_states.interface import ModelState
 from vllm.v1.worker.gpu.spec_decode.autoregressive.speculator import AutoRegressiveSpeculator
 from vllm.v1.worker.utils import AttentionGroup
 
+from vllm_ascend.ascend_forward_context import override_mrv2_forward_model
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.utils import vllm_version_is
 from vllm_ascend.worker.v2.attn_utils import build_attn_metadata_wrapper
@@ -185,6 +186,17 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
 
         self.attn_backends = attn_backends
 
+    @contextmanager
+    def _draft_forward_model(self):
+        """Announce the drafter to the Ascend forward-context hook.
+
+        The hook derives sequence-parallel settings from the architecture of the
+        model being run, and the drafter may be dense while the target is MoE.
+        Capture and execution must agree, so both go through this.
+        """
+        with override_mrv2_forward_model(self.model, is_draft_model=True):
+            yield
+
     def capture(self) -> None:
         logger.info("Capturing model for speculator...")
         # Reset indices to zeros to prevent stale values from prior
@@ -199,31 +211,32 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
         assert self.prefill_cudagraph_manager is not None
         if self.prefill_cudagraph_manager.use_breakable_cg:
             self.prefill_cudagraph_manager.init_breakable_cg_runner(self.model)
-        self.prefill_cudagraph_manager.capture(
-            self._prefill,
-            self.model_state,
-            self.target_input_buffers,
-            self.block_tables,
-            self.target_attn_groups,
-            self.kv_cache_config,
-            progress_bar_desc="Capturing prefill CUDA graphs",
-        )
-
-        if self.num_speculative_steps == 1:
-            return
-
-        # Capture all decode draft generation steps as a single graph.
-        assert self.decode_cudagraph_manager is not None
-        with build_attn_metadata_wrapper():
-            self.decode_cudagraph_manager.capture(
-                self._multi_step_decode,
+        with self._draft_forward_model():
+            self.prefill_cudagraph_manager.capture(
+                self._prefill,
                 self.model_state,
-                self.input_buffers,
+                self.target_input_buffers,
                 self.block_tables,
-                self.attn_groups,
+                self.target_attn_groups,
                 self.kv_cache_config,
-                progress_bar_desc="Capturing decode CUDA graphs",
+                progress_bar_desc="Capturing prefill CUDA graphs",
             )
+
+            if self.num_speculative_steps == 1:
+                return
+
+            # Capture all decode draft generation steps as a single graph.
+            assert self.decode_cudagraph_manager is not None
+            with build_attn_metadata_wrapper():
+                self.decode_cudagraph_manager.capture(
+                    self._multi_step_decode,
+                    self.model_state,
+                    self.input_buffers,
+                    self.block_tables,
+                    self.attn_groups,
+                    self.kv_cache_config,
+                    progress_bar_desc="Capturing decode CUDA graphs",
+                )
 
     @torch.inference_mode()
     def _run_model(
@@ -236,14 +249,15 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
         mm_inputs: tuple[list[torch.Tensor], torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Override AutoRegressiveSpeculator._run_model for Ascend NPUs."""
-        last_hidden_states, hidden_states = super()._run_model(
-            num_tokens,
-            attn_metadata,
-            slot_mappings,
-            num_tokens_across_dp,
-            cudagraph_runtime_mode,
-            mm_inputs,
-        )
+        with self._draft_forward_model():
+            last_hidden_states, hidden_states = super()._run_model(
+                num_tokens,
+                attn_metadata,
+                slot_mappings,
+                num_tokens_across_dp,
+                cudagraph_runtime_mode,
+                mm_inputs,
+            )
         self._ascend_update_seq_lens(attn_metadata)
         return last_hidden_states, hidden_states
 
