@@ -397,6 +397,9 @@ class TestNPUPlatform(TestBase):
         # does not publish them.
         self.assertNotIn("model_instance", kwargs)
         self.assertNotIn("layer_idx", kwargs)
+        # The draft flag must not move the sequence-parallel decision off the
+        # target's architecture.
+        self.assertTrue(kwargs["flash_comm_v1_enabled"])
 
     def test_set_additional_forward_context_v2_skips_contextless_call(self):
         vllm_config = TestNPUPlatform.mock_vllm_config()
