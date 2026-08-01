@@ -981,11 +981,11 @@ class NPUPlatform(Platform):
         # the performance may degrade due to the switching of
         # communication methods.
         mmrs_fusion = True
-        # Keyed on the target's architecture for draft forwards as well. v1
-        # switches a dense drafter under a MoE target to the non-SP branch, but
-        # this hook has always taken the target branch on v2, and a captured
-        # draft graph replays the padding the capture-time decision baked in;
-        # changing it needs a measurement on hardware, not a code symmetry.
+        # Both fields must be keyed on the target's architecture even for draft
+        # forwards, so that a draft graph replays with the padding its capture
+        # baked in. Do not switch a dense drafter under a MoE target to the
+        # non-SP branch here (v1 does, in ascend_forward_context) without first
+        # measuring the captured-graph path on hardware.
         if is_moe_model(vllm_config):
             flash_comm_v1_enabled = enable_sp(vllm_config) and num_tokens is not None
             mmrs_fusion = False
