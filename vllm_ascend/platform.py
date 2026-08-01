@@ -46,6 +46,7 @@ from vllm_ascend.utils import (
     check_kv_extra_config,
     enable_sfa_dcp_replicated_indexer,
     get_ascend_device_type,
+    is_drafter_moe_model,
     is_moe_model,
     model_uses_sfa_sparse,
     refresh_block_size,
@@ -929,6 +930,7 @@ class NPUPlatform(Platform):
         # NOTE(Ronald1995): avoid circular import.
         from vllm_ascend.ascend_forward_context import (
             get_mc2_mask,
+            get_mrv2_forward_model,
             get_mrv2_in_profile_run,
             select_moe_comm_method,
         )
@@ -952,12 +954,23 @@ class NPUPlatform(Platform):
         if not vllm_config.use_v2_model_runner:
             return {}
 
-        # is_draft_model will be removed later, so we set it to False temporarily.
-        is_draft_model = False
+        # A KV connector opens a forward context with neither a token count nor
+        # attention metadata (vllm/v1/worker/gpu/kv_connector.py). Nothing below
+        # is meaningful for it, and select_moe_comm_method would compare None
+        # against the MC2 token capacity.
+        if num_tokens is None and not attn_metadata:
+            return {}
+
+        model_instance, is_draft_model = get_mrv2_forward_model()
         # v2 has 2 graphs in eager, one for prefill, the other for decodes, this flag is aimed to distinguish them.
         is_draft_model_prefill = False
         sinks = False
         in_profile_run = get_mrv2_in_profile_run()
+
+        # Resolved with a direct attribute walk rather than utils.has_layer_idx:
+        # that helper memoizes its answer globally, so the first model to reach
+        # it (target or drafter) would decide the answer for the other.
+        layer_idx = getattr(getattr(model_instance, "model", None), "start_layer", None)
 
         tp_world_size = get_tensor_model_parallel_world_size()
 
@@ -974,9 +987,16 @@ class NPUPlatform(Platform):
         # the performance may degrade due to the switching of
         # communication methods.
         mmrs_fusion = True
-        if is_moe_model(vllm_config):
+        # The drafter may have a different architecture from the target, so the
+        # MoE check has to follow whichever model is running this forward.
+        is_context_moe_model = is_drafter_moe_model(vllm_config) if is_draft_model else is_moe_model(vllm_config)
+        if is_context_moe_model:
             flash_comm_v1_enabled = enable_sp(vllm_config) and num_tokens is not None
             mmrs_fusion = False
+        elif is_draft_model:
+            # For a dense drafter `sp` is redundant and is not compatible with
+            # `dp` and `graph`.
+            flash_comm_v1_enabled = False
         else:
             flash_comm_v1_enabled = enable_sp(vllm_config) and num_tokens is not None and num_tokens > 1000
         pad_size = 0
@@ -1027,6 +1047,8 @@ class NPUPlatform(Platform):
             "mc2_mask": mc2_mask,
             "is_draft_model": is_draft_model,
             "is_draft_model_prefill": is_draft_model_prefill,
+            "model_instance": model_instance,
+            "layer_idx": layer_idx,
             "in_profile_run": in_profile_run,
             "padded_num_tokens": padded_num_tokens,
             "sinks": sinks,

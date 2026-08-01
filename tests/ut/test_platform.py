@@ -8,7 +8,11 @@ from vllm.platforms import PlatformEnum
 from vllm.v1.attention.selector import AttentionSelectorConfig  # type: ignore
 
 from tests.ut.base import TestBase
-from vllm_ascend.ascend_forward_context import MoECommType, override_mrv2_in_profile_run
+from vllm_ascend.ascend_forward_context import (
+    MoECommType,
+    override_mrv2_forward_model,
+    override_mrv2_in_profile_run,
+)
 from vllm_ascend.platform import NPUPlatform
 from vllm_ascend.utils import (
     ASCEND_QUANTIZATION_METHOD,
@@ -337,6 +341,52 @@ class TestNPUPlatform(TestBase):
             )
 
         self.assertTrue(kwargs["in_profile_run"])
+
+    def test_set_additional_forward_context_reads_v2_model_override(self):
+        vllm_config = TestNPUPlatform.mock_vllm_config()
+        vllm_config.use_v2_model_runner = True
+        model_instance = MagicMock()
+        model_instance.model.start_layer = 3
+
+        with (
+            patch("vllm_ascend.platform.envs_vllm.VLLM_USE_V2_MODEL_RUNNER", True, create=True),
+            patch("vllm_ascend.platform.is_moe_model", return_value=True),
+            patch("vllm_ascend.platform.is_drafter_moe_model", return_value=False),
+            patch("vllm_ascend.platform.enable_sp", return_value=True),
+            patch("vllm.distributed.get_tensor_model_parallel_world_size", return_value=2),
+            patch("vllm.distributed.get_dp_group", return_value=MagicMock(world_size=1)),
+            patch("vllm_ascend.ascend_forward_context.select_moe_comm_method", return_value=MoECommType.ALLGATHER),
+            patch("vllm_ascend.ascend_forward_context.get_mc2_mask", return_value=None),
+            patch("vllm_ascend.ops.fused_moe.moe_comm_method.get_moe_comm_method", return_value=object()),
+            override_mrv2_forward_model(model_instance, is_draft_model=True),
+        ):
+            kwargs = self.platform.set_additional_forward_context(
+                attn_metadata=None,
+                vllm_config=vllm_config,
+                dp_metadata=None,
+                num_tokens=4,
+            )
+
+        self.assertIs(kwargs["model_instance"], model_instance)
+        self.assertEqual(kwargs["layer_idx"], 3)
+        self.assertTrue(kwargs["is_draft_model"])
+        # A dense drafter under a MoE target must not inherit the target's
+        # sequence-parallel setting.
+        self.assertFalse(kwargs["flash_comm_v1_enabled"])
+
+    def test_set_additional_forward_context_v2_skips_contextless_call(self):
+        vllm_config = TestNPUPlatform.mock_vllm_config()
+        vllm_config.use_v2_model_runner = True
+
+        with patch("vllm_ascend.platform.envs_vllm.VLLM_USE_V2_MODEL_RUNNER", True, create=True):
+            kwargs = self.platform.set_additional_forward_context(
+                attn_metadata=None,
+                vllm_config=vllm_config,
+                dp_metadata=None,
+                num_tokens=None,
+            )
+
+        self.assertEqual(kwargs, {})
 
     @patch("vllm_ascend.quantization.utils.maybe_auto_detect_quantization")
     @patch("vllm_ascend.ascend_config.init_ascend_config")

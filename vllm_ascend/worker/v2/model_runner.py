@@ -23,8 +23,10 @@ import numpy as np
 import torch
 from vllm.config import VllmConfig
 from vllm.config.compilation import CompilationMode, CUDAGraphMode
+from vllm.sequence import IntermediateTensors
 from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.v1.kv_cache_interface import KVCacheConfig
+from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.gpu import model_runner as vllm_model_runner
 from vllm.v1.worker.gpu.buffer_utils import async_copy_to_gpu
 from vllm.v1.worker.gpu.cudagraph_utils import BatchExecutionDescriptor
@@ -40,6 +42,7 @@ from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.ascend_forward_context import (
     MoECommType,
     get_mc2_tokens_capacity,
+    override_mrv2_forward_model,
     override_mrv2_in_profile_run,
     select_moe_comm_method,
     set_mc2_mask,
@@ -141,6 +144,31 @@ class NPUModelRunner(GPUModelRunner):
                 self.supports_mm_inputs,
                 self.req_states,
                 self.block_tables,
+            )
+
+    def execute_model(
+        self,
+        scheduler_output: SchedulerOutput,
+        intermediate_tensors: IntermediateTensors | None = None,
+        dummy_run: bool = False,
+        skip_attn_for_dummy_run: bool = False,
+        is_profile: bool = False,
+    ) -> ModelRunnerOutput | IntermediateTensors | None:
+        """Announce the target model to the Ascend forward-context hook.
+
+        Upstream opens the forward context deep inside this call, and the
+        platform hook that fills in the Ascend fields only sees batch-shaped
+        arguments. This single override also covers `_dummy_run`, `profile_run`
+        and warmup, which all funnel through here.
+        """
+        # `torch.inference_mode()` is not re-applied: the base method carries it.
+        with override_mrv2_forward_model(self.model):
+            return super().execute_model(
+                scheduler_output,
+                intermediate_tensors,
+                dummy_run,
+                skip_attn_for_dummy_run,
+                is_profile,
             )
 
     @torch.inference_mode()
