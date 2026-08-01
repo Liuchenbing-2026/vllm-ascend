@@ -1112,18 +1112,26 @@
 #       (mirroring the v1 runner's fallback) so models whose KV state lives
 #       outside Attention/MLAAttention -- DeepSeek V4's DSA layers -- are not
 #       dropped from the KV cache config.
-#       Three layer kinds are refused with `NotImplementedError` naming the
-#       layer, because the v2 allocator only ever builds a K/V pair per page:
-#       recurrent-state (`MambaBase`) layers, whose `MambaSpec` is not an
-#       `AttentionSpec` at all; sparse-attention indexer layers, keyed on
-#       `AscendSFAIndexerCacheSpec` rather than a model class so the whole
-#       SFA/MSA family is covered (DeepSeek V3.2, MiniMax-M3); and
-#       `CacheOnlyAttentionLayer` (the extract_hidden_states drafter), whose
-#       `HiddenStateCacheSpec` page holds a single vector. The same rule is
-#       enforced in `_get_attention_kv_cache_dims` for any MLA-shaped spec that
-#       arrives from a non-`MLAAttention` layer. Each message points at
-#       `VLLM_USE_V2_MODEL_RUNNER=0`, where the v1 runner's per-role reshape
-#       path handles these layouts.
+#       Three layer kinds are refused there with `NotImplementedError` naming
+#       the layer, because the v2 allocator only ever builds a K/V pair per
+#       page: recurrent-state (`MambaBase`) layers, whose `MambaSpec` is not an
+#       `AttentionSpec` at all; layers reporting an `AscendSFAIndexerCacheSpec`
+#       (keyed on the spec rather than a model class -- MiniMax-M3's indexer
+#       cache is the only one today); and `CacheOnlyAttentionLayer` (the
+#       extract_hidden_states drafter), whose `HiddenStateCacheSpec` page holds
+#       a single vector.
+#       A fourth rule lives in `_get_attention_kv_cache_dims` and fires later,
+#       during KV cache allocation: any spec whose page holds one latent vector
+#       instead of a K/V pair (`MLAAttentionSpec` or `SlidingWindowMLASpec` and
+#       their Ascend subclasses) coming from a layer that is not an
+#       `MLAAttention` and therefore cannot name the nope/rope split. This is
+#       where DeepSeek V3.2 is actually stopped -- upstream
+#       `DeepseekV32IndexerCache.get_kv_cache_spec` returns a plain
+#       `MLAAttentionSpec`, so the indexer rule above never sees it -- along
+#       with DeepSeek V4's `DSAAttention`, its SWA cache and its
+#       compressor-state cache.
+#       Each message points at `VLLM_USE_V2_MODEL_RUNNER=0`, where the v1
+#       runner's per-role reshape path handles these layouts.
 #   2. `vllm.v1.worker.gpu.attn_utils._allocate_kv_cache`,
 #      `vllm.v1.worker.gpu.attn_utils._reshape_kv_cache`
 #    Why:

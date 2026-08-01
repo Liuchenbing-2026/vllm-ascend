@@ -104,8 +104,9 @@ class TestGetKVCacheSpec(TestBase):
         self.assertEqual(kv_cache_spec, {})
 
     def test_refuses_indexer_spec_from_any_layer_class(self):
-        # Keyed on the spec, not on DeepseekV32IndexerCache: unrelated classes
-        # emit the same one-packed-vector layout.
+        # The rule is keyed on the spec, so it must fire for a layer class the
+        # collector has never heard of, not only for the one indexer class that
+        # emits AscendSFAIndexerCacheSpec today.
         with self.assertRaises(NotImplementedError) as ctx:
             self._collect({"model.layers.0.indexer": _PlainKVCacheLayer(_indexer_spec())})
 
