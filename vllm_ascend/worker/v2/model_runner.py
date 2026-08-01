@@ -165,10 +165,10 @@ class NPUModelRunner(GPUModelRunner):
         with override_mrv2_forward_inputs(self.input_buffers.input_ids):
             return super().execute_model(
                 scheduler_output,
-                intermediate_tensors,
-                dummy_run,
-                skip_attn_for_dummy_run,
-                is_profile,
+                intermediate_tensors=intermediate_tensors,
+                dummy_run=dummy_run,
+                skip_attn_for_dummy_run=skip_attn_for_dummy_run,
+                is_profile=is_profile,
             )
 
     @torch.inference_mode()
