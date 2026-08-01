@@ -64,6 +64,12 @@ _V2_UNSUPPORTED_HINT = "Run this model with VLLM_USE_V2_MODEL_RUNNER=0."
 # AscendSlidingWindowMLASpec, and DeepSeek V4's SWA and compressor-state caches
 # through it) inherits one of the two. Extend this tuple, never the individual
 # isinstance checks below.
+# Membership is narrower than "one vector per token": it also requires that the
+# two dimensions BE the nope/rope split, which is what an MLAAttention layer can
+# name and what the callers below spend them on. AscendSFAIndexerCacheSpec pages
+# also hold one vector per token, but paired with a separate quantization scale
+# rather than split into nope and rope, so it is refused up front by
+# get_kv_cache_spec instead of being described here.
 _SINGLE_LATENT_VECTOR_SPECS: tuple[type[KVCacheSpec], ...] = (
     MLAAttentionSpec,
     SlidingWindowMLASpec,
@@ -384,14 +390,15 @@ def _get_attention_kv_cache_dims(layer_name: str, kv_cache_spec: AttentionSpec) 
             # MLA stores one latent cache whose two halves are the nope (K) and
             # rope (V) parts; only the layer knows how the head size splits.
             return attn_layer.kv_lora_rank, attn_layer.qk_rope_head_dim
-        # Only an MLAAttention layer can name the nope/rope split, so any other
-        # layer holding a single-latent-vector spec has to be refused: the
-        # generic tail below would return (head_size, head_size) and every
-        # caller would then budget two pages and split each raw tensor in half,
-        # which no longer matches page_size_bytes. Reached by DeepSeek V4's
-        # DSAAttention, its SWA and compressor-state caches, and DeepSeek
-        # V3.2's DeepseekV32IndexerCache -- per-role cache tuples the v2
-        # allocator cannot build either way.
+        # Only an MLAAttention layer can name the nope/rope split, and the pair
+        # returned here is spent as two independent K and V extents: callers
+        # budget one page per element and split each raw tensor accordingly.
+        # There is no fallback that keeps that sound for a spec whose page holds
+        # a single latent vector, so any non-MLAAttention layer holding one has
+        # to be refused rather than routed to the generic tail below. Reached by
+        # DeepSeek V4's DSAAttention, its SWA and compressor-state caches, and
+        # DeepSeek V3.2's DeepseekV32IndexerCache -- per-role cache tuples the
+        # v2 allocator cannot build either way.
         raise NotImplementedError(
             f"KV cache layer {layer_name} ({type(attn_layer).__name__}) reports a single-latent-vector "
             f"{type(kv_cache_spec).__name__} without being an MLAAttention layer, which the v2 model runner "
