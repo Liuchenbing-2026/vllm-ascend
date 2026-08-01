@@ -195,10 +195,12 @@ def build_attn_metadata(
     """Build attention metadata for Ascend NPUs."""
     # TODO(Ronald1995): optimize AscendCommonAttentionMetadata.
 
-    # Sparse-attention builders slice positions and slot mappings down to
-    # num_input_tokens. Upstream's draft-metadata path never passes it, and the
-    # zero default would leave them empty, so fall back to the token count the
-    # caller is building for -- which is already the padded one everywhere.
+    # Sparse-attention builders index by num_input_tokens: DSA, DSA-CP and SFA
+    # all slice positions and slot mappings with it, and AscendSFAImpl falls
+    # back to it for the topk token count. Callers that cannot supply it
+    # (upstream's draft-metadata path) leave it at 0, which empties those
+    # slices, so it defaults to the token count this call is building for --
+    # already the padded one at every v2 entry point.
     if num_input_tokens <= 0:
         num_input_tokens = num_tokens
 
