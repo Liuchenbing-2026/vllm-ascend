@@ -1096,22 +1096,52 @@
 #
 # ** 25. File: worker/patch_v2/patch_attn_utils.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#   1. `vllm.v1.worker.gpu.attn_utils.get_kv_cache_spec`
+#   1. `vllm.v1.worker.gpu.model_runner.get_kv_cache_spec`
 #    Why:
 #       The current v2 worker still goes through the shared upstream v1 helper
 #       to build KV cache specs. For Ascend MLA layers that helper returns the
 #       generic `MLAAttentionSpec`, but NPU-side cache allocation and reshape
-#       logic expects `AscendMLAAttentionSpec`.
+#       logic expects `AscendMLAAttentionSpec`. The Ascend allocator also cannot
+#       build every layout an `AttentionLayerBase` may ask for, and the failure
+#       has to happen at startup rather than mid-forward.
 #    How：
 #       Monkey-patch `get_kv_cache_spec` so regular attention layers keep the
 #       upstream behavior while MLA layers are rewritten to
 #       `AscendMLAAttentionSpec`, including the FA-quant head-size adjustment.
+#       Any other `AttentionLayerBase` subclass is asked for its own spec
+#       (mirroring the v1 runner's fallback) so models whose KV state lives
+#       outside Attention/MLAAttention -- DeepSeek V4's DSA layers -- are not
+#       dropped from the KV cache config.
+#       Three layer kinds are refused with `NotImplementedError` naming the
+#       layer, because the v2 allocator only ever builds a K/V pair per page:
+#       recurrent-state (`MambaBase`) layers, whose `MambaSpec` is not an
+#       `AttentionSpec` at all; sparse-attention indexer layers, keyed on
+#       `AscendSFAIndexerCacheSpec` rather than a model class so the whole
+#       SFA/MSA family is covered (DeepSeek V3.2, MiniMax-M3); and
+#       `CacheOnlyAttentionLayer` (the extract_hidden_states drafter), whose
+#       `HiddenStateCacheSpec` page holds a single vector. The same rule is
+#       enforced in `_get_attention_kv_cache_dims` for any MLA-shaped spec that
+#       arrives from a non-`MLAAttention` layer. Each message points at
+#       `VLLM_USE_V2_MODEL_RUNNER=0`, where the v1 runner's per-role reshape
+#       path handles these layouts.
+#   2. `vllm.v1.worker.gpu.attn_utils._allocate_kv_cache`,
+#      `vllm.v1.worker.gpu.attn_utils._reshape_kv_cache`
+#    Why:
+#       Prefill disaggregation needs the K and V halves in separate 2M-aligned
+#       tensors, and MLA splits one latent page into nope/rope halves whose
+#       dimensions only the layer knows.
+#    How：
+#       Replace both with the Ascend implementations, which allocate the two
+#       halves separately and derive the per-half dimensions from the layer.
 #    Related PR (if no, explain why):
 #       No. This is a plugin-side compatibility patch for the current upstream
 #       helper path.
 #    Future Plan:
 #       Remove this patch once upstream adds a backend hook for KV cache spec
 #       construction or v2 worker no longer depends on the shared v1 helper.
+#       Remove the refusals once the v2 allocator can describe per-role cache
+#       tuples (recurrent state, indexer K + scale, single hidden-state vector)
+#       instead of exactly one K/V pair per layer.
 #
 # ** 26. File: worker/patch_v2/patch_block_table.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1119,12 +1149,18 @@
 #    Why:
 ##      vllm-ascend need to initialize slot mapping as torch.int32 dtype,
 #       but vllm default is torch.int64 dtype.
+#       An attention-free model (encoder-only pooling) also ends up with zero
+#       KV cache groups, and CANN rejects a kernel launched with a zero core
+#       dim (EE1003) where CUDA simply no-ops a zero grid dim.
 #    How：
 #       replace BlockTables with AscendBlockTables which initialize slot mapping
-#       as torch.int32 dtype.
+#       as torch.int32 dtype, and which returns the empty views from
+#       `gather_block_tables` / `compute_slot_mappings` without launching when
+#       there is no KV cache group.
 #    Future Plan:
 #       remove this patch when vLLM-ascend's BlockTables can initialize
-#       slot mapping as torch.int64 dtype.
+#       slot mapping as torch.int64 dtype, and when the triton kernels tolerate
+#       a zero grid dim on CANN.
 #
 # ** 27. File: worker/patch_v2/patch_dflash_speculator.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1140,6 +1176,25 @@
 #    Future Plan:
 #       Remove this patch once upstream exposes a backend-dispatchable spec-decode
 #       graph manager abstraction.
+#   2. `vllm.v1.worker.gpu.spec_decode.dflash.cudagraph.build_attn_metadata`
+#    Why:
+#       Ascend attention builders need more than the upstream common metadata
+#       carries. `AscendDSAMetadataBuilder.build` in particular asserts on three
+#       per-step sparse-attention memos and also reads `num_reqs_actual` and the
+#       group's block size, none of which upstream's builder loop passes.
+#    How：
+#       Replace `build_attn_metadata` with the Ascend one, which builds
+#       `AscendCommonAttentionMetadata` and threads the DSA kwargs through every
+#       KV cache group of a call, so the per-ratio groups share one decode /
+#       prefill split, positions, rope tables and sparse-attention handles.
+#       Graph capture gets a throwaway memo so its synthetic batch cannot leak
+#       into the real ones, and it goes through `build()` rather than
+#       `build_for_cudagraph_capture()`, which cannot forward those kwargs.
+#    Related PR (if no, explain why):
+#       No, plugin-side attention metadata differences.
+#    Future Plan:
+#       Remove this patch once upstream's metadata builder protocol can carry
+#       backend-specific per-step state.
 #
 # ** 28. File: worker/patch_v2/patch_eagle_speculator.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1175,8 +1230,14 @@
 #    Why:
 ##      vllm's prepare_attn in ModelState is different from vllm,
 #       we need to override init_model_state.
+#       Sparse-attention builders also need `num_input_tokens` (the padded token
+#       count they slice positions and slot mappings with) and `num_reqs_actual`
+#       (the unpadded request count whose padded rows they must zero), which
+#       upstream's `prepare_attn` never passes.
 #    How：
-#       Define AscendModelState and initialize it in init_model_state.
+#       Define AscendModelState and initialize it in init_model_state. Its
+#       `prepare_attn` calls the Ascend `build_attn_metadata` (see patch 27)
+#       with those two extra counts.
 #    Future Plan:
 #       remove this when vllm-ascend's attention metadata is align with vllm.
 #
