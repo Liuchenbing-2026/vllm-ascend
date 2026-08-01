@@ -402,7 +402,7 @@ class TestNPUPlatform(TestBase):
         # target's architecture.
         self.assertTrue(kwargs["flash_comm_v1_enabled"])
 
-    def test_set_additional_forward_context_v2_draft_forward_wins_over_target(self):
+    def test_set_additional_forward_context_v2_inner_draft_announcement_wins(self):
         vllm_config = TestNPUPlatform.mock_vllm_config()
         vllm_config.use_v2_model_runner = True
         target_ids = torch.arange(16, dtype=torch.int32)
@@ -418,7 +418,8 @@ class TestNPUPlatform(TestBase):
             patch("vllm_ascend.ascend_forward_context.select_moe_comm_method", return_value=MoECommType.ALLGATHER),
             patch("vllm_ascend.ascend_forward_context.get_mc2_mask", return_value=None),
             patch("vllm_ascend.ops.fused_moe.moe_comm_method.get_moe_comm_method", return_value=object()),
-            # A draft forward always runs inside the target's announcement.
+            # Whatever announcement is in scope, the innermost one is what the
+            # hook publishes -- the ids the model about to run will consume.
             override_mrv2_forward_inputs(target_ids),
             draft_forward_inputs(draft_buffers),
         ):

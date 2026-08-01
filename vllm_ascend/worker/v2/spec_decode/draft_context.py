@@ -28,13 +28,16 @@ from vllm_ascend.ascend_forward_context import override_mrv2_forward_inputs
 def draft_forward_inputs(input_buffers: InputBuffers) -> Iterator[None]:
     """Announce a draft forward to the Ascend forward-context hook.
 
-    A speculator's draft forward runs inside the announcement
-    `NPUModelRunner.execute_model` makes for the target, which names the
-    target's id buffer. Re-announcing here is what keeps a hash-routed MoE gate
-    or an id-consuming expert selector from silently reading the target's tokens
-    during a draft forward, so every speculator has to wrap the call that opens
-    the draft forward context -- `_run_model` -- and not only the autoregressive
-    ones do.
+    Nothing announces on a speculator's behalf, so an unwrapped draft forward
+    publishes the ContextVar default `(None, False)`. `NPUModelRunner` overrides
+    only `execute_model`, while upstream reaches `propose` from `sample_tokens`
+    -- a worker RPC entry point of its own -- and, on the dummy/profile path,
+    from a call placed after `execute_model` has returned. Either way the
+    target's announcement is already unwound before the drafter runs, and
+    `input_ids=None` is not a value an id-consuming expert selector can use:
+    `ops/fused_moe/experts_selector.py` dereferences it directly. Every
+    speculator therefore has to wrap the call that opens the draft forward
+    context -- `_run_model` -- and not only the autoregressive ones do.
 
     Wrapping `_run_model` is sufficient, not merely conventional: the hook that
     reads this announcement runs only from `set_forward_context`, and the reads
@@ -44,10 +47,9 @@ def draft_forward_inputs(input_buffers: InputBuffers) -> Iterator[None]:
     context. The other draft-model calls a speculator makes -- DFlash/DSpark
     `model.precompute_and_store_context_kv` and DSpark's `compute_draft_logits`
     / `markov_embed` / `markov_bias` / `map_draft_to_target` -- open no forward
-    context of their own and run from `propose`, which upstream calls after the
-    target's `set_forward_context` block has exited. With no context open they
-    cannot reach a reader at all, so widening this wrapper around them would
-    announce into nothing. Re-check that if any of them ever opens a context.
+    context of their own, so with no context open they cannot reach a reader at
+    all and widening this wrapper around them would announce into nothing.
+    Re-check that if any of them ever opens a context.
 
     `input_buffers` is the drafter's own buffer set; the hook slices the id
     buffer down to the token count of the forward it is building for, which is
