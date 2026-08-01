@@ -37,6 +37,7 @@ from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
     KVCacheSpec,
     MLAAttentionSpec,
+    SlidingWindowMLASpec,
     UniformTypeKVCacheSpecs,
 )
 from vllm.v1.worker.gpu.model_states.interface import ModelSpecificAttnMetadata
@@ -52,6 +53,26 @@ from vllm_ascend.utils import calc_split_factor
 _ATTENTION_MASK_BUILDER = None
 
 _V2_UNSUPPORTED_HINT = "Run this model with VLLM_USE_V2_MODEL_RUNNER=0."
+
+# Specs whose page stores one latent vector per token instead of a K/V pair.
+# The two dimensions this module reports for them are the nope/rope split of
+# that single vector, so a caller must never treat them as independent K and V
+# head sizes: that budgets two pages where one was reserved.
+# Upstream splits the family across two branches -- MLAAttentionSpec derives
+# from FullAttentionSpec, SlidingWindowMLASpec from SlidingWindowSpec -- so no
+# single base class covers both. Every Ascend subclass (AscendMLAAttentionSpec,
+# AscendSlidingWindowMLASpec, and DeepSeek V4's SWA and compressor-state caches
+# through it) inherits one of the two. Extend this tuple, never the individual
+# isinstance checks below.
+_SINGLE_LATENT_VECTOR_SPECS: tuple[type[KVCacheSpec], ...] = (
+    MLAAttentionSpec,
+    SlidingWindowMLASpec,
+)
+
+
+def _stores_single_latent_vector(kv_cache_spec: KVCacheSpec) -> bool:
+    """Whether one page of this spec holds one latent vector, not a K/V pair."""
+    return isinstance(kv_cache_spec, _SINGLE_LATENT_VECTOR_SPECS)
 
 
 def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
@@ -351,21 +372,23 @@ def _get_layer_kv_cache_specs(kv_cache_config: KVCacheConfig) -> dict[str, KVCac
 
 
 def _get_attention_kv_cache_dims(layer_name: str, kv_cache_spec: AttentionSpec) -> tuple[int, int]:
-    if isinstance(kv_cache_spec, MLAAttentionSpec):
+    if _stores_single_latent_vector(kv_cache_spec):
         attn_layers = get_layers_from_vllm_config(get_current_vllm_config(), AttentionLayerBase, [layer_name])
         attn_layer = attn_layers[layer_name]
         if isinstance(attn_layer, MLAAttention):
             # MLA stores one latent cache whose two halves are the nope (K) and
             # rope (V) parts; only the layer knows how the head size splits.
             return attn_layer.kv_lora_rank, attn_layer.qk_rope_head_dim
-        # An MLA-shaped page holds a single head_size vector, so there is no
-        # second dimension to report. Returning (head_size, head_size) would
-        # make the callers below budget two pages and then split each raw
-        # tensor in half, which no longer matches page_size_bytes. This covers
-        # DeepSeek V4's DSAAttention and DeepSeek V3.2's indexer cache, whose
-        # per-role cache tuples the v2 allocator cannot build either way.
+        # Only an MLAAttention layer can name the nope/rope split, so any other
+        # layer holding a single-latent-vector spec has to be refused: the
+        # generic tail below would return (head_size, head_size) and every
+        # caller would then budget two pages and split each raw tensor in half,
+        # which no longer matches page_size_bytes. Reached by DeepSeek V4's
+        # DSAAttention, its SWA and compressor-state caches, and DeepSeek
+        # V3.2's DeepseekV32IndexerCache -- per-role cache tuples the v2
+        # allocator cannot build either way.
         raise NotImplementedError(
-            f"KV cache layer {layer_name} ({type(attn_layer).__name__}) reports an MLA-shaped "
+            f"KV cache layer {layer_name} ({type(attn_layer).__name__}) reports a single-latent-vector "
             f"{type(kv_cache_spec).__name__} without being an MLAAttention layer, which the v2 model runner "
             f"on Ascend cannot allocate. {_V2_UNSUPPORTED_HINT}"
         )
@@ -523,7 +546,7 @@ def _reshape_kv_cache(
                     kv_cache_spec.head_size,
                     cache_dtype,
                 )
-                if not isinstance(kv_cache_spec, AscendMLAAttentionSpec):
+                if not _stores_single_latent_vector(kv_cache_spec):
                     k_shape = kv_cache_shape[1:]
                     if hasattr(kv_cache_spec, "head_size_v"):
                         v_shape = (*kv_cache_shape[1:-1], kv_cache_spec.head_size_v)
@@ -603,7 +626,7 @@ def _reshape_kv_cache_v2(
                 cache_dtype,
             )
 
-            if not isinstance(kv_cache_spec, (AscendMLAAttentionSpec, MLAAttentionSpec)):
+            if not _stores_single_latent_vector(kv_cache_spec):
                 k_shape = kv_cache_shape[1:]
                 if hasattr(kv_cache_spec, "head_size_v"):
                     v_shape = (*kv_cache_shape[1:-1], kv_cache_spec.head_size_v)

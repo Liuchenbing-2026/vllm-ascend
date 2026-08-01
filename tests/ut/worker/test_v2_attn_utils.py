@@ -25,11 +25,15 @@ import torch
 from torch import nn
 from vllm.model_executor.layers.mamba.abstract import MambaBase
 from vllm.model_executor.models.extract_hidden_states import CacheOnlyAttentionLayer
-from vllm.v1.kv_cache_interface import FullAttentionSpec
+from vllm.v1.kv_cache_interface import FullAttentionSpec, MLAAttentionSpec
 
 from tests.ut.base import TestBase
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
-from vllm_ascend.core.kv_cache_interface import AscendMLAAttentionSpec, AscendSFAIndexerCacheSpec
+from vllm_ascend.core.kv_cache_interface import (
+    AscendMLAAttentionSpec,
+    AscendSFAIndexerCacheSpec,
+    AscendSlidingWindowMLASpec,
+)
 from vllm_ascend.worker.v2.attn_utils import (
     _build_dsa_extra_kwargs,
     _get_attention_kv_cache_dims,
@@ -128,11 +132,10 @@ class TestGetKVCacheSpec(TestBase):
 
 
 class TestGetAttentionKVCacheDims(TestBase):
-    def test_refuses_mla_shaped_spec_from_non_mla_layer(self):
-        # An MLA-shaped page holds one head_size vector, so there is no second
-        # dimension to report and the pair would double-count the page.
+    def _refuse(self, spec):
+        # A single-latent-vector page holds one head_size vector, so there is no
+        # second dimension to report and the pair would double-count the page.
         layer = _PlainKVCacheLayer(None)
-        spec = AscendMLAAttentionSpec(block_size=16, num_kv_heads=1, head_size=576, dtype=torch.bfloat16)
 
         with (
             patch(f"{_ATTN_UTILS}.get_current_vllm_config", return_value=MagicMock()),
@@ -144,6 +147,28 @@ class TestGetAttentionKVCacheDims(TestBase):
         message = str(ctx.exception)
         self.assertIn("model.layers.0.self_attn", message)
         self.assertIn("VLLM_USE_V2_MODEL_RUNNER=0", message)
+
+    def test_refuses_mla_shaped_spec_from_non_mla_layer(self):
+        self._refuse(AscendMLAAttentionSpec(block_size=16, num_kv_heads=1, head_size=576, dtype=torch.bfloat16))
+
+    def test_refuses_upstream_mla_spec_from_non_mla_layer(self):
+        # DeepseekV32IndexerCache reports this exact spec, so the refusal must
+        # not be keyed on the Ascend subclass.
+        self._refuse(MLAAttentionSpec(block_size=16, num_kv_heads=1, head_size=128, dtype=torch.bfloat16))
+
+    def test_refuses_sliding_window_mla_spec_from_non_mla_layer(self):
+        # SlidingWindowMLASpec derives from SlidingWindowSpec, not from
+        # MLAAttentionSpec: DeepSeek V4's SWA and compressor-state caches reach
+        # here through it and must not fall through to the generic pair.
+        self._refuse(
+            AscendSlidingWindowMLASpec(
+                block_size=16,
+                num_kv_heads=1,
+                head_size=576,
+                dtype=torch.bfloat16,
+                sliding_window=128,
+            )
+        )
 
     def test_generic_spec_reports_head_size_pair(self):
         spec = _full_attention_spec()
