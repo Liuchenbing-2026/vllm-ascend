@@ -137,12 +137,16 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
             # One packed vector per token plus its own scale accounting, not a
             # K/V pair: _allocate_kv_cache splits every page in two, which is
             # a layout this spec cannot describe. Keyed on the spec rather than
-            # the layer class because unrelated classes emit it -- Ascend's
-            # AscendMiniMaxM3IndexerCache today, any future SFA indexer next.
+            # the layer class so any layer emitting this layout is covered; the
+            # only one today is Ascend's AscendMiniMaxM3IndexerCache. DeepSeek
+            # V3.2 does NOT arrive here -- upstream DeepseekV32IndexerCache
+            # returns a plain MLAAttentionSpec (only the v1 runner rewrites it
+            # to AscendSFAIndexerCacheSpec), so it is refused later, by
+            # _get_attention_kv_cache_dims during KV cache allocation.
             raise NotImplementedError(
                 f"Sparse-attention indexer layer {layer_name} ({type(attn_module).__name__}) is not supported "
-                f"by the v2 model runner on Ascend; this covers the SFA/MSA families (DeepSeek V3.2, "
-                f"MiniMax-M3). {_V2_UNSUPPORTED_HINT}"
+                f"by the v2 model runner on Ascend; this covers layers reporting an "
+                f"{AscendSFAIndexerCacheSpec.__name__} (MiniMax-M3 today). {_V2_UNSUPPORTED_HINT}"
             )
         kv_cache_spec[layer_name] = spec
 
