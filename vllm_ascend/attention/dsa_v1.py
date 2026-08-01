@@ -435,9 +435,13 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
     # module (and its device ops) just to run an isinstance check.
     # This attribute is the contract the v2 runner reads
     # (worker/v2/attn_utils.py build_attn_metadata); the v1 runner still
-    # isinstance-checks this class and AscendDSACPMetadataBuilder
-    # (worker/model_runner_v1.py _build_attention_metadata). A new builder needing
-    # these kwargs must set the attribute AND be added to the v1 tuples.
+    # isinstance-checks this class and AscendDSACPMetadataBuilder in the
+    # extra-kwargs branch of _build_attention_metadata
+    # (worker/model_runner_v1.py). A new builder needing these kwargs must set
+    # the attribute AND be added to that v1 tuple. v1's second, wider tuple in
+    # the same method decides cudagraph capture instead; on v2 this one
+    # attribute decides both, which is why membership can differ -- see
+    # AscendSFADCPMetadataBuilder.
     requires_sparse_attention_kwargs: ClassVar[bool] = True
     hadamard = None
     start_pos_prefill: torch.Tensor | None = None

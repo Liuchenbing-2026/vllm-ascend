@@ -71,6 +71,15 @@ class AscendSFADCPMetadataBuilder(
     DCPMetadataBuilderMixin,
     AscendSFAMetadataBuilder,
 ):
+    # Deliberately no `requires_sparse_attention_kwargs`, even though v1 groups
+    # this builder with the DSA ones. v1 answers two questions with two
+    # differently scoped isinstance tuples in _build_attention_metadata
+    # (worker/model_runner_v1.py): which builders take DSA's sparse-attention
+    # kwargs (not this one) and which must not go through
+    # build_for_cudagraph_capture (this one included). v2 derives both answers
+    # from that single attribute, so setting it here would also start feeding
+    # `build` kwargs this builder does not take. Excluding this builder from
+    # capture on v2 needs a predicate of its own.
     def __init__(
         self,
         kv_cache_spec: AttentionSpec,
