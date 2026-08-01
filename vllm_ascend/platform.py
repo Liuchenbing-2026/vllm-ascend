@@ -930,7 +930,7 @@ class NPUPlatform(Platform):
         # NOTE(Ronald1995): avoid circular import.
         from vllm_ascend.ascend_forward_context import (
             get_mc2_mask,
-            get_mrv2_forward_model,
+            get_mrv2_forward_inputs,
             get_mrv2_in_profile_run,
             select_moe_comm_method,
         )
@@ -961,7 +961,7 @@ class NPUPlatform(Platform):
         if num_tokens is None and not attn_metadata:
             return {}
 
-        model_instance, is_draft_model = get_mrv2_forward_model()
+        model_instance, input_ids_buffer, is_draft_model = get_mrv2_forward_inputs()
         # v2 has 2 graphs in eager, one for prefill, the other for decodes, this flag is aimed to distinguish them.
         is_draft_model_prefill = False
         sinks = False
@@ -1025,6 +1025,7 @@ class NPUPlatform(Platform):
 
         mc2_mask = None
         padded_num_tokens = None
+        input_ids = None
         if num_tokens is not None:
             num_actual_tokens = num_tokens
             # NOTE: token num which need to pad to when mc2
@@ -1034,12 +1035,19 @@ class NPUPlatform(Platform):
                 mc2_mask = reserved_mc2_mask[:padded_num_tokens]
                 mc2_mask[:num_actual_tokens] = True
                 mc2_mask[num_actual_tokens:] = False
+            if input_ids_buffer is not None:
+                # The padded slice, matching the ids the model is about to
+                # consume: moe_gating_top_k_hash requires one token id per
+                # router-logits row, and the MoE prepare/finalize path derives
+                # its pad math from the padded hidden-state length.
+                input_ids = input_ids_buffer[:num_tokens]
         return {
             "moe_comm_type": moe_comm_type,
             "moe_comm_method": moe_comm_method,
             "capturing": capturing,
             "mmrs_fusion": mmrs_fusion,
             "num_tokens": num_tokens,
+            "input_ids": input_ids,
             "flash_comm_v1_enabled": flash_comm_v1_enabled,
             "pad_size": pad_size,
             "padded_length": padded_length,

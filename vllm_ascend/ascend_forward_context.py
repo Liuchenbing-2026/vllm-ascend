@@ -66,31 +66,41 @@ def get_mrv2_in_profile_run() -> bool:
     return _MRV2_IN_PROFILE_RUN.get()
 
 
-_MRV2_FORWARD_MODEL: ContextVar[tuple[torch.nn.Module | None, bool]] = ContextVar(
-    "_MRV2_FORWARD_MODEL", default=(None, False)
+_MRV2_FORWARD_INPUTS: ContextVar[tuple[torch.nn.Module | None, torch.Tensor | None, bool]] = ContextVar(
+    "_MRV2_FORWARD_INPUTS", default=(None, None, False)
 )
 
 
 @contextmanager
-def override_mrv2_forward_model(model_instance: torch.nn.Module | None, is_draft_model: bool = False):
-    """Announce which model the current MRv2 forward path belongs to.
+def override_mrv2_forward_inputs(
+    model_instance: torch.nn.Module | None,
+    input_ids_buffer: torch.Tensor | None = None,
+    is_draft_model: bool = False,
+):
+    """Announce what the current MRv2 forward path is about to run.
 
-    Ascend layers read `model_instance` (for `layer_idx`) and `is_draft_model`
-    (drafter and target may have different architectures, so they need
-    different sequence-parallel settings) off the forward context, but MRv2
-    builds that context inside upstream vLLM, where the platform hook only sees
-    the batch-shaped arguments. A ContextVar keeps this MRv2-only state scoped
-    to the current forward path, mirroring `override_mrv2_in_profile_run`.
+    Ascend layers read `model_instance` (for `layer_idx`), `input_ids`
+    (hash-routed MoE gating needs the raw token ids of the current forward) and
+    `is_draft_model` (drafter and target may have different architectures, so
+    they need different sequence-parallel settings) off the forward context,
+    but MRv2 builds that context inside upstream vLLM, where the platform hook
+    only sees the batch-shaped arguments. A ContextVar keeps this MRv2-only
+    state scoped to the current forward path, mirroring
+    `override_mrv2_in_profile_run`.
+
+    `input_ids_buffer` is the persistent buffer, not the current slice: the
+    hook cuts it down with the token count it is handed, which every MRv2 entry
+    point keeps equal to the length of the ids the model receives.
     """
-    token = _MRV2_FORWARD_MODEL.set((model_instance, is_draft_model))
+    token = _MRV2_FORWARD_INPUTS.set((model_instance, input_ids_buffer, is_draft_model))
     try:
         yield
     finally:
-        _MRV2_FORWARD_MODEL.reset(token)
+        _MRV2_FORWARD_INPUTS.reset(token)
 
 
-def get_mrv2_forward_model() -> tuple[torch.nn.Module | None, bool]:
-    return _MRV2_FORWARD_MODEL.get()
+def get_mrv2_forward_inputs() -> tuple[torch.nn.Module | None, torch.Tensor | None, bool]:
+    return _MRV2_FORWARD_INPUTS.get()
 
 
 def _cann_megamoe_supported_by_config(vllm_config: VllmConfig) -> bool:
@@ -443,6 +453,7 @@ class _ExtraForwardContextProxy:
         "moe_comm_method",
         "mmrs_fusion",
         "num_tokens",
+        "input_ids",
         "flash_comm_v1_enabled",
         "pad_size",
         "padded_length",
