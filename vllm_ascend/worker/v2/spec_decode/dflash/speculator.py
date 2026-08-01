@@ -18,6 +18,7 @@ from vllm.v1.worker.gpu.spec_decode.dflash.speculator import (
 
 from vllm_ascend.utils import vllm_version_is
 from vllm_ascend.worker.v2.attn_utils import build_attn_metadata_wrapper
+from vllm_ascend.worker.v2.spec_decode.draft_context import draft_forward_inputs
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,10 @@ class AscendDFlashSpeculator(DFlashSpeculator):
                 attn_backends[layer_name] = attn_layers[layer_name].get_attn_backend()
 
         self.attn_backends = attn_backends
+
+    def _run_model(self, *args: Any, **kwargs: Any) -> torch.Tensor:
+        with draft_forward_inputs(self.input_buffers):
+            return super()._run_model(*args, **kwargs)
 
     def propose(
         self,

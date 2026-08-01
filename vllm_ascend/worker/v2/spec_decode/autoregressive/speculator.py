@@ -34,11 +34,11 @@ from vllm.v1.worker.gpu.model_states.interface import ModelState
 from vllm.v1.worker.gpu.spec_decode.autoregressive.speculator import AutoRegressiveSpeculator
 from vllm.v1.worker.utils import AttentionGroup
 
-from vllm_ascend.ascend_forward_context import override_mrv2_forward_inputs
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.utils import vllm_version_is
 from vllm_ascend.worker.v2.attn_utils import build_attn_metadata_wrapper
 from vllm_ascend.worker.v2.input_batch import AscendInputBuffers
+from vllm_ascend.worker.v2.spec_decode.draft_context import draft_forward_inputs
 
 logger = logging.getLogger(__name__)
 
@@ -186,22 +186,6 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
 
         self.attn_backends = attn_backends
 
-    @contextmanager
-    def _draft_forward_model(self, input_ids: torch.Tensor | None = None):
-        """Announce the drafter to the Ascend forward-context hook.
-
-        The hook derives sequence-parallel settings from the architecture of the
-        model being run, and the drafter may be dense while the target is MoE,
-        so capture and execution must both go through this.
-
-        ``input_ids`` defaults to the drafter's own persistent buffer; the
-        prefill graph is captured against the target's buffers instead.
-        """
-        if input_ids is None:
-            input_ids = self.input_buffers.input_ids
-        with override_mrv2_forward_inputs(input_ids, is_draft_model=True):
-            yield
-
     def capture(self) -> None:
         logger.info("Capturing model for speculator...")
         # Reset indices to zeros to prevent stale values from prior
@@ -216,23 +200,25 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
         assert self.prefill_cudagraph_manager is not None
         if self.prefill_cudagraph_manager.use_breakable_cg:
             self.prefill_cudagraph_manager.init_breakable_cg_runner(self.model)
-        with self._draft_forward_model(self.target_input_buffers.input_ids):
-            self.prefill_cudagraph_manager.capture(
-                self._prefill,
-                self.model_state,
-                self.target_input_buffers,
-                self.block_tables,
-                self.target_attn_groups,
-                self.kv_cache_config,
-                progress_bar_desc="Capturing prefill CUDA graphs",
-            )
+        # SpeculatorCudaGraphManager.capture opens no forward context of its
+        # own: _prefill reaches one only through _run_model, which announces
+        # there.
+        self.prefill_cudagraph_manager.capture(
+            self._prefill,
+            self.model_state,
+            self.target_input_buffers,
+            self.block_tables,
+            self.target_attn_groups,
+            self.kv_cache_config,
+            progress_bar_desc="Capturing prefill CUDA graphs",
+        )
 
         if self.num_speculative_steps == 1:
             return
 
         # Capture all decode draft generation steps as a single graph.
         assert self.decode_cudagraph_manager is not None
-        with self._draft_forward_model(), build_attn_metadata_wrapper():
+        with draft_forward_inputs(self.input_buffers), build_attn_metadata_wrapper():
             self.decode_cudagraph_manager.capture(
                 self._multi_step_decode,
                 self.model_state,
@@ -254,7 +240,7 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
         mm_inputs: tuple[list[torch.Tensor], torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Override AutoRegressiveSpeculator._run_model for Ascend NPUs."""
-        with self._draft_forward_model():
+        with draft_forward_inputs(self.input_buffers):
             last_hidden_states, hidden_states = super()._run_model(
                 num_tokens,
                 attn_metadata,
