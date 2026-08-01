@@ -24,6 +24,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import torch
 from torch import nn
+from vllm.config.compilation import CUDAGraphMode
 from vllm.model_executor.layers.mamba.abstract import MambaBase
 from vllm.model_executor.models.extract_hidden_states import CacheOnlyAttentionLayer
 from vllm.v1.kv_cache_interface import FullAttentionSpec, MLAAttentionSpec
@@ -42,8 +43,10 @@ from vllm_ascend.worker.v2.attn_utils import (
     build_attn_state,
     get_kv_cache_spec,
 )
+from vllm_ascend.worker.v2.model_states.default import AscendModelState
 
 _ATTN_UTILS = "vllm_ascend.worker.v2.attn_utils"
+_MODEL_STATES = "vllm_ascend.worker.v2.model_states.default"
 
 # The five kwargs AscendDSAMetadataBuilder.build requires on top of the common
 # metadata, and which build_for_cudagraph_capture has no way to accept.
@@ -396,3 +399,111 @@ class TestBuildAttnMetadataSparseRouting(TestBase):
         # Sharing the memos does not merge anything else across groups.
         self.assertEqual(builders[0].build_calls[0][1]["block_size"], 64)
         self.assertEqual(builders[1].build_calls[0][1]["block_size"], 32)
+
+
+class TestBuildAttnMetadataNumInputTokens(TestBase):
+    def test_defaults_to_the_token_count_being_built(self):
+        builder = _RecordingBuilder()
+        group = _StubAttnGroup(builder, ["model.layers.0.self_attn"], block_size=64)
+
+        _build_metadata([[group]])
+
+        common_attn_metadata, _ = builder.build_calls[0]
+        self.assertEqual(common_attn_metadata.num_input_tokens, _NUM_TOKENS)
+
+    def test_keeps_an_explicit_count(self):
+        builder = _RecordingBuilder()
+        group = _StubAttnGroup(builder, ["model.layers.0.self_attn"], block_size=64)
+
+        _build_metadata([[group]], num_input_tokens=16)
+
+        common_attn_metadata, _ = builder.build_calls[0]
+        self.assertEqual(common_attn_metadata.num_input_tokens, 16)
+
+
+class TestPrepareAttnPlumbing(TestBase):
+    """prepare_attn is the caller that must not fall back.
+
+    Its num_tokens is the unpadded count outside FULL cudagraph mode, while the
+    positions and slot mappings a sparse-attention builder slices are sized by
+    the padded one.
+    """
+
+    @staticmethod
+    def _input_batch():
+        return SimpleNamespace(
+            num_reqs=2,
+            num_tokens=6,
+            num_reqs_after_padding=4,
+            num_tokens_after_padding=8,
+            query_start_loc=torch.tensor([0, 3, 6], dtype=torch.int32),
+            query_start_loc_np=np.array([0, 3, 6], dtype=np.int32),
+            num_scheduled_tokens=np.array([3, 3], dtype=np.int32),
+            seq_lens=torch.tensor([3, 3], dtype=torch.int32),
+            seq_lens_np=np.array([3, 3], dtype=np.int32),
+            dcp_local_seq_lens=None,
+            positions=torch.arange(8, dtype=torch.int64),
+            attn_state=AscendAttentionState.PrefillNoCache,
+        )
+
+    def _prepare(self, cudagraph_mode):
+        model_state = AscendModelState.__new__(AscendModelState)
+        model_state.max_model_len = 128
+        recorded = {}
+
+        def _record(**kwargs):
+            recorded.update(kwargs)
+            return {"model.layers.0.self_attn": "metadata"}
+
+        with patch(f"{_MODEL_STATES}.build_attn_metadata", _record):
+            attn_metadata = model_state.prepare_attn(
+                self._input_batch(),
+                cudagraph_mode,
+                block_tables=(torch.zeros(2, 1, dtype=torch.int32),),
+                slot_mappings=torch.zeros(1, 8, dtype=torch.int64),
+                attn_groups=[[]],
+                kv_cache_config=SimpleNamespace(kv_cache_groups=[object()]),
+            )
+
+        # Full-graph param updates read it back off the model state.
+        self.assertIs(model_state.attn_metadata, attn_metadata)
+        return recorded
+
+    def test_passes_padded_input_tokens_in_full_mode(self):
+        recorded = self._prepare(CUDAGraphMode.FULL)
+
+        self.assertEqual(recorded["num_tokens"], 8)
+        self.assertEqual(recorded["num_input_tokens"], 8)
+        self.assertEqual(recorded["num_reqs"], 4)
+        self.assertEqual(recorded["num_reqs_actual"], 2)
+
+    def test_passes_padded_input_tokens_alongside_unpadded_num_tokens(self):
+        recorded = self._prepare(CUDAGraphMode.PIECEWISE)
+
+        # The two must not collapse into one: num_tokens is unpadded here.
+        self.assertEqual(recorded["num_tokens"], 6)
+        self.assertEqual(recorded["num_input_tokens"], 8)
+        self.assertEqual(recorded["num_reqs"], 2)
+        self.assertEqual(recorded["num_reqs_actual"], 2)
+
+    def test_forwards_capture_flag(self):
+        model_state = AscendModelState.__new__(AscendModelState)
+        model_state.max_model_len = 128
+        recorded = {}
+
+        def _record(**kwargs):
+            recorded.update(kwargs)
+            return {}
+
+        with patch(f"{_MODEL_STATES}.build_attn_metadata", _record):
+            model_state.prepare_attn(
+                self._input_batch(),
+                CUDAGraphMode.FULL,
+                block_tables=(torch.zeros(2, 1, dtype=torch.int32),),
+                slot_mappings=torch.zeros(1, 8, dtype=torch.int64),
+                attn_groups=[[]],
+                kv_cache_config=SimpleNamespace(kv_cache_groups=[object()]),
+                for_capture=True,
+            )
+
+        self.assertTrue(recorded["for_cudagraph_capture"])
