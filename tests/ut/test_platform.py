@@ -19,6 +19,7 @@ from vllm_ascend.utils import (
     COMPRESSED_TENSORS_METHOD,
     AscendDeviceType,
 )
+from vllm_ascend.worker.v2.spec_decode.draft_context import draft_forward_inputs
 
 
 class TestNPUPlatform(TestBase):
@@ -400,6 +401,37 @@ class TestNPUPlatform(TestBase):
         # The draft flag must not move the sequence-parallel decision off the
         # target's architecture.
         self.assertTrue(kwargs["flash_comm_v1_enabled"])
+
+    def test_set_additional_forward_context_v2_draft_forward_wins_over_target(self):
+        vllm_config = TestNPUPlatform.mock_vllm_config()
+        vllm_config.use_v2_model_runner = True
+        target_ids = torch.arange(16, dtype=torch.int32)
+        draft_buffers = MagicMock()
+        draft_buffers.input_ids = torch.arange(100, 116, dtype=torch.int32)
+
+        with (
+            patch("vllm_ascend.platform.envs_vllm.VLLM_USE_V2_MODEL_RUNNER", True, create=True),
+            patch("vllm_ascend.platform.is_moe_model", return_value=True),
+            patch("vllm_ascend.platform.enable_sp", return_value=False),
+            patch("vllm.distributed.get_tensor_model_parallel_world_size", return_value=2),
+            patch("vllm.distributed.get_dp_group", return_value=MagicMock(world_size=1)),
+            patch("vllm_ascend.ascend_forward_context.select_moe_comm_method", return_value=MoECommType.ALLGATHER),
+            patch("vllm_ascend.ascend_forward_context.get_mc2_mask", return_value=None),
+            patch("vllm_ascend.ops.fused_moe.moe_comm_method.get_moe_comm_method", return_value=object()),
+            # A draft forward always runs inside the target's announcement.
+            override_mrv2_forward_inputs(target_ids),
+            draft_forward_inputs(draft_buffers),
+        ):
+            kwargs = self.platform.set_additional_forward_context(
+                attn_metadata=None,
+                vllm_config=vllm_config,
+                dp_metadata=None,
+                num_tokens=4,
+            )
+
+        self.assertTrue(kwargs["is_draft_model"])
+        self.assertEqual(kwargs["input_ids"].data_ptr(), draft_buffers.input_ids.data_ptr())
+        self.assertEqual(kwargs["input_ids"].tolist(), [100, 101, 102, 103])
 
     def test_set_additional_forward_context_v2_skips_contextless_call(self):
         vllm_config = TestNPUPlatform.mock_vllm_config()
