@@ -138,9 +138,9 @@ class ModelAclGraphManager(ModelCudaGraphManager):
         """Capture CUDA graphs for model forward pass."""
         model = ModelWithContext(model)
         # Capture builds its own forward contexts (upstream cudagraph_utils), so
-        # the Ascend platform hook needs the same model announcement that
+        # the Ascend platform hook needs the same announcement that
         # NPUModelRunner.execute_model makes for real steps.
-        with communicator_switch(), override_mrv2_forward_inputs(self.model_runner.model, input_buffers.input_ids):
+        with communicator_switch(), override_mrv2_forward_inputs(input_buffers.input_ids):
             return super().capture(
                 model,
                 model_state,

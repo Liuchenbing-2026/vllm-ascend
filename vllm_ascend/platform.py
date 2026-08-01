@@ -950,7 +950,7 @@ class NPUPlatform(Platform):
         # Currently, model runner v2 use the new forward context.
         # compared to v1, v2's forward context lacks some fields, such as:
         # is_first_layer, prefetch_mlp_gate_up_proj, prefetch_mlp_gate_down_proj,
-        # prefetch_mlp_enabled, model_instance, is_draft_model.
+        # prefetch_mlp_enabled, model_instance, layer_idx.
         if not vllm_config.use_v2_model_runner:
             return {}
 
@@ -961,16 +961,11 @@ class NPUPlatform(Platform):
         if num_tokens is None and not attn_metadata:
             return {}
 
-        model_instance, input_ids_buffer, is_draft_model = get_mrv2_forward_inputs()
+        input_ids_buffer, is_draft_model = get_mrv2_forward_inputs()
         # v2 has 2 graphs in eager, one for prefill, the other for decodes, this flag is aimed to distinguish them.
         is_draft_model_prefill = False
         sinks = False
         in_profile_run = get_mrv2_in_profile_run()
-
-        # Resolved with a direct attribute walk rather than utils.has_layer_idx:
-        # that helper memoizes its answer globally, so the first model to reach
-        # it (target or drafter) would decide the answer for the other.
-        layer_idx = getattr(getattr(model_instance, "model", None), "start_layer", None)
 
         tp_world_size = get_tensor_model_parallel_world_size()
 
@@ -1055,8 +1050,6 @@ class NPUPlatform(Platform):
             "mc2_mask": mc2_mask,
             "is_draft_model": is_draft_model,
             "is_draft_model_prefill": is_draft_model_prefill,
-            "model_instance": model_instance,
-            "layer_idx": layer_idx,
             "in_profile_run": in_profile_run,
             "padded_num_tokens": padded_num_tokens,
             "sinks": sinks,

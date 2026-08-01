@@ -162,7 +162,7 @@ class NPUModelRunner(GPUModelRunner):
         and warmup, which all funnel through here.
         """
         # `torch.inference_mode()` is not re-applied: the base method carries it.
-        with override_mrv2_forward_inputs(self.model, self.input_buffers.input_ids):
+        with override_mrv2_forward_inputs(self.input_buffers.input_ids):
             return super().execute_model(
                 scheduler_output,
                 intermediate_tensors,
