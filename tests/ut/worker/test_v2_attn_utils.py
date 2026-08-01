@@ -15,9 +15,10 @@
 # limitations under the License.
 # This file is a part of the vllm-ascend project.
 #
-"""CPU-only tests for the v2 KV cache spec collector and attention-state helper."""
+"""CPU-only tests for the v2 KV cache spec collector, attn-state helper and metadata routing."""
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -37,11 +38,25 @@ from vllm_ascend.core.kv_cache_interface import (
 from vllm_ascend.worker.v2.attn_utils import (
     _build_dsa_extra_kwargs,
     _get_attention_kv_cache_dims,
+    build_attn_metadata,
     build_attn_state,
     get_kv_cache_spec,
 )
 
 _ATTN_UTILS = "vllm_ascend.worker.v2.attn_utils"
+
+# The five kwargs AscendDSAMetadataBuilder.build requires on top of the common
+# metadata, and which build_for_cudagraph_capture has no way to accept.
+_SPARSE_ATTENTION_KWARGS = frozenset(
+    {
+        "num_reqs_actual",
+        "prefill_ratio_to_sas_metadata",
+        "decode_ratio_to_sas_metadata",
+        "common_ratio_to_sas_metadata",
+        "block_size",
+    }
+)
+_MEMO_KWARGS = ("prefill_ratio_to_sas_metadata", "decode_ratio_to_sas_metadata", "common_ratio_to_sas_metadata")
 
 
 class _PlainKVCacheLayer:
@@ -238,9 +253,146 @@ class TestBuildDSAExtraKwargs(TestBase):
         memos = ({"ratio": "prefill"}, {"ratio": "decode"}, {"ratio": "common"})
         kwargs = self._kwargs(True, memos)
 
-        for key, memo in zip(
-            ("prefill_ratio_to_sas_metadata", "decode_ratio_to_sas_metadata", "common_ratio_to_sas_metadata"),
-            memos,
-        ):
+        for key, memo in zip(_MEMO_KWARGS, memos):
             self.assertEqual(kwargs[key], {})
             self.assertIsNot(kwargs[key], memo)
+
+
+class _RecordingBuilder:
+    """Stand-in metadata builder that records how build_attn_metadata called it.
+
+    A builder advertises the sparse-attention contract by carrying
+    ``requires_sparse_attention_kwargs``; one that does not want it must not
+    even have the attribute, which is what the production duck-typing check
+    reads.
+    """
+
+    def __init__(self, *, requires_sparse_attention_kwargs: bool | None = None):
+        if requires_sparse_attention_kwargs is not None:
+            self.requires_sparse_attention_kwargs = requires_sparse_attention_kwargs
+        self.build_calls: list[tuple[Any, dict]] = []
+        self.capture_calls: list[Any] = []
+
+    def build(self, *, common_prefix_len, common_attn_metadata, **kwargs):
+        self.build_calls.append((common_attn_metadata, kwargs))
+        return f"built-{len(self.build_calls)}"
+
+    def build_for_cudagraph_capture(self, common_attn_metadata):
+        # The real one takes exactly this argument: a builder needing more than
+        # the common metadata cannot be routed through it.
+        self.capture_calls.append(common_attn_metadata)
+        return "captured"
+
+
+class _StubAttnGroup:
+    def __init__(self, builder: _RecordingBuilder, layer_names: list[str], block_size: int):
+        self._builder = builder
+        self.layer_names = layer_names
+        self.kv_cache_spec = SimpleNamespace(block_size=block_size)
+
+    def get_metadata_builder(self, ubatch_id: int = 0):
+        return self._builder
+
+
+_NUM_REQS = 2
+_NUM_TOKENS = 8
+
+
+def _build_metadata(attn_groups, **overrides):
+    num_groups = len(attn_groups)
+    kwargs = dict(
+        attn_groups=attn_groups,
+        num_reqs=_NUM_REQS,
+        num_tokens=_NUM_TOKENS,
+        query_start_loc_gpu=torch.tensor([0, 4, 8], dtype=torch.int32),
+        query_start_loc_cpu=torch.tensor([0, 4, 8], dtype=torch.int32),
+        max_query_len=4,
+        seq_lens=torch.tensor([4, 4], dtype=torch.int32),
+        max_seq_len=_NUM_TOKENS,
+        block_tables=[torch.zeros(_NUM_REQS, 1, dtype=torch.int32) for _ in range(num_groups)],
+        slot_mappings=torch.zeros(num_groups, _NUM_TOKENS, dtype=torch.int64),
+        # Only the group count matters here: build_attn_metadata indexes the
+        # per-group block tables and slot mappings by position.
+        kv_cache_config=SimpleNamespace(kv_cache_groups=[object() for _ in range(num_groups)]),
+    )
+    kwargs.update(overrides)
+    return build_attn_metadata(**kwargs)
+
+
+class TestBuildAttnMetadataSparseRouting(TestBase):
+    """A sparse-attention builder needs kwargs no other builder takes.
+
+    ``build_for_cudagraph_capture`` cannot carry them, and the memo dicts only
+    save work if every KV cache group of one call sees the same three objects.
+    """
+
+    def test_sparse_builder_receives_the_extra_kwargs(self):
+        builder = _RecordingBuilder(requires_sparse_attention_kwargs=True)
+        group = _StubAttnGroup(builder, ["model.layers.0.self_attn"], block_size=64)
+
+        attn_metadata = _build_metadata([[group]], num_reqs_actual=1)
+
+        self.assertEqual(attn_metadata, {"model.layers.0.self_attn": "built-1"})
+        _, extra_kwargs = builder.build_calls[0]
+        self.assertEqual(set(extra_kwargs), set(_SPARSE_ATTENTION_KWARGS))
+        self.assertEqual(extra_kwargs["num_reqs_actual"], 1)
+        # The group's block size, not the kernel-rewritten one the builder holds.
+        self.assertEqual(extra_kwargs["block_size"], 64)
+
+    def test_num_reqs_actual_falls_back_to_num_reqs(self):
+        builder = _RecordingBuilder(requires_sparse_attention_kwargs=True)
+        group = _StubAttnGroup(builder, ["model.layers.0.self_attn"], block_size=64)
+
+        _build_metadata([[group]])
+
+        self.assertEqual(builder.build_calls[0][1]["num_reqs_actual"], _NUM_REQS)
+
+    def test_plain_builder_receives_no_extra_kwargs(self):
+        builder = _RecordingBuilder()
+        group = _StubAttnGroup(builder, ["model.layers.0.self_attn"], block_size=64)
+
+        _build_metadata([[group]])
+
+        self.assertEqual(builder.build_calls[0][1], {})
+
+    def test_sparse_builder_bypasses_the_capture_shortcut(self):
+        sparse_builder = _RecordingBuilder(requires_sparse_attention_kwargs=True)
+        plain_builder = _RecordingBuilder()
+        attn_groups = [
+            [_StubAttnGroup(sparse_builder, ["model.layers.0.self_attn"], block_size=64)],
+            [_StubAttnGroup(plain_builder, ["model.layers.1.self_attn"], block_size=64)],
+        ]
+
+        attn_metadata = _build_metadata(attn_groups, for_cudagraph_capture=True)
+
+        self.assertEqual(len(sparse_builder.build_calls), 1)
+        self.assertEqual(sparse_builder.capture_calls, [])
+        self.assertEqual(plain_builder.build_calls, [])
+        self.assertEqual(len(plain_builder.capture_calls), 1)
+        self.assertEqual(
+            attn_metadata,
+            {"model.layers.0.self_attn": "built-1", "model.layers.1.self_attn": "captured"},
+        )
+
+    def test_memos_are_shared_across_groups_and_fresh_per_call(self):
+        builders = [_RecordingBuilder(requires_sparse_attention_kwargs=True) for _ in range(2)]
+        attn_groups = [
+            [_StubAttnGroup(builders[0], ["model.layers.0.self_attn"], block_size=64)],
+            [_StubAttnGroup(builders[1], ["model.layers.1.self_attn"], block_size=32)],
+        ]
+
+        _build_metadata(attn_groups)
+        _build_metadata(attn_groups)
+
+        for key in _MEMO_KWARGS:
+            first_call = builders[0].build_calls[0][1][key]
+            self.assertIs(builders[1].build_calls[0][1][key], first_call)
+            # The tensors a memo holds belong to the batch being built, so a
+            # second call must not be handed the first call's dict.
+            self.assertIsNot(builders[0].build_calls[1][1][key], first_call)
+        # The three memos are separate dicts, not one shared under three names.
+        memos = [builders[0].build_calls[0][1][key] for key in _MEMO_KWARGS]
+        self.assertEqual(len({id(memo) for memo in memos}), len(_MEMO_KWARGS))
+        # Sharing the memos does not merge anything else across groups.
+        self.assertEqual(builders[0].build_calls[0][1]["block_size"], 64)
+        self.assertEqual(builders[1].build_calls[0][1]["block_size"], 32)
