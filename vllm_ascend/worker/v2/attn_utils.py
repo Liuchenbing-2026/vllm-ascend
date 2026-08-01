@@ -295,10 +295,10 @@ def build_attn_state(
 ):
     """Build attention state for npu's attention backend."""
     if vllm_config.model_config.runner_type == "pooling":
-        if isinstance(
-            vllm_config.kv_cache_config.kv_cache_groups[0].kv_cache_spec,
-            EncoderOnlyAttentionSpec,
-        ):
+        # An attention-free model has no KV cache group at all, which is the
+        # same "nothing was cached" situation as an encoder-only one.
+        kv_cache_groups = vllm_config.kv_cache_config.kv_cache_groups
+        if not kv_cache_groups or isinstance(kv_cache_groups[0].kv_cache_spec, EncoderOnlyAttentionSpec):
             attn_state = AscendAttentionState.PrefillNoCache
         else:
             attn_state = AscendAttentionState.PrefillCacheHit
