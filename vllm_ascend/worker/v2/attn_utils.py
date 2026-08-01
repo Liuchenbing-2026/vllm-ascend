@@ -29,6 +29,7 @@ from vllm.config import VllmConfig, get_current_vllm_config, get_layers_from_vll
 from vllm.model_executor.layers.attention import Attention
 from vllm.model_executor.layers.attention.mla_attention import MLAAttention
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
+from vllm.model_executor.layers.mamba.abstract import MambaBase
 from vllm.v1.attention.backend import AttentionBackend
 from vllm.v1.kv_cache_interface import (
     AttentionSpec,
@@ -44,11 +45,13 @@ from vllm.v1.worker.utils import AttentionGroup
 from vllm_ascend.attention.attention_mask import AttentionMaskBuilder
 from vllm_ascend.attention.attention_v1 import AscendAttentionState
 from vllm_ascend.attention.utils import AscendCommonAttentionMetadata
-from vllm_ascend.core.kv_cache_interface import AscendMLAAttentionSpec
+from vllm_ascend.core.kv_cache_interface import AscendMLAAttentionSpec, AscendSFAIndexerCacheSpec
 from vllm_ascend.quantization.utils import enable_fa_quant
 from vllm_ascend.utils import calc_split_factor
 
 _ATTENTION_MASK_BUILDER = None
+
+_V2_UNSUPPORTED_HINT = "Run this model with VLLM_USE_V2_MODEL_RUNNER=0."
 
 
 @lru_cache(maxsize=1)
@@ -71,23 +74,9 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
     layer_type = AttentionLayerBase
     attn_layers = get_layers_from_vllm_config(vllm_config, layer_type)
 
-    # Imported lazily: pulling a concrete model module in at worker import time
-    # would drag the whole DeepSeek stack into every v2 startup.
-    from vllm.model_executor.models.deepseek_v2 import DeepseekV32IndexerCache
-
     for layer_name, attn_module in attn_layers.items():
         if getattr(attn_module, "kv_sharing_target_layer_name", None):
             continue
-        if isinstance(attn_module, DeepseekV32IndexerCache):
-            # The indexer cache is one packed vector, not a K/V pair, and its
-            # Ascend block-size and scale accounting live in
-            # AscendSFAIndexerCacheSpec. The generic fallback below would emit
-            # upstream's plain MLAAttentionSpec, mixing spec classes inside one
-            # model and describing a layout the Ascend allocator cannot build.
-            raise NotImplementedError(
-                f"Sparse attention indexer layer {layer_name} is not supported by the v2 model runner; "
-                "run this model with VLLM_USE_V2_MODEL_RUNNER=0."
-            )
         if isinstance(attn_module, Attention):
             if spec := attn_module.get_kv_cache_spec(vllm_config):
                 kv_cache_spec[layer_name] = spec
@@ -111,13 +100,34 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
                 cache_dtype_str=cache_dtype_str,
             )
             continue
+        if isinstance(attn_module, MambaBase):
+            # A MambaSpec is not an AttentionSpec, so it trips the assert in
+            # _allocate_kv_cache below instead of getting the recurrent-state
+            # page layout the layer needs.
+            raise NotImplementedError(
+                f"Recurrent-state layer {layer_name} ({type(attn_module).__name__}) is not supported by the "
+                f"v2 model runner on Ascend. {_V2_UNSUPPORTED_HINT}"
+            )
         # Attention layers that are neither Attention nor MLAAttention still own
         # KV state -- DeepSeek V4's DSA contributes DSAAttention plus its SWA,
         # compressor-state and indexer caches. Ask the layer for its own spec,
         # mirroring the v1 runner's fallback branch. Without this every DSA
         # layer is dropped and the model ends up with no KV cache group at all.
-        if spec := attn_module.get_kv_cache_spec(vllm_config):
-            kv_cache_spec[layer_name] = spec
+        spec = attn_module.get_kv_cache_spec(vllm_config)
+        if not spec:
+            continue
+        if isinstance(spec, AscendSFAIndexerCacheSpec):
+            # One packed vector per token plus its own scale accounting, not a
+            # K/V pair: _allocate_kv_cache splits every page in two, which is
+            # a layout this spec cannot describe. Keyed on the spec rather than
+            # the layer class because unrelated classes emit it -- Ascend's
+            # AscendMiniMaxM3IndexerCache today, any future SFA indexer next.
+            raise NotImplementedError(
+                f"Sparse-attention indexer layer {layer_name} ({type(attn_module).__name__}) is not supported "
+                f"by the v2 model runner on Ascend; this covers the SFA/MSA families (DeepSeek V3.2, "
+                f"MiniMax-M3). {_V2_UNSUPPORTED_HINT}"
+            )
+        kv_cache_spec[layer_name] = spec
 
     return kv_cache_spec
 
@@ -340,16 +350,24 @@ def _get_layer_kv_cache_specs(kv_cache_config: KVCacheConfig) -> dict[str, KVCac
 
 
 def _get_attention_kv_cache_dims(layer_name: str, kv_cache_spec: AttentionSpec) -> tuple[int, int]:
-    if isinstance(kv_cache_spec, AscendMLAAttentionSpec):
+    if isinstance(kv_cache_spec, MLAAttentionSpec):
         attn_layers = get_layers_from_vllm_config(get_current_vllm_config(), AttentionLayerBase, [layer_name])
         attn_layer = attn_layers[layer_name]
         if isinstance(attn_layer, MLAAttention):
             # MLA stores one latent cache whose two halves are the nope (K) and
             # rope (V) parts; only the layer knows how the head size splits.
             return attn_layer.kv_lora_rank, attn_layer.qk_rope_head_dim
-        # Layers that carry an MLA-shaped spec without being MLAAttention (e.g.
-        # DeepSeek V4's DSA attention and its indexer cache) do not have a
-        # nope/rope split, so use the generic head-size layout below.
+        # An MLA-shaped page holds a single head_size vector, so there is no
+        # second dimension to report. Returning (head_size, head_size) would
+        # make the callers below budget two pages and then split each raw
+        # tensor in half, which no longer matches page_size_bytes. This covers
+        # DeepSeek V4's DSAAttention and DeepSeek V3.2's indexer cache, whose
+        # per-role cache tuples the v2 allocator cannot build either way.
+        raise NotImplementedError(
+            f"KV cache layer {layer_name} ({type(attn_layer).__name__}) reports an MLA-shaped "
+            f"{type(kv_cache_spec).__name__} without being an MLAAttention layer, which the v2 model runner "
+            f"on Ascend cannot allocate. {_V2_UNSUPPORTED_HINT}"
+        )
 
     head_size_v = kv_cache_spec.head_size_v if hasattr(kv_cache_spec, "head_size_v") else kv_cache_spec.head_size
     return kv_cache_spec.head_size, head_size_v
