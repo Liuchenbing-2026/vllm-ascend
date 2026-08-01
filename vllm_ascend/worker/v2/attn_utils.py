@@ -127,9 +127,10 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
             )
         # Attention layers that are neither Attention nor MLAAttention still own
         # KV state -- DeepSeek V4's DSA contributes DSAAttention plus its SWA,
-        # compressor-state and indexer caches. Ask the layer for its own spec,
-        # mirroring the v1 runner's fallback branch. Without this every DSA
-        # layer is dropped and the model ends up with no KV cache group at all.
+        # compressor-state and indexer caches, and every one of them must appear
+        # here or the model reaches _allocate_kv_cache with no KV cache group.
+        # Ask the layer for its own spec, mirroring the v1 runner's fallback
+        # branch, and let the layout rules below decide what is buildable.
         spec = attn_module.get_kv_cache_spec(vllm_config)
         if not spec:
             continue

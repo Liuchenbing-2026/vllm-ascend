@@ -186,8 +186,8 @@ class TestBuildAttnState(TestBase):
         )
 
     def test_attention_free_model_has_no_kv_cache_group(self):
-        # An attention-free pooling model gets an empty group list, which used
-        # to raise IndexError before either block-table kernel could run.
+        # An attention-free pooling model gets an empty group list, so this
+        # helper must not index kv_cache_groups[0] to decide the state.
         attn_state = build_attn_state(
             self._pooling_config([]),
             np.array([4], dtype=np.int32),
