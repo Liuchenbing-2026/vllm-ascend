@@ -199,7 +199,7 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
         """
         if input_ids is None:
             input_ids = self.input_buffers.input_ids
-        with override_mrv2_forward_inputs(self.model, input_ids, is_draft_model=True):
+        with override_mrv2_forward_inputs(input_ids, is_draft_model=True):
             yield
 
     def capture(self) -> None:
