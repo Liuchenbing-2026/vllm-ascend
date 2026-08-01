@@ -72,6 +72,11 @@ class AscendModelState(DefaultModelState):
             seq_lens_np=input_batch.seq_lens_np,
             positions=input_batch.positions,
             attn_state=input_batch.attn_state,
+            # DSA slices positions and slot mappings with num_input_tokens; both
+            # buffers are sized by the padded token count in prepare_attn.
+            num_input_tokens=input_batch.num_tokens_after_padding,
+            # Unpadded request count, used to clear the padded rows.
+            num_reqs_actual=input_batch.num_reqs,
             for_cudagraph_capture=for_capture,
         )
         return self.attn_metadata

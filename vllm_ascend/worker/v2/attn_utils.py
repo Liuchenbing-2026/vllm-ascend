@@ -19,6 +19,7 @@
 
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
@@ -48,6 +49,20 @@ from vllm_ascend.quantization.utils import enable_fa_quant
 from vllm_ascend.utils import calc_split_factor
 
 _ATTENTION_MASK_BUILDER = None
+
+
+@lru_cache(maxsize=1)
+def _dsa_metadata_builder_classes() -> tuple[type, ...]:
+    """Resolve the DSA metadata builder classes on first use.
+
+    Importing them at module scope would drag the DSA attention backend and its
+    device-op dependencies into every v2 startup, including models that have no
+    sparse attention at all.
+    """
+    from vllm_ascend.attention.context_parallel.dsa_cp import AscendDSACPMetadataBuilder
+    from vllm_ascend.attention.dsa_v1 import AscendDSAMetadataBuilder
+
+    return (AscendDSAMetadataBuilder, AscendDSACPMetadataBuilder)
 
 
 def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
@@ -115,6 +130,35 @@ def get_attn_mask_builder(device: torch.device):
     return _ATTENTION_MASK_BUILDER
 
 
+def _build_dsa_extra_kwargs(
+    *,
+    attn_group: AttentionGroup,
+    num_reqs_actual: int,
+    prefill_ratio_to_sas_metadata: dict[Any, Any],
+    decode_ratio_to_sas_metadata: dict[Any, Any],
+    common_ratio_to_sas_metadata: dict[Any, Any],
+    for_cudagraph_capture: bool,
+) -> dict[str, Any]:
+    """Collect the kwargs AscendDSAMetadataBuilder.build requires."""
+    if for_cudagraph_capture:
+        # Capture runs on synthetic batches; give it a throwaway memo so it
+        # cannot hand its tensors to the real batches that follow.
+        prefill_ratio_to_sas_metadata = {}
+        decode_ratio_to_sas_metadata = {}
+        common_ratio_to_sas_metadata = {}
+    return {
+        # The padded request rows have stale block ids, and the builder needs
+        # the unpadded count to zero them.
+        "num_reqs_actual": num_reqs_actual,
+        "prefill_ratio_to_sas_metadata": prefill_ratio_to_sas_metadata,
+        "decode_ratio_to_sas_metadata": decode_ratio_to_sas_metadata,
+        "common_ratio_to_sas_metadata": common_ratio_to_sas_metadata,
+        # The group's spec, not the builder's: create_metadata_builders hands
+        # the builder a clone rewritten to the kernel block size.
+        "block_size": attn_group.kv_cache_spec.block_size,
+    }
+
+
 def build_attn_metadata(
     *,
     attn_groups: list[list[AttentionGroup]],
@@ -137,12 +181,20 @@ def build_attn_metadata(
     attn_state: Any | None = None,
     graph_pad_size: int = -1,
     num_input_tokens: int = 0,
+    num_reqs_actual: int | None = None,
     model_specific_attn_metadata: ModelSpecificAttnMetadata | None = None,
     for_cudagraph_capture: bool = False,
     causal: bool | Mapping[int, bool] = True,
 ) -> dict[str, Any]:
     """Build attention metadata for Ascend NPUs."""
     # TODO(Ronald1995): optimize AscendCommonAttentionMetadata.
+
+    # Sparse-attention builders slice positions and slot mappings down to
+    # num_input_tokens. Upstream's draft-metadata path never passes it, and the
+    # zero default would leave them empty, so fall back to the token count the
+    # caller is building for -- which is already the padded one everywhere.
+    if num_input_tokens <= 0:
+        num_input_tokens = num_tokens
 
     # seq_lens_np is used for ascend npus, it maybe None in spec_decode case,
     # we fill it with max_seq_len in case `attn_metadata_builder.build` raise
@@ -152,6 +204,16 @@ def build_attn_metadata(
     seq_lens_cpu = torch.from_numpy(seq_lens_np)[:num_reqs]
     if seq_lens_cpu_upper_bound is None:
         seq_lens_cpu_upper_bound = seq_lens_cpu
+
+    # A DSA model spreads its layers over several KV cache groups, one per
+    # compression ratio, whose builders share this scratch: the first builder to
+    # run fills it in and the others reuse the decode/prefill split, positions,
+    # rope tables and sparse-attention handles instead of recomputing them.
+    # It has to be rebuilt on every call because the tensors it holds belong to
+    # the batch currently being built.
+    prefill_ratio_to_sas_metadata: dict[Any, Any] = {}
+    decode_ratio_to_sas_metadata: dict[Any, Any] = {}
+    common_ratio_to_sas_metadata: dict[Any, Any] = {}
 
     attn_metadata: dict[str, Any] = {}
     kv_cache_groups = kv_cache_config.kv_cache_groups
@@ -188,7 +250,10 @@ def build_attn_metadata(
 
         for attn_group in attn_groups[i]:
             attn_metadata_builder = attn_group.get_metadata_builder(0)
-            if for_cudagraph_capture:
+            is_dsa_builder = isinstance(attn_metadata_builder, _dsa_metadata_builder_classes())
+            # DSA's builder requires kwargs that build_for_cudagraph_capture
+            # cannot pass, so it builds the capture metadata the normal way.
+            if for_cudagraph_capture and not is_dsa_builder:
                 metadata = attn_metadata_builder.build_for_cudagraph_capture(common_attn_metadata)
             else:
                 attn_metadata_extra_kwargs = (
@@ -199,6 +264,18 @@ def build_attn_metadata(
                     if model_specific_attn_metadata is not None
                     else {}
                 )
+                if is_dsa_builder:
+                    attn_metadata_extra_kwargs = {
+                        **attn_metadata_extra_kwargs,
+                        **_build_dsa_extra_kwargs(
+                            attn_group=attn_group,
+                            num_reqs_actual=num_reqs if num_reqs_actual is None else num_reqs_actual,
+                            prefill_ratio_to_sas_metadata=prefill_ratio_to_sas_metadata,
+                            decode_ratio_to_sas_metadata=decode_ratio_to_sas_metadata,
+                            common_ratio_to_sas_metadata=common_ratio_to_sas_metadata,
+                            for_cudagraph_capture=for_cudagraph_capture,
+                        ),
+                    }
                 metadata = attn_metadata_builder.build(
                     common_prefix_len=0,
                     common_attn_metadata=common_attn_metadata,
