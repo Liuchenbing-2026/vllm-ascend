@@ -56,9 +56,23 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
     layer_type = AttentionLayerBase
     attn_layers = get_layers_from_vllm_config(vllm_config, layer_type)
 
+    # Imported lazily: pulling a concrete model module in at worker import time
+    # would drag the whole DeepSeek stack into every v2 startup.
+    from vllm.model_executor.models.deepseek_v2 import DeepseekV32IndexerCache
+
     for layer_name, attn_module in attn_layers.items():
         if getattr(attn_module, "kv_sharing_target_layer_name", None):
             continue
+        if isinstance(attn_module, DeepseekV32IndexerCache):
+            # The indexer cache is one packed vector, not a K/V pair, and its
+            # Ascend block-size and scale accounting live in
+            # AscendSFAIndexerCacheSpec. The generic fallback below would emit
+            # upstream's plain MLAAttentionSpec, mixing spec classes inside one
+            # model and describing a layout the Ascend allocator cannot build.
+            raise NotImplementedError(
+                f"Sparse attention indexer layer {layer_name} is not supported by the v2 model runner; "
+                "run this model with VLLM_USE_V2_MODEL_RUNNER=0."
+            )
         if isinstance(attn_module, Attention):
             if spec := attn_module.get_kv_cache_spec(vllm_config):
                 kv_cache_spec[layer_name] = spec
@@ -252,9 +266,13 @@ def _get_attention_kv_cache_dims(layer_name: str, kv_cache_spec: AttentionSpec) 
     if isinstance(kv_cache_spec, AscendMLAAttentionSpec):
         attn_layers = get_layers_from_vllm_config(get_current_vllm_config(), AttentionLayerBase, [layer_name])
         attn_layer = attn_layers[layer_name]
-        if not isinstance(attn_layer, MLAAttention):
-            raise TypeError(f"Expected AscendMLAAttention layer for {layer_name}, got {type(attn_layer).__name__}.")
-        return attn_layer.kv_lora_rank, attn_layer.qk_rope_head_dim
+        if isinstance(attn_layer, MLAAttention):
+            # MLA stores one latent cache whose two halves are the nope (K) and
+            # rope (V) parts; only the layer knows how the head size splits.
+            return attn_layer.kv_lora_rank, attn_layer.qk_rope_head_dim
+        # Layers that carry an MLA-shaped spec without being MLAAttention (e.g.
+        # DeepSeek V4's DSA attention and its indexer cache) do not have a
+        # nope/rope split, so use the generic head-size layout below.
 
     head_size_v = kv_cache_spec.head_size_v if hasattr(kv_cache_spec, "head_size_v") else kv_cache_spec.head_size
     return kv_cache_spec.head_size, head_size_v
