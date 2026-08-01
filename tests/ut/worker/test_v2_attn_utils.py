@@ -507,3 +507,29 @@ class TestPrepareAttnPlumbing(TestBase):
             )
 
         self.assertTrue(recorded["for_cudagraph_capture"])
+
+
+class TestSparseAttentionBuilderContract(TestBase):
+    """``requires_sparse_attention_kwargs`` is the whole v2 routing contract.
+
+    The v2 metadata build has no other way to tell a sparse-attention builder
+    apart, so a builder that stops carrying the attribute silently loses the
+    kwargs its ``build`` asserts on. The v1 runner keeps the equivalent
+    isinstance tuples (``model_runner_v1._build_attention_metadata``); the two
+    must stay in step.
+    """
+
+    def test_sparse_builders_declare_the_attribute(self):
+        from vllm_ascend.attention.context_parallel.dsa_cp import AscendDSACPMetadataBuilder
+        from vllm_ascend.attention.dsa_v1 import AscendDSAMetadataBuilder
+
+        self.assertTrue(AscendDSAMetadataBuilder.requires_sparse_attention_kwargs)
+        self.assertTrue(AscendDSACPMetadataBuilder.requires_sparse_attention_kwargs)
+
+    def test_sfa_dcp_builder_stays_out_of_the_kwargs_tuple(self):
+        # v1 excludes this builder from build_for_cudagraph_capture but does
+        # not pass it the extra kwargs; its build() swallows them via **kwargs,
+        # so declaring the attribute here would change what it receives.
+        from vllm_ascend.attention.context_parallel.sfa_cp import AscendSFADCPMetadataBuilder
+
+        self.assertFalse(hasattr(AscendSFADCPMetadataBuilder, "requires_sparse_attention_kwargs"))
