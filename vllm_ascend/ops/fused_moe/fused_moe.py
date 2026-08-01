@@ -183,7 +183,7 @@ class AscendUnquantizedFusedMoEMethod(UnquantizedFusedMoEMethod):
     ) -> torch.Tensor:
         zero_expert_num = getattr(layer, "zero_expert_num", 0)
         zero_expert_type = getattr(layer, "zero_expert_type", None)
-        input_ids = getattr(get_forward_context(), "input_ids", None)
+        input_ids = _EXTRA_CTX.input_ids
         num_shared_experts = getattr(layer, "n_shared_experts", 0)
         if num_shared_experts is None:
             num_shared_experts = 0

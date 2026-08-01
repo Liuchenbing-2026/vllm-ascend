@@ -10,7 +10,7 @@ from vllm.v1.attention.selector import AttentionSelectorConfig  # type: ignore
 from tests.ut.base import TestBase
 from vllm_ascend.ascend_forward_context import (
     MoECommType,
-    override_mrv2_forward_model,
+    override_mrv2_forward_inputs,
     override_mrv2_in_profile_run,
 )
 from vllm_ascend.platform import NPUPlatform
@@ -317,6 +317,34 @@ class TestNPUPlatform(TestBase):
         self.assertFalse(kwargs["in_profile_run"])
         self.assertEqual(kwargs["padded_num_tokens"], 8)
         self.assertIs(kwargs["moe_comm_method"], dummy_comm_method)
+        # No forward-inputs override is active, so there is no id buffer to cut.
+        self.assertIsNone(kwargs["input_ids"])
+
+    def test_set_additional_forward_context_v2_slices_input_ids(self):
+        vllm_config = TestNPUPlatform.mock_vllm_config()
+        vllm_config.use_v2_model_runner = True
+        input_ids_buffer = torch.arange(16, dtype=torch.int32)
+
+        with (
+            patch("vllm_ascend.platform.envs_vllm.VLLM_USE_V2_MODEL_RUNNER", True, create=True),
+            patch("vllm_ascend.platform.is_moe_model", return_value=True),
+            patch("vllm_ascend.platform.enable_sp", return_value=False),
+            patch("vllm.distributed.get_tensor_model_parallel_world_size", return_value=4),
+            patch("vllm.distributed.get_dp_group", return_value=MagicMock(world_size=1)),
+            patch("vllm_ascend.ascend_forward_context.select_moe_comm_method", return_value=MoECommType.ALLGATHER),
+            patch("vllm_ascend.ascend_forward_context.get_mc2_mask", return_value=None),
+            patch("vllm_ascend.ops.fused_moe.moe_comm_method.get_moe_comm_method", return_value=object()),
+            override_mrv2_forward_inputs(None, input_ids_buffer),
+        ):
+            kwargs = self.platform.set_additional_forward_context(
+                attn_metadata=None,
+                vllm_config=vllm_config,
+                dp_metadata=None,
+                num_tokens=5,
+            )
+
+        self.assertEqual(kwargs["input_ids"].numel(), 5)
+        self.assertEqual(kwargs["input_ids"].data_ptr(), input_ids_buffer.data_ptr())
 
     def test_set_additional_forward_context_reads_v2_profile_override(self):
         vllm_config = TestNPUPlatform.mock_vllm_config()
@@ -358,7 +386,7 @@ class TestNPUPlatform(TestBase):
             patch("vllm_ascend.ascend_forward_context.select_moe_comm_method", return_value=MoECommType.ALLGATHER),
             patch("vllm_ascend.ascend_forward_context.get_mc2_mask", return_value=None),
             patch("vllm_ascend.ops.fused_moe.moe_comm_method.get_moe_comm_method", return_value=object()),
-            override_mrv2_forward_model(model_instance, is_draft_model=True),
+            override_mrv2_forward_inputs(model_instance, is_draft_model=True),
         ):
             kwargs = self.platform.set_additional_forward_context(
                 attn_metadata=None,

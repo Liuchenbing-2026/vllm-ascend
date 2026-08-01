@@ -34,7 +34,7 @@ from vllm.v1.worker.gpu.input_batch import InputBuffers
 from vllm.v1.worker.gpu.model_states.interface import ModelState
 from vllm.v1.worker.utils import AttentionGroup
 
-from vllm_ascend.ascend_forward_context import _EXTRA_CTX, override_mrv2_forward_model
+from vllm_ascend.ascend_forward_context import _EXTRA_CTX, override_mrv2_forward_inputs
 from vllm_ascend.compilation.acl_graph import set_graph_params, update_full_graph_params
 from vllm_ascend.worker.v2.utils import communicator_switch
 
@@ -140,7 +140,7 @@ class ModelAclGraphManager(ModelCudaGraphManager):
         # Capture builds its own forward contexts (upstream cudagraph_utils), so
         # the Ascend platform hook needs the same model announcement that
         # NPUModelRunner.execute_model makes for real steps.
-        with communicator_switch(), override_mrv2_forward_model(self.model_runner.model):
+        with communicator_switch(), override_mrv2_forward_inputs(self.model_runner.model, input_buffers.input_ids):
             return super().capture(
                 model,
                 model_state,
