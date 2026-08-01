@@ -36,9 +36,13 @@ from vllm_ascend.core.kv_cache_interface import (
     AscendSFAIndexerCacheSpec,
     AscendSlidingWindowMLASpec,
 )
+from vllm_ascend.utils import AscendDeviceType
 from vllm_ascend.worker.v2.attn_utils import (
+    _allocate_kv_cache,
     _build_dsa_extra_kwargs,
     _get_attention_kv_cache_dims,
+    _reshape_kv_cache_v2,
+    bind_kv_cache,
     build_attn_metadata,
     build_attn_state,
     get_kv_cache_spec,
@@ -193,6 +197,246 @@ class TestGetAttentionKVCacheDims(TestBase):
         spec = _full_attention_spec()
 
         self.assertEqual(_get_attention_kv_cache_dims("model.layers.0.self_attn", spec), (64, 64))
+
+
+class _DSACacheBackend:
+    @staticmethod
+    def get_kv_cache_shape(num_blocks, block_size, num_kv_heads, head_size):
+        return num_blocks, block_size, num_kv_heads, head_size
+
+
+class _ConventionalCacheBackend:
+    @staticmethod
+    def get_kv_cache_shape(num_blocks, block_size, num_kv_heads, head_size, cache_dtype):
+        return 2, num_blocks, block_size, num_kv_heads, head_size
+
+
+def _kv_cache_config(layer_name, spec, num_blocks):
+    return SimpleNamespace(
+        kv_cache_groups=[SimpleNamespace(kv_cache_spec=spec, layer_names=[layer_name])],
+        kv_cache_tensors=[
+            SimpleNamespace(
+                size=num_blocks * spec.page_size_bytes,
+                shared_by=[layer_name],
+                offset=0,
+                block_stride=0,
+            )
+        ],
+        num_blocks=num_blocks,
+    )
+
+
+def _attn_group(layer_name, spec, backend):
+    return SimpleNamespace(
+        kv_cache_group_id=0,
+        kv_cache_spec=spec,
+        layer_names=[layer_name],
+        backend=backend,
+    )
+
+
+class TestDSAKVCacheLayout(TestBase):
+    def _runner_config(self):
+        return SimpleNamespace(kv_transfer_config=None)
+
+    def test_dsv4_ascend_mla_uses_physical_block_size(self):
+        spec = AscendMLAAttentionSpec(
+            block_size=8,
+            num_kv_heads=1,
+            head_size=4,
+            dtype=torch.int8,
+            compress_ratio=4,
+            model_version="deepseek_v4",
+        )
+
+        # Ascend already reduces the number of allocated blocks by
+        # compress_ratio. Dividing the physical block size here too would
+        # compress the storage a second time.
+        self.assertEqual(spec.storage_block_size, 8)
+
+    def test_dsv4_merge_preserves_layout_marker_and_compression(self):
+        specs = [
+            AscendMLAAttentionSpec(
+                block_size=8,
+                num_kv_heads=1,
+                head_size=4,
+                dtype=torch.int8,
+                compress_ratio=4,
+                model_version="deepseek_v4",
+            )
+            for _ in range(2)
+        ]
+
+        merged = AscendMLAAttentionSpec.merge(specs)
+
+        self.assertEqual(merged.compress_ratio, 4)
+        self.assertEqual(merged.model_version, "deepseek_v4")
+
+    def test_allocator_keeps_one_raw_backing_for_dsa_layer(self):
+        layer_name = "model.layers.0.self_attn.attn"
+        spec = AscendMLAAttentionSpec(
+            block_size=2,
+            num_kv_heads=1,
+            head_size=4,
+            dtype=torch.int8,
+            compress_ratio=4,
+            model_version="deepseek_v4",
+            scale_dim=1,
+            scale_dtype=torch.float16,
+        )
+        config = _kv_cache_config(layer_name, spec, num_blocks=2)
+
+        with patch(f"{_ATTN_UTILS}.get_current_vllm_config", return_value=self._runner_config()):
+            raw_caches = _allocate_kv_cache(config, {}, torch.device("cpu"))
+
+        raw_cache = raw_caches[layer_name]
+        self.assertIsInstance(raw_cache, torch.Tensor)
+        self.assertEqual(raw_cache.dtype, torch.int8)
+        self.assertEqual(raw_cache.numel(), 2 * spec.page_size_bytes)
+
+    def test_a2_indexer_views_share_page_strided_backing(self):
+        layer_name = "model.layers.0.self_attn.indexer.k_cache"
+        spec = AscendMLAAttentionSpec(
+            block_size=2,
+            num_kv_heads=1,
+            head_size=4,
+            dtype=torch.int8,
+            compress_ratio=4,
+            model_version="deepseek_v4",
+            scale_dim=1,
+            scale_dtype=torch.float16,
+        )
+        config = _kv_cache_config(layer_name, spec, num_blocks=2)
+        raw_cache = torch.zeros(2 * spec.page_size_bytes, dtype=torch.int8)
+        group = _attn_group(layer_name, spec, _DSACacheBackend)
+
+        with (
+            patch(f"{_ATTN_UTILS}.get_current_vllm_config", return_value=self._runner_config()),
+            patch(f"{_ATTN_UTILS}.get_ascend_device_type", return_value=AscendDeviceType.A2),
+        ):
+            cache = _reshape_kv_cache_v2([group], {layer_name: raw_cache}, "auto", [2], {}, config)[layer_name]
+
+        self.assertEqual(len(cache), 2)
+        data, scale = cache
+        self.assertEqual(data.shape, (2, 2, 1, 4))
+        self.assertEqual(scale.shape, (2, 2, 1, 1))
+        self.assertEqual(data.dtype, torch.int8)
+        self.assertEqual(scale.dtype, torch.float16)
+        self.assertEqual(data.stride(), (spec.page_size_bytes, 4, 4, 1))
+        self.assertEqual(scale.stride(), (spec.page_size_bytes // 2, 1, 1, 1))
+        self.assertEqual(scale.storage_offset() * scale.element_size(), 8)
+        self.assertEqual(data.untyped_storage().data_ptr(), raw_cache.untyped_storage().data_ptr())
+        self.assertEqual(scale.untyped_storage().data_ptr(), raw_cache.untyped_storage().data_ptr())
+
+    def test_a5_indexer_full_view_overlaps_data_and_scale(self):
+        layer_name = "model.layers.0.self_attn.indexer.k_cache"
+        spec = AscendMLAAttentionSpec(
+            block_size=2,
+            num_kv_heads=1,
+            head_size=4,
+            dtype=torch.float8_e4m3fn,
+            compress_ratio=4,
+            model_version="deepseek_v4",
+            scale_dim=1,
+            scale_dtype=torch.float32,
+        )
+        config = _kv_cache_config(layer_name, spec, num_blocks=2)
+        raw_cache = torch.zeros(2 * spec.page_size_bytes, dtype=torch.int8)
+        group = _attn_group(layer_name, spec, _DSACacheBackend)
+
+        with (
+            patch(f"{_ATTN_UTILS}.get_current_vllm_config", return_value=self._runner_config()),
+            patch(f"{_ATTN_UTILS}.get_ascend_device_type", return_value=AscendDeviceType.A5),
+        ):
+            cache = _reshape_kv_cache_v2([group], {layer_name: raw_cache}, "auto", [2], {}, config)[layer_name]
+
+        self.assertEqual(len(cache), 3)
+        data, scale, full = cache
+        self.assertEqual(data.shape, (2, 2, 1, 4))
+        self.assertEqual(scale.shape, (2, 2, 1, 1))
+        self.assertEqual(full.shape, (2, 2, 1, 8))
+        self.assertEqual(scale.storage_offset() * scale.element_size(), 8)
+        self.assertEqual(full.storage_offset(), 0)
+        for view in cache:
+            self.assertEqual(view.untyped_storage().data_ptr(), raw_cache.untyped_storage().data_ptr())
+
+    def test_padded_single_view_skips_each_pages_padding(self):
+        layer_name = "model.layers.0.self_attn.compressor.state_cache"
+        spec = AscendSlidingWindowMLASpec(
+            block_size=2,
+            num_kv_heads=1,
+            head_size=3,
+            dtype=torch.bfloat16,
+            sliding_window=8,
+            page_size_padded=16,
+            model_version="deepseek_v4",
+        )
+        config = _kv_cache_config(layer_name, spec, num_blocks=2)
+        raw_cache = torch.zeros(2 * spec.page_size_bytes, dtype=torch.int8)
+        group = _attn_group(layer_name, spec, _DSACacheBackend)
+
+        with (
+            patch(f"{_ATTN_UTILS}.get_current_vllm_config", return_value=self._runner_config()),
+            patch(f"{_ATTN_UTILS}.get_ascend_device_type", return_value=AscendDeviceType.A2),
+        ):
+            cache = _reshape_kv_cache_v2([group], {layer_name: raw_cache}, "auto", [2], {}, config)[layer_name]
+
+        self.assertEqual(len(cache), 1)
+        (state,) = cache
+        self.assertEqual(state.shape, (2, 2, 1, 3))
+        self.assertEqual(state.stride(), (8, 3, 3, 1))
+        self.assertEqual(state.untyped_storage().data_ptr(), raw_cache.untyped_storage().data_ptr())
+
+    def test_conventional_kv_pair_path_is_unchanged(self):
+        layer_name = "model.layers.0.self_attn"
+        spec = FullAttentionSpec(block_size=2, num_kv_heads=1, head_size=2, dtype=torch.bfloat16)
+        config = _kv_cache_config(layer_name, spec, num_blocks=2)
+        group = _attn_group(layer_name, spec, _ConventionalCacheBackend)
+
+        with (
+            patch(f"{_ATTN_UTILS}.get_current_vllm_config", return_value=self._runner_config()),
+            patch(f"{_ATTN_UTILS}.enable_fa_quant", return_value=False),
+        ):
+            raw_caches = _allocate_kv_cache(config, {}, torch.device("cpu"))
+            caches = _reshape_kv_cache_v2([group], raw_caches, "auto", [2], {}, config)
+
+        self.assertIsInstance(raw_caches[layer_name], tuple)
+        k_cache, v_cache = caches[layer_name]
+        self.assertEqual(k_cache.shape, (2, 2, 1, 2))
+        self.assertEqual(v_cache.shape, (2, 2, 1, 2))
+
+
+class TestBindKVCache(TestBase):
+    def test_allows_multiple_cache_modules_per_transformer_layer(self):
+        caches = {
+            "model.layers.1.self_attn.swa_cache": torch.tensor([3]),
+            "model.layers.0.self_attn.indexer.k_cache": [torch.tensor([1]), torch.tensor([2])],
+            "model.layers.0.self_attn.attn": [torch.tensor([0])],
+        }
+        forward_context = {layer_name: SimpleNamespace(bind_kv_cache=MagicMock()) for layer_name in caches}
+        runner_caches = []
+
+        bind_kv_cache(caches, forward_context, runner_caches)
+
+        self.assertEqual(len(runner_caches), 3)
+        # Transformer layer order first, then a stable name order among the
+        # cache-only modules belonging to the same layer.
+        self.assertIs(runner_caches[0], caches["model.layers.0.self_attn.attn"])
+        self.assertIs(runner_caches[1], caches["model.layers.0.self_attn.indexer.k_cache"])
+        self.assertIs(runner_caches[2], caches["model.layers.1.self_attn.swa_cache"])
+        for layer_name, cache in caches.items():
+            forward_context[layer_name].bind_kv_cache.assert_called_once_with(cache)
+
+    def test_supports_vllm_026_direct_attribute_binding(self):
+        layer_name = "model.layers.0.self_attn.indexer.k_cache"
+        cache = [torch.tensor([1]), torch.tensor([2])]
+        layer = SimpleNamespace(kv_cache=None)
+        runner_caches = []
+
+        bind_kv_cache({layer_name: cache}, {layer_name: layer}, runner_caches)
+
+        self.assertEqual(runner_caches, [cache])
+        self.assertIs(layer.kv_cache, cache)
 
 
 class TestBuildAttnState(TestBase):

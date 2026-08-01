@@ -15,9 +15,9 @@ to get specific plans.
 
 - [ ] `_allocate_kv_cache` & `_reshape_kv_cache`
 
-    Why: KV cache requires continuous space (thus divided as K cache and V cache separately) and PD disaggregation requires 2M-aligned tensors for KV cache, so custom KV cache initialization is needed. These should be removed when the above 2 requirements are no longer needed.
+    Why: Conventional KV cache requires continuous space (divided into K and V for PD disaggregation and 2M alignment). DeepSeek V4 DSA requires one page backing with data/scale strided views, including an overlapping full view on A5. These should be removed when upstream exposes equivalent backend layout hooks.
 
-    Location: `attn_utils._get_layer_kv_cache_specs`, `attn_utils._get_attention_kv_cache_dims`, `attn_utils._align_memory`, `attn_utils._allocate_kv_cache`, `attn_utils._reshape_kv_cache_v2`.
+    Location: `attn_utils._get_layer_kv_cache_specs`, `attn_utils._get_attention_kv_cache_dims`, `attn_utils._align_memory`, `attn_utils._allocate_kv_cache`, `attn_utils._reshape_dsv4_dsa_cache`, `attn_utils._reshape_kv_cache_v2`.
 
 - [ ] `torch_npu_graph_wrapper`
 

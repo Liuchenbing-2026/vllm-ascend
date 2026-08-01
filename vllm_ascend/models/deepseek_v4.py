@@ -132,6 +132,7 @@ class AscendCompressorStateCache(CompressorStateCache):
             sliding_window=self.sliding_window,
             alignment=None,
             page_size_padded=page_size_padded,
+            model_version="deepseek_v4",
         )
 
     def forward(self): ...

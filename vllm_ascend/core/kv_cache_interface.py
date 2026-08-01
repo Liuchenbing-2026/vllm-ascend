@@ -32,6 +32,16 @@ class AscendMLAAttentionSpec(MLAAttentionSpec):
     cache_sparse_sfa_c8: bool = False
 
     @property
+    def storage_block_size(self) -> int:
+        # Ascend DSA reduces the number of cache blocks in
+        # max_memory_usage_bytes instead of shrinking the physical page. The
+        # inherited MLA property would divide by compress_ratio a second time
+        # when MRV2 builds the kernel view.
+        if self.model_version == "deepseek_v4":
+            return self.block_size
+        return super().storage_block_size
+
+    @property
     def page_size_bytes(self) -> int:
         return (
             self.block_size
@@ -52,6 +62,8 @@ class AscendMLAAttentionSpec(MLAAttentionSpec):
                 spec.scale_dim,
                 spec.scale_dtype,
                 spec.dtype,
+                spec.page_size_padded,
+                spec.indexes_kv_by_block_stride,
             )
             for spec in specs
         }
@@ -66,6 +78,11 @@ class AscendMLAAttentionSpec(MLAAttentionSpec):
         assert len(cache_sparse_sfa_c8_set) == 1, (
             "All attention layers in the same KV cache group must use the same sparse SFA C8 setting."
         )
+        compress_ratio_set = set(spec.compress_ratio for spec in specs)
+        model_version_set = set(spec.model_version for spec in specs)
+        assert len(compress_ratio_set) == 1 and len(model_version_set) == 1, (
+            "All attention layers in the same KV cache group must use the same compression ratio and model version."
+        )
         return cls(
             block_size=specs[0].block_size,
             num_kv_heads=specs[0].num_kv_heads,
@@ -75,6 +92,10 @@ class AscendMLAAttentionSpec(MLAAttentionSpec):
             dtype=specs[0].dtype,
             cache_dtype_str=cache_dtype_str_set.pop(),
             cache_sparse_sfa_c8=specs[0].cache_sparse_sfa_c8,
+            page_size_padded=specs[0].page_size_padded,
+            indexes_kv_by_block_stride=specs[0].indexes_kv_by_block_stride,
+            compress_ratio=compress_ratio_set.pop(),
+            model_version=model_version_set.pop(),
         )
 
     def max_memory_usage_bytes(self, vllm_config: VllmConfig) -> int:
@@ -181,15 +202,17 @@ class AscendSlidingWindowMLASpec(SlidingWindowMLASpec):
         compress_ratio_set = set(spec.compress_ratio for spec in specs)
         model_version_set = set(spec.model_version for spec in specs)
         sliding_window_set = set(spec.sliding_window for spec in specs)
+        block_stride_set = set(spec.indexes_kv_by_block_stride for spec in specs)
         assert (
             len(cache_dtype_str_set) == 1
             and len(compress_ratio_set) == 1
             and len(model_version_set) == 1
             and len(sliding_window_set) == 1
+            and len(block_stride_set) == 1
         ), (
             "All attention layers in the same KV cache group must use the same "
-            "quantization method, compress ratio, model version and sliding "
-            "window size."
+            "quantization method, compress ratio, model version, sliding "
+            "window size and KV block stride indexing."
         )
         return cls(
             block_size=specs[0].block_size,
@@ -201,6 +224,7 @@ class AscendSlidingWindowMLASpec(SlidingWindowMLASpec):
             cache_dtype_str=cache_dtype_str_set.pop(),
             compress_ratio=compress_ratio_set.pop(),
             model_version=model_version_set.pop(),
+            indexes_kv_by_block_stride=block_stride_set.pop(),
         )
 
 

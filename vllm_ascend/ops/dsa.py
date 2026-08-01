@@ -161,7 +161,7 @@ class AscendDeepseekSparseAttention(MultiHeadLatentAttentionWrapper):
         kv_cache: torch.Tensor | None = None,
         attn_metadata: AttentionMetadata | None = None,
     ) -> torch.Tensor:
-        need_gather_q_kv = get_forward_context().flash_comm_v1_enabled
+        need_gather_q_kv = getattr(get_forward_context(), "flash_comm_v1_enabled", False)
         output_shape = hidden_states.shape
 
         output = torch.empty(output_shape, dtype=hidden_states.dtype, device=hidden_states.device)
@@ -243,17 +243,13 @@ def _build_kv_cache(self, forward_context):
             compress_kv_cache = compress_kv_cache[virtual_engine]
     if self.compress_ratio == 4:
         indexer_state_cache = self.indexer.compressor.state_cache.kv_cache
+        indexer_cache_views = normalize_kv_cache_views(self.indexer.k_cache.kv_cache)
         if get_ascend_device_type() in {AscendDeviceType.A5}:
-            indexer_k_cache, indexer_scale_cache, indexer_full_cache = (
-                self.indexer.k_cache.kv_cache[0][0],
-                self.indexer.k_cache.kv_cache[0][1],
-                self.indexer.k_cache.kv_cache[0][2],
-            )
+            assert len(indexer_cache_views) == 3
+            indexer_k_cache, indexer_scale_cache, indexer_full_cache = indexer_cache_views
         else:
-            indexer_k_cache, indexer_scale_cache = (
-                self.indexer.k_cache.kv_cache[0][0],
-                self.indexer.k_cache.kv_cache[0][1],
-            )
+            assert len(indexer_cache_views) == 2
+            indexer_k_cache, indexer_scale_cache = indexer_cache_views
 
     if get_ascend_device_type() in {AscendDeviceType.A5}:
         kv_cache = tuple(
@@ -288,6 +284,14 @@ def _build_kv_cache(self, forward_context):
 
 
 def unfold_kvcache(kvcache):
-    while isinstance(kvcache, list) and len(kvcache) == 1:
+    while isinstance(kvcache, (list, tuple)) and len(kvcache) == 1:
         kvcache = kvcache[0]
+    return kvcache
+
+
+def normalize_kv_cache_views(kvcache):
+    """Accept v1's engine wrapper and v2's direct per-layer view list."""
+    while isinstance(kvcache, (list, tuple)) and len(kvcache) == 1 and isinstance(kvcache[0], (list, tuple)):
+        kvcache = kvcache[0]
+    assert isinstance(kvcache, (list, tuple))
     return kvcache

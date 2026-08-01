@@ -256,6 +256,23 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
                 cudagraph_runtime_mode,
                 mm_inputs,
             )
+        # The autoregressive speculator keeps its feedback buffer flat as
+        # [num_tokens, draft_hidden_size]. DeepSeek V4 MTP intentionally keeps
+        # the hc_mult axis in the draft output so compute_logits can apply
+        # hc_head, returning [num_tokens, hc_mult, hidden_size]. Preserve that
+        # tensor for sampling, but flatten only the state fed into the next
+        # speculative step. This is the same boundary at which the legacy
+        # Ascend proposer uses target_hidden_states.view(num_tokens, -1).
+        if hidden_states.ndim > 2:
+            feedback_hidden_states = hidden_states.flatten(1)
+            expected_hidden_size = self.hidden_states.shape[1]
+            if feedback_hidden_states.shape[1] != expected_hidden_size:
+                raise RuntimeError(
+                    "Draft feedback hidden states have incompatible shape: "
+                    f"got {tuple(hidden_states.shape)}, expected "
+                    f"[num_tokens, {expected_hidden_size}] after flattening."
+                )
+            hidden_states = feedback_hidden_states
         self._ascend_update_seq_lens(attn_metadata)
         return last_hidden_states, hidden_states
 
@@ -430,7 +447,19 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
         if attn_metadata is None:
             return
 
-        num_reqs_padded = next(iter(attn_metadata.values())).seq_lens_cpu.shape[0]
+        # Sparse-attention metadata (for example AscendDSAMetadata) keeps only
+        # ``seq_lens`` and is rebuilt for every eager draft step. The FIA
+        # metadata update below applies only to backends that expose the
+        # mutable CPU sequence-length buffer. Do not infer that contract from
+        # dictionary order: a DSA layer may be the first entry in a hybrid
+        # DeepSeek V4 cache layout.
+        updatable_metadata = [
+            metadata for metadata in attn_metadata.values() if getattr(metadata, "seq_lens_cpu", None) is not None
+        ]
+        if not updatable_metadata:
+            return
+
+        num_reqs_padded = updatable_metadata[0].seq_lens_cpu.shape[0]
         seq_lens_cpu = self._get_seq_lens_cpu()[:num_reqs_padded]
         if num_reqs is None:
             num_reqs = num_reqs_padded
@@ -440,7 +469,7 @@ class AscendAutoRegressiveSpeculator(AutoRegressiveSpeculator):
         seq_lens_list = next_seq_lens_cpu.tolist()
         # attn_metadata is build in vllm's super class.
         # We need to update attn_state for each layer's metadata.
-        for metadata in attn_metadata.values():
+        for metadata in updatable_metadata:
             metadata.actual_seq_lengths_q = query_lens_list
             metadata.seq_lens_cpu.copy_(next_seq_lens_cpu)
             metadata.seq_lens_list = seq_lens_list

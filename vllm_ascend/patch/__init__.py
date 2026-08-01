@@ -1121,35 +1121,37 @@
 #       extract_hidden_states drafter), whose `HiddenStateCacheSpec` page holds
 #       a single vector.
 #       A fourth rule lives in `_get_attention_kv_cache_dims` and fires later,
-#       during KV cache allocation: any spec whose page holds one latent vector
-#       instead of a K/V pair (`MLAAttentionSpec` or `SlidingWindowMLASpec` and
-#       their Ascend subclasses) coming from a layer that is not an
-#       `MLAAttention` and therefore cannot name the nope/rope split. This is
-#       where DeepSeek V3.2 is actually stopped -- upstream
-#       `DeepseekV32IndexerCache.get_kv_cache_spec` returns a plain
-#       `MLAAttentionSpec`, so the indexer rule above never sees it -- along
-#       with DeepSeek V4's `DSAAttention`, its SWA cache and its
-#       compressor-state cache.
-#       Each message points at `VLLM_USE_V2_MODEL_RUNNER=0`, where the v1
-#       runner's per-role reshape path handles these layouts.
+#       during KV cache allocation: a non-MLAAttention layer reporting a
+#       generic single-latent-vector spec cannot name an MLA nope/rope split.
+#       DeepSeek V3.2's generic indexer spec is refused there. DeepSeek V4 DSA
+#       is distinguished by its Ascend spec plus `model_version` marker and is
+#       routed to the dedicated single-backing layout instead.
 #   2. `vllm.v1.worker.gpu.attn_utils._allocate_kv_cache`,
 #      `vllm.v1.worker.gpu.attn_utils._reshape_kv_cache`
 #    Why:
 #       Prefill disaggregation needs the K and V halves in separate 2M-aligned
-#       tensors, and MLA splits one latent page into nope/rope halves whose
-#       dimensions only the layer knows.
+#       tensors. DeepSeek V4 DSA instead consumes one physical vector per page,
+#       with its indexer scale stored after the data inside the same page.
 #    How：
-#       Replace both with the Ascend implementations, which allocate the two
-#       halves separately and derive the per-half dimensions from the layer.
+#       Conventional attention still allocates two tensors and derives their
+#       dimensions from the layer. DSV4 DSA allocates one byte backing and
+#       creates page-strided data/scale views; A5 also receives the overlapping
+#       full-page view used by its kernel.
+#   3. `vllm.v1.worker.gpu.attn_utils.bind_kv_cache`
+#    Why:
+#       DSV4 contributes several cache-only modules with the same transformer
+#       layer index, which upstream rejects on non-CUDA platforms.
+#    How：
+#       Bind every module in deterministic order and invoke each module's
+#       `bind_kv_cache` hook so it can keep its own logical view list.
 #    Related PR (if no, explain why):
 #       No. This is a plugin-side compatibility patch for the current upstream
 #       helper path.
 #    Future Plan:
 #       Remove this patch once upstream adds a backend hook for KV cache spec
 #       construction or v2 worker no longer depends on the shared v1 helper.
-#       Remove the refusals once the v2 allocator can describe per-role cache
-#       tuples (recurrent state, indexer K + scale, single hidden-state vector)
-#       instead of exactly one K/V pair per layer.
+#       Remove the remaining refusals once the v2 allocator can describe
+#       recurrent state, generic indexer K+scale and hidden-state caches.
 #
 # ** 26. File: worker/patch_v2/patch_block_table.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
