@@ -48,6 +48,7 @@ from vllm_ascend.ops.fused_moe.token_dispatcher import (
     TokenDispatcherWithMC2,
 )
 from vllm_ascend.quantization.quant_type import QuantType
+from vllm_ascend.utils import AscendDeviceType, get_ascend_device_type
 
 _MoECommMethods: dict[MoECommType | None, MoECommMethod] = {}
 
@@ -333,17 +334,32 @@ class FusedMC2CommImpl(MoECommMethod):
             num_max_tokens_per_rank = max(1, int(rank_invariant_cap))
         num_topk = self.moe_config.experts_per_token
         num_experts = self.moe_config.num_experts
-        expert_per_rank = max(1, num_experts // int(self.token_dispatcher.ep_world_size))
-        max_recv_token_num = max(
-            1,
-            num_max_tokens_per_rank * int(self.token_dispatcher.ep_world_size) * min(num_topk, expert_per_rank),
-        )
+        dummy_token_capacity = 0
+        if get_ascend_device_type() == AscendDeviceType.A2:
+            num_max_tokens_per_rank, _, dummy_token_capacity, max_recv_token_num = (
+                comm_utils.get_cann_megamoe_buffer_params(
+                    num_max_tokens_per_rank,
+                    int(self.token_dispatcher.ep_world_size),
+                    num_experts,
+                    num_topk,
+                )
+            )
+        else:
+            expert_per_rank = max(1, num_experts // int(self.token_dispatcher.ep_world_size))
+            max_recv_token_num = max(
+                1,
+                num_max_tokens_per_rank * int(self.token_dispatcher.ep_world_size) * min(num_topk, expert_per_rank),
+            )
 
         logger.info(
-            "CANN MegaMoe sym-buffer alloc (must match across all EP ranks): ep_rank=%s ep_world=%s global_bs=%s",
+            "CANN MegaMoe sym-buffer alloc (must match across all EP ranks): "
+            "ep_rank=%s ep_world=%s global_bs=%s max_tokens_per_rank=%s dummy_tokens=%s max_recv_tokens=%s",
             getattr(self.token_dispatcher, "ep_rank_id", "?"),
             getattr(self.token_dispatcher, "ep_world_size", "?"),
             self.token_dispatcher.global_bs,
+            num_max_tokens_per_rank,
+            dummy_token_capacity,
+            max_recv_token_num,
         )
         self._mega_moe_symm_buffer = self.get_symm_buffer_for_mega_moe(
             group,
@@ -410,10 +426,26 @@ class FusedMC2CommImpl(MoECommMethod):
         l1_bias = fused_experts_input.weights.w1_scale_bias
         l2_bias = fused_experts_input.weights.w2_scale_bias
 
+        hidden_states = fused_experts_input.hidden_states
+        topk_weights = fused_experts_input.topk_weights
+        original_num_tokens = int(hidden_states.shape[0])
+        if get_ascend_device_type() == AscendDeviceType.A2:
+            hidden_states, topk_ids, topk_weights, x_active_mask, original_num_tokens = (
+                comm_utils.append_cann_megamoe_dummy_tokens(
+                    hidden_states,
+                    topk_ids,
+                    topk_weights,
+                    x_active_mask,
+                    int(self.moe_config.num_experts),
+                    int(self.token_dispatcher.ep_rank_id),
+                    int(self.token_dispatcher.ep_world_size),
+                )
+            )
+
         out, expert_tokens = self.mega_moe(
-            fused_experts_input.hidden_states,
+            hidden_states,
             topk_ids.to(torch.int32),
-            fused_experts_input.topk_weights.to(torch.float32),
+            topk_weights.to(torch.float32),
             weight1,
             weight2,
             self._mega_moe_symm_buffer,
@@ -431,7 +463,7 @@ class FusedMC2CommImpl(MoECommMethod):
         # pre-allocated in/out buffer. The MegaMoe op returns a fresh
         # expert_tokens tensor that is consumed by the caller via the
         # return value, so there is nothing to keep on the instance.
-        return out, expert_tokens
+        return out[:original_num_tokens], expert_tokens
 
     def fused_experts(
         self,

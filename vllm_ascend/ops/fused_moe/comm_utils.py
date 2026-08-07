@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import math
 from importlib import import_module
 
 import torch
@@ -140,3 +141,89 @@ def _get_cann_mega_moe_quant_settings(quant_type: QuantType) -> tuple[int, int |
         "MegaMoe platforms. "
         f"Unsupported quant type: {quant_type}."
     )
+
+
+def get_cann_megamoe_dummy_token_capacity(num_experts: int, num_topk: int) -> int:
+    """Reserve enough global rows to route to every expert once."""
+    if num_topk < 1:
+        raise ValueError(f"CANN MegaMoe requires num_topk to be positive, got {num_topk}.")
+    if num_experts < num_topk:
+        raise ValueError(
+            "CANN MegaMoe dummy routing requires num_experts >= num_topk, got "
+            f"num_experts={num_experts}, num_topk={num_topk}."
+        )
+    return math.ceil(num_experts / num_topk)
+
+
+def get_cann_megamoe_buffer_params(
+    base_num_max_tokens_per_rank: int,
+    ep_world_size: int,
+    num_experts: int,
+    num_topk: int,
+) -> tuple[int, int, int, int]:
+    """Return max tokens, local experts, dummy rows, and receive bound."""
+    dummy_token_capacity = get_cann_megamoe_dummy_token_capacity(num_experts, num_topk)
+    num_max_tokens_per_rank = base_num_max_tokens_per_rank + dummy_token_capacity
+    if not 1 <= num_max_tokens_per_rank <= 4096:
+        raise ValueError(f"CANN MegaMoe requires num_max_tokens_per_rank in [1, 4096], got {num_max_tokens_per_rank}.")
+    if ep_world_size not in {2, 4, 8, 16, 32}:
+        raise ValueError(f"CANN MegaMoe only supports EP sizes 2, 4, 8, 16, and 32, got {ep_world_size}.")
+    if num_experts % ep_world_size != 0:
+        raise ValueError(f"num_experts={num_experts} must be divisible by ep_world_size={ep_world_size}.")
+    if not 1 <= num_topk <= 16:
+        raise ValueError(f"CANN MegaMoe requires num_topk in [1, 16], got {num_topk}.")
+    num_experts_per_rank = num_experts // ep_world_size
+    max_recv_token_num = num_max_tokens_per_rank * ep_world_size * min(num_topk, num_experts_per_rank)
+    return num_max_tokens_per_rank, num_experts_per_rank, dummy_token_capacity, max_recv_token_num
+
+
+def append_cann_megamoe_dummy_tokens(
+    hidden_states: torch.Tensor,
+    topk_ids: torch.Tensor,
+    topk_weights: torch.Tensor,
+    x_active_mask: torch.Tensor | None,
+    num_experts: int,
+    ep_rank_id: int,
+    ep_world_size: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
+    """Append equal-size A2 sentinels that cover all experts globally."""
+    if ep_world_size < 1 or not 0 <= ep_rank_id < ep_world_size:
+        raise ValueError(
+            "CANN MegaMoe dummy routing requires a valid EP rank: "
+            f"ep_rank_id={ep_rank_id}, ep_world_size={ep_world_size}."
+        )
+    num_topk = int(topk_ids.shape[-1])
+    global_dummy_capacity = get_cann_megamoe_dummy_token_capacity(num_experts, num_topk)
+    local_dummy_capacity = math.ceil(global_dummy_capacity / ep_world_size)
+    global_dummy_rows = ep_rank_id * local_dummy_capacity + torch.arange(
+        local_dummy_capacity,
+        dtype=topk_ids.dtype,
+        device=topk_ids.device,
+    )
+    dummy_topk_ids = global_dummy_rows[:, None] * num_topk + torch.arange(
+        num_topk,
+        dtype=topk_ids.dtype,
+        device=topk_ids.device,
+    )
+    dummy_topk_ids = dummy_topk_ids.remainder(num_experts)
+    dummy_hidden_states = torch.ones(
+        (local_dummy_capacity, hidden_states.shape[-1]),
+        dtype=hidden_states.dtype,
+        device=hidden_states.device,
+    )
+    dummy_topk_weights = torch.full(
+        (local_dummy_capacity, num_topk),
+        1.0 / num_topk,
+        dtype=topk_weights.dtype,
+        device=topk_weights.device,
+    )
+
+    original_num_tokens = int(hidden_states.shape[0])
+    hidden_states = torch.cat((hidden_states, dummy_hidden_states), dim=0)
+    topk_ids = torch.cat((topk_ids, dummy_topk_ids), dim=0)
+    topk_weights = torch.cat((topk_weights, dummy_topk_weights), dim=0)
+    if x_active_mask is None:
+        x_active_mask = torch.ones(original_num_tokens, dtype=torch.int8, device=hidden_states.device)
+    dummy_mask = torch.ones(local_dummy_capacity, dtype=x_active_mask.dtype, device=x_active_mask.device)
+    x_active_mask = torch.cat((x_active_mask, dummy_mask), dim=0)
+    return hidden_states, topk_ids, topk_weights, x_active_mask, original_num_tokens

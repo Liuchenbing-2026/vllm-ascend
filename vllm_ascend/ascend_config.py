@@ -278,6 +278,10 @@ class AscendConfig:
         if self.mega_moe_max_tokens <= 0:
             raise ValueError(f"mega_moe_max_tokens must be a positive integer, got {self.mega_moe_max_tokens}")
 
+        self.mega_moe_min_tokens = additional_config.get("mega_moe_min_tokens", 512)
+        if not isinstance(self.mega_moe_min_tokens, int) or not 1 <= self.mega_moe_min_tokens <= 4096:
+            raise ValueError(f"mega_moe_min_tokens must be an integer in [1, 4096], got {self.mega_moe_min_tokens!r}")
+
         # Enable optimized reduce sampling scheme
         self.enable_reduce_sample = additional_config.get("enable_reduce_sample", False)
 
