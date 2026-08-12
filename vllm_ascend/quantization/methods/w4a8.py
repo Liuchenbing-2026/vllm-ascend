@@ -560,7 +560,7 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
             w2_scale_bias = layer.w2_scale_bias_list
         elif (
             _EXTRA_CTX.moe_comm_type == MoECommType.FUSED_MC2
-            and get_ascend_config().enable_fused_mc2 == 1
+            and get_ascend_config().enable_fused_mc2 in (1, 2)
             and _MEGA_MOE_SUPPORTED
         ):
             w1 = layer.cann_mega_moe_w13_weight_list
@@ -738,7 +738,7 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
         # FIX(mega W4A8 all-route): with MegaMoe on, keep ND int8 (skip trans_nz + pack_to_int32);
         # _maybe_build_cann_mega_moe_lists casts each expert slice to FRACTAL_NZ individually. See
         # the modelslim path below for the full rationale. Non-mega keeps the standard NZ-int32 form.
-        if get_ascend_config().enable_fused_mc2 == 1 and not self.dynamic_eplb and _MEGA_MOE_SUPPORTED:
+        if get_ascend_config().enable_fused_mc2 in (1, 2) and not self.dynamic_eplb and _MEGA_MOE_SUPPORTED:
             self._maybe_build_cann_mega_moe_lists(layer)
         else:
             layer.w13_weight.data = maybe_trans_nz(layer.w13_weight.data)
@@ -747,10 +747,18 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
             layer.w2_weight.data = self.pack_to_int32(layer.w2_weight.data)
 
     def _maybe_build_cann_mega_moe_lists(self, layer):
+        preserve_fallback = get_ascend_config().enable_fused_mc2 == 2
         layer.w13_weight.data = maybe_trans_nz(layer.w13_weight.data)
         layer.w2_weight.data = maybe_trans_nz(layer.w2_weight.data)
-        layer.cann_mega_moe_w13_weight_list = [weight.clone() for weight in layer.w13_weight.data.unbind(dim=0)]
-        layer.cann_mega_moe_w2_weight_list = [weight.clone() for weight in layer.w2_weight.data.unbind(dim=0)]
+        if preserve_fallback:
+            # Mode 2 is hybrid: unsupported token shapes can fall back to the
+            # standard MoE path. Keep the packed int32 parameters and expose
+            # per-expert int8 views over the same physical INT4 storage.
+            layer.cann_mega_moe_w13_weight_list = list(layer.w13_weight.data.unbind(dim=0))
+            layer.cann_mega_moe_w2_weight_list = list(layer.w2_weight.data.unbind(dim=0))
+        else:
+            layer.cann_mega_moe_w13_weight_list = [weight.clone() for weight in layer.w13_weight.data.unbind(dim=0)]
+            layer.cann_mega_moe_w2_weight_list = [weight.clone() for weight in layer.w2_weight.data.unbind(dim=0)]
 
         layer.cann_mega_moe_w13_weight_scale_list = [t.reshape(-1) for t in layer.w13_weight_scale.data.unbind(dim=0)]
         layer.cann_mega_moe_w2_weight_scale_list = [t.reshape(-1) for t in layer.w2_weight_scale.data.unbind(dim=0)]
@@ -761,6 +769,10 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
             )
         layer.cann_mega_moe_w13_scale_bias_list = [t.reshape(-1) for t in layer.w13_scale_bias.data.unbind(dim=0)]
         layer.cann_mega_moe_w2_scale_bias_list = [t.reshape(-1) for t in layer.w2_scale_bias.data.unbind(dim=0)]
+        if preserve_fallback:
+            layer.w13_weight.data = self.pack_to_int32(layer.w13_weight.data)
+            layer.w2_weight.data = self.pack_to_int32(layer.w2_weight.data)
+            return
         del layer.w13_weight
         del layer.w2_weight
         del layer.w13_weight_scale
@@ -818,7 +830,7 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
             del layer.w13_scale_bias
             del layer.w2_scale_bias
         # keep weights as ND int8 when MegaMoe is on (skip trans_nz).
-        elif get_ascend_config().enable_fused_mc2 == 1 and _MEGA_MOE_SUPPORTED:
+        elif get_ascend_config().enable_fused_mc2 in (1, 2) and _MEGA_MOE_SUPPORTED:
             self._maybe_build_cann_mega_moe_lists(layer)
 
         else:

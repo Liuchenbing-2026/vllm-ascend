@@ -45,7 +45,14 @@ _MEGA_MOE_TOKENS_PER_RANK_LIMIT = 4096
 _DISPATCH_FFN_COMBINE_TOKENS_PER_RANK_LIMIT = 512
 _MC2_TOKENS_PER_RANK_LIMIT = 512
 _A2_CANN_MEGAMOE_SUPPORTED_EP_SIZES = {2, 4, 8, 16, 32}
-_A2_CANN_MEGAMOE_SUPPORTED_QUANT_NAMES = {"w8a8", "w8a8_dynamic", "quanttype.w8a8"}
+_A2_CANN_MEGAMOE_SUPPORTED_QUANT_NAMES = {
+    "w8a8",
+    "w4a8",
+    "w8a8_dynamic",
+    "w4a8_dynamic",
+    "quanttype.w8a8",
+    "quanttype.w4a8",
+}
 
 
 def _is_a2_megamoe_enabled(ascend_config: Any) -> bool:
@@ -60,7 +67,10 @@ def _get_a2_cann_megamoe_quant_name(vllm_config: VllmConfig, quant_type: Any) ->
     if not isinstance(quant_description, dict):
         return None
     quant_values = {str(value).lower() for value in quant_description.values()}
-    return next((name for name in ("w8a8_dynamic", "w8a8") if name in quant_values), None)
+    return next(
+        (name for name in ("w8a8_dynamic", "w4a8_dynamic", "w8a8", "w4a8") if name in quant_values),
+        None,
+    )
 
 
 def _a2_cann_megamoe_supported_by_config(
