@@ -15,14 +15,40 @@
 #
 
 
+import os
+
 import torch
 from torch import nn
 from vllm.config import get_current_vllm_config
+from vllm.logger import init_logger
 from vllm.model_executor.layers.layernorm import GemmaRMSNorm, RMSNorm, RMSNormGated
 
 from vllm_ascend.device.device_op import DeviceOperator
 from vllm_ascend.ops.triton.layernorm_gated import layer_norm_fwd_npu
 from vllm_ascend.utils import enable_custom_op
+
+logger = init_logger(__name__)
+_ADD_RMS_NORM_BIAS_SUPPORTED = os.getenv("VLLM_ASCEND_DISABLE_ADD_RMS_NORM_BIAS", "0") != "1"
+
+
+def _add_rms_norm_bias_or_fallback(x, residual, weight, bias, eps):
+    import torch_npu
+
+    global _ADD_RMS_NORM_BIAS_SUPPORTED
+    if _ADD_RMS_NORM_BIAS_SUPPORTED and enable_custom_op():
+        try:
+            x, _, residual = torch.ops._C_ascend.npu_add_rms_norm_bias(x, residual, weight, bias, eps)
+            return x, residual
+        except RuntimeError as exc:
+            if "aclnnAddRmsNormBias" not in str(exc):
+                raise
+            _ADD_RMS_NORM_BIAS_SUPPORTED = False
+            logger.warning_once("CANN does not provide AddRmsNormBias; using torch_npu fallback.")
+
+    x, _, residual = torch_npu.npu_add_rms_norm(x, residual, weight, eps)
+    if bias is not None:
+        x.add_(bias)
+    return x, residual
 
 
 class AscendRMSNorm(RMSNorm):
@@ -69,14 +95,9 @@ class AscendRMSNorm(RMSNorm):
 
         if residual is not None:
             residual = torch.ops.vllm.maybe_chunk_residual(x, residual)
-            if enable_custom_op():
-                x, _, residual = torch.ops._C_ascend.npu_add_rms_norm_bias(
-                    x, residual, self.weight, self.bias, self.variance_epsilon
-                )
-            else:
-                x, _, residual = torch_npu.npu_add_rms_norm(x, residual, self.weight, self.variance_epsilon)
-                if self.bias is not None:
-                    x.add_(self.bias)
+            x, residual = _add_rms_norm_bias_or_fallback(
+                x, residual, self.weight, self.bias, self.variance_epsilon
+            )
             return x, residual
 
         x, residual = torch_npu.npu_rms_norm(x, self.weight, self.variance_epsilon)

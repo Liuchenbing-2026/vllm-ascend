@@ -7,6 +7,7 @@ from vllm.model_executor.layers.layernorm import RMSNorm
 
 from vllm_ascend.utils import enable_custom_op
 from vllm_ascend.utils import is_310p as is_310p_hw
+from vllm_ascend.ops import layernorm as layernorm_ops
 
 enable_custom_op()
 
@@ -29,6 +30,27 @@ def mock_add_rms_norm_bias(x, residual, weight, bias, eps):
         return 2 * x, None, 2 * residual
     else:
         return 2 * x + bias, None, 2 * residual
+
+
+@patch("torch_npu.npu_add_rms_norm", side_effect=mock_add_rms_norm)
+@patch(
+    "torch.ops._C_ascend.npu_add_rms_norm_bias",
+    side_effect=RuntimeError("aclnnAddRmsNormBias not in libopapi.so"),
+)
+def test_add_rms_norm_bias_falls_back_for_old_cann(mock_custom, mock_fallback, monkeypatch, dummy_tensor):
+    monkeypatch.setattr(layernorm_ops, "_ADD_RMS_NORM_BIAS_SUPPORTED", True)
+    monkeypatch.setattr(layernorm_ops, "enable_custom_op", lambda: True)
+    bias = torch.ones(8, dtype=dummy_tensor.dtype)
+
+    out, residual = layernorm_ops._add_rms_norm_bias_or_fallback(
+        dummy_tensor, dummy_tensor, torch.ones_like(bias), bias, 1e-5
+    )
+
+    assert torch.allclose(out, 2 * dummy_tensor + bias)
+    assert torch.allclose(residual, 2 * dummy_tensor)
+    assert layernorm_ops._ADD_RMS_NORM_BIAS_SUPPORTED is False
+    mock_custom.assert_called_once()
+    mock_fallback.assert_called_once()
 
 
 @pytest.fixture(autouse=True)

@@ -3241,6 +3241,54 @@ class TestMooncakeConnectorWorker(unittest.TestCase):
         self.assertEqual(local_ids, [([70, 71, 72, 73], [80, 81, 82, 83])])
         self.assertEqual(remote_ids, [([50, 51, 52, 53], [60, 61, 62, 63])])
 
+    def test_hybrid_cp_uses_kv_cache_group_ids_for_split_transfer_groups(self):
+        worker = MooncakeConnectorWorker(self.vllm_config, self.engine_id, MockKVCacheConfig())
+        worker._is_hma_required = True
+        worker.use_mla = True
+        worker.use_sparse = False
+        worker.num_key_value_heads = 1
+        worker.tp_size = 8
+        worker.tp_rank = 0
+        worker.pcp_size = 1
+        worker.dcp_size = 8
+        worker.pcp_rank = 0
+        worker.dcp_rank = 0
+        worker._decode_tp_size = 8
+        worker._prefill_tp_size = 8
+        worker._prefill_pp_size = 1
+        worker.side_channel_port = 5000
+        worker.handshake_port = worker.side_channel_port
+        worker.local_remote_block_port_mapping = {}
+        worker.remote_port_send_num = {}
+        worker.block_size = 16
+        worker.block_size_scale = [[1], [1]]
+        worker.kv_group2layeridx = {
+            0: ({"kv_cache_spec_type": "AscendSFAIndexerCacheSpec", "kv_cache_group_id": 0}, [0]),
+            1: ({"kv_cache_spec_type": "AscendMLAAttentionSpec", "kv_cache_group_id": 0}, [1]),
+        }
+
+        meta = types.SimpleNamespace(
+            remote_pcp_size=1,
+            remote_dcp_size=8,
+            remote_ptp_size=8,
+            remote_port=31000,
+            remote_block_ids=([50],),
+            local_block_ids=([70],),
+            num_external_tokens=8 * worker.block_size,
+            num_prompt_blocks=8,
+            num_computed_tokens=0,
+            remote_engine_id="remote_hybrid_cp_split_transfer_groups",
+            remote_host="localhost",
+            remote_multi_nodes_meta_mapping={},
+            remote_block_size=16,
+        )
+
+        ports, local_ids, remote_ids = worker._get_kv_split_metadata("req_hybrid_cp_split", cast(ReqMeta, meta))
+
+        self.assertEqual(len(ports), 1)
+        self.assertEqual(local_ids, [([70],)])
+        self.assertEqual(remote_ids, [([50],)])
+
     def test_get_tp_num_need_pulls(self):
         worker = MooncakeConnectorWorker(self.vllm_config, self.engine_id, MockKVCacheConfig())
         worker.num_key_value_heads = 8

@@ -547,7 +547,6 @@ class NPUPlatform(Platform):
 
         compilation_config.use_inductor = False
         if compilation_config.cudagraph_mode == CUDAGraphMode.NONE:
-            compilation_config.mode = CompilationMode.NONE
             ascend_config.ascend_compilation_config.enable_npugraph_ex = False
         elif compilation_config.cudagraph_mode.requires_piecewise_compilation():
             # Our is_cuda_alike is False so we cannot reuse the assertion of upstream
