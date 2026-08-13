@@ -16,6 +16,8 @@
 # limitations under the License.
 #
 
+import os
+
 from torch import fx as fx
 from vllm.compilation.passes.inductor_pass import get_pass_context
 from vllm.compilation.passes.vllm_inductor_pass import VllmInductorPass
@@ -51,7 +53,11 @@ class GraphFusionPassManager:
 
         # By default, we enable the graph fusion and quantization fusion pass.
         self.ascend_compilation_config: dict = config.additional_config.get("ascend_compilation_config", {})
-        if self.ascend_compilation_config.get("fuse_norm_quant", True) and not is_310p():
+        if (
+            os.getenv("VLLM_ASCEND_DISABLE_NORM_QUANT_FUSION", "0") != "1"
+            and self.ascend_compilation_config.get("fuse_norm_quant", True)
+            and not is_310p()
+        ):
             from .passes.norm_quant_fusion_pass import AddRMSNormQuantFusionPass
 
             self.passes.append(AddRMSNormQuantFusionPass(config))

@@ -335,6 +335,35 @@ class TestAscendW4A8DynamicFusedMoEMethod(TestBase):
         self.assertEqual(packed.shape, torch.Size([1, 1, 1]))
         torch.testing.assert_close(packed.view(torch.int8), weight)
 
+    @patch("vllm_ascend.quantization.methods.w4a8.get_ascend_config")
+    @patch("vllm_ascend.quantization.methods.w4a8.maybe_trans_nz")
+    def test_mode_2_megamoe_lists_share_storage_and_preserve_fallback(
+        self, mock_maybe_trans_nz, mock_get_ascend_config
+    ):
+        mock_maybe_trans_nz.side_effect = identity
+        mock_get_ascend_config.return_value.enable_fused_mc2 = 2
+        self.quant_method.new_quant_version = True
+        layer = self.build_layer(is_new_quant_version=True, is_per_channel_weight=True)
+
+        self.quant_method._maybe_build_cann_mega_moe_lists(layer)
+
+        self.assertEqual(layer.w13_weight.dtype, torch.int32)
+        self.assertEqual(layer.w2_weight.dtype, torch.int32)
+        self.assertEqual(layer.cann_mega_moe_w13_weight_list[0].dtype, torch.int8)
+        self.assertEqual(layer.cann_mega_moe_w2_weight_list[0].dtype, torch.int8)
+        self.assertEqual(
+            layer.cann_mega_moe_w13_weight_list[0].data_ptr(),
+            layer.w13_weight.view(torch.int8)[0].data_ptr(),
+        )
+        self.assertEqual(
+            layer.cann_mega_moe_w2_weight_list[0].data_ptr(),
+            layer.w2_weight.view(torch.int8)[0].data_ptr(),
+        )
+        self.assertTrue(hasattr(layer, "w13_weight_scale"))
+        self.assertTrue(hasattr(layer, "w2_weight_scale"))
+        self.assertTrue(hasattr(layer, "w13_scale_bias"))
+        self.assertTrue(hasattr(layer, "w2_scale_bias"))
+
     def test_get_weight_compressed_tensors(self):
         self.quant_method.quant_method = COMPRESSED_TENSORS_METHOD
         result = self.quant_method.get_weight(self.experts, self.input_size, self.output_size, torch.bfloat16)

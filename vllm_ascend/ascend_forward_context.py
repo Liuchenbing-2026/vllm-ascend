@@ -1,6 +1,5 @@
 import importlib.util
 import math
-import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from enum import Enum
@@ -58,10 +57,6 @@ _A2_CANN_MEGAMOE_SUPPORTED_QUANT_NAMES = {
 
 def _is_a2_megamoe_enabled(ascend_config: Any) -> bool:
     return get_ascend_device_type() == AscendDeviceType.A2 and ascend_config.enable_fused_mc2 == 2
-
-
-def _force_a2_legacy_mc2() -> bool:
-    return os.getenv("VLLM_ASCEND_FORCE_LEGACY_MC2") == "1"
 
 
 def _get_a2_cann_megamoe_quant_name(vllm_config: VllmConfig, quant_type: Any) -> str | None:
@@ -366,13 +361,6 @@ def _select_a2_moe_comm_method(
     mc2_tokens_capacity: int,
     is_draft_model: bool,
 ) -> MoECommType:
-    if (
-        _force_a2_legacy_mc2()
-        and get_ascend_config().enable_fused_mc2 == 1
-        and num_tokens <= mc2_tokens_capacity
-    ):
-        return MoECommType.FUSED_MC2
-
     min_tokens = getattr(get_ascend_config(), "mega_moe_min_tokens", 512)
     if min_tokens <= num_tokens <= mc2_tokens_capacity and _a2_cann_megamoe_supported_by_config(
         vllm_config, quant_type, is_draft_model
