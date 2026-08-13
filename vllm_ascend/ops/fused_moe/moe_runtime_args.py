@@ -245,6 +245,7 @@ def build_mlp_compute_input(
         fusion=fused_experts_input.quant.quant_type
         in (
             QuantType.W8A8,
+            QuantType.W4A8,
             QuantType.W8A8MXFP,
             QuantType.W4A4MXFP,
             QuantType.W4A8MXFP,

@@ -238,6 +238,43 @@ class TestMoERuntimeArgs(unittest.TestCase):
                 self.assertEqual(mlp_compute_input.quant.mxfp.per_token_scale_dtype, torch.float16)
                 self.assertFalse(mlp_compute_input.quant.mxfp.use_bf16)
 
+    def test_build_mlp_compute_input_enables_w4a8_fusion(self):
+        fused_experts_input = build_fused_experts_input(
+            hidden_states=torch.randn(2, 8, dtype=torch.bfloat16),
+            topk_weights=torch.randn(2, 2),
+            topk_ids=torch.tensor([[0, 1], [1, 0]], dtype=torch.int32),
+            w1=torch.randn(2, 8, 16),
+            w2=torch.randn(2, 16, 8),
+            quant_type=QuantType.W4A8,
+            w1_scale=[torch.randn(1)],
+            w2_scale=[torch.randn(1)],
+        )
+        token_dispatch_output = MoETokenDispatchOutput(
+            hidden_states=torch.randn(4, 8, dtype=torch.bfloat16),
+            group_list=torch.tensor([2, 2], dtype=torch.int64),
+            group_list_type=1,
+            dynamic_scale=torch.randn(4, 1),
+            combine_metadata=MoEAllGatherCombineMetadata(
+                topk_weights=fused_experts_input.topk_weights,
+                expanded_row_idx=torch.arange(4, dtype=torch.int32),
+                restore_shape=torch.Size([2, 8]),
+            ),
+        )
+
+        enabled = build_mlp_compute_input(
+            fused_experts_input=fused_experts_input,
+            token_dispatch_output=token_dispatch_output,
+            use_fusion_ops=True,
+        )
+        disabled = build_mlp_compute_input(
+            fused_experts_input=fused_experts_input,
+            token_dispatch_output=token_dispatch_output,
+            use_fusion_ops=False,
+        )
+
+        self.assertTrue(enabled.fusion)
+        self.assertFalse(disabled.fusion)
+
     def test_build_fused_experts_input_constructs_internal_mxfp_leaf_from_primitives(self):
         for quant_type in (QuantType.W8A8MXFP, QuantType.W4A4MXFP):
             with self.subTest(quant_type=quant_type):

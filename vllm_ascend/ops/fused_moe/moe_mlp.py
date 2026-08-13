@@ -42,6 +42,7 @@ from vllm_ascend.utils import (
 
 ASCEND_DEVICE_TYPE = get_ascend_device_type()
 SITU_MX_DST_TYPE_E4M3FN = 36
+_W4A8_PER_CHANNEL_GMM_SWIGLU_V2_MAX_N = 8192
 
 
 def _custom_gmm_swiglu_enabled(fusion, dynamic_eplb, activation=None):
@@ -57,6 +58,11 @@ def _gmm_swiglu_quant_fusion_enabled(use_mxfp_quant, fusion, dynamic_eplb, activ
     return (use_mxfp_quant or (fusion and not dynamic_eplb)) and (
         getattr(activation, "value", activation) != "swigluoai_uninterleave"
     )
+
+
+def _w4a8_per_channel_gmm_swiglu_v2_supported(weight_scale: list[torch.Tensor] | torch.Tensor) -> bool:
+    scales = weight_scale if isinstance(weight_scale, list) else [weight_scale]
+    return all(scale.shape[-1] <= _W4A8_PER_CHANNEL_GMM_SWIGLU_V2_MAX_N for scale in scales)
 
 
 def cumsum_group_list(
@@ -512,7 +518,9 @@ def quant_apply_mlp(
 
         if (
             use_w4a8_per_channel_gmm_swiglu
+            and fusion
             and enable_custom_op()
+            and _w4a8_per_channel_gmm_swiglu_v2_supported(w1_scale)
             and activation != MoEActivation.SWIGLUSTEP
             and not is_gelu_activation
             and not is_swigluoai_uninterleave
@@ -561,10 +569,13 @@ def quant_apply_mlp(
                 dispose_tensor(quantized_hidden_states)
         else:
             # gmm1: gate_up_proj
+            gmm1_scale = [w1_scale[0].to(w2_scale[0].dtype)] if isinstance(w1_scale, list) else [w1_scale]
+            if use_w4a8_per_channel_gmm_swiglu:
+                gmm1_scale = [scale.unsqueeze(-2) if scale.ndim == 2 else scale for scale in gmm1_scale]
             gmm1_kwargs = {
                 "x": [hidden_states],
                 "weight": w1 if isinstance(w1, list) else [w1],
-                "scale": [w1_scale[0].to(w2_scale[0].dtype)] if isinstance(w1_scale, list) else [w1_scale],
+                "scale": gmm1_scale,
                 "bias": bias1,
                 "per_token_scale": [pertoken_scale],
                 "split_item": 2,

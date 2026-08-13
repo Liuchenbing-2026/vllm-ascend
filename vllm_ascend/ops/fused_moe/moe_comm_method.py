@@ -16,10 +16,12 @@
 from __future__ import annotations
 
 import math
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 import torch
+import torch_npu
 from vllm.logger import logger
 from vllm.model_executor.layers.fused_moe import FusedMoEConfig
 
@@ -339,6 +341,10 @@ class FusedMC2CommImpl(MoECommMethod):
         super().__init__(moe_config)
         self._mega_moe_symm_buffer = None
         self._mega_moe_weight_type = None
+        self._profile_bypass_logged = False
+        self._idle_warmup_bypass_logged = False
+        self._runtime_signature_logged = False
+        self._runtime_debug_call_index = 0
         if _MEGA_MOE_SUPPORTED:
             self.get_symm_buffer_for_mega_moe, self.mega_moe = comm_utils.load_cann_mega_moe_ops()
         if get_ascend_config().enable_fused_mc2 == 1:
@@ -381,6 +387,14 @@ class FusedMC2CommImpl(MoECommMethod):
             num_experts,
             num_topk,
         )
+        configured_max_recv = int(os.getenv("VLLM_ASCEND_MEGAMOE_MAX_RECV_TOKENS", "0"))
+        if configured_max_recv:
+            if not 1 <= configured_max_recv <= max_recv_token_num:
+                raise ValueError(
+                    "VLLM_ASCEND_MEGAMOE_MAX_RECV_TOKENS must be in "
+                    f"[1, {max_recv_token_num}], got {configured_max_recv}."
+                )
+            max_recv_token_num = configured_max_recv
 
         logger.info(
             "CANN MegaMoe sym-buffer alloc: ep_rank=%s ep_world=%s global_bs=%s "
@@ -399,7 +413,7 @@ class FusedMC2CommImpl(MoECommMethod):
             num_topk,
             hidden=self.moe_config.hidden_dim,
             intermediate_hidden=2 * self.moe_config.intermediate_size_per_partition,
-            max_recv_token_num=0,
+            max_recv_token_num=max_recv_token_num,
             dispatch_quant_mode=dispatch_quant_mode,
             dispatch_quant_out_dtype=dispatch_quant_out_dtype,
         )
@@ -409,9 +423,13 @@ class FusedMC2CommImpl(MoECommMethod):
         fused_experts_input: MoEFusedExpertsInput,
         topk_ids: torch.Tensor,
     ):
-        if _is_a2_megamoe_enabled(get_ascend_config()) and fused_experts_input.quant.quant_type != QuantType.W8A8:
+        supported_a2_quant_types = {QuantType.W8A8, QuantType.W4A8}
+        if (
+            _is_a2_megamoe_enabled(get_ascend_config())
+            and fused_experts_input.quant.quant_type not in supported_a2_quant_types
+        ):
             raise RuntimeError(
-                "CANN MegaMoe mode 2 currently supports only W8A8 routed experts, got "
+                "CANN MegaMoe mode 2 currently supports only W8A8/W4A8 routed experts, got "
                 f"{fused_experts_input.quant.quant_type}."
             )
         assert fused_experts_input.weights.w1_scale is not None
@@ -425,12 +443,8 @@ class FusedMC2CommImpl(MoECommMethod):
 
         weight1 = to_list(fused_experts_input.weights.w1)
         weight2 = to_list(fused_experts_input.weights.w2)
-        # A8W4-INT MegaMoe reads N from weight1.storageShape.lastDim treated as int8 (N = lastDim*2)
-        # and checks weight2.dim0 == N/2, so the weights MUST be int8-shaped (two int4 per byte), NOT
-        # the eight-int4-per-int32 packing (that makes the op read N four times too small and fail
-        # CheckWeight2Input). The op prototype also REQUIRES FRACTAL_NZ per expert. The W4A8 quant
-        # method therefore builds per-expert int8 + FRACTAL_NZ lists (cann_mega_moe_*_weight_list) and
-        # they are passed through as-is here. W8A8 weights are already int8 + FRACTAL_NZ, also as-is.
+        # A8W4-INT uses compact INT8 storage with two INT4 values per byte.
+        # weight_type tells MegaMoe to interpret those FRACTAL_NZ bytes as INT4.
         weight_scales1 = to_list(fused_experts_input.weights.w1_scale)
         weight_scales2 = to_list(fused_experts_input.weights.w2_scale)
         # MegaMoe requires per-expert weight scales to be 1-D. The W4A8 method
@@ -439,11 +453,6 @@ class FusedMC2CommImpl(MoECommMethod):
         # [1, N] per-channel case to avoid flattening genuine per-group scales.
         weight_scales1 = [t.squeeze(0) if (t.dim() == 2 and t.shape[0] == 1) else t for t in weight_scales1]
         weight_scales2 = [t.squeeze(0) if (t.dim() == 2 and t.shape[0] == 1) else t for t in weight_scales2]
-
-        if self._mega_moe_symm_buffer is None:
-            self._init_mega_moe_symm_buffer(
-                fused_experts_input,
-            )
 
         activation_clamp = fused_experts_input.swiglu_limit if fused_experts_input.swiglu_limit > 0 else None
         x_active_mask = None
@@ -458,6 +467,18 @@ class FusedMC2CommImpl(MoECommMethod):
                 x_active_mask = raw_mask.contiguous()
             else:
                 x_active_mask = raw_mask.to(torch.int8).contiguous()
+
+        if self._mega_moe_symm_buffer is None:
+            if x_active_mask is not None:
+                global_active_tokens = x_active_mask.sum(dtype=torch.int64)
+                torch.distributed.all_reduce(global_active_tokens, group=get_mc2_group().device_group)
+                if int(global_active_tokens.item()) == 0:
+                    if not self._idle_warmup_bypass_logged:
+                        logger.info("Bypassing CANN MegaMoe for an all-idle DP warmup batch.")
+                        self._idle_warmup_bypass_logged = True
+                    return torch.zeros_like(fused_experts_input.hidden_states), None
+            self._init_mega_moe_symm_buffer(fused_experts_input)
+
         # A8W4-INT precision-compensation biases B1/B2 (l1_bias/l2_bias).
         l1_bias = fused_experts_input.weights.w1_scale_bias
         l2_bias = fused_experts_input.weights.w2_scale_bias
@@ -478,6 +499,127 @@ class FusedMC2CommImpl(MoECommMethod):
                 )
             )
 
+        debug_call_index = self._runtime_debug_call_index
+        self._runtime_debug_call_index += 1
+        should_debug = os.getenv("VLLM_ASCEND_MEGAMOE_DEBUG") == "1" and (
+            debug_call_index < 2 or debug_call_index % 64 < 2
+        )
+        if should_debug:
+            active_tokens = (
+                int(x_active_mask.sum(dtype=torch.int64).item())
+                if x_active_mask is not None
+                else int(hidden_states.shape[0])
+            )
+            hidden_abs = hidden_states.float().abs()
+            mask_head = None if x_active_mask is None else x_active_mask[:8].cpu().tolist()
+            topk_head = topk_ids[:2].cpu().tolist()
+            hidden_abs_mean = float(hidden_abs.mean().item())
+            hidden_abs_max = float(hidden_abs.max().item())
+            topk_weights_fp32 = topk_weights.float()
+            topk_weight_min = float(topk_weights_fp32.min().item())
+            topk_weight_max = float(topk_weights_fp32.max().item())
+            topk_weight_sums = topk_weights_fp32.sum(dim=-1)[:8].cpu().tolist()
+            topk_min = int(topk_ids.min().item())
+            topk_max = int(topk_ids.max().item())
+            ep_rank = int(self.token_dispatcher.ep_rank_id)
+            if ep_rank % int(self.prepare_finalize.tp_size) == 0:
+                logger.warning(
+                    "CANN MegaMoe debug before: call=%d ep_rank=%d tokens=%d "
+                    "original_tokens=%d active=%d "
+                    "mask_head=%s hidden_abs_mean=%.6f hidden_abs_max=%.6f "
+                    "topk_min=%d topk_max=%d topk_head=%s "
+                    "topk_weight_min=%.6f topk_weight_max=%.6f "
+                    "topk_weight_sums=%s log2phy=%s",
+                    debug_call_index,
+                    ep_rank,
+                    int(hidden_states.shape[0]),
+                    original_num_tokens,
+                    active_tokens,
+                    mask_head,
+                    hidden_abs_mean,
+                    hidden_abs_max,
+                    topk_min,
+                    topk_max,
+                    topk_head,
+                    topk_weight_min,
+                    topk_weight_max,
+                    topk_weight_sums,
+                    fused_experts_input.routing.log2phy is not None,
+                )
+
+        if not self._runtime_signature_logged:
+            try:
+                weight1_format = int(torch_npu.get_npu_format(weight1[0]))
+                weight2_format = int(torch_npu.get_npu_format(weight2[0]))
+                weight1_nonzero = int(torch.count_nonzero(weight1[0]).item())
+                weight2_nonzero = int(torch.count_nonzero(weight2[0]).item())
+                weight1_abs_max = int(weight1[0].abs().max().item())
+                weight2_abs_max = int(weight2[0].abs().max().item())
+                scale1_fp32 = weight_scales1[0].view(torch.float32)[::2]
+                scale2_fp32 = weight_scales2[0].view(torch.float32)[::2]
+                scale1_min = float(scale1_fp32.min().item())
+                scale1_max = float(scale1_fp32.max().item())
+                scale1_nonzero = int(torch.count_nonzero(scale1_fp32).item())
+                scale2_min = float(scale2_fp32.min().item())
+                scale2_max = float(scale2_fp32.max().item())
+                scale2_nonzero = int(torch.count_nonzero(scale2_fp32).item())
+                bias1_abs_mean = float(l1_bias[0].abs().mean().item()) if l1_bias is not None else -1.0
+                bias1_abs_max = float(l1_bias[0].abs().max().item()) if l1_bias is not None else -1.0
+                bias2_abs_mean = float(l2_bias[0].abs().mean().item()) if l2_bias is not None else -1.0
+                bias2_abs_max = float(l2_bias[0].abs().max().item()) if l2_bias is not None else -1.0
+            except Exception as exc:
+                weight1_format = weight2_format = -1
+                weight1_nonzero = weight2_nonzero = -1
+                weight1_abs_max = weight2_abs_max = -1
+                scale1_min = scale1_max = scale2_min = scale2_max = -1.0
+                scale1_nonzero = scale2_nonzero = -1
+                bias1_abs_mean = bias1_abs_max = bias2_abs_mean = bias2_abs_max = -1.0
+                logger.warning("CANN MegaMoe weight debug failed: %s", exc)
+            logger.info(
+                "CANN MegaMoe call signature: ep_rank=%s hidden=%s topk_ids=%s topk_weights=%s "
+                "mask=%s weight1=%s/%s/format=%s/nonzero=%s/abs_max=%s "
+                "weight2=%s/%s/format=%s/nonzero=%s/abs_max=%s "
+                "scale1=%s/%s/min=%.8g/max=%.8g/nonzero=%s "
+                "scale2=%s/%s/min=%.8g/max=%.8g/nonzero=%s "
+                "bias1=%s/abs_mean=%.8g/abs_max=%.8g "
+                "bias2=%s/abs_mean=%.8g/abs_max=%.8g",
+                getattr(self.token_dispatcher, "ep_rank_id", "?"),
+                tuple(hidden_states.shape),
+                tuple(topk_ids.shape),
+                tuple(topk_weights.shape),
+                None if x_active_mask is None else tuple(x_active_mask.shape),
+                len(weight1),
+                (tuple(weight1[0].shape), weight1[0].dtype),
+                weight1_format,
+                weight1_nonzero,
+                weight1_abs_max,
+                len(weight2),
+                (tuple(weight2[0].shape), weight2[0].dtype),
+                weight2_format,
+                weight2_nonzero,
+                weight2_abs_max,
+                len(weight_scales1),
+                (tuple(weight_scales1[0].shape), weight_scales1[0].dtype),
+                scale1_min,
+                scale1_max,
+                scale1_nonzero,
+                len(weight_scales2),
+                (tuple(weight_scales2[0].shape), weight_scales2[0].dtype),
+                scale2_min,
+                scale2_max,
+                scale2_nonzero,
+                None if l1_bias is None else (len(l1_bias), tuple(l1_bias[0].shape), l1_bias[0].dtype),
+                bias1_abs_mean,
+                bias1_abs_max,
+                None if l2_bias is None else (len(l2_bias), tuple(l2_bias[0].shape), l2_bias[0].dtype),
+                bias2_abs_mean,
+                bias2_abs_max,
+            )
+            self._runtime_signature_logged = True
+
+        operator_active_mask = (
+            None if os.getenv("VLLM_ASCEND_MEGAMOE_DISABLE_MASK") == "1" else x_active_mask
+        )
         out, expert_tokens = self.mega_moe(
             hidden_states,
             topk_ids.to(torch.int32),
@@ -489,11 +631,34 @@ class FusedMC2CommImpl(MoECommMethod):
             l2_weights_sf=weight_scales2,
             l1_bias=l1_bias,
             l2_bias=l2_bias,
-            x_active_mask=x_active_mask,
+            x_active_mask=operator_active_mask,
             activation_clamp=activation_clamp,
             weight1_type=self._mega_moe_weight_type,
             weight2_type=self._mega_moe_weight_type,
         )
+        if should_debug:
+            output_abs = out[:original_num_tokens].float().abs()
+            output_abs_mean = float(output_abs.mean().item())
+            output_abs_max = float(output_abs.max().item())
+            output_finite = bool(torch.isfinite(output_abs).all().item())
+            expert_tokens_head = expert_tokens[:16].cpu().tolist()
+            expert_tokens_sum = int(expert_tokens.sum(dtype=torch.int64).item())
+            ep_rank = int(self.token_dispatcher.ep_rank_id)
+            if ep_rank % int(self.prepare_finalize.tp_size) == 0:
+                logger.warning(
+                    "CANN MegaMoe debug after: call=%d ep_rank=%d tokens=%d "
+                    "original_tokens=%d output_abs_mean=%.6f output_abs_max=%.6f finite=%s "
+                    "expert_tokens_sum=%d expert_tokens_head=%s",
+                    debug_call_index,
+                    ep_rank,
+                    int(hidden_states.shape[0]),
+                    original_num_tokens,
+                    output_abs_mean,
+                    output_abs_max,
+                    output_finite,
+                    expert_tokens_sum,
+                    expert_tokens_head,
+                )
         # NOTE: self.expert_token_nums is only used by the
         # mega_moe path (enable_fused_mc2 == 1) as a
         # pre-allocated in/out buffer. The MegaMoe op returns a fresh
@@ -505,6 +670,20 @@ class FusedMC2CommImpl(MoECommMethod):
         self,
         fused_experts_input: MoEFusedExpertsInput,
     ):
+        if (
+            os.getenv("VLLM_ASCEND_BYPASS_MEGAMOE_PROFILE") == "1"
+            and getattr(_EXTRA_CTX, "in_profile_run", False)
+        ):
+            if not self._profile_bypass_logged:
+                logger.info("Bypassing CANN MegaMoe during the startup profile run.")
+                self._profile_bypass_logged = True
+            return FusedExpertsResult(
+                routed_out=torch.zeros_like(fused_experts_input.hidden_states),
+                swiglu_limit=fused_experts_input.swiglu_limit,
+                swiglu_alpha=fused_experts_input.swiglu_alpha,
+                swiglu_beta=fused_experts_input.swiglu_beta,
+            )
+
         # SiTU is implemented by the generic MoE path. Keep other activations
         # on the upstream MegaMoE path, including unquantized shared experts.
         if isinstance(fused_experts_input.activation, SituActivationConfig):
@@ -525,7 +704,7 @@ class FusedMC2CommImpl(MoECommMethod):
         expert_tokens = None
         enable_fused_mc2 = get_ascend_config().enable_fused_mc2
         if enable_fused_mc2 == 1:
-            if _MEGA_MOE_SUPPORTED:
+            if _MEGA_MOE_SUPPORTED and os.getenv("VLLM_ASCEND_FORCE_LEGACY_MC2") != "1":
                 out, expert_tokens = self._apply_cann_mega_moe(fused_experts_input, topk_ids)
             else:
                 assert not (

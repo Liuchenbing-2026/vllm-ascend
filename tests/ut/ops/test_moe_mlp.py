@@ -76,6 +76,14 @@ class TestW4A8RuntimeFlags(unittest.TestCase):
             MoEQuantParams(quant_type=QuantType.W8A8, is_per_channel_weight=True).use_w4a8_per_channel_gmm_swiglu
         )
 
+    def test_w4a8_per_channel_v2_shape_limit(self):
+        self.assertTrue(
+            moe_mlp_module._w4a8_per_channel_gmm_swiglu_v2_supported(torch.ones(2, 8192))
+        )
+        self.assertFalse(
+            moe_mlp_module._w4a8_per_channel_gmm_swiglu_v2_supported([torch.ones(16384)])
+        )
+
 
 class TestUnifiedApplyMlpRequest(unittest.TestCase):
     def test_unquant_apply_mlp_wraps_tensor_weights_for_grouped_matmul(self):
@@ -272,6 +280,61 @@ class TestUnifiedApplyMlpRequest(unittest.TestCase):
         self.assertIs(mock_fused_gmm.call_args.kwargs["weight"], packed_w1)
         self.assertIs(mock_fused_gmm.call_args.kwargs["weight_scale"], w1_scale)
         self.assertEqual(w1_scale.shape, torch.Size([1, 4]))
+
+    def test_w4a8_per_channel_respects_disabled_fusion(self):
+        hidden_states = torch.randn(2, 4, dtype=torch.bfloat16)
+        quantized_input = torch.ones(2, 4, dtype=torch.int8)
+        input_scale = torch.ones(2, 1, dtype=torch.float32)
+        gate_up_out = torch.randn(2, 4, dtype=torch.bfloat16)
+        activated = torch.randn(2, 2, dtype=torch.bfloat16)
+        quantized_activation = torch.ones(2, 2, dtype=torch.int8)
+        activation_scale = torch.ones(2, 1, dtype=torch.float32)
+        down_out = torch.randn(2, 4, dtype=torch.bfloat16)
+        event = object()
+        custom_fused_gmm = MagicMock()
+
+        with (
+            patch.object(
+                moe_mlp_module.torch.ops,
+                "_C_ascend",
+                SimpleNamespace(grouped_matmul_swiglu_quant_v2=custom_fused_gmm),
+            ),
+            patch.object(moe_mlp_module, "HAS_TRITON", False),
+            patch(f"{MOE_MLP}.enable_custom_op", return_value=True),
+            patch(
+                f"{MOE_MLP}.DeviceOperator.npu_dynamic_quant",
+                return_value=(quantized_input, input_scale),
+            ),
+            patch(f"{MOE_MLP}.torch_npu.npu_grouped_matmul", return_value=[gate_up_out]) as fallback_gmm,
+            patch(f"{MOE_MLP}.torch_npu.npu_swiglu", return_value=activated),
+            patch(
+                f"{MOE_MLP}.torch_npu.npu_dynamic_quant",
+                return_value=(quantized_activation, activation_scale),
+            ),
+            patch(f"{MOE_MLP}.DeviceOperator.npu_grouped_matmul_gmm2", return_value=down_out),
+            patch(f"{MOE_MLP}.dispose_tensor"),
+            patch(
+                f"{MOE_MLP}.torch.npu.current_stream",
+                return_value=MagicMock(record_event=MagicMock(return_value=event)),
+            ),
+        ):
+            output, before_gmm2_evt = quant_apply_mlp(
+                hidden_states=hidden_states,
+                w1=[torch.ones(1, 4, 1, dtype=torch.int32)],
+                w1_scale=[torch.ones(1, 4, dtype=torch.int64)],
+                w2=[torch.ones(1, 2, 1, dtype=torch.int32)],
+                w2_scale=[torch.ones(1, 4, dtype=torch.int64)],
+                group_list=torch.tensor([2]),
+                activation="silu",
+                fusion=False,
+                mxfp_quant_dtype=QuantType.W4A8,
+                use_w4a8_per_channel_gmm_swiglu=True,
+            )
+
+        self.assertIs(output, down_out)
+        self.assertIs(before_gmm2_evt, event)
+        custom_fused_gmm.assert_not_called()
+        fallback_gmm.assert_called_once()
 
     def test_request_unquant_path(self):
         hidden_states = torch.randn(2, 8)

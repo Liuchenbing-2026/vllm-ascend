@@ -28,6 +28,7 @@ COMM_STREAM = None
 
 _CANN_ACL_INT8 = 258
 _CANN_ACL_INT4 = 285
+_CANN_TORCH_INT8 = 1
 _CANN_MEGA_MOE_QUANT_MODE_INT8 = 2
 
 
@@ -125,16 +126,13 @@ def _get_cann_mega_moe_quant_settings(quant_type: QuantType) -> tuple[int, int |
     # packed weights; otherwise it derives W4A8's packed N as an INT8 N and
     # rejects weight2.
     #
-    # dispatch_quant_out_dtype: the doc types this as torch.dtype (torch.int8 /
-    # torch.float8_e4m3fn). We pass the ACL enum ints (258 / 24) because W8A8
-    # was validated end-to-end this way in PD; switching W4A8 to torch.int8 did
-    # NOT fix the W4A8 accuracy issue and slowed graph capture (see bug_a3.md),
-    # so keep the working values until the W4A8 accuracy root cause is found on
-    # the operator side.
+    # The current wrapper schema expects PyTorch scalar-type enum values for
+    # dispatch_quant_out_dtype. Keep the validated W8A8 value unchanged, while
+    # W4A8 uses the wrapper's torch.int8 enum value (1).
     if quant_type == QuantType.W8A8:
         return (_CANN_MEGA_MOE_QUANT_MODE_INT8, _CANN_ACL_INT8, _CANN_ACL_INT8)
     if quant_type == QuantType.W4A8:
-        return (_CANN_MEGA_MOE_QUANT_MODE_INT8, _CANN_ACL_INT8, _CANN_ACL_INT4)
+        return (_CANN_MEGA_MOE_QUANT_MODE_INT8, _CANN_TORCH_INT8, _CANN_ACL_INT4)
     raise RuntimeError(
         "MegaMoe integration supports W8A8/W4A8 INT on A2/A3 and MXFP on FP8-capable "
         "MegaMoe platforms. "
