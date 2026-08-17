@@ -24,7 +24,6 @@ from vllm.model_executor.layers.linear import LinearMethodBase, RowParallelLinea
 from vllm.model_executor.layers.quantization.kv_cache import BaseKVCacheMethod
 from vllm.model_executor.parameter import PerTensorScaleParameter
 from vllm.model_executor.utils import set_weight_attrs
-
 from vllm_ascend.distributed.parallel_state import get_mlp_tp_group, get_otp_group
 from vllm_ascend.utils import mlp_tp_enable, oproj_tp_enable
 
@@ -56,6 +55,7 @@ class AscendLinearMethod(LinearMethodBase):
     ) -> None:
         output_size_per_partition = sum(output_partition_sizes)
         weight_loader = extra_weight_attrs.get("weight_loader")
+        layer.logical_widths = output_partition_sizes
 
         weight_dict = self.quant_method.get_weight(input_size_per_partition, output_size_per_partition, params_dtype)
 
@@ -78,7 +78,11 @@ class AscendLinearMethod(LinearMethodBase):
         # the shape of pertensor_param requires introducing layer_type
         layer_type = "row" if isinstance(layer, RowParallelLinear) else "others"
 
-        pertensor_dict = self.quant_method.get_pertensor_param(params_dtype, layer_type=layer_type)
+        pertensor_dict = self.quant_method.get_pertensor_param(
+            params_dtype,
+            layer_type=layer_type,
+            output_partition_sizes=output_partition_sizes,
+        )
         for pertensor_name, pertensor_param in pertensor_dict.items():
             param = PerTensorScaleParameter(data=pertensor_param, weight_loader=weight_loader)
             # disable warning
@@ -228,7 +232,12 @@ class AscendFusedMoEMethod(FusedMoEMethodBase):
             layer.register_parameter(param_key, param)
             set_weight_attrs(param, extra_weight_attrs)
 
-        extra_weight_attrs.update({"quant_method": FusedMoeWeightScaleSupported.CHANNEL.value})
+        weight_scale_supported = getattr(
+            self.quant_method,
+            "weight_scale_supported",
+            FusedMoeWeightScaleSupported.CHANNEL.value,
+        )
+        extra_weight_attrs.update({"quant_method": weight_scale_supported})
         per_group_param = ["weight_scale_second", "weight_offset_second", "scale_bias"] + (
             ["weight_scale", "weight_offset"]
             if hasattr(self.quant_method, "group_size") and self.quant_method.group_size > 0

@@ -1,10 +1,9 @@
 from unittest.mock import MagicMock, patch
 
 import torch
+from tests.ut.base import TestBase
 from vllm.model_executor.layers.fused_moe import FusedMoeWeightScaleSupported
 from vllm.model_executor.layers.linear import ColumnParallelLinear
-
-from tests.ut.base import TestBase
 from vllm_ascend.quantization.method_adapters import (
     AscendFusedMoEMethod,
     AscendKVCacheMethod,
@@ -57,6 +56,7 @@ class TestAscendLinearMethod(TestBase):
         self.assertEqual(layer.weight.output_dim, 0)
         self.assertEqual(layer.weight.packed_dim, 0)
         self.assertEqual(layer.weight.packed_factor, 0.1)
+        self.assertEqual(layer.logical_widths, [128])
 
         # Check per tensor param
         self.mock_scheme.get_pertensor_param.assert_called_once()
@@ -162,6 +162,12 @@ class TestAscendFusedMoEMethod(TestBase):
         self.assertEqual(layer.w2_scale_bias.quant_method, FusedMoeWeightScaleSupported.GROUP.value)
         self.assertEqual(layer.w13_weight_scale.quant_method, FusedMoeWeightScaleSupported.CHANNEL.value)
         self.assertEqual(layer.w2_weight_offset.quant_method, FusedMoeWeightScaleSupported.CHANNEL.value)
+
+        # per tensor quantization
+        self.mock_scheme.weight_scale_supported = FusedMoeWeightScaleSupported.TENSOR.value
+        layer = self.create_moe_weights()
+        self.assertEqual(layer.w13_weight_scale.quant_method, FusedMoeWeightScaleSupported.TENSOR.value)
+        self.assertEqual(layer.w2_weight_offset.quant_method, FusedMoeWeightScaleSupported.TENSOR.value)
 
         # per group quantization
         self.mock_scheme.group_size = 128

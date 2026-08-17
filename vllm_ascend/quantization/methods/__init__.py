@@ -45,6 +45,7 @@ from .base import (
 
 # Import all scheme classes for external access
 from .fp8 import AscendW4A8MXFPDSDynamicFusedMoEMethod, AscendW8A8MXFP8DSDynamicLinearMethod
+from .fp8_per_tensor import AscendFp8PerTensorFusedMoEMethod, AscendFp8PerTensorLinearMethod
 from .kv_c8 import AscendFAQuantAttentionMethod
 
 # Import registry functions
@@ -115,4 +116,6 @@ __all__ = [
     "AscendW4A4MXFP4FlatQuantDynamicLinearMethod",
     "AscendW8A8MXFP8DSDynamicLinearMethod",
     "AscendW4A8MXFPDSDynamicFusedMoEMethod",
+    "AscendFp8PerTensorLinearMethod",
+    "AscendFp8PerTensorFusedMoEMethod",
 ]

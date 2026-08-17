@@ -2,11 +2,83 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import torch
-from vllm.model_executor.layers.fused_moe import MoERunner, RoutedExperts
-from vllm.model_executor.layers.linear import LinearBase
-
 from tests.ut.base import TestBase
-from vllm_ascend.quantization.fp8_config import AscendDeepseekV4FP8Config
+from vllm.model_executor.layers.fused_moe import MoERunner, RoutedExperts
+from vllm.model_executor.layers.linear import LinearBase, UnquantizedLinearMethod
+from vllm_ascend.quantization.fp8_config import AscendDeepseekV4FP8Config, AscendFp8Config
+from vllm_ascend.utils import FP8_METHOD
+
+
+class TestAscendFp8Config(TestBase):
+    def setUp(self):
+        self.config = AscendFp8Config(
+            is_checkpoint_fp8_serialized=True,
+            activation_scheme="static",
+        )
+
+    def test_get_quant_method_for_linear_base(self):
+        linear_layer = MagicMock(spec=LinearBase)
+        mock_scheme_class = MagicMock()
+        mock_ascend_linear = MagicMock()
+
+        with (
+            patch(
+                "vllm_ascend.quantization.fp8_config.get_scheme_class",
+                return_value=mock_scheme_class,
+            ) as mock_get_scheme,
+            patch(
+                "vllm_ascend.quantization.method_adapters.AscendLinearMethod",
+                return_value=mock_ascend_linear,
+            ),
+        ):
+            method = self.config.get_quant_method(linear_layer, "model.layers.0.self_attn.q_proj")
+
+        mock_get_scheme.assert_called_once_with(FP8_METHOD, "tensor_linear")
+        mock_scheme_class.assert_called_once_with("static")
+        self.assertEqual(linear_layer.ascend_quant_method, FP8_METHOD)
+        self.assertIs(method, mock_ascend_linear)
+
+    def test_get_quant_method_for_moe(self):
+        moe_layer = MagicMock(spec=RoutedExperts)
+        moe_layer.moe_config = MagicMock()
+        mock_scheme_class = MagicMock()
+        mock_ascend_moe = MagicMock()
+
+        with (
+            patch(
+                "vllm_ascend.quantization.fp8_config.get_scheme_class",
+                return_value=mock_scheme_class,
+            ) as mock_get_scheme,
+            patch(
+                "vllm_ascend.quantization.method_adapters.AscendFusedMoEMethod",
+                return_value=mock_ascend_moe,
+            ),
+        ):
+            method = self.config.get_quant_method(moe_layer, "model.layers.0.mlp.experts")
+
+        mock_get_scheme.assert_called_once_with(FP8_METHOD, "tensor_moe")
+        mock_scheme_class.assert_called_once_with("static")
+        self.assertEqual(moe_layer.ascend_quant_method, FP8_METHOD)
+        self.assertIs(method, mock_ascend_moe)
+
+    @patch("vllm_ascend.quantization.fp8_config.is_layer_skipped", return_value=True)
+    def test_ignored_linear_is_unquantized(self, _mock_is_layer_skipped):
+        method = self.config.get_quant_method(MagicMock(spec=LinearBase), "vision_tower.layers.0")
+        self.assertIsInstance(method, UnquantizedLinearMethod)
+
+    def test_online_fp8_is_rejected(self):
+        config = AscendFp8Config(is_checkpoint_fp8_serialized=False, activation_scheme="dynamic")
+        with self.assertRaisesRegex(NotImplementedError, "serialized FP8 checkpoint"):
+            config.get_quant_method(MagicMock(spec=LinearBase), "model.layers.0.mlp.down_proj")
+
+    def test_generic_block_fp8_is_rejected(self):
+        config = AscendFp8Config(
+            is_checkpoint_fp8_serialized=True,
+            activation_scheme="dynamic",
+            weight_block_size=[128, 128],
+        )
+        with self.assertRaisesRegex(NotImplementedError, "Generic block-wise FP8"):
+            config.get_quant_method(MagicMock(spec=LinearBase), "model.layers.0.mlp.down_proj")
 
 
 class TestAscendDeepseekV4FP8Config(TestBase):
