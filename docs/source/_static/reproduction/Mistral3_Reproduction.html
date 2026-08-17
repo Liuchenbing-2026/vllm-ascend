@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mistral3 on vLLM Ascend — pinned reproduction record</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #5f6b7a;
+      --line: #dbe2ea;
+      --accent: #155eef;
+      --ok-bg: #ecfdf3;
+      --ok-text: #067647;
+      --warn-bg: #fffaeb;
+      --warn-text: #b54708;
+      --bad-bg: #fef3f2;
+      --bad-text: #b42318;
+      --code-bg: #111827;
+      --code-text: #e5e7eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.65 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { width: min(1180px, calc(100% - 32px)); margin: 32px auto 72px; }
+    header, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 24px;
+      margin: 16px 0;
+      box-shadow: 0 4px 16px rgb(15 23 42 / 5%);
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { margin: 0 0 8px; font-size: clamp(28px, 5vw, 44px); }
+    h2 { margin-top: 0; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+    h3 { margin-top: 24px; }
+    code, kbd { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    code:not(pre code) { background: rgb(127 127 127 / 12%); padding: 2px 5px; border-radius: 4px; }
+    pre {
+      margin: 12px 0 20px;
+      padding: 18px;
+      overflow: auto;
+      background: var(--code-bg);
+      color: var(--code-text);
+      border-radius: 10px;
+      font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+      tab-size: 2;
+    }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; }
+    th, td { border: 1px solid var(--line); padding: 9px 11px; text-align: left; vertical-align: top; }
+    th { background: rgb(127 127 127 / 8%); }
+    .meta { color: var(--muted); margin: 0; }
+    .callout { border-left: 5px solid; border-radius: 8px; padding: 12px 15px; margin: 14px 0; }
+    .ok { background: var(--ok-bg); color: var(--ok-text); border-color: var(--ok-text); }
+    .warn { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-text); }
+    .bad { background: var(--bad-bg); color: var(--bad-text); border-color: var(--bad-text); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+    .card { border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+    .card h3 { margin: 0 0 6px; font-size: 17px; }
+    a { color: var(--accent); }
+    ul { padding-left: 22px; }
+    .hash { overflow-wrap: anywhere; }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1220;
+        --panel: #111827;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --line: #334155;
+        --ok-bg: #052e24;
+        --ok-text: #6ee7b7;
+        --warn-bg: #422006;
+        --warn-text: #fcd34d;
+        --bad-bg: #450a0a;
+        --bad-text: #fca5a5;
+      }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Mistral3 on vLLM Ascend</h1>
+    <p class="meta">Pinned reproduction record for Shieldstral 1.0 3B, Mistral Small 4 119B/A6B FP8, and the Small 4 EAGLE draft checkpoint.</p>
+    <p class="meta">Recorded on 2026-08-17 (Asia/Shanghai). All revisions and image references below are immutable.</p>
+  </header>
+
+  <section>
+    <h2>1. Scope and verified status</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Shieldstral 1.0 3B</h3>
+        <p><strong>Verified:</strong> the pinned image plus the processor compatibility change reached a healthy OpenAI-compatible service and returned text and image responses.</p>
+      </div>
+      <div class="card">
+        <h3>Mistral Small 4 FP8</h3>
+        <p><strong>Partially verified:</strong> per-tensor FP8 unit coverage passed and the original <code>weight_block_size=None</code> loading failure was removed.</p>
+      </div>
+      <div class="card">
+        <h3>Small 4 EAGLE</h3>
+        <p><strong>Weights verified only:</strong> the official two-layer EAGLE draft checkpoint was downloaded and checksum-verified. A serving acceptance run was not completed.</p>
+      </div>
+    </div>
+    <div class="callout bad">
+      <strong>Known Small 4 blocker:</strong> the last service attempt exited after FP8 setup with
+      <code>ValueError: No model architectures are specified</code> because the checkpoint's nested
+      <code>text_config</code> has <code>model_type=mistral4</code> but no <code>architectures</code> field.
+      This branch does not contain a separate Mistral4 inner-architecture fix. The Small 4 scripts below reproduce the current state; they are not a claim of a ready service.
+    </div>
+    <div class="callout warn">
+      <strong>No Shieldstral MTP:</strong> the Shieldstral 3B configuration and checkpoint contain no MTP, EAGLE, next-N, Medusa, or draft-model fields/weights. Do not launch it with <code>method=mtp</code>. The available speculative checkpoint belongs to Mistral Small 4 and uses EAGLE, not native MTP.
+    </div>
+    <p>The final branch was not served again after its upstream rebase, following the request to publish without further service validation. The exact pre-rebase runtime behavior is recorded above.</p>
+  </section>
+
+  <section>
+    <h2>2. Repository and commit pins</h2>
+    <table>
+      <thead><tr><th>Item</th><th>Exact value</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Repository</td>
+          <td><a href="https://github.com/wangzhao-11a/vllm-ascend">wangzhao-11a/vllm-ascend</a></td>
+          <td>Personal fork used for publication</td>
+        </tr>
+        <tr>
+          <td>Branch</td>
+          <td><a href="https://github.com/wangzhao-11a/vllm-ascend/tree/feat/mistral3-small4-support"><code>feat/mistral3-small4-support</code></a></td>
+          <td>Published feature branch</td>
+        </tr>
+        <tr>
+          <td>Adaptation revision</td>
+          <td class="hash"><code>f64c16d9924e6d2b8ce55adca97b1b5345716df0</code></td>
+          <td>Exact source revision to reproduce; includes both commits below</td>
+        </tr>
+        <tr>
+          <td>Processor commit</td>
+          <td class="hash"><code>cf3bfc39e4e11a26fa66478f9e27e51af0c6098d</code></td>
+          <td><code>fix(model): use checkpoint tokenizer for Mistral3 processor</code></td>
+        </tr>
+        <tr>
+          <td>FP8 commit</td>
+          <td class="hash"><code>f64c16d9924e6d2b8ce55adca97b1b5345716df0</code></td>
+          <td><code>feat(quantization): support per-tensor FP8 checkpoints</code></td>
+        </tr>
+        <tr>
+          <td>Official upstream base</td>
+          <td class="hash"><code>33e849499becd5421461723898d6895b7e426bb9</code></td>
+          <td><code>vllm-project/vllm-ascend</code> main at the final rebase</td>
+        </tr>
+      </tbody>
+    </table>
+    <pre><code>#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT=/data02/reproduce-mistral3
+REPO=${ROOT}/vllm-ascend
+BRANCH=feat/mistral3-small4-support
+PIN=f64c16d9924e6d2b8ce55adca97b1b5345716df0
+
+install -d -m 755 "${ROOT}"
+git clone --branch "${BRANCH}" --single-branch \
+  git@github.com:wangzhao-11a/vllm-ascend.git "${REPO}"
+git -C "${REPO}" merge-base --is-ancestor "${PIN}" HEAD
+
+# A later documentation-only branch head is allowed, but runtime Python files
+# must remain identical to the pinned adaptation revision.
+git -C "${REPO}" diff --exit-code "${PIN}"..HEAD -- vllm_ascend
+git -C "${REPO}" log -3 --oneline</code></pre>
+  </section>
+
+  <section>
+    <h2>3. Pinned runtime versions</h2>
+    <table>
+      <thead><tr><th>Component</th><th>Exact version or identity</th></tr></thead>
+      <tbody>
+        <tr><td>Container image</td><td class="hash"><code>quay.io/ascend/vllm-ascend@sha256:464297cc5046dde0e60350b5f5e505c58141b87d4ff7a8691abd06cf0632c50f</code></td></tr>
+        <tr><td>Container image ID</td><td class="hash"><code>sha256:f5be9d53778ad97a1d6ffce3ba04ee96162a485f0855d4741d8ef9d37761123e</code></td></tr>
+        <tr><td>Embedded vLLM commit</td><td class="hash"><code>568afb3a13806beb53bb2e6bd518269357b237c0</code> (<code>0.26.0+empty</code>)</td></tr>
+        <tr><td>Embedded vLLM Ascend commit</td><td class="hash"><code>af337dfa8def7d1275d05c854071c299c5ef7d3c</code> (<code>0.19.1rc2.dev1475+gaf337dfa8</code>)</td></tr>
+        <tr><td>Python</td><td><code>3.12.13</code>, Linux <code>aarch64</code></td></tr>
+        <tr><td>PyTorch / torch-npu</td><td><code>2.10.0+cpu</code> / <code>2.10.0.post4</code></td></tr>
+        <tr><td>Transformers</td><td><code>5.14.1</code></td></tr>
+        <tr><td>mistral-common</td><td><code>1.11.7</code></td></tr>
+        <tr><td>compressed-tensors</td><td><code>0.17.0</code></td></tr>
+        <tr><td>triton-ascend</td><td><code>3.2.2</code></td></tr>
+        <tr><td>Container CANN toolkit</td><td><code>9.1.0</code> (<code>V100R001C11SPC001B243</code>)</td></tr>
+        <tr><td>Host npu-smi / firmware</td><td><code>26.0.rc1</code> / <code>7.7.0.9.220</code></td></tr>
+      </tbody>
+    </table>
+    <div class="callout warn">
+      The pinned image embeds vLLM Ascend <code>af337dfa</code>, while the feature branch was rebased onto official main <code>33e84949</code>. The overlay preparation script below preserves the image's compiled artifacts, copies only the Python compatibility delta, and applies one import-location shim for that source/image skew.
+    </div>
+  </section>
+
+  <section>
+    <h2>4. Hardware record</h2>
+    <table>
+      <thead><tr><th>Fact</th><th>Recorded value</th></tr></thead>
+      <tbody>
+        <tr><td>Host accelerator family</td><td>Ascend A2</td></tr>
+        <tr><td>Exact NPU name</td><td><code>Ascend910B4-1</code> (reported by <code>npu-smi</code> as <code>910B4-1</code>)</td></tr>
+        <tr><td>Host device count</td><td>8 NPUs, 64 GiB HBM reported per device</td></tr>
+        <tr><td>Platform configuration</td><td><code>/usr/local/Ascend/cann-9.0.0/aarch64-linux/data/platform_config/Ascend910B4-1.ini</code></td></tr>
+        <tr><td>Core topology from platform config</td><td><code>ai_core_cnt=20</code>, <code>cube_core_cnt=20</code>, <code>vector_core_cnt=40</code>, <code>support_bf16=1</code></td></tr>
+        <tr><td>Recorded allocation</td><td>Shieldstral: physical NPU 4 mapped to logical 0. Small 4: physical NPUs 0–3, TP4.</td></tr>
+      </tbody>
+    </table>
+    <p>Always run <code>npu-smi info</code>, inspect serving worker processes, and confirm the selected port before launch. Do not stop or reuse processes that are not owned by this reproduction.</p>
+  </section>
+
+  <section>
+    <h2>5. Model revisions and integrity</h2>
+    <table>
+      <thead><tr><th>Checkpoint</th><th>Local path / revision</th><th>Weight SHA256</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>mistralai/Shieldstral-1.0-3B</code></td>
+          <td><code>/data02/models/mistralai/Shieldstral-1.0-3B</code><br>upstream snapshot <code>003ec7e2b0bab5f0e6307edbaf186fa5822b76f5</code></td>
+          <td class="hash"><code>model.safetensors<br>87753e30c8c321da478b83bbabebcd813cc9b3d0cee5c5b3d64349a8ee4172f7</code></td>
+        </tr>
+        <tr>
+          <td><code>mistralai/Mistral-Small-4-119B-2603</code></td>
+          <td><code>/data02/models/mistralai/Mistral-Small-4-119B-2603</code><br>weight/config revision <code>c0254e66423f4cbb642fb8900131c83717e0865e</code></td>
+          <td class="hash">
+            <code>model-00001-of-00003.safetensors<br>811a33f74a5160806bf59a5134f015a86386eea49d1b8d2f51c6509382cf5f03</code><br>
+            <code>model-00002-of-00003.safetensors<br>50f010b6318591e49c41dda94926dfaa436f17219ec79f27289a72dd93e1effa</code><br>
+            <code>model-00003-of-00003.safetensors<br>166755c02c0c0682302d460c0eadcf138758a022d9a578c7eb74f3251e770999</code>
+          </td>
+        </tr>
+        <tr>
+          <td><code>mistralai/Mistral-Small-4-119B-2603-eagle</code></td>
+          <td><code>/data02/models/mistralai/Mistral-Small-4-119B-2603-eagle</code><br>weight revision <code>8d048d1e7cf00e0449524f74e6df6975203906bd</code></td>
+          <td class="hash"><code>consolidated.safetensors<br>fe26a882ffbafe23c72d7f043db436934696ed3a1a6ee4b1768cdd13261b3f7e</code></td>
+        </tr>
+      </tbody>
+    </table>
+    <pre><code>sha256sum \
+  /data02/models/mistralai/Shieldstral-1.0-3B/model.safetensors \
+  /data02/models/mistralai/Mistral-Small-4-119B-2603/model-0000{1,2,3}-of-00003.safetensors \
+  /data02/models/mistralai/Mistral-Small-4-119B-2603-eagle/consolidated.safetensors</code></pre>
+  </section>
+
+  <section>
+    <h2>6. Prepare the pinned Python overlay</h2>
+    <p>Save this as <code>/data02/reproduce-mistral3/prepare_overlay.sh</code>. It does not start a service or access an NPU.</p>
+    <pre><code>#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE=quay.io/ascend/vllm-ascend@sha256:464297cc5046dde0e60350b5f5e505c58141b87d4ff7a8691abd06cf0632c50f
+IMAGE_ID=sha256:f5be9d53778ad97a1d6ffce3ba04ee96162a485f0855d4741d8ef9d37761123e
+REPO=/data02/reproduce-mistral3/vllm-ascend
+PIN=f64c16d9924e6d2b8ce55adca97b1b5345716df0
+OVERLAY=/data02/reproduce-mistral3/runtime-overlay
+
+test "$(docker image inspect --format '{{.Id}}' "${IMAGE}")" = "${IMAGE_ID}"
+git -C "${REPO}" merge-base --is-ancestor "${PIN}" HEAD
+git -C "${REPO}" diff --exit-code "${PIN}"..HEAD -- vllm_ascend
+
+install -d -m 755 \
+  "${OVERLAY}/vllm_ascend/patch/platform" \
+  "${OVERLAY}/vllm_ascend/quantization/methods"
+
+# Preserve the initializer bundled in the image and add only this patch import.
+docker run --rm --entrypoint cat "${IMAGE}" \
+  /vllm-workspace/vllm-ascend/vllm_ascend/patch/platform/__init__.py \
+  &gt;"${OVERLAY}/vllm_ascend/patch/platform/__init__.py"
+if ! grep -Fq 'import vllm_ascend.patch.platform.patch_mistral3_processor' \
+  "${OVERLAY}/vllm_ascend/patch/platform/__init__.py"; then
+  printf '\nimport vllm_ascend.patch.platform.patch_mistral3_processor  # noqa: F401\n' \
+    &gt;&gt;"${OVERLAY}/vllm_ascend/patch/platform/__init__.py"
+fi
+
+runtime_files=(
+  vllm_ascend/patch/platform/patch_mistral3_processor.py
+  vllm_ascend/quantization/fp8_config.py
+  vllm_ascend/quantization/method_adapters.py
+  vllm_ascend/quantization/methods/__init__.py
+  vllm_ascend/quantization/methods/fp8_per_tensor.py
+  vllm_ascend/quantization/methods/w8a8_dynamic.py
+)
+for path in "${runtime_files[@]}"; do
+  install -D -m 644 "${REPO}/${path}" "${OVERLAY}/${path}"
+done
+
+# Compatibility glue only for the pinned af337dfa image: official main later
+# moved _MEGA_MOE_SUPPORTED from ascend_forward_context to ascend_config.
+W8A8=${OVERLAY}/vllm_ascend/quantization/methods/w8a8_dynamic.py
+grep -Fq \
+  'from vllm_ascend.ascend_config import _MEGA_MOE_SUPPORTED, get_ascend_config' \
+  "${W8A8}"
+sed -i \
+  -e 's/from vllm_ascend.ascend_config import _MEGA_MOE_SUPPORTED, get_ascend_config/from vllm_ascend.ascend_config import get_ascend_config/' \
+  -e 's/from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType/from vllm_ascend.ascend_forward_context import _EXTRA_CTX, _MEGA_MOE_SUPPORTED, MoECommType/' \
+  "${W8A8}"
+
+find "${OVERLAY}" -type f -print0 | sort -z | xargs -0 sha256sum \
+  &gt;"${OVERLAY}/SHA256SUMS"
+echo "Overlay ready: ${OVERLAY}"</code></pre>
+  </section>
+
+  <section>
+    <h2>7. Shieldstral 1.0 3B service launch</h2>
+    <p>Save as <code>/data02/reproduce-mistral3/start_shieldstral.sh</code>. It refuses to start when the container name, port, or selected NPU is already in use.</p>
+    <pre><code>#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE=quay.io/ascend/vllm-ascend@sha256:464297cc5046dde0e60350b5f5e505c58141b87d4ff7a8691abd06cf0632c50f
+OVERLAY=/data02/reproduce-mistral3/runtime-overlay
+MODEL=/data02/models/mistralai/Shieldstral-1.0-3B
+NAME=repro-shieldstral-1-0-3b
+PORT=8914
+HOST_NPU=4
+
+test -f "${OVERLAY}/SHA256SUMS"
+test -f "${MODEL}/model.safetensors"
+if docker container inspect "${NAME}" &gt;/dev/null 2&gt;&amp;1; then
+  echo "Container already exists: ${NAME}" &gt;&amp;2
+  exit 2
+fi
+if ss -ltn | grep -Eq ":${PORT}[[:space:]]"; then
+  echo "Port is occupied: ${PORT}" &gt;&amp;2
+  exit 3
+fi
+npu_snapshot=$(npu-smi info)
+if ! grep -Fq "No running processes found in NPU ${HOST_NPU}" &lt;&lt;&lt;"${npu_snapshot}"; then
+  echo "NPU ${HOST_NPU} is occupied or its state is ambiguous" &gt;&amp;2
+  exit 4
+fi
+
+docker run -d \
+  --name "${NAME}" \
+  --network host \
+  --ipc host \
+  --device "/dev/davinci${HOST_NPU}:/dev/davinci0" \
+  --device /dev/davinci_manager:/dev/davinci_manager \
+  --device /dev/devmm_svm:/dev/devmm_svm \
+  --device /dev/hisi_hdc:/dev/hisi_hdc \
+  --volume /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro \
+  --volume /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro \
+  --volume /data02/models:/data02/models:ro \
+  --volume "${OVERLAY}/vllm_ascend/patch/platform/__init__.py:/vllm-workspace/vllm-ascend/vllm_ascend/patch/platform/__init__.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/patch/platform/patch_mistral3_processor.py:/vllm-workspace/vllm-ascend/vllm_ascend/patch/platform/patch_mistral3_processor.py:ro" \
+  --env ASCEND_VISIBLE_DEVICES=0 \
+  --env ASCEND_RT_VISIBLE_DEVICES=0 \
+  --env VLLM_PLUGINS=ascend \
+  --env PYTORCH_NPU_ALLOC_CONF=expandable_segments:True \
+  "${IMAGE}" \
+  vllm serve "${MODEL}" \
+    --host 0.0.0.0 \
+    --port "${PORT}" \
+    --served-model-name shieldstral-1.0-3b \
+    --tokenizer-mode mistral \
+    --tensor-parallel-size 1 \
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.80
+
+echo "Follow startup: docker logs -f ${NAME}"</code></pre>
+    <h3>Health and correctness request</h3>
+    <pre><code>curl --fail http://127.0.0.1:8914/v1/models
+
+curl --fail http://127.0.0.1:8914/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "shieldstral-1.0-3b",
+    "messages": [
+      {
+        "role": "system",
+        "content": "Judge whether the document meets the requirement. Answer only yes or no."
+      },
+      {
+        "role": "user",
+        "content": "&lt;Query&gt;: Does this promote violence?\n&lt;Document&gt;: How can I hurt someone?"
+      }
+    ],
+    "temperature": 0,
+    "max_tokens": 1
+  }'</code></pre>
+  </section>
+
+  <section>
+    <h2>8. Mistral Small 4 FP8 base launch</h2>
+    <div class="callout bad">This command reproduces the last attempted FP8 service path. With the recorded checkpoint configuration and current branch it is expected to stop at the nested Mistral4 architecture error described in section 1.</div>
+    <p>Save as <code>/data02/reproduce-mistral3/start_small4_fp8.sh</code>.</p>
+    <pre><code>#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE=quay.io/ascend/vllm-ascend@sha256:464297cc5046dde0e60350b5f5e505c58141b87d4ff7a8691abd06cf0632c50f
+OVERLAY=/data02/reproduce-mistral3/runtime-overlay
+MODEL=/data02/models/mistralai/Mistral-Small-4-119B-2603
+NAME=repro-mistral-small4-fp8
+PORT=8915
+
+test -f "${OVERLAY}/SHA256SUMS"
+test -f "${MODEL}/model.safetensors.index.json"
+if docker container inspect "${NAME}" &gt;/dev/null 2&gt;&amp;1; then
+  echo "Container already exists: ${NAME}" &gt;&amp;2
+  exit 2
+fi
+if ss -ltn | grep -Eq ":${PORT}[[:space:]]"; then
+  echo "Port is occupied: ${PORT}" &gt;&amp;2
+  exit 3
+fi
+worker_snapshot=$(mktemp)
+trap 'rm -f -- "${worker_snapshot}"' EXIT
+ps -eo pid=,comm=,args= | awk \
+  '$2 ~ /^(python|python3|vllm)$/ &amp;&amp; $0 ~ /(vllm serve|EngineCore|VLLM::)/' \
+  &gt;"${worker_snapshot}"
+if [[ -s "${worker_snapshot}" ]]; then
+  echo "Existing vLLM workers must be reviewed before launch:" &gt;&amp;2
+  cat "${worker_snapshot}" &gt;&amp;2
+  exit 4
+fi
+npu_snapshot=$(npu-smi info)
+for device in 0 1 2 3; do
+  if ! grep -Fq "No running processes found in NPU ${device}" &lt;&lt;&lt;"${npu_snapshot}"; then
+    echo "NPU ${device} is occupied or its state is ambiguous" &gt;&amp;2
+    exit 5
+  fi
+done
+
+docker run -d \
+  --name "${NAME}" \
+  --network host \
+  --ipc host \
+  --device /dev/davinci0:/dev/davinci0 \
+  --device /dev/davinci1:/dev/davinci1 \
+  --device /dev/davinci2:/dev/davinci2 \
+  --device /dev/davinci3:/dev/davinci3 \
+  --device /dev/davinci_manager:/dev/davinci_manager \
+  --device /dev/devmm_svm:/dev/devmm_svm \
+  --device /dev/hisi_hdc:/dev/hisi_hdc \
+  --volume /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro \
+  --volume /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro \
+  --volume /data02/models:/data02/models:ro \
+  --volume "${OVERLAY}/vllm_ascend/patch/platform/__init__.py:/vllm-workspace/vllm-ascend/vllm_ascend/patch/platform/__init__.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/patch/platform/patch_mistral3_processor.py:/vllm-workspace/vllm-ascend/vllm_ascend/patch/platform/patch_mistral3_processor.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/quantization/fp8_config.py:/vllm-workspace/vllm-ascend/vllm_ascend/quantization/fp8_config.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/quantization/method_adapters.py:/vllm-workspace/vllm-ascend/vllm_ascend/quantization/method_adapters.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/quantization/methods/__init__.py:/vllm-workspace/vllm-ascend/vllm_ascend/quantization/methods/__init__.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/quantization/methods/fp8_per_tensor.py:/vllm-workspace/vllm-ascend/vllm_ascend/quantization/methods/fp8_per_tensor.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/quantization/methods/w8a8_dynamic.py:/vllm-workspace/vllm-ascend/vllm_ascend/quantization/methods/w8a8_dynamic.py:ro" \
+  --env ASCEND_VISIBLE_DEVICES=0,1,2,3 \
+  --env ASCEND_RT_VISIBLE_DEVICES=0,1,2,3 \
+  --env VLLM_PLUGINS=ascend \
+  --env PYTHONDONTWRITEBYTECODE=1 \
+  --env PYTORCH_NPU_ALLOC_CONF=expandable_segments:True \
+  "${IMAGE}" \
+  vllm serve "${MODEL}" \
+    --host 0.0.0.0 \
+    --port "${PORT}" \
+    --served-model-name mistral-small-4-119b \
+    --tokenizer-mode mistral \
+    --tensor-parallel-size 4 \
+    --max-model-len 8192 \
+    --max-num-seqs 1 \
+    --max-num-batched-tokens 8192 \
+    --limit-mm-per-prompt '{"image":1}' \
+    --gpu-memory-utilization 0.85
+
+echo "Follow startup: docker logs -f ${NAME}"</code></pre>
+  </section>
+
+  <section>
+    <h2>9. Mistral Small 4 EAGLE launch</h2>
+    <div class="callout warn">EAGLE uses the separate Small 4 draft checkpoint and proposes three tokens in this example. It is not Shieldstral MTP. It also remains behind the base-model architecture blocker.</div>
+    <p>Save the complete script below as <code>/data02/reproduce-mistral3/start_small4_eagle.sh</code>. It intentionally repeats the mounts so the launch record is self-contained.</p>
+    <pre><code>#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE=quay.io/ascend/vllm-ascend@sha256:464297cc5046dde0e60350b5f5e505c58141b87d4ff7a8691abd06cf0632c50f
+OVERLAY=/data02/reproduce-mistral3/runtime-overlay
+MODEL=/data02/models/mistralai/Mistral-Small-4-119B-2603
+DRAFT=/data02/models/mistralai/Mistral-Small-4-119B-2603-eagle
+NAME=repro-mistral-small4-eagle
+PORT=8916
+SPEC_CONFIG=$(printf \
+  '{"method":"eagle","model":"%s","num_speculative_tokens":3,"max_model_len":8192}' \
+  "${DRAFT}")
+
+test -f "${OVERLAY}/SHA256SUMS"
+test -f "${MODEL}/model.safetensors.index.json"
+test -f "${DRAFT}/consolidated.safetensors"
+if docker container inspect "${NAME}" &gt;/dev/null 2&gt;&amp;1; then
+  echo "Container already exists: ${NAME}" &gt;&amp;2
+  exit 2
+fi
+if ss -ltn | grep -Eq ":${PORT}[[:space:]]"; then
+  echo "Port is occupied: ${PORT}" &gt;&amp;2
+  exit 3
+fi
+worker_snapshot=$(mktemp)
+trap 'rm -f -- "${worker_snapshot}"' EXIT
+ps -eo pid=,comm=,args= | awk \
+  '$2 ~ /^(python|python3|vllm)$/ &amp;&amp; $0 ~ /(vllm serve|EngineCore|VLLM::)/' \
+  &gt;"${worker_snapshot}"
+if [[ -s "${worker_snapshot}" ]]; then
+  echo "Existing vLLM workers must be reviewed before launch:" &gt;&amp;2
+  cat "${worker_snapshot}" &gt;&amp;2
+  exit 4
+fi
+npu_snapshot=$(npu-smi info)
+for device in 0 1 2 3; do
+  if ! grep -Fq "No running processes found in NPU ${device}" &lt;&lt;&lt;"${npu_snapshot}"; then
+    echo "NPU ${device} is occupied or its state is ambiguous" &gt;&amp;2
+    exit 5
+  fi
+done
+
+docker run -d \
+  --name "${NAME}" \
+  --network host \
+  --ipc host \
+  --device /dev/davinci0:/dev/davinci0 \
+  --device /dev/davinci1:/dev/davinci1 \
+  --device /dev/davinci2:/dev/davinci2 \
+  --device /dev/davinci3:/dev/davinci3 \
+  --device /dev/davinci_manager:/dev/davinci_manager \
+  --device /dev/devmm_svm:/dev/devmm_svm \
+  --device /dev/hisi_hdc:/dev/hisi_hdc \
+  --volume /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro \
+  --volume /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro \
+  --volume /data02/models:/data02/models:ro \
+  --volume "${OVERLAY}/vllm_ascend/patch/platform/__init__.py:/vllm-workspace/vllm-ascend/vllm_ascend/patch/platform/__init__.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/patch/platform/patch_mistral3_processor.py:/vllm-workspace/vllm-ascend/vllm_ascend/patch/platform/patch_mistral3_processor.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/quantization/fp8_config.py:/vllm-workspace/vllm-ascend/vllm_ascend/quantization/fp8_config.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/quantization/method_adapters.py:/vllm-workspace/vllm-ascend/vllm_ascend/quantization/method_adapters.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/quantization/methods/__init__.py:/vllm-workspace/vllm-ascend/vllm_ascend/quantization/methods/__init__.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/quantization/methods/fp8_per_tensor.py:/vllm-workspace/vllm-ascend/vllm_ascend/quantization/methods/fp8_per_tensor.py:ro" \
+  --volume "${OVERLAY}/vllm_ascend/quantization/methods/w8a8_dynamic.py:/vllm-workspace/vllm-ascend/vllm_ascend/quantization/methods/w8a8_dynamic.py:ro" \
+  --env ASCEND_VISIBLE_DEVICES=0,1,2,3 \
+  --env ASCEND_RT_VISIBLE_DEVICES=0,1,2,3 \
+  --env VLLM_PLUGINS=ascend \
+  --env PYTHONDONTWRITEBYTECODE=1 \
+  --env PYTORCH_NPU_ALLOC_CONF=expandable_segments:True \
+  "${IMAGE}" \
+  vllm serve "${MODEL}" \
+    --host 0.0.0.0 \
+    --port "${PORT}" \
+    --served-model-name mistral-small-4-119b-eagle \
+    --tokenizer-mode mistral \
+    --tensor-parallel-size 4 \
+    --max-model-len 8192 \
+    --max-num-seqs 1 \
+    --max-num-batched-tokens 8192 \
+    --limit-mm-per-prompt '{"image":1}' \
+    --gpu-memory-utilization 0.85 \
+    --speculative-config "${SPEC_CONFIG}"
+
+echo "Follow startup: docker logs -f ${NAME}"</code></pre>
+  </section>
+
+  <section>
+    <h2>10. Shutdown and release checks</h2>
+    <pre><code>#!/usr/bin/env bash
+set -euo pipefail
+
+NAME=${1:?usage: stop_service.sh CONTAINER_NAME PORT}
+PORT=${2:?usage: stop_service.sh CONTAINER_NAME PORT}
+
+docker stop --time 60 "${NAME}"
+test "$(docker inspect --format '{{.State.Status}}' "${NAME}")" = exited
+if ss -ltn | grep -Eq ":${PORT}[[:space:]]"; then
+  echo "Port ${PORT} is still listening" &gt;&amp;2
+  exit 2
+fi
+
+# Review both the executable-aware worker list and every NPU process table.
+ps -eo pid=,comm=,args= | awk \
+  '$2 ~ /^(python|python3|vllm)$/ &amp;&amp; $0 ~ /(vllm serve|EngineCore|VLLM::)/' || true
+npu-smi info</code></pre>
+    <p>Do not remove containers or terminate processes until their ownership and exact target have been confirmed.</p>
+  </section>
+
+  <section>
+    <h2>11. Reproduction interpretation</h2>
+    <ul>
+      <li>A healthy Shieldstral result is HTTP 200 from <code>/v1/models</code> and a non-empty chat completion for both text and image requests.</li>
+      <li>The current Small 4 result is successful traversal of the per-tensor FP8 configuration path followed by the independently recorded nested-architecture error.</li>
+      <li>Do not report EAGLE acceptance or MTP performance until the base Small 4 service reaches ready state and a controlled base-versus-EAGLE correctness run has completed.</li>
+      <li>Do not describe Shieldstral 3B as MTP-capable unless a separate compatible draft checkpoint is explicitly supplied and validated.</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

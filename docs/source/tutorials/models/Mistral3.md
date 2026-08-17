@@ -4,6 +4,9 @@ This guide covers experimental deployment of two Mistral3 multimodal checkpoints
 `mistralai/Shieldstral-1.0-3B` safety classifier and the 119B/A6B
 `mistralai/Mistral-Small-4-119B-2603` model. The examples target the current vLLM-Ascend main branch.
 
+For the exact branch, commits, container and dependency versions, model checksums, device allocation, and
+complete launch scripts, see the [pinned reproduction record](../../_static/reproduction/Mistral3_Reproduction.html).
+
 ## Supported features
 
 | Model | Precision | Minimum example | Multimodal | Speculative decoding |
