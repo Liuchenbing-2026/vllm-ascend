@@ -1178,3 +1178,22 @@
 #       Remove this patch once vllm-ascend's bundled PyTorch >= 2.13.0
 #       (which, like upstream, allows eps >= 0 for inference).
 #
+# ** 35. File: platform/patch_mistral3_processor.py**
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.model_executor.models.mistral3.Mistral3ProcessingInfo.get_hf_processor`
+#    Why:
+#       The pinned vLLM injects its runtime Mistral tokenizer backend into
+#       PixtralProcessor. That backend encodes `[IMG]` as ordinary text for
+#       Mistral3 checkpoints whose repository tokenizer defines the image
+#       tokens, so multimodal preprocessing finds no image token IDs.
+#    How:
+#       Build PixtralProcessor from the model configuration so it uses the
+#       checkpoint's tokenizer files, while leaving the runtime Mistral chat
+#       renderer unchanged.
+#    Related PR (if no, explain why):
+#       No. This compatibility patch unblocks the vLLM commit currently pinned
+#       by vllm-ascend; the equivalent fix should be contributed to vLLM.
+#    Future Plan:
+#       Remove this patch after the vLLM version paired with vllm-ascend builds
+#       Mistral3's PixtralProcessor from the checkpoint tokenizer by default.
+#

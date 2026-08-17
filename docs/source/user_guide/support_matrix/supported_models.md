@@ -158,7 +158,7 @@ Get the latest info here: <https://github.com/vllm-project/vllm-ascend/issues/16
 | LLaVA-Next                     | 🔵            |                                                                      | A2/A3 |
 | LLaVA-Next-Video               | 🔵            |                                                                      | A2/A3 |
 | MiniCPM-V                      | 🔵            |                                                                      | A2/A3 |
-| Mistral3                       | 🔵            |                                                                      | A2/A3 |
+| Mistral3                       | 🔵            | [Shieldstral 1.0 3B and Mistral Small 4](../../tutorials/models/Mistral3.md) | A2/A3 |
 | Phi-3-Vision/Phi-3.5-Vision    | 🔵            |                                                                      | A2/A3 |
 | Gemma3                         | 🔵            |                                                                      | A2/A3 |
 | Llama3.2                       | 🔵            |                                                                      | A2/A3 |
