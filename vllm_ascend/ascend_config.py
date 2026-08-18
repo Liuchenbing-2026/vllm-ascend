@@ -162,7 +162,7 @@ class AscendConfig:
             "MiniMax M3 does not support enable_fused_mc2=1. Please set "
             "additional_config.enable_fused_mc2 to 0 or unset VLLM_ASCEND_ENABLE_FUSED_MC2."
         )
-        if self.enable_fused_mc2 == 1 and self.multistream_overlap_shared_expert:
+        if self.enable_fused_mc2 in (1, 2) and self.multistream_overlap_shared_expert:
             self.multistream_overlap_shared_expert = False
             logger.warning_once(
                 "VLLM_ASCEND_ENABLE_FUSED_MC2 (fused mc2) and multistream_overlap_shared_expert "
