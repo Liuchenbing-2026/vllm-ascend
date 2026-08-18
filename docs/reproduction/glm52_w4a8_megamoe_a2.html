@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GLM-5.2 W4A8 MegaMoe on Ascend A2 — Reproduction</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { max-width: 1080px; margin: 2rem auto; padding: 0 1rem; line-height: 1.55; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #8888; padding: .55rem; text-align: left; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    pre { overflow-x: auto; padding: 1rem; background: #8881; border-radius: .4rem; }
+    .ok { color: #14843c; font-weight: 700; }
+    .note { border-left: .25rem solid #d69b00; padding-left: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>GLM-5.2 W4A8 MegaMoe on Ascend A2</h1>
+  <p>This page records the exact runtime identity, launch method, correctness checks,
+     and AISBench comparison used to validate the A2 MegaMoe adaptation.</p>
+
+  <h2>Validated identity</h2>
+  <table>
+    <tbody>
+      <tr><th>Branch</th><td><code>pr11200_glm52_w4a8_megamoe</code></td></tr>
+      <tr><th>Adaptation commit</th><td><code>49aff020f1b731e9e79e3c078477ef3cbf657f95</code></td></tr>
+      <tr><th>Deadlock fix commit</th><td><code>dde3e817c069ba22425c590f4ca79f85976a983e</code></td></tr>
+      <tr><th>vLLM commit</th><td><code>568afb3a13806beb53bb2e6bd518269357b237c0</code></td></tr>
+      <tr><th>Runtime image</th><td><code>codex/vllm-ascend-megamoe:fix-dde3e817-v2</code></td></tr>
+      <tr><th>Image ID</th><td><code>sha256:f0ed636b85bd999c47028226cea51b43063dbfb8e2ff1a4918fd8bfed8f1fe25</code></td></tr>
+      <tr><th>Base image</th><td><code>quay.io/ascend/vllm-ascend@sha256:464297cc5046dde0e60350b5f5e505c58141b87d4ff7a8691abd06cf0632c50f</code></td></tr>
+      <tr><th>CANN / device</th><td>9.1.0 / 8 × Ascend 910B4-1</td></tr>
+      <tr><th>Target model</th><td><code>/data01/models/GLM-5.2-w4a8c8</code></td></tr>
+      <tr><th>Draft model</th><td><code>/data01/models/GLM-5.2-DSpark-NPU-0805</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Verified failure and fix</h2>
+  <p><strong>Verified fact:</strong> in the failed post-adaptation run, the third MegaMoe
+     invocation left rank 3 waiting in token-per-expert all-gather while peer ranks did not
+     enter the same communication phase. The run ended in CANN error 507014 after the
+     AICore timeout. This was not an ABI or missing-library failure.</p>
+  <p><strong>Root cause:</strong> mode 1 already disabled
+     <code>multistream_overlap_shared_expert</code>, but the newly introduced MegaMoe mode 2
+     did not apply the same mutual-exclusion guard. Commit <code>dde3e817...</code> extends
+     that guard to modes 1 and 2 and adds a unit regression test.</p>
+
+  <h2>Start the service</h2>
+  <p>Use a CANN 9.1 runtime containing the exact vLLM and vLLM Ascend commits above, map
+     NPU devices 0–7 plus the standard Ascend management devices, and run:</p>
+  <pre><code>MODEL_PATH=/data01/models/GLM-5.2-w4a8c8 \
+DRAFT_MODEL_PATH=/data01/models/GLM-5.2-DSpark-NPU-0805 \
+PORT=8077 \
+bash examples/online_serving/serve_glm52_w4a8_megamoe_a2.sh</code></pre>
+  <p>The launch script explicitly sets <code>VLLM_ASCEND_ENABLE_FUSED_MC2=2</code> and keeps
+     shared-expert multistream overlap disabled. The validated service uses TP=8, EP=8,
+     4096 maximum batched tokens, and DSpark with seven speculative tokens.</p>
+
+  <h2>Correctness and stability checks</h2>
+  <pre><code>curl -fsS http://127.0.0.1:8077/health
+
+curl -fsS http://127.0.0.1:8077/v1/completions \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"model":"glm-5.2-w4a8c8-dspark","prompt":"1+1=2\n2+2=4\n2+3=","temperature":0,"seed":1024,"max_tokens":1}'</code></pre>
+  <p class="ok">Validated: two repeated requests both returned exactly <code>5</code>.</p>
+  <p>DSpark validation generated 16/16 requested tokens. Metrics advanced to 4 drafts,
+     28 draft tokens, and 15 accepted tokens during the short acceptance sequence.</p>
+
+  <h2>AISBench 8K / 1K / concurrency 8</h2>
+  <p>The synthetic dataset used eight simultaneous requests with token-ID request size
+     8192, no prefix, <code>max_out_len=1024</code>, <code>ignore_eos=true</code>, one warmup,
+     and seed 1024. Both runs generated 8192 output tokens with 8 successes and 0 failures.</p>
+  <table>
+    <thead>
+      <tr><th>Metric</th><th>Before MegaMoe<br><code>ed211382</code></th><th>MegaMoe fixed<br><code>dde3e817</code></th><th>Change</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Benchmark duration</td><td>432140.3988 ms</td><td>326279.1176 ms</td><td>−24.50%</td></tr>
+      <tr><td>Aggregate output throughput</td><td>18.9568 token/s</td><td>25.1073 token/s</td><td>+32.44%</td></tr>
+      <tr><td>Average E2EL</td><td>280326.6 ms</td><td>191928.5 ms</td><td>−31.53%</td></tr>
+      <tr><td>Average TTFT</td><td>190256.9 ms</td><td>118174.9 ms</td><td>−37.89%</td></tr>
+      <tr><td>Average TPOT</td><td>88.0 ms</td><td>72.1 ms</td><td>−18.07%</td></tr>
+      <tr><td>Total input / output tokens</td><td>68287 / 8192</td><td>68287 / 8192</td><td>identical</td></tr>
+    </tbody>
+  </table>
+  <p class="note">The comparison is an end-to-end branch comparison. The fixed MegaMoe
+     run also disables shared-expert multistream overlap because enabling both features is
+     the verified deadlock condition; it is therefore not a microbenchmark of the operator alone.</p>
+
+  <h2>Acceptance result</h2>
+  <p class="ok">PASS — service startup, repeated deterministic inference, DSpark activity,
+     and AISBench 8K/1K/concurrency-8 all completed successfully.</p>
+</body>
+</html>
