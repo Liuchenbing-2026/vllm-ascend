@@ -49,9 +49,13 @@ def get_spec_decode_method(method, vllm_config, device, runner):
     elif method == "dflash":
         speculative_config = vllm_config.speculative_config
         draft_model_config = speculative_config.draft_model_config if speculative_config else None
-        architectures = (
-            getattr(draft_model_config.hf_config, "architectures", None) if draft_model_config else None
-        )
+        architectures = getattr(draft_model_config.hf_config, "architectures", None) if draft_model_config else None
+        if architectures and "DFlash2DraftModel" in architectures:
+            # DFlash2 keeps DFlash's 1+N drafting block and adds the
+            # candidate selector tail.
+            from vllm_ascend.spec_decode.dflash2_proposer import AscendDflash2Proposer
+
+            return AscendDflash2Proposer(vllm_config, device, runner)
         if architectures and "Qwen3DSparkModel" in architectures:
             # DSpark shares DFlash's drafting block but samples sequentially
             # through its Markov head.

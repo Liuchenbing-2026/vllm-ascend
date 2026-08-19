@@ -49,6 +49,7 @@ import vllm_ascend.patch.platform.patch_balance_schedule  # noqa
 import vllm_ascend.patch.platform.patch_kv_cache_coordinator  # noqa
 import vllm_ascend.patch.platform.patch_speculative_config  # noqa
 import vllm_ascend.patch.platform.patch_speculators_dspark  # noqa
+import vllm_ascend.patch.platform.patch_speculators_dflash2  # noqa
 
 if not vllm_version_is("0.23.0"):
     import vllm_ascend.patch.platform.patch_fused_moe  # noqa
