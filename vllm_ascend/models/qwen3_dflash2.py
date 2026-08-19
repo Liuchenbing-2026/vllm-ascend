@@ -234,7 +234,23 @@ class CandidateSelector(nn.Module):
             # Flattened call shape (B*S, R): restore (B, S, R) so the edge
             # scoring broadcast against [B, S, K, R] is well-defined. The
             # standalone torch.compile shape inference can pass 2-D inputs.
+            # B*S == B * S holds by construction (S = num_speculative_tokens),
+            # but Dynamo treats the token dim and the candidate batch dim as
+            # independent SymInts; record the equality so the view and the
+            # downstream [B, S, K, K] einsum broadcast stay provable under
+            # dynamic shapes.
+            torch._check(
+                hidden.shape[0] == candidate_ids.shape[0] * candidate_ids.shape[1]
+            )
             hidden = hidden.view(candidate_ids.shape[0], candidate_ids.shape[1], -1)
+        else:
+            # Standalone shape inference may also present hidden 3-D with an
+            # independent batch SymInt; bind it to the candidate batch.
+            torch._check(hidden.shape[0] == candidate_ids.shape[0])
+        # The anchor and unary tensors carry the same batch as the candidate
+        # grid; bind their SymInts so the edge-scoring broadcasts are provable.
+        torch._check(anchor_token_ids.shape[0] == candidate_ids.shape[0])
+        torch._check(unary_logits.shape[0] == candidate_ids.shape[0])
         return _score_edges(
             self.predecessor_codebook,
             self.successor_codebook,
