@@ -43,6 +43,8 @@ Ascend adaptation notes (differences from upstream):
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import torch
 from torch import nn
 from vllm.compilation.decorators import support_torch_compile
@@ -326,6 +328,24 @@ class DFlash2Qwen3Model(DFlashQwen3Model):
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return super().embed_input_ids(input_ids) * self.input_embedding_scale
+
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Prefix-tolerant loader for the DFlash2 submodules.
+
+        vLLM's AutoWeightsLoader normally strips the ``model.`` prefix before
+        delegating to a submodule's ``load_weights``, but the dspark-backport
+        vLLM tree passes the fully-qualified names through. The base
+        ``DFlashQwen3Model.load_weights`` indexes ``named_parameters()``
+        relative to the model, so a ``model.``-prefixed name raises KeyError.
+        Strip the prefix here and delegate; both call shapes stay correct.
+        """
+
+        def _relative(name: str) -> str:
+            if name.startswith("model."):
+                return name[len("model.") :]
+            return name
+
+        return super().load_weights((_relative(name), weight) for name, weight in weights)
 
 
 class DFlash2Qwen3ForCausalLM(DFlashQwen3ForCausalLM):
