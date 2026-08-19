@@ -358,7 +358,11 @@ class DFlash2Qwen3Model(DFlashQwen3Model):
         except Exception as error:  # noqa: BLE001 - re-raise with the failing name
             name = last[-1] if last else None
             shape = tuple(items[name].shape) if name in items else None
-            raise RuntimeError(f"DFlash2 weight load failed at name={name!r} shape={shape}: {error}") from error
+            params = dict(self.named_parameters())
+            param_shape = tuple(params[name].shape) if name in params else None
+            raise RuntimeError(
+                f"DFlash2 weight load failed at name={name!r} loaded_shape={shape} param_shape={param_shape}: {error}"
+            ) from error
 
 
 class DFlash2Qwen3ForCausalLM(DFlashQwen3ForCausalLM):
