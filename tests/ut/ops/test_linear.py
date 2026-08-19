@@ -12,6 +12,7 @@ from vllm_ascend.ops.linear import (
     AscendReplicatedLinear,
     AscendRowParallelLinear,
     AscendUnquantizedLinearMethod,
+    unquantized_gemm_fake,
 )
 
 
@@ -60,6 +61,14 @@ class TestAscendUnquantizedLinearMethod(TestBase):
         mock_is_meta = mock.PropertyMock(return_value=False)
         type(self.layer.weight.data).is_meta = mock_is_meta
         self.layer.precast_fp32_weight = False
+
+    def test_fake_shape_matches_linear_for_nd_inputs(self):
+        weight = torch.empty(5, 11)
+        for input_shape in ((3, 11), (2, 7, 11), (4, 2, 7, 11)):
+            x = torch.empty(input_shape)
+            actual = unquantized_gemm_fake(x, weight)
+            expected = torch.nn.functional.linear(x, weight)
+            self.assertEqual(actual.shape, expected.shape)
 
     @patch("vllm_ascend.utils.get_ascend_config")
     @mock.patch("torch_npu.npu_format_cast")

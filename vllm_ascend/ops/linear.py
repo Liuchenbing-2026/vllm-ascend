@@ -62,7 +62,10 @@ def unquantized_gemm_fake(
     weight: torch.Tensor,
     bias: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    output_shape = (x.shape[0], weight.shape[0])
+    # F.linear preserves every leading input dimension and replaces only the
+    # contracted last dimension.  Keeping the fake implementation identical
+    # to that contract is required for callers with inputs such as [B, S, H].
+    output_shape = (*x.shape[:-1], weight.shape[0])
     return torch.empty(output_shape, dtype=x.dtype, device=x.device)
 
 

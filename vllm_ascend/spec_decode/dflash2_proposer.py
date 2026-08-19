@@ -102,10 +102,6 @@ class AscendDflash2Proposer(AscendDflashProposer):
             [batch, num_speculative_tokens] draft token ids (target vocab).
         """
         num_spec = self.num_speculative_tokens
-        # sample_hidden_states is [batch * num_spec, hidden]; the batch dim is
-        # recovered by floordiv. Under dynamic shapes Dynamo cannot prove the
-        # divisibility, so record it before the (B, S, *) views below.
-        torch._check(sample_hidden_states.shape[0] % num_spec == 0)
         batch_size = sample_hidden_states.shape[0] // num_spec
         model = self.model
 
