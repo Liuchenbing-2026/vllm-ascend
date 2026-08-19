@@ -188,9 +188,7 @@ def _dspark_debug_model_forward(
 
     final_hidden, _ = self.norm(hidden_states, residual)
     context_chunks = list(getattr(self, "_dspark_context_debug_chunks", []))
-    raw_context_chunks = list(
-        getattr(self, "_dspark_raw_context_debug_chunks", [])
-    )
+    raw_context_chunks = list(getattr(self, "_dspark_raw_context_debug_chunks", []))
     self._last_dspark_backbone_debug = {
         "input_ids": _cpu_snapshot(input_ids),
         "positions": _cpu_snapshot(positions),
@@ -279,9 +277,7 @@ def _resolve_kv_cache_pair(kv_cache, virtual_engine):
     selected = kv_cache[virtual_engine]
     if isinstance(selected, torch.Tensor):
         if selected.ndim < 5 or selected.shape[0] != 2:
-            raise ValueError(
-                f"Expected virtual-engine stacked K/V cache, got {tuple(selected.shape)}"
-            )
+            raise ValueError(f"Expected virtual-engine stacked K/V cache, got {tuple(selected.shape)}")
         return selected[0], selected[1]
     if isinstance(selected, (list, tuple)) and len(selected) == 2:
         return selected[0], selected[1]
@@ -310,9 +306,7 @@ def _dspark_reference_forward(
     q, k = self.rotary_emb(positions, q, k)
 
     forward_context = get_forward_context()
-    attn_metadata = _resolve_layer_attn_metadata(
-        forward_context.attn_metadata, self.attn.layer_name
-    )
+    attn_metadata = _resolve_layer_attn_metadata(forward_context.attn_metadata, self.attn.layer_name)
     if attn_metadata is None:
         # Profiling / warmup with no metadata: use the normal path.
         attn_output = self.attn(q, k, v)
@@ -320,9 +314,7 @@ def _dspark_reference_forward(
         return output
 
     virtual_engine = getattr(forward_context, "virtual_engine", 0)
-    key_cache, value_cache = _resolve_kv_cache_pair(
-        self.attn.kv_cache, virtual_engine
-    )
+    key_cache, value_cache = _resolve_kv_cache_pair(self.attn.kv_cache, virtual_engine)
 
     block_table = getattr(attn_metadata, "block_tables", None)
     seq_lens = getattr(attn_metadata, "seq_lens", None)
@@ -376,20 +368,22 @@ def _maybe_reference_forward(
         logger.warning_once(
             "DSpark reference attention failed; falling back to the normal "
             "DFlash attention path. Set VLLM_ASCEND_DSPARK_REFERENCE_ATTENTION=0 "
-            "to silence. First error: "
-            + repr(exc)
-            + "\n"
-            + traceback.format_exc()
+            "to silence. First error: " + repr(exc) + "\n" + traceback.format_exc()
         )
         return _ORIGINAL_DFLASH_ATTENTION_FORWARD(self, positions, hidden_states)
 
 
 DFlashQwen3Attention.forward = _maybe_reference_forward
 
+
 # DFlash2 graph-mode fix: the dspark-backport vLLM tree's DFlashQwen3Attention.forward
 # declares `global _DSPARK_ATTN_N` but never defines it at module scope. Dynamo
 # fullgraph capture fails on the unresolved bare global. Pre-seed the module
 # attribute at import time; the probe branch stays inert unless DSPARK_PROBE=1.
-import vllm.model_executor.models.qwen3_dflash as _dflash_module
+def _seed_dspark_probe_global() -> None:
+    import vllm.model_executor.models.qwen3_dflash as _dflash_module
 
-_dflash_module._DSPARK_ATTN_N = 0
+    _dflash_module._DSPARK_ATTN_N = 0
+
+
+_seed_dspark_probe_global()
