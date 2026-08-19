@@ -188,7 +188,14 @@ class DFlash2Qwen3DecoderLayer(DFlashQwen3DecoderLayer):
         return hidden_states, residual
 
 
-@support_torch_compile
+@support_torch_compile(
+    dynamic_arg_dims={
+        "candidate_ids": 0,
+        "unary_logits": 0,
+        "hidden_states": 0,
+        "anchor_token_ids": -1,
+    }
+)
 class CandidateSelector(nn.Module):
     def __init__(
         self,
