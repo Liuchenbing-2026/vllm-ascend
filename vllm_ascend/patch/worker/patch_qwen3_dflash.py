@@ -391,4 +391,5 @@ DFlashQwen3Attention.forward = _maybe_reference_forward
 # fullgraph capture fails on the unresolved bare global. Pre-seed the module
 # attribute at import time; the probe branch stays inert unless DSPARK_PROBE=1.
 import vllm.model_executor.models.qwen3_dflash as _dflash_module
+
 _dflash_module._DSPARK_ATTN_N = 0
