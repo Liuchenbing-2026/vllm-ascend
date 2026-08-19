@@ -377,13 +377,21 @@ DFlashQwen3Attention.forward = _maybe_reference_forward
 
 
 # DFlash2 graph-mode fix: the dspark-backport vLLM tree's DFlashQwen3Attention.forward
-# declares `global _DSPARK_ATTN_N` but never defines it at module scope. Dynamo
-# fullgraph capture fails on the unresolved bare global. Pre-seed the module
-# attribute at import time; the probe branch stays inert unless DSPARK_PROBE=1.
+# declares `global _DSPARK_ATTN_N` / `_DSPARK_OUT_N` but never defines them at
+# module scope. Dynamo fullgraph capture fails on the unresolved bare names.
+# Pre-seed them (plus the os aliases the probe branches use) at import time;
+# the probe branches stay inert unless DSPARK_PROBE=1.
 def _seed_dspark_probe_global() -> None:
+    import os
+
     import vllm.model_executor.models.qwen3_dflash as _dflash_module
 
     _dflash_module._DSPARK_ATTN_N = 0
+    _dflash_module._DSPARK_OUT_N = 0
+    if not hasattr(_dflash_module, "_os"):
+        _dflash_module._os = os
+    if not hasattr(_dflash_module, "_oso"):
+        _dflash_module._oso = os
 
 
 _seed_dspark_probe_global()
