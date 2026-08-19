@@ -230,6 +230,11 @@ class CandidateSelector(nn.Module):
         anchor_token_ids: torch.Tensor,
     ) -> torch.Tensor:
         hidden = self.hidden_projection(hidden_states)
+        if hidden.dim() == 2:
+            # Flattened call shape (B*S, R): restore (B, S, R) so the edge
+            # scoring broadcast against [B, S, K, R] is well-defined. The
+            # standalone torch.compile shape inference can pass 2-D inputs.
+            hidden = hidden.view(candidate_ids.shape[0], candidate_ids.shape[1], -1)
         return _score_edges(
             self.predecessor_codebook,
             self.successor_codebook,
