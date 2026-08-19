@@ -345,7 +345,20 @@ class DFlash2Qwen3Model(DFlashQwen3Model):
                 return name[len("model.") :]
             return name
 
-        return super().load_weights((_relative(name), weight) for name, weight in weights)
+        items = {_relative(name): weight for name, weight in weights}
+        last: list[str] = []
+
+        def tracked():
+            for name, weight in items.items():
+                last.append(name)
+                yield name, weight
+
+        try:
+            return super().load_weights(tracked())
+        except Exception as error:  # noqa: BLE001 - re-raise with the failing name
+            name = last[-1] if last else None
+            shape = tuple(items[name].shape) if name in items else None
+            raise RuntimeError(f"DFlash2 weight load failed at name={name!r} shape={shape}: {error}") from error
 
 
 class DFlash2Qwen3ForCausalLM(DFlashQwen3ForCausalLM):
