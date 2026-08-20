@@ -133,6 +133,14 @@ def hf_config_override(hf_config: PretrainedConfig) -> PretrainedConfig:
     if initial_architecture == "MistralLarge3ForCausalLM":
         hf_config.update({"architectures": ["EagleMistralLarge3ForCausalLM"]})
 
+    if hf_config.model_type == "gemma4_assistant":
+        hf_config.model_type = "gemma4_mtp"
+        text_config = getattr(hf_config, "text_config", hf_config)
+        # Cross-model KV sharing is configured by Gemma4Proposer after loading.
+        if hasattr(text_config, "num_kv_shared_layers"):
+            text_config.num_kv_shared_layers = 0
+        hf_config.update({"n_predict": 1, "architectures": ["Gemma4MTPModel"]})
+
     return hf_config
 
 
