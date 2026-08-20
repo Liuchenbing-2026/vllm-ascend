@@ -145,6 +145,7 @@ class TestAscendAttentionMetadataBuilder(TestBase):
         self.mock_vllm_config.cache_config.block_size = 64
         self.mock_vllm_config.compilation_config.cudagraph_mode = None
         self.mock_vllm_config.scheduler_config.max_num_seqs = 10
+        self.mock_vllm_config.scheduler_config.max_num_batched_tokens = 64
         self.mock_vllm_config.scheduler_config.chunked_prefill_enabled = False
         self.mock_device = "cpu:0"
         torch.Tensor.pin_memory = lambda x: x  # noqa
@@ -200,12 +201,15 @@ class TestAscendAttentionMetadataBuilder(TestBase):
             positions=torch.tensor([10, 10]),
             attn_state=AscendAttentionState.ChunkedPrefill,
             num_computed_tokens_cpu=None,
-            seq_lens=None,
+            seq_lens=torch.tensor([4, 5, 6]),
             max_seq_len=6,
         )
         mock_model = MagicMock()
 
         self.builder.build(1, common_attn_metadata, mock_model)
+
+        metadata_kwargs = mock_ascend_metadata.call_args.kwargs
+        self.assertTrue(torch.equal(metadata_kwargs["seq_lens_device"], common_attn_metadata.seq_lens))
 
 
 def test_pcp_metadata_keeps_expanded_slot_mapping() -> None:
@@ -805,7 +809,8 @@ class TestAscendAttentionBackendImpl(TestBase):
         mock_EXTRA_CTX.sinks = False
         mock_EXTRA_CTX.is_draft_model = False
 
-        param: list[MagicMock | None] = [MagicMock()] * 22
+        param: list[MagicMock | torch.Tensor | None] = [MagicMock()] * 22
+        param[3] = torch.zeros((1, 1), dtype=torch.int32)  # block_tables
         param[16] = None  # sliding_window
         param[17] = None  # c8_k_aq_scale
         param[21] = None  # layer_name
@@ -820,7 +825,14 @@ class TestAscendAttentionBackendImpl(TestBase):
             "model.layers.5.self_attn.attn",
         ]
         forward_context = MagicMock()
-        forward_context.attn_metadata = {key: MagicMock() for key in attn_metadata_keys}
+        forward_context.attn_metadata = {}
+        for key in attn_metadata_keys:
+            metadata = MagicMock()
+            metadata.block_tables = param[3]
+            metadata.seq_lens_list = [1]
+            metadata.actual_seq_lengths_q = [1]
+            metadata.causal = True
+            forward_context.attn_metadata[key] = metadata
         # breakpoint()
         self.impl.update_graph_params(self.mock_stream, forward_context, 1, self.mock_vllm_config)
 
@@ -831,6 +843,116 @@ class TestAscendAttentionBackendImpl(TestBase):
         ]
         self.assertEqual(attn_module._ATTN_KEYS_BUFFER, expected)
         self.assertEqual(mock_fia.out.call_count, 3)
+
+    @patch("torch.npu.stream")
+    @patch("torch.npu.graph_task_update_begin")
+    @patch("torch.npu.graph_task_update_end")
+    @patch("torch_npu.npu_fused_infer_attention_score")
+    @patch("vllm_ascend.attention.attention_v1.get_graph_params")
+    @patch("vllm_ascend.attention.attention_v1._EXTRA_CTX")
+    @patch("vllm_ascend.attention.attention_v1.using_paged_attention", return_value=False)
+    @patch("vllm_ascend.attention.attention_v1.needs_layer_aware_fia_graph_replay", return_value=False)
+    @patch("vllm_ascend.attention.attention_v1._ATTN_KEYS_BUFFER", new=[])
+    def test_update_graph_params_swa_refresh_does_not_clobber_aliased_block_table(
+        self,
+        mock_needs_layer_aware_fia_graph_replay,
+        mock_using_paged_attention,
+        mock_EXTRA_CTX,
+        mock_get_graph_params,
+        mock_fia,
+        mock_graph_task_update_end,
+        mock_graph_task_update_begin,
+        mock_stream,
+    ):
+        """Regression: the captured block table and the runtime one are usually
+        two row-slices of the same persistent buffer -- same storage, different
+        shape. Testing ``shape`` before ``data_ptr()`` sent that case into
+        ``zero_()``, wiping the live rows and then copying the zeros back, so
+        every request attended to physical block 0."""
+        mock_EXTRA_CTX.sinks = False
+        mock_EXTRA_CTX.is_draft_model = False
+
+        persistent = torch.arange(1, 17, dtype=torch.int32).view(4, 4)
+        captured = persistent[:2]
+        runtime = persistent[:3]
+        self.assertEqual(captured.data_ptr(), runtime.data_ptr())
+        self.assertNotEqual(captured.shape, runtime.shape)
+
+        param: list[MagicMock | torch.Tensor | None] = [MagicMock()] * 22
+        param[3] = captured
+        param[16] = 512  # sliding_window -> take the SWA refresh branch
+        param[17] = None  # c8_k_aq_scale
+        param[21] = None  # layer_name
+
+        mock_get_graph_params.return_value.attn_params = {1: [tuple(param)]}
+        mock_get_graph_params.return_value.handles = {1: [MagicMock()]}
+        mock_get_graph_params.return_value.events = {1: [MagicMock()]}
+
+        metadata = MagicMock()
+        metadata.block_tables = runtime
+        metadata.seq_lens_list = [1]
+        metadata.actual_seq_lengths_q = [1]
+        metadata.causal = True
+        forward_context = MagicMock()
+        forward_context.attn_metadata = {"model.layers.0.self_attn.attn": metadata}
+
+        self.impl.update_graph_params(self.mock_stream, forward_context, 1, self.mock_vllm_config)
+
+        self.assertTrue(torch.equal(persistent, torch.arange(1, 17, dtype=torch.int32).view(4, 4)))
+
+    @patch("torch.npu.stream")
+    @patch("torch.npu.graph_task_update_begin")
+    @patch("torch.npu.graph_task_update_end")
+    @patch("torch_npu.npu_fused_infer_attention_score")
+    @patch("vllm_ascend.attention.attention_v1.get_graph_params")
+    @patch("vllm_ascend.attention.attention_v1._EXTRA_CTX")
+    @patch("vllm_ascend.attention.attention_v1.using_paged_attention", return_value=False)
+    @patch("vllm_ascend.attention.attention_v1.needs_layer_aware_fia_graph_replay", return_value=False)
+    @patch("vllm_ascend.attention.attention_v1._ATTN_KEYS_BUFFER", new=[])
+    def test_update_graph_params_swa_refresh_copies_distinct_block_table(
+        self,
+        mock_needs_layer_aware_fia_graph_replay,
+        mock_using_paged_attention,
+        mock_EXTRA_CTX,
+        mock_get_graph_params,
+        mock_fia,
+        mock_graph_task_update_end,
+        mock_graph_task_update_begin,
+        mock_stream,
+    ):
+        """When the runtime block table really is a different allocation, the
+        captured buffer must be refreshed in place (keeping its address) rather
+        than rebound, and rows/cols outside the overlap must be zeroed."""
+        mock_EXTRA_CTX.sinks = False
+        mock_EXTRA_CTX.is_draft_model = False
+
+        captured = torch.full((3, 4), 9, dtype=torch.int32)
+        runtime = torch.arange(1, 5, dtype=torch.int32).view(2, 2)
+        self.assertNotEqual(captured.data_ptr(), runtime.data_ptr())
+
+        param: list[MagicMock | torch.Tensor | None] = [MagicMock()] * 22
+        param[3] = captured
+        param[16] = 512  # sliding_window -> take the SWA refresh branch
+        param[17] = None  # c8_k_aq_scale
+        param[21] = None  # layer_name
+
+        mock_get_graph_params.return_value.attn_params = {1: [tuple(param)]}
+        mock_get_graph_params.return_value.handles = {1: [MagicMock()]}
+        mock_get_graph_params.return_value.events = {1: [MagicMock()]}
+
+        metadata = MagicMock()
+        metadata.block_tables = runtime
+        metadata.seq_lens_list = [1]
+        metadata.actual_seq_lengths_q = [1]
+        metadata.causal = True
+        forward_context = MagicMock()
+        forward_context.attn_metadata = {"model.layers.0.self_attn.attn": metadata}
+
+        self.impl.update_graph_params(self.mock_stream, forward_context, 1, self.mock_vllm_config)
+
+        expected = torch.zeros((3, 4), dtype=torch.int32)
+        expected[:2, :2] = runtime
+        self.assertTrue(torch.equal(captured, expected))
 
     @patch("torch.npu.stream")
     @patch("torch.npu.graph_task_update_begin")

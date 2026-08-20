@@ -106,6 +106,9 @@ def test_load_model_reads_validated_draft_window_size():
     proposer._get_model = MagicMock(return_value=MagicMock())
     proposer.method = "eagle3"
     proposer.num_speculative_tokens = 4
+    # Set by SpecDecodeBaseProposer.__init__ upstream; load_model consults it
+    # before falling back to text-only drafting for multimodal targets.
+    proposer.supports_mm_inputs = False
     proposer.runner = SimpleNamespace(max_num_reqs=8)
     proposer.device = "cpu"
     proposer.parallel_drafting = False
