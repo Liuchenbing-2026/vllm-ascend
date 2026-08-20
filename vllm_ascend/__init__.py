@@ -73,6 +73,10 @@ def _ensure_global_patch():
 def register():
     """Register the NPU platform."""
 
+    from vllm_ascend.transformers_utils import register_gemma4_assistant_config
+
+    register_gemma4_assistant_config()
+
     return "vllm_ascend.platform.NPUPlatform"
 
 

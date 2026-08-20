@@ -2,7 +2,6 @@ from vllm.config.speculative import SpeculativeConfig
 
 _orig_post_init = SpeculativeConfig.__post_init__
 
-
 def _dspark_post_init(self):
     _orig_post_init(self)
     if self.use_dspark():

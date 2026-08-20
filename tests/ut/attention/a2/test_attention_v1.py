@@ -26,7 +26,7 @@ from vllm_ascend.device.device_op import A5DeviceAdaptor
 from vllm_ascend.device.utils import FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE
 from vllm_ascend.utils import AscendDeviceType
 
-LARGE_HEAD_PREFILL_PATH = "vllm_ascend.device.utils.npu_large_head_prefill_attention"
+LARGE_HEAD_PREFILL_PATH = "torch_npu.npu_fusion_attention"
 
 
 class TestAttentionGraphHelpers(TestBase):
@@ -145,6 +145,7 @@ class TestAscendAttentionMetadataBuilder(TestBase):
         self.mock_vllm_config.cache_config.block_size = 64
         self.mock_vllm_config.compilation_config.cudagraph_mode = None
         self.mock_vllm_config.scheduler_config.max_num_seqs = 10
+        self.mock_vllm_config.scheduler_config.max_num_batched_tokens = 64
         self.mock_vllm_config.scheduler_config.chunked_prefill_enabled = False
         self.mock_device = "cpu:0"
         torch.Tensor.pin_memory = lambda x: x  # noqa
@@ -200,12 +201,15 @@ class TestAscendAttentionMetadataBuilder(TestBase):
             positions=torch.tensor([10, 10]),
             attn_state=AscendAttentionState.ChunkedPrefill,
             num_computed_tokens_cpu=None,
-            seq_lens=None,
+            seq_lens=torch.tensor([4, 5, 6]),
             max_seq_len=6,
         )
         mock_model = MagicMock()
 
         self.builder.build(1, common_attn_metadata, mock_model)
+
+        metadata_kwargs = mock_ascend_metadata.call_args.kwargs
+        self.assertTrue(torch.equal(metadata_kwargs["seq_lens_device"], common_attn_metadata.seq_lens))
 
 
 def test_pcp_metadata_keeps_expanded_slot_mapping() -> None:
@@ -372,6 +376,19 @@ class TestAscendAttentionBackendImpl(TestBase):
             head_size=192,
             scale=1.0,
             num_kv_heads=8,
+            alibi_slopes=None,
+            sliding_window=None,
+            kv_cache_dtype="float16",
+            logits_soft_cap=None,
+            attn_type=self.attention_type.DECODER,
+            kv_sharing_target_layer_name=None,
+        )
+
+        self.impl_512 = AscendAttentionBackendImpl(
+            num_heads=8,
+            head_size=512,
+            scale=1.0,
+            num_kv_heads=1,
             alibi_slopes=None,
             sliding_window=None,
             kv_cache_dtype="float16",
@@ -805,7 +822,8 @@ class TestAscendAttentionBackendImpl(TestBase):
         mock_EXTRA_CTX.sinks = False
         mock_EXTRA_CTX.is_draft_model = False
 
-        param: list[MagicMock | None] = [MagicMock()] * 21
+        param: list[MagicMock | torch.Tensor | None] = [MagicMock()] * 21
+        param[3] = torch.zeros((1, 1), dtype=torch.int32)
         param[16] = None
         param[20] = None
 
@@ -819,7 +837,14 @@ class TestAscendAttentionBackendImpl(TestBase):
             "model.layers.5.self_attn.attn",
         ]
         forward_context = MagicMock()
-        forward_context.attn_metadata = {key: MagicMock() for key in attn_metadata_keys}
+        forward_context.attn_metadata = {}
+        for key in attn_metadata_keys:
+            metadata = MagicMock()
+            metadata.block_tables = param[3]
+            metadata.seq_lens_list = [1]
+            metadata.actual_seq_lengths_q = [1]
+            metadata.causal = True
+            forward_context.attn_metadata[key] = metadata
         # breakpoint()
         self.impl.update_graph_params(self.mock_stream, forward_context, 1, self.mock_vllm_config)
 
