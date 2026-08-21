@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import inspect
 import logging
 from typing import Any, cast
 
@@ -16,19 +17,22 @@ from vllm.v1.worker.gpu.spec_decode.dflash.speculator import (
     DFlashSpeculator,
 )
 
-from vllm_ascend.utils import vllm_version_is
 from vllm_ascend.worker.v2.attn_utils import build_attn_metadata_wrapper
 
 logger = logging.getLogger(__name__)
+
+_DRAFT_ATTN_HAS_SEQ_LENS = (
+    "seq_lens_cpu_upper_bound"
+    in inspect.signature(DFlashSpeculator._build_draft_attn_metadata).parameters
+)
 
 
 class AscendDFlashSpeculator(DFlashSpeculator):
     # NOTE: upstream vLLM named this to _build_draft_attn_metadatas;
     # keep the current name for now as upstream may change it again.
-    # The signature is split on vllm_version_is: v0.26.0's
-    # _build_draft_attn_metadata does not accept seq_lens_cpu_upper_bound /
-    # step; d02df748bf+ does.
-    if vllm_version_is("0.26.0"):
+    # Feature-detect this signature because verified post-release commits may
+    # retain the 0.26.0 package version while already exposing the new args.
+    if not _DRAFT_ATTN_HAS_SEQ_LENS:
 
         def build_draft_attn_metadatas(self, num_reqs_padded, seq_lens_cpu_upper_bound):
             num_tokens_padded = num_reqs_padded * self.num_query_per_req
