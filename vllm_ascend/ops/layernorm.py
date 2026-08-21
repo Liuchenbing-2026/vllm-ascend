@@ -22,7 +22,6 @@ from vllm.model_executor.layers.layernorm import GemmaRMSNorm, RMSNorm, RMSNormG
 
 from vllm_ascend.device.device_op import DeviceOperator
 from vllm_ascend.ops.triton.fused_norm_gate import layer_norm_fwd_npu
-from vllm_ascend.utils import enable_custom_op
 
 
 class AscendRMSNorm(RMSNorm):
@@ -69,14 +68,13 @@ class AscendRMSNorm(RMSNorm):
 
         if residual is not None:
             residual = torch.ops.vllm.maybe_chunk_residual(x, residual)
-            if enable_custom_op():
-                x, _, residual = torch.ops._C_ascend.npu_add_rms_norm_bias(
-                    x, residual, self.weight, self.bias, self.variance_epsilon
-                )
-            else:
-                x, _, residual = torch_npu.npu_add_rms_norm(x, residual, self.weight, self.variance_epsilon)
-                if self.bias is not None:
-                    x.add_(self.bias)
+            # CANN 9.1 no longer exports aclnnAddRmsNormBias. Use the
+            # supported add-RMSNorm op and apply the optional bias separately.
+            x, _, residual = torch_npu.npu_add_rms_norm(
+                x, residual, self.weight, self.variance_epsilon
+            )
+            if self.bias is not None:
+                x.add_(self.bias)
             return x, residual
 
         x, residual = torch_npu.npu_rms_norm(x, self.weight, self.variance_epsilon)
@@ -96,12 +94,9 @@ class AscendGemmaRMSNorm(GemmaRMSNorm):
 
         if residual is not None:
             residual = torch.ops.vllm.maybe_chunk_residual(x, residual)
-            if enable_custom_op():
-                x, _, residual = torch.ops._C_ascend.npu_add_rms_norm_bias(
-                    x, residual, 1.0 + self.weight, None, self.variance_epsilon
-                )
-            else:
-                x, _, residual = torch_npu.npu_add_rms_norm(x, residual, 1.0 + self.weight, self.variance_epsilon)
+            x, _, residual = torch_npu.npu_add_rms_norm(
+                x, residual, 1.0 + self.weight, self.variance_epsilon
+            )
             return x, residual
 
         x = DeviceOperator.npu_gemma_rms_norm(x, self.weight, self.variance_epsilon)
