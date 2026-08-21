@@ -45,6 +45,22 @@ def _update_dspark(config_dict: dict, pre_trained_config: dict) -> None:
 speculator_algos.SUPPORTED_SPECULATORS_TYPES["dspark"] = _update_dspark
 
 
+# vLLM's Speculators updater predates the dedicated DFlash2 architecture and
+# rewrites every DFlash checkpoint to DFlashDraftModel. Keep the checkpoint's
+# explicit DFlash2 contract so VllmConfig can select the DFlash2 speculator.
+_orig_update_dflash = speculator_algos.SUPPORTED_SPECULATORS_TYPES["dflash"]
+
+
+def _update_dflash(config_dict: dict, pre_trained_config: dict) -> None:
+    architectures = list(pre_trained_config.get("architectures") or [])
+    _orig_update_dflash(config_dict, pre_trained_config)
+    if "DFlash2DraftModel" in architectures:
+        pre_trained_config["architectures"] = architectures
+
+
+speculator_algos.SUPPORTED_SPECULATORS_TYPES["dflash"] = _update_dflash
+
+
 def hf_config_override(hf_config: PretrainedConfig) -> PretrainedConfig:
     initial_architecture = hf_config.architectures[0]
     if initial_architecture == "DSparkDraftModel" and hf_config.model_type == "qwen3":
