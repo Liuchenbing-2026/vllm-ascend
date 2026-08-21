@@ -659,16 +659,13 @@
 #       compatibility checks. On Ascend the NPU v2 runner is not yet
 #       compatible with all upstream-defaulted models and features, so
 #       enabling by model architecture can crash. We override the
-#       property to primarily read VLLM_USE_V2_MODEL_RUNNER, deferring
-#       model/framework checks to the NPU runner itself. DFlash2 is the
-#       narrow exception because its candidate selector is implemented only
-#       by the v2 speculator.
+#       property to read only VLLM_USE_V2_MODEL_RUNNER, deferring
+#       model/framework checks to the NPU runner itself.
 #    How:
 #       Monkey-patch VllmConfig.use_v2_model_runner to return
-#       envs.VLLM_USE_V2_MODEL_RUNNER when explicitly configured, enable v2
-#       for a DFlash2 draft when it is unset, and otherwise default to False.
-#       worker/patch_v2/patch_use_v2_model_runner.py reuses this platform patch
-#       so EngineCore and worker processes share the same behavior.
+#       envs.VLLM_USE_V2_MODEL_RUNNER (defaulting to False when unset).
+#       worker/patch_v2/patch_use_v2_model_runner.py reuses this platform
+#       patch so EngineCore and worker processes share the same behavior.
 #    Related PR (if no, explain why):
 #       1. https://github.com/vllm-project/vllm-ascend/pull/11389
 #    Future Plan:
