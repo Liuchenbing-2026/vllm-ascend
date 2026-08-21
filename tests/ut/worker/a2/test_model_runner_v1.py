@@ -323,6 +323,34 @@ class TestCorrectOptimisticSeqLensCpu(unittest.TestCase):
         runner._get_valid_sampled_token_count.assert_called_once_with()
         self.assertEqual(rejected.tolist(), [1, 3, 0])
 
+    def test_current_rejections_reuse_bookkeeping_tokens(self):
+        runner = NPUModelRunner.__new__(NPUModelRunner)
+        runner._get_valid_sampled_token_count = MagicMock()
+        metadata = SimpleNamespace(num_draft_tokens=[2, 3, 0])
+
+        rejected = runner._get_current_num_rejected_tokens_cpu(
+            metadata,
+            num_reqs=3,
+            valid_sampled_token_ids_cpu=[[11, 12], [21], []],
+        )
+
+        runner._get_valid_sampled_token_count.assert_not_called()
+        self.assertEqual(rejected.tolist(), [1, 3, 0])
+
+    def test_current_rejections_incomplete_bookkeeping_falls_back(self):
+        runner = NPUModelRunner.__new__(NPUModelRunner)
+        runner._get_valid_sampled_token_count = MagicMock(return_value=[2, 1])
+        metadata = SimpleNamespace(num_draft_tokens=[2, 3])
+
+        rejected = runner._get_current_num_rejected_tokens_cpu(
+            metadata,
+            num_reqs=2,
+            valid_sampled_token_ids_cpu=[[11, 12]],
+        )
+
+        runner._get_valid_sampled_token_count.assert_called_once_with()
+        self.assertEqual(rejected.tolist(), [1, 3])
+
     def test_current_rejections_mismatch_falls_back(self):
         runner = NPUModelRunner.__new__(NPUModelRunner)
         runner._get_valid_sampled_token_count = MagicMock(return_value=[2])

@@ -1691,9 +1691,22 @@ class NPUModelRunner(GPUModelRunner):
         self,
         spec_decode_metadata: SpecDecodeMetadata,
         num_reqs: int,
+        valid_sampled_token_ids_cpu: list[list[int]] | None = None,
     ) -> torch.Tensor | None:
-        """Return current-step rejected-token counts using the existing D2H copy."""
-        valid_counts = self._get_valid_sampled_token_count()
+        """Return the current-step rejected-token counts on the host.
+
+        Synchronous bookkeeping has already materialized the accepted token
+        IDs on the host. Prefer those lists so DFlash does not wait for a
+        second D2H copy of the same per-request counts. Async scheduling does
+        not produce the lists, so retain the existing event-backed fallback.
+        """
+        if (
+            valid_sampled_token_ids_cpu is not None
+            and len(valid_sampled_token_ids_cpu) == num_reqs
+        ):
+            valid_counts = [len(token_ids) for token_ids in valid_sampled_token_ids_cpu]
+        else:
+            valid_counts = self._get_valid_sampled_token_count()
         num_draft_tokens = spec_decode_metadata.num_draft_tokens
         if len(valid_counts) != num_reqs or len(num_draft_tokens) != num_reqs:
             return None
@@ -1726,6 +1739,7 @@ class NPUModelRunner(GPUModelRunner):
         aux_hidden_states: torch.Tensor = None,
         sample_hidden_states: torch.Tensor = None,
         target_model_batch_desc: BatchDescriptor = None,
+        valid_sampled_token_ids_cpu: list[list[int]] | None = None,
     ) -> list[list[int]] | None:
         if not self.drafter:
             # Speculative decoding is not enabled.
@@ -1952,13 +1966,13 @@ class NPUModelRunner(GPUModelRunner):
                 and spec_decode_metadata is not None
                 and num_rejected_tokens_gpu is not None
             ):
-                # The copy was launched immediately after target sampling.
-                # Waiting here lets intervening padded-input preparation and
-                # gather enqueues overlap with the D2H transfer, while still
-                # producing an exact host mirror before draft attention builds.
+                # Sync scheduling already parsed the accepted tokens on the
+                # host. Async scheduling has no such lists, so the helper
+                # falls back to waiting for the existing valid-count copy.
                 num_rejected_tokens_cpu = self._get_current_num_rejected_tokens_cpu(
                     spec_decode_metadata,
                     common_attn_metadata.num_reqs,
+                    valid_sampled_token_ids_cpu=valid_sampled_token_ids_cpu,
                 )
             draft_token_ids = self.drafter._propose(
                 target_token_ids=target_token_ids,
@@ -2531,7 +2545,7 @@ class NPUModelRunner(GPUModelRunner):
 
         self.valid_sampled_token_count_gpu: torch.Tensor | None = None # type: ignore[no-redef]
 
-        def propose_draft_token_ids(sampled_token_ids):
+        def propose_draft_token_ids(sampled_token_ids, sampled_token_ids_cpu=None):
             assert spec_decode_common_attn_metadata is not None
             self._draft_token_ids = self.propose_draft_token_ids(
                 sampled_token_ids,
@@ -2545,6 +2559,7 @@ class NPUModelRunner(GPUModelRunner):
                 aux_hidden_states,
                 sample_hidden_states,
                 batch_desc,
+                valid_sampled_token_ids_cpu=sampled_token_ids_cpu,
             )
             self._copy_draft_token_ids_to_cpu(scheduler_output)
 
@@ -2579,7 +2594,10 @@ class NPUModelRunner(GPUModelRunner):
                 if use_padded_batch:
                     # EAGLE speculative decoding can use the GPU sampled tokens
                     # as inputs, and does not need to wait for bookkeeping to finish.
-                    propose_draft_token_ids(sampler_output.sampled_token_ids)
+                    propose_draft_token_ids(
+                        sampler_output.sampled_token_ids,
+                        valid_sampled_token_ids,
+                    )
                 if self.speculative_config and not use_padded_batch:
                     # ngram and other speculative decoding methods use the sampled
                     # tokens on the CPU, so they are run after bookkeeping.
@@ -2700,13 +2718,21 @@ class NPUModelRunner(GPUModelRunner):
             self.rejection_sampler.prepare_sampling(max_topk)
         if isinstance(self.drafter, AscendDsparkProposer):
             self.drafter.record_target_logit_debug(logits, spec_decode_metadata)
-        sampler_output = self.rejection_sampler(
-            spec_decode_metadata,
-            None,  # draft_probs
-            logits,
-            sampling_metadata,
-        )
-        return sampler_output
+        prepare_draft_probs = getattr(self.drafter, "prepare_draft_probs", None)
+        clear_draft_probs = getattr(self.drafter, "clear_draft_probs", None)
+        draft_probs = None
+        if not sampling_metadata.all_greedy and prepare_draft_probs is not None:
+            draft_probs = prepare_draft_probs(spec_decode_metadata)
+        try:
+            return self.rejection_sampler(
+                spec_decode_metadata,
+                draft_probs,
+                logits,
+                sampling_metadata,
+            )
+        finally:
+            if draft_probs is not None and clear_draft_probs is not None:
+                clear_draft_probs(draft_probs)
 
     # TODO: remove this func after eagle_proposer is refactored and
     #  _bookkeeping_sync is moved after propose_draft_token_ids
