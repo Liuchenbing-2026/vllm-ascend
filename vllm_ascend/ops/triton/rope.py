@@ -20,6 +20,12 @@ from vllm.triton_utils import tl, triton
 from vllm_ascend.ops.triton.triton_utils import get_vectorcore_num
 
 
+def _get_block_size_head(n_q_head: int, n_kv_head: int, is_neox_style: bool) -> int:
+    max_block_size = 64 if is_neox_style else 32
+    actual_head_size = triton.next_power_of_2(max(n_q_head, n_kv_head))
+    return min(max_block_size, actual_head_size)
+
+
 @triton.jit
 def _triton_rope(
     q_ptr,
@@ -270,11 +276,7 @@ def rope_forward_triton(
 
     num_tokens, n_q_head, head_dim = q.shape
     n_kv_head = k.shape[1]
-    # TODO: use a more robust method to get BLOCK_SIZE_HEAD
-    if is_neox_style:
-        BLOCK_SIZE_HEAD = 64
-    else:
-        BLOCK_SIZE_HEAD = 32
+    BLOCK_SIZE_HEAD = _get_block_size_head(n_q_head, n_kv_head, is_neox_style)
     num_vectorcore = get_vectorcore_num()
     n_row = min(num_tokens, num_vectorcore)
 
