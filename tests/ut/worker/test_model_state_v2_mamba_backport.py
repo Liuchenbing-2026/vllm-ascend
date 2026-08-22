@@ -46,3 +46,13 @@ def test_hybrid_model_selects_mamba_model_state(mock_mamba_state):
         encoder_cache,
         device,
     )
+
+
+def test_v2_attn_utils_rebinds_ascend_kv_cache_binder():
+    import vllm.v1.worker.gpu.attn_utils as gpu_attn_utils
+
+    from vllm_ascend.patch.worker.patch_qwen3_next_mtp import bind_kv_cache
+
+    # gpu.attn_utils imports the binder by value, so patching only
+    # vllm.v1.worker.utils does not update the reference used by init_kv_cache.
+    assert gpu_attn_utils.bind_kv_cache is bind_kv_cache
