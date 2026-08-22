@@ -186,6 +186,16 @@ class ModelWithContext(nn.Module):
     def compute_draft_logits(self, hidden_states: torch.Tensor):
         return self.original_model.compute_draft_logits(hidden_states)
 
+    def compute_candidates(
+        self,
+        hidden_states: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.original_model.compute_candidates(hidden_states)
+
+    @property
+    def model(self) -> nn.Module:
+        return self.original_model.model
+
     def markov_embed(self, token_ids: torch.Tensor):
         return self.original_model.markov_embed(token_ids)
 
