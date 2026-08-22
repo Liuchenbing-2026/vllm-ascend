@@ -41,7 +41,17 @@ def _tensor_view_from_data_ptr(state: torch.Tensor, start_addr: int, num_element
         raise RuntimeError("Invalid Mamba state copy pointer.")
 
     element_offset = byte_offset // element_size
-    flat_state = state.view(-1)
+    # MRV2 binds Mamba states as views into block-major pages, so adjacent
+    # logical blocks can be separated by page padding. Flatten the underlying
+    # storage from this state's first element instead of requiring the logical
+    # state tensor itself to be contiguous.
+    storage_offset = state.storage_offset()
+    storage_numel = state.untyped_storage().nbytes() // element_size
+    flat_state = state.as_strided(
+        (storage_numel - storage_offset,),
+        (1,),
+        storage_offset=storage_offset,
+    )
     if element_offset + num_elements > flat_state.numel():
         raise RuntimeError("Mamba state copy range exceeds tensor storage.")
     return flat_state.narrow(0, element_offset, num_elements)
