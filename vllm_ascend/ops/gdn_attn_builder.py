@@ -48,7 +48,9 @@ _GDN_CUMSUM_WORKING_SET = 2**18
 
 def _stable_argsort_for_npu(tensor: torch.Tensor) -> torch.Tensor:
     if tensor.dtype == torch.bool:
-        tensor = tensor.to(torch.int32)
+        # NPU ArgSort only runs floating-point inputs on AiCore.  Keeping this
+        # device-side also avoids a dependency on the optional AiCPU Sort kernel.
+        tensor = tensor.to(torch.float32)
     return torch.argsort(tensor, stable=True)
 
 

@@ -57,6 +57,26 @@ def _no_pin_memory():
         yield
 
 
+def test_stable_argsort_uses_aicore_dtype_for_bool(monkeypatch: pytest.MonkeyPatch):
+    original_argsort = torch.argsort
+    calls: list[tuple[torch.dtype, bool]] = []
+
+    def capture_argsort(tensor: torch.Tensor, *, stable: bool):
+        calls.append((tensor.dtype, stable))
+        return original_argsort(tensor, stable=stable)
+
+    monkeypatch.setattr(torch, "argsort", capture_argsort)
+    result = ascend_gdn_attn_builder._stable_argsort_for_npu(
+        torch.tensor([True, False, True, False]),
+    )
+
+    assert calls == [(torch.float32, True)]
+    assert torch.equal(
+        result,
+        torch.tensor([1, 3, 0, 2]),
+    )
+
+
 @dataclass
 class BatchSpec:
     seq_lens: list[int]
