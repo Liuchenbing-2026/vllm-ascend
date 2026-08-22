@@ -86,6 +86,20 @@ def _collect_no_draft_probs_values(spec_config, pipeline_parallel_size: int) -> 
     return [False, True]
 
 
+def _make_int64_constant(
+    shape: tuple[int, ...],
+    fill_value: int,
+    device: torch.device,
+) -> torch.Tensor:
+    """Create an int64 warmup constant without an int64 fill kernel."""
+    return torch.full(
+        shape,
+        fill_value,
+        dtype=torch.int32,
+        device=device,
+    ).to(torch.int64)
+
+
 def _make_rejection_tensors(
     batch_size: int,
     max_spec_len: int,
@@ -153,7 +167,7 @@ def _make_rejection_tensors(
             dtype=torch.float32,
             device=device,
         ),
-        "target_argmax": torch.zeros(num_tokens, dtype=torch.int64, device=device),
+        "target_argmax": _make_int64_constant((num_tokens,), 0, device),
         "global_vocab_size": global_vocab_size,
         "prob_vocab_size": prob_vocab,
     }
@@ -174,7 +188,7 @@ def _warm_prepare_inputs(device: torch.device, num_reqs: int) -> None:
         dim=0,
         dtype=torch.int32,
     )
-    valid_sampled_tokens_count = torch.ones(num_reqs, dtype=torch.int64, device=device)
+    valid_sampled_tokens_count = _make_int64_constant((num_reqs,), 1, device)
     query_start_loc = torch.arange(num_reqs + 1, dtype=torch.int32, device=device)
     token_indices_to_sample = torch.empty(num_reqs, dtype=torch.int32, device=device)
     num_rejected_tokens_gpu = torch.empty(num_reqs, dtype=torch.int32, device=device)

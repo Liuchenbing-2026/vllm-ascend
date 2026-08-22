@@ -4,6 +4,8 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import torch
+
 from tests.ut.model_executor.warmup.helpers import make_mock_worker
 from vllm_ascend.model_executor.warmup import rejection_sampler_triton_warmup as rw
 
@@ -16,6 +18,13 @@ def test_collect_warmup_rejection_block_sizes():
     assert sizes[0] == 1
     assert sizes[-1] == 8
     assert len(block_sizes) == len(sizes)
+
+
+def test_make_int64_constant():
+    result = rw._make_int64_constant((2, 3), -1, torch.device("cpu"))
+
+    assert result.dtype == torch.int64
+    torch.testing.assert_close(result, torch.full((2, 3), -1, dtype=torch.int64))
 
 
 @patch.object(rw, "_warm_rejection_random")
