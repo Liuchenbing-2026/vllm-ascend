@@ -43,7 +43,8 @@ Ascend adaptation notes (differences from upstream):
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from typing import Any
 
 import torch
 from torch import nn
@@ -53,7 +54,6 @@ from vllm.distributed import (
     get_tensor_model_parallel_world_size,
     tensor_model_parallel_all_gather,
 )
-from vllm.logger import init_logger
 from vllm.model_executor.layers.layernorm import RMSNorm
 from vllm.model_executor.layers.linear import ReplicatedLinear
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
@@ -73,12 +73,25 @@ from vllm.model_executor.models.utils import get_draft_quant_config, maybe_prefi
 from vllm_ascend.models._dflash2_math import grouped_conv as _grouped_conv
 from vllm_ascend.models._dflash2_math import score_edges as _score_edges
 
-logger = init_logger(__name__)
-
 
 def _topk(scores: torch.Tensor, k: int) -> tuple[torch.Tensor, torch.Tensor]:
     """Vocabulary top-k; Ascend always uses torch.topk (no FlashInfer)."""
     return torch.topk(scores, k, dim=-1)
+
+
+def _merge_drafter_config(config: object) -> dict[str, Any]:
+    """Merge draft settings without mutating the shared model config."""
+    drafter_config = dict(getattr(config, "eagle_config", None) or {})
+    drafter_config.update(getattr(config, "dflash_config", None) or {})
+    return drafter_config
+
+
+def _relative_weights(
+    weights: Iterable[tuple[str, torch.Tensor]],
+) -> Iterator[tuple[str, torch.Tensor]]:
+    """Strip the outer model prefix while preserving stream order."""
+    for name, weight in weights:
+        yield (name.removeprefix("model."), weight)
 
 
 class DFlashGroupedConv(nn.Module):
@@ -231,9 +244,7 @@ class CandidateSelector(nn.Module):
     ) -> torch.Tensor:
         hidden = self.hidden_projection(hidden_states)
         if hidden.dim() != 3:
-            raise RuntimeError(
-                "CandidateSelector hidden projection must preserve [batch, steps, rank]"
-            )
+            raise RuntimeError("CandidateSelector hidden projection must preserve [batch, steps, rank]")
         if hidden.shape[0] != candidate_ids.shape[0]:
             raise RuntimeError("CandidateSelector hidden/candidate batch mismatch")
         if hidden.shape[1] != candidate_ids.shape[1]:
@@ -277,13 +288,9 @@ class DFlash2Qwen3Model(DFlashQwen3Model):
         self.vocab_size = self.config.vocab_size
         self.quant_config = get_draft_quant_config(vllm_config)
 
-        drafter_config = getattr(self.config, "eagle_config", {})
-        drafter_config.update(getattr(self.config, "dflash_config", {}))
+        drafter_config = _merge_drafter_config(self.config)
 
-        if drafter_config is not None and "use_aux_hidden_state" in drafter_config:
-            self.use_aux_hidden_state = drafter_config["use_aux_hidden_state"]
-        else:
-            self.use_aux_hidden_state = True
+        self.use_aux_hidden_state = drafter_config.get("use_aux_hidden_state", True)
 
         current_vllm_config = get_current_vllm_config()
 
@@ -358,29 +365,7 @@ class DFlash2Qwen3Model(DFlashQwen3Model):
         Strip the prefix here and delegate; both call shapes stay correct.
         """
 
-        def _relative(name: str) -> str:
-            if name.startswith("model."):
-                return name[len("model.") :]
-            return name
-
-        items = {_relative(name): weight for name, weight in weights}
-        last: list[str] = []
-
-        def tracked():
-            for name, weight in items.items():
-                last.append(name)
-                yield name, weight
-
-        try:
-            return super().load_weights(tracked())
-        except Exception as error:  # noqa: BLE001 - re-raise with the failing name
-            name = last[-1] if last else None
-            shape = tuple(items[name].shape) if name in items else None
-            params = dict(self.named_parameters())
-            param_shape = tuple(params[name].shape) if name in params else None
-            raise RuntimeError(
-                f"DFlash2 weight load failed at name={name!r} loaded_shape={shape} param_shape={param_shape}: {error}"
-            ) from error
+        return super().load_weights(_relative_weights(weights))
 
 
 class DFlash2Qwen3ForCausalLM(DFlashQwen3ForCausalLM):

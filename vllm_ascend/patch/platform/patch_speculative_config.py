@@ -103,6 +103,10 @@ def hf_config_override(hf_config: PretrainedConfig) -> PretrainedConfig:
 
     if hf_config.model_type in ("qwen3_5", "qwen3_5_moe"):
         is_moe = hf_config.model_type == "qwen3_5_moe"
+        quantization_config = getattr(hf_config, "quantization_config", None)
+        hf_config = getattr(hf_config, "text_config", hf_config)
+        if quantization_config is not None and getattr(hf_config, "quantization_config", None) is None:
+            hf_config.update({"quantization_config": quantization_config})
         hf_config.model_type = "qwen3_5_mtp"
         n_predict = getattr(hf_config, "mtp_num_hidden_layers", None)
         hf_config.update(

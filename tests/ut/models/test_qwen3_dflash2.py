@@ -2,10 +2,37 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 
 from vllm_ascend.models._dflash2_math import grouped_conv, score_edges, selector_walk
+from vllm_ascend.models.qwen3_dflash2 import _merge_drafter_config, _relative_weights
+
+
+def test_merge_drafter_config_does_not_mutate_sources() -> None:
+    eagle_config = {"use_aux_hidden_state": False, "eagle_only": 1}
+    dflash_config = {"use_aux_hidden_state": True, "dflash_only": 2}
+    config = SimpleNamespace(eagle_config=eagle_config, dflash_config=dflash_config)
+
+    merged = _merge_drafter_config(config)
+
+    assert merged == {"use_aux_hidden_state": True, "eagle_only": 1, "dflash_only": 2}
+    assert eagle_config == {"use_aux_hidden_state": False, "eagle_only": 1}
+    assert dflash_config == {"use_aux_hidden_state": True, "dflash_only": 2}
+    assert _merge_drafter_config(SimpleNamespace(eagle_config=None, dflash_config=None)) == {}
+
+
+def test_relative_weights_preserves_order_and_duplicates() -> None:
+    first = torch.tensor([1.0])
+    second = torch.tensor([2.0])
+
+    actual = list(_relative_weights([("model.layer.weight", first), ("layer.weight", second)]))
+
+    assert [name for name, _ in actual] == ["layer.weight", "layer.weight"]
+    assert actual[0][1] is first
+    assert actual[1][1] is second
 
 
 @pytest.mark.parametrize("block_size", [5, 8])
@@ -28,7 +55,7 @@ def test_grouped_conv_matches_reference(block_size: int) -> None:
     torch.testing.assert_close(actual, expected.flatten(0, 1).flatten(-2))
 
 
-def testgrouped_conv_is_bit_deterministic() -> None:
+def test_grouped_conv_is_bit_deterministic() -> None:
     torch.manual_seed(3)
     hidden = torch.randn(16, 8)
     delta = torch.randn(16, 2, 2)

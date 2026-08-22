@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[3]
 STEP3P5 = ROOT / "vllm_ascend" / "spec_decode" / "step3p5.py"
@@ -48,6 +49,19 @@ def _func(path: Path, name: str) -> ast.FunctionDef:
 
 def _src(node: ast.AST) -> str:
     return ast.unparse(node)
+
+
+class _Config(SimpleNamespace):
+    def update(self, values: dict) -> None:
+        self.__dict__.update(values)
+
+
+def _load_hf_config_override():
+    function = _func(PATCH_SPEC_CFG, "hf_config_override")
+    module = ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[]))
+    namespace = {"PretrainedConfig": object}
+    exec(compile(module, str(PATCH_SPEC_CFG), "exec"), namespace)
+    return namespace["hf_config_override"]
 
 
 def test_step3p5_first_pass_forwards_rejected_token_counts() -> None:
@@ -101,3 +115,29 @@ def test_step3p7_uses_step3p5_mtp_override_without_legacy_runtime_patch() -> Non
     assert "Step3p5MTP" in override_src
     assert "patch_step3p5_mtp" not in WORKER_PATCH_INIT.read_text()
     assert not LEGACY_STEP3P7_PATCH.exists()
+
+
+def test_qwen3_5_mtp_override_promotes_text_config() -> None:
+    text_config = _Config(
+        model_type="qwen3_5_text",
+        architectures=["Qwen3_5ForCausalLM"],
+        mtp_num_hidden_layers=1,
+        num_attention_heads=24,
+        num_hidden_layers=64,
+    )
+    config = _Config(
+        model_type="qwen3_5",
+        architectures=["Qwen3_5ForConditionalGeneration"],
+        text_config=text_config,
+        quantization_config={"quant_method": "test"},
+    )
+
+    result = _load_hf_config_override()(config)
+
+    assert result is text_config
+    assert result.model_type == "qwen3_5_mtp"
+    assert result.architectures == ["Qwen3_5MTP"]
+    assert result.n_predict == 1
+    assert result.num_attention_heads == 24
+    assert result.num_hidden_layers == 64
+    assert result.quantization_config == {"quant_method": "test"}

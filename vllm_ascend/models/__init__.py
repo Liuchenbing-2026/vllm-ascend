@@ -9,6 +9,4 @@ def register_model():
         "LlamaForCausalLMVwnEagle3", "vllm_ascend.models.llama_eagle3_vwn:Eagle3VwnLlamaForCausalLM"
     )
     ModelRegistry.register_model("Qwen3DSparkModel", "vllm_ascend.models.qwen3_dspark:Qwen3DSparkForCausalLM")
-    ModelRegistry.register_model(
-        "DFlash2DraftModel", "vllm_ascend.models.qwen3_dflash2:DFlash2Qwen3ForCausalLM"
-    )
+    ModelRegistry.register_model("DFlash2DraftModel", "vllm_ascend.models.qwen3_dflash2:DFlash2Qwen3ForCausalLM")

@@ -38,12 +38,9 @@ from __future__ import annotations
 
 import torch
 from vllm.config import VllmConfig
-from vllm.logger import init_logger
 
 from vllm_ascend.models._dflash2_math import selector_walk
 from vllm_ascend.spec_decode.dflash_proposer import AscendDflashProposer
-
-logger = init_logger(__name__)
 
 
 class AscendDflash2Proposer(AscendDflashProposer):
