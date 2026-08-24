@@ -16,9 +16,54 @@ Use quantized `DeepSeek-V4-Flash-0731-w8a8` weight. Download it from [ModelScope
 
 Start the container as described in [Using Docker](../../installation.md#set-up-using-docker). For multi-node deployment, also complete [multi-node communication verification](../../installation.md#verify-multi-node-communication).
 
-## 3 A3 Deployment Configurations
+## 3 A2 Single-Node Deployment
 
-### 3.1 Single-Node Deployment
+For A2, use the `quay.io/ascend/vllm-ascend:nightly-releases-v0.25.1rc` image and the same quantized `DeepSeek-V4-Flash-0731-w8a8` weights.
+
+```shell
+export OMP_NUM_THREADS=10
+export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+export TASK_QUEUE_ENABLE=1
+export HCCL_BUFFSIZE=1024
+export HCCL_OP_EXPANSION_MODE=AIV
+
+vllm serve /data01/models/DeepSeek-V4-Flash-0731-w8a8 \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --served-model-name dsv4-dspark \
+    --tensor-parallel-size 8 \
+    --enable-expert-parallel \
+    --quantization ascend \
+    --max-model-len 1048576 \
+    --max-num-seqs 32 \
+    --max-num-batched-tokens 8192 \
+    --gpu-memory-utilization 0.9 \
+    --block-size 128 \
+    --trust-remote-code \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --reasoning-parser deepseek_v4 \
+    --enable-prefix-caching \
+    --no-disable-hybrid-kv-cache-manager \
+    --model-loader-extra-config '{"enable_multithread_load": true, "num_threads": 128}' \
+    --speculative-config '{"method": "dspark", "num_speculative_tokens": 7, "enforce_eager": true}' \
+    --compilation-config '{"cudagraph_mode": "FULL_DECODE_ONLY"}' \
+    --async-scheduling \
+    --additional-config '{
+        "ascend_compilation_config": {
+            "enable_npugraph_ex": true,
+            "enable_static_kernel": false
+        },
+        "enable_cpu_binding": true,
+        "enable_dsa_cp": false,
+        "multistream_overlap_shared_expert": true
+    }'
+```
+
+## 4 A3 Deployment Configurations
+
+### 4.1 Single-Node Deployment
 
 This configuration uses the quantized `DeepSeek-V4-Flash-0731-w8a8` weights. Set the local directory containing the weights `/path/to/DeepSeek-V4-Flash-0731-w8a8`.
 
@@ -63,11 +108,11 @@ vllm serve /path/to/DeepSeek-V4-Flash-0731-w8a8 \
     }'
 ```
 
-### 3.2 1P1D PD Separation Deployment
+### 4.2 1P1D PD Separation Deployment
 
 DSpark uses Mooncake for KV transfer. Before deployment, prepare the following scripts on both the Prefill and Decode nodes.
 
-#### 3.2.1 Prepare `launch_online_dp.py` on Each Node
+#### 4.2.1 Prepare `launch_online_dp.py` on Each Node
 
 Prepare the script `launch_online_dp.py` on each node.
 
@@ -183,7 +228,7 @@ Parameter descriptions:
 |`--dp-rpc-port`|str|No|12345|RPC port for data parallel master communication.|
 |`--vllm-start-port`|int|No|9000|Starting port for each vLLM engine instance on this node.|
 
-#### 3.2.2 Run the Prefill and Decode Nodes
+#### 4.2.2 Run the Prefill and Decode Nodes
 
 1. Prefill node
 
@@ -352,7 +397,7 @@ python launch_online_dp.py --dp-size 16 --tp-size 1 --dp-size-local 16 --dp-rank
 
 Refer to [Prefill-Decode Disaggregation (Deepseek)](../features/pd_disaggregation_mooncake_multi_node.md) to deploy the P-D disaggregation proxy.
 
-### 3.3 Key Deployment Parameters
+### 4.3 Key Deployment Parameters
 
 - `--speculative-config`: DSpark requires Prefill and Decode to use the same `num_speculative_tokens` value.
 - `--no-disable-hybrid-kv-cache-manager`: keeps the hybrid KV cache manager enabled for this model configuration.
@@ -364,7 +409,7 @@ Refer to [Prefill-Decode Disaggregation (Deepseek)](../features/pd_disaggregatio
 
 For proxy deployment and verification, see [Prefill-Decode Disaggregation (DeepSeek)](../features/pd_disaggregation_mooncake_multi_node.md).
 
-## 4 Accuracy Evaluation
+## 5 Accuracy Evaluation
 
 | Dataset | Version | Metric | Mode | Result | Configuration |
 | --- | --- | --- | --- | --- | --- |
