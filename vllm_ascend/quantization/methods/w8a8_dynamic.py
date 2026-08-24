@@ -24,12 +24,17 @@ from vllm.config import CompilationMode, get_current_vllm_config
 from vllm.logger import logger
 
 from vllm_ascend.ascend_config import get_ascend_config
-from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType
+from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType, _is_a2_megamoe_enabled
 from vllm_ascend.distributed.parallel_state import get_mc2_group
 from vllm_ascend.flash_common3_context import get_flash_common3_context
 from vllm_ascend.ops.fused_moe.experts_selector import select_experts, zero_experts_compute
 from vllm_ascend.ops.fused_moe.moe_runtime_args import build_fused_experts_input
-from vllm_ascend.utils import ACL_FORMAT_FRACTAL_NZ, enable_dsa_cp, maybe_trans_nz
+from vllm_ascend.utils import (
+    ACL_FORMAT_FRACTAL_NZ,
+    enable_custom_op,
+    enable_dsa_cp,
+    maybe_trans_nz,
+)
 
 from .base import AscendLinearScheme, AscendMoEScheme, QuantType, get_moe_num_logical_experts
 from .registry import register_scheme
@@ -306,22 +311,30 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         topk_weights = topk_weights.to(self.in_dtype)
 
         moe_comm_method = _EXTRA_CTX.moe_comm_method
-        fused_scale_flag = (
-            _EXTRA_CTX.moe_comm_type == MoECommType.FUSED_MC2 and get_ascend_config().enable_fused_mc2 == 1
-        )
+        fused_mc2_selected = _EXTRA_CTX.moe_comm_type == MoECommType.FUSED_MC2
+        ascend_config = get_ascend_config() if fused_mc2_selected else None
+        enable_fused_mc2 = ascend_config.enable_fused_mc2 if ascend_config else 0
+        cann_megamoe_flag = fused_mc2_selected and _is_a2_megamoe_enabled(ascend_config)
+        fused_scale_flag = fused_mc2_selected and (enable_fused_mc2 == 1 or cann_megamoe_flag)
+        fused_scale_bias_flag = fused_mc2_selected and enable_fused_mc2 == 1
         if self.dynamic_eplb:
             w1 = layer.w13_weight_list
             w1_scale = layer.fused_w1_scale_list if fused_scale_flag else layer.w13_weight_scale_fp32_list
             w2 = layer.w2_weight_list
             w2_scale = layer.fused_w2_scale_list if fused_scale_flag else layer.w2_weight_scale_list
+        elif cann_megamoe_flag:
+            w1 = layer.cann_megamoe_w13_weight_list
+            w1_scale = layer.cann_megamoe_fused_w1_scale_list
+            w2 = layer.cann_megamoe_w2_weight_list
+            w2_scale = layer.cann_megamoe_fused_w2_scale_list
         else:
             w1 = [layer.w13_weight]
             w1_scale = [layer.fused_w1_scale] if fused_scale_flag else [layer.w13_weight_scale_fp32]
             w2 = [layer.w2_weight]
             w2_scale = [layer.fused_w2_scale] if fused_scale_flag else [layer.w2_weight_scale]
 
-        w1_scale_bias = [torch.tensor([], dtype=torch.float32)] if fused_scale_flag else None
-        w2_scale_bias = [torch.tensor([], dtype=torch.float32)] if fused_scale_flag else None
+        w1_scale_bias = [torch.tensor([], dtype=torch.float32)] if fused_scale_bias_flag else None
+        w2_scale_bias = [torch.tensor([], dtype=torch.float32)] if fused_scale_bias_flag else None
 
         final_hidden_states = moe_comm_method.fused_experts(
             fused_experts_input=build_fused_experts_input(
@@ -351,6 +364,9 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         return final_hidden_states
 
     def process_weights_after_loading(self, layer):
+        # Register optional routing kernels before the first compiled forward.
+        # Importing the extension from inside Dynamo tracing is unsupported.
+        enable_custom_op()
         layer.w13_weight.data = layer.w13_weight.data.transpose(1, 2).contiguous()
         layer.w2_weight.data = layer.w2_weight.data.transpose(1, 2).contiguous()
         # TODO(zzzzwwjj): Currently, `torch_npu.npu_grouped_matmul_swiglu_quant`
@@ -364,9 +380,24 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         layer.w2_weight_scale.data = layer.w2_weight_scale.data.view(layer.w2_weight_scale.data.shape[0], -1)
         layer.w2_weight_offset.data = layer.w2_weight_offset.data.view(layer.w2_weight_offset.data.shape[0], -1)
 
-        if get_ascend_config().enable_fused_mc2 == 1:
+        ascend_config = get_ascend_config()
+        cann_megamoe_enabled = _is_a2_megamoe_enabled(ascend_config) and not self.dynamic_eplb
+        enable_int_fused_mc2 = ascend_config.enable_fused_mc2 == 1 or cann_megamoe_enabled
+        if enable_int_fused_mc2:
             layer.fused_w1_scale = scale_from_float_to_int64(layer.w13_weight_scale.data)
             layer.fused_w2_scale = scale_from_float_to_int64(layer.w2_weight_scale.data)
+
+        if cann_megamoe_enabled:
+            # MegaMoe consumes one FRACTAL_NZ weight and one UINT64-compatible
+            # scale tensor per local expert. These are views over existing data.
+            layer.cann_megamoe_w13_weight_list = list(layer.w13_weight.data.unbind(dim=0))
+            layer.cann_megamoe_w2_weight_list = list(layer.w2_weight.data.unbind(dim=0))
+            layer.cann_megamoe_fused_w1_scale_list = list(
+                layer.fused_w1_scale.view(layer.w13_weight.shape[0], -1).data.unbind(dim=0)
+            )
+            layer.cann_megamoe_fused_w2_scale_list = list(
+                layer.fused_w2_scale.view(layer.w2_weight.shape[0], -1).data.unbind(dim=0)
+            )
 
         if self.dynamic_eplb:
             layer.w13_weight_list = [weight.clone() for weight in layer.w13_weight.data.unbind(dim=0)]
@@ -375,7 +406,7 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
                 weight.clone() for weight in layer.w13_weight_scale_fp32.data.unbind(dim=0)
             ]
             layer.w2_weight_scale_list = [weight.clone() for weight in layer.w2_weight_scale.data.unbind(dim=0)]
-            if get_ascend_config().enable_fused_mc2 == 1:
+            if enable_int_fused_mc2:
                 layer.fused_w1_scale_list = [
                     weight.clone()
                     for weight in layer.fused_w1_scale.view(len(layer.w13_weight_list), -1).data.unbind(dim=0)
@@ -389,7 +420,7 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
             del layer.w13_weight_scale
             del layer.w13_weight_scale_fp32
             del layer.w2_weight_scale
-            if get_ascend_config().enable_fused_mc2 == 1:
+            if enable_int_fused_mc2:
                 del layer.fused_w1_scale
                 del layer.fused_w2_scale
             torch.npu.empty_cache()

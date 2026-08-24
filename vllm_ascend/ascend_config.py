@@ -182,6 +182,8 @@ class AscendConfig:
                 "VLLM_ASCEND_ENABLE_FUSED_MC2 (fused mc2) and multistream_overlap_shared_expert "
                 "cannot be enabled at the same time. Setting multistream_overlap_shared_expert to False."
             )
+        if self.enable_fused_mc2 not in (0, 1, 2):
+            raise ValueError(f"enable_fused_mc2 must be 0, 1, or 2, got {self.enable_fused_mc2}")
         self.enable_mlapo = self._get_config_value(
             additional_config,
             "enable_mlapo",
@@ -311,6 +313,13 @@ class AscendConfig:
             )
         if self.mega_moe_max_tokens <= 0:
             raise ValueError(f"mega_moe_max_tokens must be a positive integer, got {self.mega_moe_max_tokens}")
+
+        self.mega_moe_min_tokens = additional_config.get("mega_moe_min_tokens", 512)
+        if not isinstance(self.mega_moe_min_tokens, int) or not 1 <= self.mega_moe_min_tokens <= 4096:
+            raise ValueError(
+                "mega_moe_min_tokens must be an integer in [1, 4096], got "
+                f"{self.mega_moe_min_tokens!r}"
+            )
 
         # Whether to use NPU device group for DP metadata all_reduce.
         # "True": use NPU device group, "False" (default): use CPU group.

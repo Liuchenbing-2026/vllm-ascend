@@ -12,7 +12,12 @@ def reset_mc2_tokens_capacity(monkeypatch):
     monkeypatch.setattr(
         afc,
         "get_ascend_config",
-        lambda: SimpleNamespace(enable_prefill_mc2=False, enable_fused_mc2=0),
+        lambda: SimpleNamespace(
+            enable_prefill_mc2=False,
+            enable_fused_mc2=0,
+            mega_moe_min_tokens=512,
+            eplb_config=SimpleNamespace(dynamic_eplb=False),
+        ),
     )
 
 
@@ -30,7 +35,11 @@ def _make_vllm_config(
     max_cudagraph_capture_size: int = 0,
     max_num_batched_tokens: int = 0,
 ):
-    hf_text_config_attrs: dict[str, object] = {"top_k_experts": top_k_experts}
+    hf_text_config_attrs: dict[str, object] = {
+        "hidden_size": 4096,
+        "moe_intermediate_size": 2048,
+        "top_k_experts": top_k_experts,
+    }
     if quant_type is not None:
         hf_text_config_attrs["quantize"] = quant_type
     if num_experts_per_tok is not None:
@@ -38,6 +47,7 @@ def _make_vllm_config(
 
     model_config = SimpleNamespace(
         hf_text_config=SimpleNamespace(**hf_text_config_attrs),
+        get_hidden_size=lambda: 4096,
         get_num_experts=lambda: num_experts,
     )
     parallel_config = SimpleNamespace(
@@ -73,7 +83,15 @@ def _patch_select_moe_comm_method_deps(
     monkeypatch.setattr(afc, "get_mc2_tokens_capacity", lambda: capacity)
     monkeypatch.setattr(afc, "get_ascend_device_type", lambda: device_type)
     monkeypatch.setattr(afc, "get_ep_group", lambda: SimpleNamespace(world_size=ep_world_size))
-    monkeypatch.setattr(afc, "get_ascend_config", lambda: SimpleNamespace(enable_fused_mc2=enable_fused_mc2))
+    monkeypatch.setattr(
+        afc,
+        "get_ascend_config",
+        lambda: SimpleNamespace(
+            enable_fused_mc2=enable_fused_mc2,
+            mega_moe_min_tokens=512,
+            eplb_config=SimpleNamespace(dynamic_eplb=False),
+        ),
+    )
     monkeypatch.setattr(
         afc,
         "speculative_enable_dispatch_gmm_combine_decode",
@@ -112,6 +130,20 @@ def test_set_mc2_tokens_capacity_prefill_mc2_uses_max_num_batched_tokens(monkeyp
     afc.set_mc2_tokens_capacity(vllm_config, max_num_reqs=16, uniform_decode_query_len=1)
 
     assert afc.get_mc2_tokens_capacity() == 520
+
+
+def test_set_mc2_tokens_capacity_a2_megamoe_uses_max_num_batched_tokens(monkeypatch):
+    monkeypatch.setattr(
+        afc,
+        "get_ascend_config",
+        lambda: SimpleNamespace(enable_prefill_mc2=False, enable_fused_mc2=2),
+    )
+    monkeypatch.setattr(afc, "get_ascend_device_type", lambda: afc.AscendDeviceType.A2)
+    vllm_config = _make_vllm_config(tensor_parallel_size=8, max_num_batched_tokens=4096)
+
+    afc.set_mc2_tokens_capacity(vllm_config, max_num_reqs=16, uniform_decode_query_len=1)
+
+    assert afc.get_mc2_tokens_capacity() == 4096
 
 
 def test_select_moe_comm_method_returns_none_for_non_moe(monkeypatch):
@@ -163,6 +195,42 @@ def test_select_moe_comm_method_a2_uses_mc2_within_capacity(monkeypatch, num_tok
     vllm_config = _make_vllm_config(world_size=16, num_experts=128)
 
     assert afc.select_moe_comm_method(num_tokens, vllm_config) == expected
+
+
+@pytest.mark.parametrize(
+    ("num_tokens", "quant_type", "is_draft_model", "expected"),
+    [
+        (511, "w8a8", False, MoECommType.MC2),
+        (512, "w8a8", False, MoECommType.FUSED_MC2),
+        (4096, "w8a8_dynamic", False, MoECommType.FUSED_MC2),
+        (4097, "w8a8", False, MoECommType.ALLGATHER),
+        (512, "w4a8", False, MoECommType.MC2),
+        (512, "w8a8", True, MoECommType.MC2),
+    ],
+)
+def test_select_moe_comm_method_a2_megamoe_mode_2(
+    monkeypatch,
+    num_tokens,
+    quant_type,
+    is_draft_model,
+    expected,
+):
+    _patch_select_moe_comm_method_deps(
+        monkeypatch,
+        device_type=afc.AscendDeviceType.A2,
+        capacity=4096,
+        ep_world_size=32,
+        enable_fused_mc2=2,
+    )
+    vllm_config = _make_vllm_config(
+        world_size=32,
+        tensor_parallel_size=8,
+        num_experts=256,
+        quant_type=quant_type,
+        num_experts_per_tok=8,
+    )
+
+    assert afc.select_moe_comm_method(num_tokens, vllm_config, is_draft_model) == expected
 
 
 @pytest.mark.parametrize(
