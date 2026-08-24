@@ -747,9 +747,7 @@ class NPUModelRunner(GPUModelRunner):
             self._dummy_run(1, is_idle_dp_dummy=True)
 
     def _get_step_moe_comm_type_override(self) -> MoECommType | None:
-        needs_fallback = _is_a2_megamoe_enabled(self.ascend_config) and (
-            not self._dp_tokens_are_uniform or not self._all_dp_ranks_have_tokens
-        )
+        needs_fallback = _is_a2_megamoe_enabled(self.ascend_config) and not self._all_dp_ranks_have_tokens
         return MoECommType.MC2 if needs_fallback else None
 
     def get_model(self) -> nn.Module:
@@ -3074,7 +3072,6 @@ class NPUModelRunner(GPUModelRunner):
             _is_a2_megamoe_enabled(self.ascend_config)
             and uniform_decode
             and (is_graph_capturing or is_all_decode)
-            and self._dp_tokens_are_uniform
             and self._all_dp_ranks_have_tokens
             and cudagraph_mode != CUDAGraphMode.NONE
         )
@@ -3519,7 +3516,11 @@ class NPUModelRunner(GPUModelRunner):
             is_graph_capturing=is_graph_capturing,
             actual_num_tokens=0 if is_idle_dp_dummy else num_tokens_unpadded,
         )
-        moe_comm_type_override = self._get_step_moe_comm_type_override()
+        moe_comm_type_override = (
+            MoECommType.MC2
+            if is_profile and _is_a2_megamoe_enabled(self.ascend_config)
+            else self._get_step_moe_comm_type_override()
+        )
         if self.use_cp:
             self.pcp_manager.init_batch_info(
                 num_scheduled_tokens,
