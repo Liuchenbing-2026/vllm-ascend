@@ -146,6 +146,19 @@ class TestAscendConfig(TestBase):
 
     @_clean_up_ascend_config
     @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
+    def test_megamoe_disables_multistream_shared_expert_overlap(self, mock_fix_incompatible_config):
+        test_vllm_config = VllmConfig()
+        test_vllm_config.additional_config = {
+            "enable_fused_mc2": 2,
+            "multistream_overlap_shared_expert": True,
+        }
+
+        ascend_config = init_ascend_config(test_vllm_config)
+
+        self.assertFalse(ascend_config.multistream_overlap_shared_expert)
+
+    @_clean_up_ascend_config
+    @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
     def test_init_ascend_config_with_nested_scheduler_config(self, mock_fix_incompatible_config):
         test_vllm_config = VllmConfig()
         test_vllm_config.additional_config = {
