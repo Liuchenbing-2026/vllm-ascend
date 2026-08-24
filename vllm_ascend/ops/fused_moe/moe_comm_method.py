@@ -409,9 +409,12 @@ class FusedMC2CommImpl(MoECommMethod):
         fused_experts_input: MoEFusedExpertsInput,
         topk_ids: torch.Tensor,
     ):
-        if _is_a2_megamoe_enabled(get_ascend_config()) and fused_experts_input.quant.quant_type != QuantType.W8A8:
+        if _is_a2_megamoe_enabled(get_ascend_config()) and fused_experts_input.quant.quant_type not in (
+            QuantType.W8A8,
+            QuantType.W4A8,
+        ):
             raise RuntimeError(
-                "CANN MegaMoe mode 2 currently supports only W8A8 routed experts, got "
+                "CANN MegaMoe mode 2 supports only W8A8/W4A8 INT routed experts, got "
                 f"{fused_experts_input.quant.quant_type}."
             )
         assert fused_experts_input.weights.w1_scale is not None

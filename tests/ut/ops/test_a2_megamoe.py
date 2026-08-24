@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 from vllm_ascend import ascend_forward_context as afc
@@ -39,7 +40,8 @@ def test_receive_bound_uses_documented_worst_case():
     assert get_cann_megamoe_buffer_params(480, 32, 256, 8) == (512, 8, 32, 131072)
 
 
-def test_a2_mode_2_selects_megamoe(monkeypatch):
+@pytest.mark.parametrize("quantize", ["w8a8_dynamic", "w4a8_dynamic"])
+def test_a2_mode_2_selects_megamoe(monkeypatch, quantize):
     monkeypatch.setattr(afc, "_MEGA_MOE_SUPPORTED", True)
     monkeypatch.setattr(afc, "is_moe_model", lambda _: True)
     monkeypatch.setattr(afc, "get_mc2_tokens_capacity", lambda: 4096)
@@ -59,7 +61,7 @@ def test_a2_mode_2_selects_megamoe(monkeypatch):
             hidden_size=4096,
             moe_intermediate_size=1536,
             num_experts_per_tok=8,
-            quantize="w8a8_dynamic",
+            quantize=quantize,
         ),
         get_hidden_size=lambda: 4096,
         get_num_experts=lambda: 256,
