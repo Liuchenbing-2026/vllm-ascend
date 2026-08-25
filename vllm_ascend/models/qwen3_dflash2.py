@@ -224,6 +224,8 @@ class CandidateSelector(nn.Module):
 
 
 class DFlash2Qwen3Model(DFlashQwen3Model):
+    decoder_layer_cls = DFlash2Qwen3DecoderLayer
+
     def __init__(
         self,
         *,
@@ -268,6 +270,7 @@ class DFlash2Qwen3Model(DFlashQwen3Model):
 class DFlash2Qwen3ForCausalLM(DFlashQwen3ForCausalLM):
     # Share the target LM head so compute_candidates can top-k the full vocab.
     has_own_lm_head = False
+    model_cls = DFlash2Qwen3Model
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         import vllm.model_executor.models.qwen3_dflash as dflash_mod
