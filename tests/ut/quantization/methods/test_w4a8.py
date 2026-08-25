@@ -220,6 +220,42 @@ class TestAscendW4A8DynamicFusedMoEMethod(TestBase):
         self.assertEqual(list_layer.w13_weight_list[0].dtype, torch.int8)
         self.assertTrue(all(weight.storage_offset() == 0 for weight in list_layer.w13_weight_list))
 
+    @patch(
+        "vllm_ascend.quantization.methods.w4a8._is_a2_megamoe_enabled",
+        return_value=True,
+    )
+    @patch("vllm_ascend.quantization.methods.w4a8.get_ascend_config")
+    @patch("vllm_ascend.quantization.methods.w4a8.maybe_trans_nz")
+    @patch("torch.Tensor.npu", new=lambda self: self, create=True)
+    def test_a2_megamoe_lists_share_storage_and_preserve_fallback(
+        self,
+        mock_maybe_trans_nz,
+        mock_get_ascend_config,
+        mock_is_a2_megamoe_enabled,
+    ):
+        mock_maybe_trans_nz.side_effect = identity
+        mock_get_ascend_config.return_value.enable_fused_mc2 = 1
+        layer = self.build_layer()
+
+        self.quant_method.process_weights_after_loading(layer)
+
+        self.assertEqual(layer.w13_weight.dtype, torch.int32)
+        self.assertEqual(layer.w2_weight.dtype, torch.int32)
+        self.assertEqual(layer.cann_mega_moe_w13_weight_list[0].dtype, torch.int8)
+        self.assertEqual(layer.cann_mega_moe_w2_weight_list[0].dtype, torch.int8)
+        self.assertEqual(
+            layer.cann_mega_moe_w13_weight_list[0].data_ptr(),
+            layer.w13_weight.view(torch.int8)[0].data_ptr(),
+        )
+        self.assertEqual(
+            layer.cann_mega_moe_w2_weight_list[0].data_ptr(),
+            layer.w2_weight.view(torch.int8)[0].data_ptr(),
+        )
+        self.assertTrue(hasattr(layer, "w13_weight_scale"))
+        self.assertTrue(hasattr(layer, "w2_weight_scale"))
+        self.assertTrue(hasattr(layer, "w13_scale_bias"))
+        self.assertTrue(hasattr(layer, "w2_scale_bias"))
+
     def test_pack_to_int32_asserts_packed_dim(self):
         weight = torch.zeros((self.experts, self.output_size, 10), dtype=torch.int8)
         expected_message = f"the last dim of weight needs to be divided by 4 but got shape {weight.shape}"

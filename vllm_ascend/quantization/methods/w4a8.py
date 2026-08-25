@@ -23,7 +23,7 @@ from vllm.config import get_current_vllm_config
 from vllm.distributed import get_tensor_model_parallel_world_size
 
 from vllm_ascend.ascend_config import _MEGA_MOE_SUPPORTED, get_ascend_config
-from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType
+from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType, _is_a2_megamoe_enabled
 from vllm_ascend.distributed.parallel_state import get_mc2_group
 from vllm_ascend.ops.fused_moe.dataclass.fused_experts import build_fused_experts_input
 from vllm_ascend.ops.fused_moe.routed_experts import AscendRoutedExperts  # noqa: F401
@@ -363,8 +363,16 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
                 setattr(layer, f"{tensor_name}_list", expert_list)
                 delattr(layer, tensor_name)
         elif get_ascend_config().enable_fused_mc2 == 1 and _MEGA_MOE_SUPPORTED:
-            layer.cann_mega_moe_w13_weight_list = [weight.clone() for weight in layer.w13_weight.data.unbind(dim=0)]
-            layer.cann_mega_moe_w2_weight_list = [weight.clone() for weight in layer.w2_weight.data.unbind(dim=0)]
+            preserve_a2_fallback = _is_a2_megamoe_enabled(get_ascend_config())
+            if preserve_a2_fallback:
+                # A2 selects MegaMoe only for supported token shapes. Keep the
+                # packed INT32 parameters for the standard MoE fallback while
+                # exposing per-expert INT8 views over the same INT4 storage.
+                layer.cann_mega_moe_w13_weight_list = list(layer.w13_weight.data.unbind(dim=0))
+                layer.cann_mega_moe_w2_weight_list = list(layer.w2_weight.data.unbind(dim=0))
+            else:
+                layer.cann_mega_moe_w13_weight_list = [weight.clone() for weight in layer.w13_weight.data.unbind(dim=0)]
+                layer.cann_mega_moe_w2_weight_list = [weight.clone() for weight in layer.w2_weight.data.unbind(dim=0)]
 
             layer.cann_mega_moe_w13_weight_scale_list = [
                 t.reshape(-1) for t in layer.w13_weight_scale.data.unbind(dim=0)
@@ -376,8 +384,12 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
             layer.cann_mega_moe_w2_scale_bias_list = [
                 t.reshape(-1).to(torch.float32) for t in layer.w2_scale_bias.data.unbind(dim=0)
             ]
-            for tensor_name in tensor_names:
-                delattr(layer, tensor_name)
+            if preserve_a2_fallback:
+                layer.w13_weight.data = self._pack_to_int32(layer.w13_weight.data)
+                layer.w2_weight.data = self._pack_to_int32(layer.w2_weight.data)
+            else:
+                for tensor_name in tensor_names:
+                    delattr(layer, tensor_name)
         else:
             layer.w13_weight.data = self._pack_to_int32(layer.w13_weight.data)
             layer.w2_weight.data = self._pack_to_int32(layer.w2_weight.data)

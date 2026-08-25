@@ -1040,6 +1040,19 @@ class TestTopLevelSwitchTypeValidation(TestBase):
         self.assertEqual(init_ascend_config(vc).mega_moe_max_tokens, 131072)
 
     @_clean_up
+    @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
+    def test_mega_moe_min_tokens_is_typed_and_bounded(self, mock_fix):
+        vc = VllmConfig()
+        vc.additional_config = {"mega_moe_min_tokens": "512"}
+        self.assertEqual(init_ascend_config(vc).mega_moe_min_tokens, 512)
+
+        for invalid_value in (0, 4097):
+            vc = VllmConfig()
+            vc.additional_config = {"mega_moe_min_tokens": invalid_value}
+            with self.assertRaisesRegex(ValueError, "mega_moe_min_tokens must be in"):
+                init_ascend_config(vc)
+
+    @_clean_up
     @patch("vllm_ascend.ascend_config._MEGA_MOE_SUPPORTED", True)
     @patch.object(AscendConfig, "_is_megamoe_supported_by_config", return_value=False)
     @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")

@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from vllm.config import VllmConfig
 
 _MEGA_MOE_SUPPORTED = importlib.util.find_spec("cann_ops_transformer") is not None
+_MEGA_MOE_MIN_TOKENS_UPPER_BOUND = 4096
 
 
 def validate_additional_config_bool(value: Any, path: str) -> bool:
@@ -246,6 +247,7 @@ class AscendConfig:
     mix_placement: bool = False
     pa_shape_list: list[Any] = dataclasses.field(default_factory=list)
     mega_moe_max_tokens: int = 131072
+    mega_moe_min_tokens: int = 512
     ascend_log_path: str = dataclasses.field(
         default_factory=lambda: os.path.join(os.path.expanduser("~"), "ascend", "log", "vllm_ascend")
     )
@@ -322,6 +324,11 @@ class AscendConfig:
     def _validate_user_input_ranges(self):
         if self.weight_nz_mode not in (0, 1, 2):
             raise ValueError(f"weight_nz_mode must be one of 0, 1, or 2; got {self.weight_nz_mode}")
+        if not 1 <= self.mega_moe_min_tokens <= _MEGA_MOE_MIN_TOKENS_UPPER_BOUND:
+            raise ValueError(
+                "mega_moe_min_tokens must be in "
+                f"[1, {_MEGA_MOE_MIN_TOKENS_UPPER_BOUND}], got {self.mega_moe_min_tokens}"
+            )
         return self
 
     # ---- derivations + cross-config downgrades/mutex ----
