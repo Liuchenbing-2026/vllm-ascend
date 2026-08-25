@@ -36,6 +36,18 @@ class TestAttentionGraphHelpers(TestBase):
         self.assertEqual(result.numel(), 4)
         self.assertEqual(graph_params.workspaces[1].numel(), 4)
 
+    def test_full_graph_fia_sparse_config(self):
+        cases = (
+            (False, 2048, (0, attn_module.SWA_INT_MAX, attn_module.SWA_INT_MAX)),
+            (True, 2048, (4, 2048, 0)),
+            (True, None, (3, attn_module.SWA_INT_MAX, attn_module.SWA_INT_MAX)),
+        )
+
+        for causal, sliding_window, expected in cases:
+            with self.subTest(causal=causal, sliding_window=sliding_window):
+                actual = attn_module._get_full_graph_fia_sparse_config(causal, sliding_window)
+                self.assertEqual(actual, expected)
+
     def test_cache_graph_workspace_updates_to_larger_workspace(self):
         graph_params = SimpleNamespace(workspaces={1: torch.empty(4)})
         candidate_workspace = torch.empty(8)
