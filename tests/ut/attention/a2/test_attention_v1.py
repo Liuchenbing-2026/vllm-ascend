@@ -11,8 +11,6 @@ from vllm_ascend.attention.attention_v1 import (
     AscendAttentionMetadataBuilder,
     AscendAttentionState,
     AscendC8AttentionBackendImpl,
-    _fia_requires_mask,
-    _fia_sparse_config,
 )
 from vllm_ascend.attention.utils import (
     AscendCommonAttentionMetadata,
@@ -52,19 +50,6 @@ class TestAttentionGraphHelpers(TestBase):
         vllm_config.speculative_config = None
         with patch("vllm_ascend.attention.utils.get_ascend_device_type", return_value=AscendDeviceType.A2):
             self.assertTrue(using_paged_attention(1, vllm_config, head_size=FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE))
-
-    def test_noncausal_sliding_attention_uses_symmetric_band_mask(self):
-        self.assertTrue(_fia_requires_mask(causal=False, sliding_window=2048))
-        self.assertEqual(
-            _fia_sparse_config(causal=False, sliding_window=2048),
-            (4, 2048, 2048),
-        )
-
-    def test_causal_sliding_attention_keeps_right_window_closed(self):
-        self.assertEqual(
-            _fia_sparse_config(causal=True, sliding_window=2048),
-            (4, 2048, 0),
-        )
 
 
 class TestAscendAttentionBackend(TestBase):

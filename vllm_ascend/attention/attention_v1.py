@@ -147,23 +147,6 @@ class AscendAttentionState(Enum):
     SpecDecoding = 4
 
 
-def _fia_requires_mask(causal: bool, sliding_window: int | None) -> bool:
-    """Whether FIA needs the optimized 2048x2048 attention mask."""
-    return causal or sliding_window is not None
-
-
-def _fia_sparse_config(causal: bool, sliding_window: int | None) -> tuple[int, int, int]:
-    """Return sparse mode, preceding window, and following window for FIA."""
-    if sliding_window is not None:
-        # Non-causal sliding attention is a symmetric band. This matches the
-        # window symmetrization used by upstream FlashAttention.
-        next_tokens = 0 if causal else sliding_window
-        return 4, sliding_window, next_tokens
-    if causal:
-        return 3, SWA_INT_MAX, SWA_INT_MAX
-    return 0, SWA_INT_MAX, SWA_INT_MAX
-
-
 @dataclass
 class AscendMetadata:
     """
@@ -341,13 +324,7 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
         attn_state = common_attn_metadata.attn_state
 
         # Get attn_mask from singleton AttentionMaskBuilder
-        attn_mask = self.attn_mask_builder.get_attention_mask(
-            causal=_fia_requires_mask(
-                common_attn_metadata.causal,
-                getattr(self.kv_cache_spec, "sliding_window", None),
-            ),
-            model_config=self.model_config,
-        )
+        attn_mask = self.attn_mask_builder.get_attention_mask(common_attn_metadata.causal, self.model_config)
 
         # TODO: Yet another unnecessary H2D while we already have a query_start_loc on device
         query_start_loc = query_start_loc_cpu.pin_memory().to(self.device, non_blocking=True)
@@ -622,9 +599,7 @@ class AscendAttentionBackendImpl(AttentionImpl):
                         num_kv_heads,
                         num_heads,
                         scale,
-                        sparse_mode,
-                        pre_tokens,
-                        next_tokens,
+                        sliding_window,
                         sinks,
                         attn_output,
                         softmax_lse,
@@ -654,9 +629,9 @@ class AscendAttentionBackendImpl(AttentionImpl):
                         actual_seq_kvlen=seq_lens,
                         num_key_value_heads=num_kv_heads,
                         num_query_heads=num_heads,
-                        sparse_mode=sparse_mode,
-                        pre_tokens=pre_tokens,
-                        next_tokens=next_tokens,
+                        sparse_mode=4 if sliding_window is not None else 3,
+                        pre_tokens=sliding_window if sliding_window is not None else SWA_INT_MAX,
+                        next_tokens=0,
                         softmax_scale=scale,
                         learnable_sink=sinks,
                         workspace=workspace,
@@ -813,7 +788,7 @@ class AscendAttentionBackendImpl(AttentionImpl):
                         actual_seq_lengths_q = metadata.actual_seq_lengths_q
                         block_tables = metadata.block_tables
                         attn_count = attn_count + 1
-                        if not metadata.causal and sparse_mode != 4:
+                        if not metadata.causal:
                             sparse_mode = 0
                     else:
                         metadata_key = layer_name if layer_name is not None and layer_name in attn_metadata else key
@@ -894,9 +869,9 @@ class AscendAttentionBackendImpl(AttentionImpl):
         softmax_lse = torch.empty(1, dtype=query.dtype, device=query.device)
         input_layout = "TND"
         attn_mask = attn_metadata.attn_mask
-        sparse_mode, pre_tokens, next_tokens = _fia_sparse_config(
-            attn_metadata.causal, self.sliding_window
-        )
+        sparse_mode = 4 if self.sliding_window else 3 if attn_metadata.causal else 0
+        pre_tokens = self.sliding_window or SWA_INT_MAX
+        next_tokens = 0 if self.sliding_window else SWA_INT_MAX
 
         extra_args = {}
         if self.enable_c8_quant and layer is not None:
@@ -1060,9 +1035,6 @@ class AscendAttentionBackendImpl(AttentionImpl):
 
         actual_seq_lengths_q = attn_metadata.actual_seq_lengths_q
         softmax_lse = torch.empty(1, dtype=query.dtype, device=query.device)
-        sparse_mode, pre_tokens, next_tokens = _fia_sparse_config(
-            attn_metadata.causal, self.sliding_window
-        )
         use_max_workspace = self._use_max_workspace_for_fia_graph
         workspace = graph_params.workspaces.get(num_tokens)
         should_update_workspace_cache = False
@@ -1082,9 +1054,9 @@ class AscendAttentionBackendImpl(AttentionImpl):
                 num_key_value_heads=self.num_kv_heads,
                 softmax_scale=self.scale,
                 num_query_heads=self.num_heads,
-                sparse_mode=sparse_mode,
-                pre_tokens=pre_tokens,
-                next_tokens=next_tokens,
+                sparse_mode=4 if self.sliding_window is not None else 3,
+                pre_tokens=self.sliding_window if self.sliding_window is not None else SWA_INT_MAX,
+                next_tokens=0,
                 learnable_sink=self.sinks,
             )
             workspace = cache_graph_workspace(
@@ -1108,9 +1080,9 @@ class AscendAttentionBackendImpl(AttentionImpl):
                 num_key_value_heads=self.num_kv_heads,
                 softmax_scale=self.scale,
                 num_query_heads=self.num_heads,
-                sparse_mode=sparse_mode,
-                pre_tokens=pre_tokens,
-                next_tokens=next_tokens,
+                sparse_mode=4 if self.sliding_window is not None else 3,
+                pre_tokens=self.sliding_window if self.sliding_window is not None else SWA_INT_MAX,
+                next_tokens=0,
                 learnable_sink=self.sinks,
             )
             should_update_workspace_cache = True
@@ -1139,9 +1111,7 @@ class AscendAttentionBackendImpl(AttentionImpl):
                 self.num_kv_heads,
                 self.num_heads,
                 self.scale,
-                sparse_mode,
-                pre_tokens,
-                next_tokens,
+                self.sliding_window,
                 self.sinks,
                 weak_ref_tensors(output),
                 weak_ref_tensors(softmax_lse),
@@ -1161,9 +1131,9 @@ class AscendAttentionBackendImpl(AttentionImpl):
             actual_seq_kvlen=actual_seq_lengths_kv,
             num_key_value_heads=self.num_kv_heads,
             num_query_heads=self.num_heads,
-            sparse_mode=sparse_mode,
-            pre_tokens=pre_tokens,
-            next_tokens=next_tokens,
+            sparse_mode=4 if self.sliding_window is not None else 3,
+            pre_tokens=self.sliding_window if self.sliding_window is not None else SWA_INT_MAX,
+            next_tokens=0,
             softmax_scale=self.scale,
             learnable_sink=self.sinks,
             workspace=workspace,
@@ -1337,9 +1307,10 @@ class AscendAttentionBackendImpl(AttentionImpl):
             actual_seq_qlen = attn_metadata.actual_seq_lengths_q
             if attn_metadata.attn_state == AscendAttentionState.DecodeOnly:
                 actual_seq_qlen = torch.tensor([1] * len(attn_metadata.seq_lens_list), dtype=torch.int32).cumsum(dim=0)
-            sparse_mode, pre_tokens, next_tokens = _fia_sparse_config(
-                attn_metadata.causal, self.sliding_window
-            )
+            if self.sliding_window is not None:
+                sparse_mode = 4
+            else:
+                sparse_mode = 3
             attn_output, _ = torch_npu.npu_fused_infer_attention_score_v2(
                 query,
                 key.contiguous(),
@@ -1347,8 +1318,8 @@ class AscendAttentionBackendImpl(AttentionImpl):
                 num_query_heads=self.num_heads,
                 num_key_value_heads=self.num_kv_heads,
                 input_layout="TND",
-                pre_tokens=pre_tokens,
-                next_tokens=next_tokens,
+                pre_tokens=self.sliding_window if self.sliding_window is not None else SWA_INT_MAX,
+                next_tokens=0,
                 atten_mask=attn_metadata.attn_mask,
                 sparse_mode=sparse_mode,
                 softmax_scale=self.scale,
@@ -1359,7 +1330,7 @@ class AscendAttentionBackendImpl(AttentionImpl):
                 learnable_sink=self.sinks,
             )
         else:
-            if not attn_metadata.causal and self.sliding_window is None:
+            if not attn_metadata.causal:
                 attn_output, _ = torch_npu.npu_fused_infer_attention_score(
                     query=query,
                     key=key,
@@ -1389,7 +1360,7 @@ class AscendAttentionBackendImpl(AttentionImpl):
                     num_heads=self.num_heads,
                     scale=self.scale,
                     pre_tokens=self.sliding_window,
-                    next_tokens=0 if attn_metadata.causal else self.sliding_window,
+                    next_tokens=0,
                     sparse_mode=4,
                 )
             else:
