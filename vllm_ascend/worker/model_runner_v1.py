@@ -747,7 +747,9 @@ class NPUModelRunner(GPUModelRunner):
             self._dummy_run(1, is_idle_dp_dummy=True)
 
     def _get_step_moe_comm_type_override(self) -> MoECommType | None:
-        needs_fallback = _is_a2_megamoe_enabled(self.ascend_config) and not self._all_dp_ranks_have_tokens
+        needs_fallback = _is_a2_megamoe_enabled(self.ascend_config) and (
+            not self._dp_tokens_are_uniform or not self._all_dp_ranks_have_tokens
+        )
         return MoECommType.MC2 if needs_fallback else None
 
     def get_model(self) -> nn.Module:
