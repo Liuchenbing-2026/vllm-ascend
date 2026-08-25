@@ -220,6 +220,7 @@ class TestAscendW4A8DynamicFusedMoEMethod(TestBase):
         self.assertEqual(list_layer.w13_weight_list[0].dtype, torch.int8)
         self.assertTrue(all(weight.storage_offset() == 0 for weight in list_layer.w13_weight_list))
 
+    @patch("vllm_ascend.quantization.methods.w4a8._MEGA_MOE_SUPPORTED", True)
     @patch(
         "vllm_ascend.quantization.methods.w4a8._is_a2_megamoe_enabled",
         return_value=True,
