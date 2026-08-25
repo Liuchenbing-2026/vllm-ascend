@@ -57,6 +57,7 @@ _DISPATCH_FFN_COMBINE_MODE = 1
 _CANN_MEGAMOE_MODE = 2
 _CANN_MEGAMOE_MODULE_NAME = "cann_ops_transformer.ops"
 _CANN_MEGAMOE_DISPATCH_QUANT_MODE = 2
+_CANN_MEGAMOE_W4A8_WEIGHT_TYPE = 285
 
 
 def _as_tensor_list(value: torch.Tensor | list[torch.Tensor], name: str) -> list[torch.Tensor]:
@@ -425,7 +426,7 @@ class FusedMC2CommImpl(MoECommMethod):
             )
 
         hidden = int(self.moe_config.hidden_dim)
-        intermediate_hidden = int(self.moe_config.intermediate_size_per_partition)
+        intermediate_hidden = int(weight2[0].shape[0])
         required_buffer_mb = int(
             get_buffer_size(
                 ep_world_size,
@@ -490,18 +491,19 @@ class FusedMC2CommImpl(MoECommMethod):
         fused_experts_input: MoEFusedExpertsInput,
         topk_ids: torch.Tensor,
     ):
-        if fused_experts_input.quant.quant_type != QuantType.W8A8:
+        quant_type = fused_experts_input.quant.quant_type
+        if quant_type not in (QuantType.W8A8, QuantType.W4A8):
             raise RuntimeError(
-                "CANN MegaMoe mode 2 currently supports only W8A8 routed experts, got "
-                f"{fused_experts_input.quant.quant_type}."
+                "CANN MegaMoe mode 2 currently supports only W8A8/W4A8 routed experts, got "
+                f"{quant_type}."
             )
         if fused_experts_input.hidden_states.dtype != torch.bfloat16:
             raise ValueError(
-                "CANN MegaMoe A8W8 requires BF16 hidden states, got "
+                "CANN MegaMoe requires BF16 hidden states, got "
                 f"{fused_experts_input.hidden_states.dtype}."
             )
         if fused_experts_input.weights.w1_scale is None or fused_experts_input.weights.w2_scale is None:
-            raise ValueError("CANN MegaMoe W8A8 requires both w1_scale and w2_scale.")
+            raise ValueError("CANN MegaMoe requires both w1_scale and w2_scale.")
 
         weight1 = _as_tensor_list(fused_experts_input.weights.w1, "w1")
         weight2 = _as_tensor_list(fused_experts_input.weights.w2, "w2")
@@ -520,10 +522,16 @@ class FusedMC2CommImpl(MoECommMethod):
                 f"w2={len(weight2)}, w2_scale={len(weight_scales2)}."
             )
         if any(weight.dtype != torch.int8 for weight in (*weight1, *weight2)):
-            raise ValueError("CANN MegaMoe W8A8 requires INT8 expert weights.")
+            raise ValueError("CANN MegaMoe requires INT8 expert weight storage.")
         valid_scale_dtypes = {torch.int64, torch.uint64}
         if any(scale.dtype not in valid_scale_dtypes for scale in (*weight_scales1, *weight_scales2)):
-            raise ValueError("CANN MegaMoe W8A8 requires UINT64-compatible expert scales.")
+            raise ValueError("CANN MegaMoe requires UINT64-compatible expert scales.")
+
+        l1_bias = fused_experts_input.weights.w1_scale_bias
+        l2_bias = fused_experts_input.weights.w2_scale_bias
+        weight_type = _CANN_MEGAMOE_W4A8_WEIGHT_TYPE if quant_type == QuantType.W4A8 else None
+        if quant_type == QuantType.W4A8 and (l1_bias is None or l2_bias is None):
+            raise ValueError("CANN MegaMoe W4A8 requires both w1_scale_bias and w2_scale_bias.")
 
         sym_buffer = self._get_cann_symm_buffer(fused_experts_input, topk_ids, weight1, weight2)
         _, _, mega_moe = self._load_cann_megamoe_ops()
@@ -552,9 +560,13 @@ class FusedMC2CommImpl(MoECommMethod):
             sym_buffer,
             l1_weights_sf=weight_scales1,
             l2_weights_sf=weight_scales2,
+            l1_bias=l1_bias,
+            l2_bias=l2_bias,
             x_active_mask=x_active_mask,
             activation=_normalize_cann_megamoe_activation(fused_experts_input.activation),
             activation_clamp=activation_clamp,
+            weight1_type=weight_type,
+            weight2_type=weight_type,
         )
         return output[:original_num_tokens], expert_tokens
 

@@ -34,8 +34,11 @@ class MoECommType(Enum):
 _CANN_MEGAMOE_SUPPORTED_EP_SIZES = {2, 4, 8, 16, 32}
 _CANN_MEGAMOE_SUPPORTED_QUANT_NAMES = {
     "w8a8",
+    "w4a8",
     "w8a8_dynamic",
+    "w4a8_dynamic",
     "quanttype.w8a8",
+    "quanttype.w4a8",
 }
 
 
@@ -53,7 +56,10 @@ def _get_cann_megamoe_quant_name(vllm_config: VllmConfig, quant_type: Any) -> st
         return None
 
     quant_values = {str(value).lower() for value in quant_description.values()}
-    return next((name for name in ("w8a8_dynamic", "w8a8") if name in quant_values), None)
+    return next(
+        (name for name in ("w8a8_dynamic", "w4a8_dynamic", "w8a8", "w4a8") if name in quant_values),
+        None,
+    )
 
 
 def _cann_megamoe_supported_by_config(
@@ -401,7 +407,7 @@ def select_moe_comm_method(num_tokens: int, vllm_config: VllmConfig, is_draft_mo
     1. Non-MoE models return `None`.
     2. Without expert parallel, fall back to all-gather.
     3. On A2 with expert parallel, MC2 mode 2 selects CANN MegaMoe for a
-       supported W8A8 main model. Other configurations retain legacy MC2 or
+       supported W8A8 or W4A8 main model. Other configurations retain legacy MC2 or
        all-gather selection.
     4. On A3 with expert parallel, prefer fused MC2 when using w8a8_dynamic
        quantization with small EP size, no dynamic_eplb, and not in MTP

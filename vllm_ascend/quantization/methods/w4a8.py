@@ -25,11 +25,11 @@ from vllm.config import get_current_vllm_config
 from vllm.distributed import get_tensor_model_parallel_world_size
 
 from vllm_ascend.ascend_config import get_ascend_config
-from vllm_ascend.ascend_forward_context import _EXTRA_CTX
+from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType, _is_a2_megamoe_enabled
 from vllm_ascend.distributed.parallel_state import get_mc2_group
 from vllm_ascend.ops.fused_moe.experts_selector import select_experts
 from vllm_ascend.ops.fused_moe.moe_runtime_args import build_fused_experts_input
-from vllm_ascend.utils import COMPRESSED_TENSORS_METHOD, maybe_trans_nz
+from vllm_ascend.utils import ACL_FORMAT_FRACTAL_NZ, COMPRESSED_TENSORS_METHOD, maybe_trans_nz
 
 from .base import AscendLinearScheme, AscendMoEScheme, QuantType, get_moe_num_logical_experts
 from .registry import register_scheme
@@ -558,6 +558,13 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
             w2_scale = layer.w2_weight_scale_list
             w1_scale_bias = layer.w13_scale_bias_list
             w2_scale_bias = layer.w2_scale_bias_list
+        elif _EXTRA_CTX.moe_comm_type == MoECommType.FUSED_MC2 and self._cann_megamoe_enabled():
+            w1 = layer.cann_mega_moe_w13_weight_list
+            w1_scale = layer.cann_mega_moe_w13_weight_scale_list
+            w2 = layer.cann_mega_moe_w2_weight_list
+            w2_scale = layer.cann_mega_moe_w2_weight_scale_list
+            w1_scale_bias = layer.cann_mega_moe_w13_scale_bias_list
+            w2_scale_bias = layer.cann_mega_moe_w2_scale_bias_list
         else:
             w1 = [layer.w13_weight]
             w1_scale = [layer.w13_weight_scale]
@@ -719,10 +726,43 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
         # Packs 2 int4 into 1 int8 on-the-fly to mirror the modelslim new_quant_version path
         layer.w13_weight.data = self.pack_int4_to_int8(layer.w13_weight.data)
         layer.w2_weight.data = self.pack_int4_to_int8(layer.w2_weight.data)
-        layer.w13_weight.data = maybe_trans_nz(layer.w13_weight.data)
-        layer.w2_weight.data = maybe_trans_nz(layer.w2_weight.data)
-        layer.w13_weight.data = self.pack_to_int32(layer.w13_weight.data)
-        layer.w2_weight.data = self.pack_to_int32(layer.w2_weight.data)
+        if self._cann_megamoe_enabled() and not self.dynamic_eplb:
+            self._build_cann_megamoe_weights(layer)
+        else:
+            layer.w13_weight.data = maybe_trans_nz(layer.w13_weight.data)
+            layer.w2_weight.data = maybe_trans_nz(layer.w2_weight.data)
+            layer.w13_weight.data = self.pack_to_int32(layer.w13_weight.data)
+            layer.w2_weight.data = self.pack_to_int32(layer.w2_weight.data)
+
+    def _build_cann_megamoe_weights(self, layer):
+        layer.cann_mega_moe_w13_weight_list = [
+            torch_npu.npu_format_cast(weight.clone(), ACL_FORMAT_FRACTAL_NZ)
+            for weight in layer.w13_weight.data.unbind(dim=0)
+        ]
+        layer.cann_mega_moe_w2_weight_list = [
+            torch_npu.npu_format_cast(weight.clone(), ACL_FORMAT_FRACTAL_NZ)
+            for weight in layer.w2_weight.data.unbind(dim=0)
+        ]
+        layer.cann_mega_moe_w13_weight_scale_list = [
+            scale.reshape(-1).contiguous() for scale in layer.w13_weight_scale.data.unbind(dim=0)
+        ]
+        layer.cann_mega_moe_w2_weight_scale_list = [
+            scale.reshape(-1).contiguous() for scale in layer.w2_weight_scale.data.unbind(dim=0)
+        ]
+        if not hasattr(layer, "w13_scale_bias") or not hasattr(layer, "w2_scale_bias"):
+            raise RuntimeError("CANN MegaMoe W4A8 requires w13_scale_bias and w2_scale_bias.")
+        layer.cann_mega_moe_w13_scale_bias_list = [
+            bias.reshape(-1).to(torch.float32).contiguous() for bias in layer.w13_scale_bias.data.unbind(dim=0)
+        ]
+        layer.cann_mega_moe_w2_scale_bias_list = [
+            bias.reshape(-1).to(torch.float32).contiguous() for bias in layer.w2_scale_bias.data.unbind(dim=0)
+        ]
+        layer.w13_weight.data = self.pack_to_int32(maybe_trans_nz(layer.w13_weight.data))
+        layer.w2_weight.data = self.pack_to_int32(maybe_trans_nz(layer.w2_weight.data))
+
+    @staticmethod
+    def _cann_megamoe_enabled() -> bool:
+        return _is_a2_megamoe_enabled(get_ascend_config())
 
     def process_weights_after_loading_modelslim(self, layer):
         layer.w13_weight.data = layer.w13_weight.data.transpose(1, 2).contiguous()
@@ -749,10 +789,9 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
 
         if self.is_per_channel_weight:
             layer.w13_weight_scale.data = self.maybe_squeeze_per_channel_weight_scale(layer.w13_weight_scale.data)
-        layer.w13_weight.data = maybe_trans_nz(layer.w13_weight.data)
-        layer.w2_weight.data = maybe_trans_nz(layer.w2_weight.data)
-
         if self.dynamic_eplb:
+            layer.w13_weight.data = maybe_trans_nz(layer.w13_weight.data)
+            layer.w2_weight.data = maybe_trans_nz(layer.w2_weight.data)
             layer.w13_weight_list = [weight.clone() for weight in layer.w13_weight.data.unbind(dim=0)]
             layer.w2_weight_list = [weight.clone() for weight in layer.w2_weight.data.unbind(dim=0)]
             layer.w13_weight_scale_list = [weight.clone() for weight in layer.w13_weight_scale.data.unbind(dim=0)]
@@ -773,6 +812,10 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
             del layer.w2_weight_scale
             del layer.w13_scale_bias
             del layer.w2_scale_bias
+        elif self._cann_megamoe_enabled():
+            self._build_cann_megamoe_weights(layer)
         else:
+            layer.w13_weight.data = maybe_trans_nz(layer.w13_weight.data)
+            layer.w2_weight.data = maybe_trans_nz(layer.w2_weight.data)
             layer.w13_weight.data = self.pack_to_int32(layer.w13_weight.data)
             layer.w2_weight.data = self.pack_to_int32(layer.w2_weight.data)
