@@ -2317,8 +2317,9 @@ class NPUModelRunner(GPUModelRunner):
         # encoder inputs are present. Use eager for the first pass.
         num_encoder_reqs = len(scheduler_output.scheduled_encoder_inputs)
         has_encoder_input = self.model_config.is_encoder_decoder and num_encoder_reqs > 0
-        skip_compiled_megamoe_runtime = _is_a2_megamoe_enabled(self.ascend_config) and not (
-            self._a2_megamoe_decode_graph_safe and cudagraph_mode != CUDAGraphMode.NONE
+        skip_compiled_megamoe_runtime = (
+            _is_a2_megamoe_enabled(self.ascend_config)
+            and cudagraph_mode == CUDAGraphMode.NONE
         )
 
         # Run forward pass
@@ -3053,18 +3054,13 @@ class NPUModelRunner(GPUModelRunner):
             if num_tokens_across_dp is not None:
                 dp_rank = self.parallel_config.data_parallel_rank
                 num_tokens_padded = int(num_tokens_across_dp[dp_rank].item())
-                unsafe_dp_megamoe_graph = self._get_step_moe_comm_type_override() is not None
-                if unsafe_dp_megamoe_graph:
-                    # Non-uniform or idle DP steps use standard MC2 and eager
-                    # execution so every rank follows the same collective path.
-                    cudagraph_mode = CUDAGraphMode.NONE
-                    batch_descriptor = BatchDescriptor(num_tokens_padded)
-                else:
-                    # Re-dispatch with DP padding
-                    cudagraph_mode, batch_descriptor = dispatch_cudagraph(
-                        num_tokens_padded,
-                        valid_modes={synced_cudagraph_mode},
-                    )
+                # The decode graph captures a uniformly padded collective.
+                # Keep the graph and pad idle ranks so every rank replays the
+                # same operator sequence and graph entry.
+                cudagraph_mode, batch_descriptor = dispatch_cudagraph(
+                    num_tokens_padded,
+                    valid_modes={synced_cudagraph_mode},
+                )
                 # Assert to make sure the agreed upon token count is correct otherwise
                 # num_tokens_across_dp will no-longer be valid
                 assert batch_descriptor.num_tokens == num_tokens_padded
