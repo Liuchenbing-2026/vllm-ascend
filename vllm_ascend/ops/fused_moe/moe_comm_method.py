@@ -455,7 +455,7 @@ class FusedMC2CommImpl(MoECommMethod):
             logger.info(
                 "CANN MegaMoe sym-buffer alloc: ep_rank=%s ep_world=%d "
                 "experts=%d max_tokens_per_rank=%d dummy_tokens=%d "
-                "buffer_max_recv_tokens=%d runtime_max_recv_tokens=auto buffer=%d MB",
+                "max_recv_tokens=%d buffer=%d MB",
                 self.token_dispatcher.ep_rank_id,
                 ep_world_size,
                 num_experts,
@@ -471,9 +471,7 @@ class FusedMC2CommImpl(MoECommMethod):
                 num_topk,
                 hidden,
                 intermediate_hidden,
-                # Size HCCL for the worst case, but let CANN derive the
-                # per-call receive bound from the current token count.
-                max_recv_token_num=0,
+                max_recv_token_num=buffer_max_recv_token_num,
                 dispatch_quant_mode=_CANN_MEGAMOE_DISPATCH_QUANT_MODE,
                 dispatch_quant_out_dtype=torch.int8,
             )
