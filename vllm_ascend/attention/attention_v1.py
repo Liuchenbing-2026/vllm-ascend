@@ -335,7 +335,14 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
         attn_mask = self.attn_mask_builder.get_attention_mask(common_attn_metadata.causal, self.model_config)
 
         # TODO: Yet another unnecessary H2D while we already have a query_start_loc on device
-        query_start_loc = query_start_loc_cpu.pin_memory().to(self.device, non_blocking=True)
+        if self.speculative_config and self.speculative_config.parallel_drafting:
+            # DFlash prepares the complete real-and-padded query_start_loc in
+            # its input buffer before metadata construction. Reuse that stable
+            # device tensor instead of issuing one pinned CPU-to-NPU copy per
+            # attention group for each of the two FULL-graph metadata builds.
+            query_start_loc = common_attn_metadata.query_start_loc[: num_reqs + 1]
+        else:
+            query_start_loc = query_start_loc_cpu.pin_memory().to(self.device, non_blocking=True)
 
         actual_seq_lengths_q = query_start_loc_cpu[1:].tolist()
         seq_lens_list = seq_lens.tolist()
