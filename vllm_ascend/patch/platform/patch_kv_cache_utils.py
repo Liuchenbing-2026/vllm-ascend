@@ -108,7 +108,65 @@ def _try_get_full_allocation_fallback_groups(
     return vllm.v1.core.kv_cache_utils._get_kv_cache_groups_uniform_type(uniform_spec)
 
 
+def _maybe_promote_dflash_swa_for_full_allocation(
+    vllm_config: VllmConfig,
+    kv_cache_spec: dict[str, KVCacheSpec],
+) -> None:
+    """Retain all DFlash draft KV blocks for a controlled diagnostic.
+
+    Ascend MRV1 currently executes an explicitly non-causal DFlash sliding
+    layer through FIA sparse mode 0.  Without the proposer-side window
+    adapter, that operator reads the full block table even though
+    ``SlidingWindowManager`` may already have freed old draft blocks.  The
+    opt-in below changes only block accounting: it routes DFlash
+    ``SlidingWindowSpec`` layers to ``FullAttentionManager`` while retaining
+    ``sliding_window`` on the spec.  Hidden-state cache specs remain separate.
+
+    This is deliberately an ``additional_config`` diagnostic rather than a
+    default because it increases per-request KV reservation and does not by
+    itself implement non-causal sliding-window compute.
+    """
+    additional_config = vllm_config.additional_config or {}
+    if not additional_config.get("dflash_full_kv_allocation", False):
+        return
+
+    speculative_config = vllm_config.speculative_config
+    if speculative_config is None or speculative_config.method != "dflash":
+        raise ValueError(
+            "dflash_full_kv_allocation requires speculative method dflash."
+        )
+
+    promoted = 0
+    for layer_name, spec in list(kv_cache_spec.items()):
+        if not isinstance(spec, SlidingWindowSpec):
+            continue
+        kv_cache_spec[layer_name] = FullAttentionSpec(
+            block_size=spec.block_size,
+            num_kv_heads=spec.num_kv_heads,
+            head_size=spec.head_size,
+            head_size_v=spec.head_size_v,
+            dtype=spec.dtype,
+            kv_quant_mode=spec.kv_quant_mode,
+            page_size_padded=spec.page_size_padded,
+            indexes_kv_by_block_stride=spec.indexes_kv_by_block_stride,
+            sliding_window=spec.sliding_window,
+        )
+        promoted += 1
+
+    if promoted == 0:
+        raise ValueError(
+            "dflash_full_kv_allocation was requested, but no "
+            "SlidingWindowSpec was found."
+        )
+    vllm.v1.core.kv_cache_utils.logger.warning(
+        "DFlash diagnostic: retaining full KV history for %d sliding-window "
+        "draft layers; attention compute is otherwise unchanged.",
+        promoted,
+    )
+
+
 def get_kv_cache_groups(vllm_config: VllmConfig, kv_cache_spec: dict[str, KVCacheSpec]) -> list[KVCacheGroupSpec]:
+    _maybe_promote_dflash_swa_for_full_allocation(vllm_config, kv_cache_spec)
     try:
         return _orig_get_kv_cache_groups(vllm_config, kv_cache_spec)
     except NotImplementedError as exc:
