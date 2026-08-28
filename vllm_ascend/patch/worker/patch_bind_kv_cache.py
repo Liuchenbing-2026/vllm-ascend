@@ -42,9 +42,12 @@ def bind_kv_cache(
         for layer_name in layer_names:
             runner_kv_caches.append(kv_caches[layer_name])
 
-    # Bind kv_caches to forward context
+    # Bind kv_caches to forward context. Each layer unpacks its own raw
+    # allocation into the view(s) it needs -- Mamba/GDN layers split the page
+    # into per-state conv/ssm tensors -- so go through the layer hook rather
+    # than assigning the raw tensor.
     for layer_name, kv_cache in kv_caches.items():
-        forward_context[layer_name].kv_cache = kv_cache
+        forward_context[layer_name].bind_kv_cache(kv_cache)
 
 
 utils.bind_kv_cache = bind_kv_cache
