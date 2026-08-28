@@ -35,6 +35,7 @@ if not is_310p():
     import vllm_ascend.patch.worker.patch_qwen3_5  # noqa
     import vllm_ascend.patch.worker.patch_qwen3_dflash  # noqa
     import vllm_ascend.patch.worker.patch_qwen3vl  # noqa
+    import vllm_ascend.patch.worker.patch_qwen4_exp  # noqa
 else:
     import vllm_ascend.patch.worker.patch_idex_310  # noqa
 import vllm_ascend.patch.worker.patch_rejection_sampler  # noqa
