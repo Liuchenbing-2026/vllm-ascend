@@ -75,6 +75,7 @@ from vllm.v1.attention.selector import get_attn_backend  # type: ignore
 from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.v1.kv_cache_interface import (
     AttentionSpec,
+    CircularBufferSpec,
     EncoderOnlyAttentionSpec,
     HiddenStateCacheSpec,
     KVCacheConfig,
@@ -4807,8 +4808,17 @@ class NPUModelRunner(GPUModelRunner):
                 if spec := mamba_module.get_kv_cache_spec(self.vllm_config):
                     kv_cache_spec[layer_name] = spec
                     mamba_page_size_padded = spec.page_size_bytes
+            # CSA+linear models (QSA main KV + compressed cache + compressor
+            # ring alongside a linear/Mamba mixer) are grouped by vLLM's own
+            # _get_kv_cache_groups_csa_linear, which unifies these page sizes
+            # itself and rejects specs that arrive pre-padded. Detect that
+            # layout the way vLLM does -- by the compressor ring -- and leave
+            # the sizing to the dedicated path.
+            is_csa_linear = any(type(spec) is CircularBufferSpec for spec in kv_cache_spec.values())
             # align attn_page_size to mamba_page_size_padded
             for layer_name in attn_layer_names:
+                if is_csa_linear:
+                    continue
                 if kv_cache_spec[layer_name].page_size_bytes < mamba_page_size_padded:  # type: ignore[attr-defined]
                     object.__setattr__(kv_cache_spec[layer_name], "page_size_padded", mamba_page_size_padded)
 

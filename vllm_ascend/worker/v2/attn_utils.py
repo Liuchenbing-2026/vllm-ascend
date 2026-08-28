@@ -19,7 +19,7 @@
 
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import fields as dc_fields, replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -31,6 +31,7 @@ from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.utils.torch_utils import get_dtype_size, get_kv_cache_torch_dtype
 from vllm.v1.attention.backend import AttentionBackend
 from vllm.v1.kv_cache_interface import (
+    CircularBufferSpec,
     AttentionSpec,
     EncoderOnlyAttentionSpec,
     KVCacheConfig,
@@ -50,6 +51,7 @@ from vllm_ascend.attention.utils import (
     get_sfa_qsfa_packed_head_dim,
 )
 from vllm_ascend.core.kv_cache_interface import (
+    get_storage_block_size,
     AscendMLAAttentionSpec,
     AscendSFAIndexerCacheSpec,
     AscendSlidingWindowMLASpec,
@@ -141,6 +143,15 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
             attention_layer_names.append(layer_name)
             continue
 
+    if mamba_specs and any(
+        type(spec) is CircularBufferSpec
+        for spec in (*kv_cache_spec.values(), *mamba_specs.values())
+    ):
+        # CSA+linear model: vLLM's dedicated grouping path unifies page sizes
+        # itself and rejects specs that were padded beforehand.
+        kv_cache_spec.update(mamba_specs)
+        return kv_cache_spec
+
     if mamba_specs:
         common_page_size = max(spec.page_size_bytes for spec in (*kv_cache_spec.values(), *mamba_specs.values()))
         for layer_name in attention_layer_names:
@@ -150,11 +161,12 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
             # the backend's logical cache shape starts with the K/V dimension.
             # Consequently, padded pages are indexed by their runtime block
             # stride and are safe for hybrid Attention/Mamba allocations.
-            kv_cache_spec[layer_name] = replace(
-                spec,
-                page_size_padded=page_size_padded,
-                indexes_kv_by_block_stride=True,
-            )
+            spec_changes = {"page_size_padded": page_size_padded}
+            # `indexes_kv_by_block_stride` moved from AttentionSpec onto the
+            # attention backend; only set it on specs that still declare it.
+            if any(f.name == "indexes_kv_by_block_stride" for f in dc_fields(spec)):
+                spec_changes["indexes_kv_by_block_stride"] = True
+            kv_cache_spec[layer_name] = replace(spec, **spec_changes)
         for layer_name, spec in mamba_specs.items():
             if spec.page_size_bytes < common_page_size:
                 mamba_specs[layer_name] = replace(spec, page_size_padded=common_page_size)
@@ -227,7 +239,7 @@ def build_attn_metadata(
             if model_specific_attn_metadata is not None
             else {}
         )
-        common_attn_metadata = AscendCommonAttentionMetadata(
+        common_attn_metadata_kwargs = dict(
             query_start_loc=query_start_loc_gpu,
             query_start_loc_cpu=query_start_loc_cpu,
             seq_lens_cpu=seq_lens_cpu,
@@ -245,8 +257,14 @@ def build_attn_metadata(
             is_prefilling=is_prefilling,
             max_seq_len=max_seq_len,
             causal=group_causal,
-            **common_attn_metadata_extra_kwargs,
         )
+        # The model-specific metadata is authoritative for the fields it
+        # provides; the named arguments above are the fallback for callers that
+        # have no ModelSpecificAttnMetadata. Overriding rather than splatting
+        # keeps the two from colliding (e.g. `is_prefilling`, which
+        # MambaHybridAttnMetadata always supplies).
+        common_attn_metadata_kwargs.update(common_attn_metadata_extra_kwargs)
+        common_attn_metadata = AscendCommonAttentionMetadata(**common_attn_metadata_kwargs)
 
         for attn_group in attn_groups[i]:
             attn_metadata_builder = attn_group.get_metadata_builder(0)
@@ -725,9 +743,10 @@ def _reshape_kv_cache_v2(
             continue
 
         group_spec = group.kv_cache_spec
+        group_storage_block_size = get_storage_block_size(group_spec)
         kernel_block_size = (
-            group_spec.storage_block_size
-            if group_spec.storage_block_size != group_spec.block_size
+            group_storage_block_size
+            if group_storage_block_size != group_spec.block_size
             else kernel_block_sizes[group.kv_cache_group_id]
         )
 

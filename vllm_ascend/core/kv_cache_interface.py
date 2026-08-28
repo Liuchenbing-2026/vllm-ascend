@@ -23,11 +23,16 @@ def get_storage_block_size(kv_cache_spec: KVCacheSpec) -> int:
     """Return the physical token rows represented by one scheduler block."""
     if isinstance(kv_cache_spec, UniformTypeKVCacheSpecs):
         storage_block_sizes = {
-            getattr(spec, "storage_block_size", spec.block_size) for spec in kv_cache_spec.kv_cache_specs.values()
+            get_storage_block_size(spec) for spec in kv_cache_spec.kv_cache_specs.values()
         }
         assert len(storage_block_sizes) == 1, "All specs in one KV cache group must use the same storage block size."
         return storage_block_sizes.pop()
-    return getattr(kv_cache_spec, "storage_block_size", kv_cache_spec.block_size)
+    try:
+        return kv_cache_spec.storage_block_size
+    except AttributeError:
+        # Specs without the Ascend-specific property express the same quantity
+        # as num_states (= block_size // tokens_per_state).
+        return kv_cache_spec.num_states
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -49,8 +54,12 @@ class AscendMLAAttentionSpec(MLAAttentionSpec):
 
     @property
     def storage_block_size(self) -> int:
-        """Return the physical block size consumed by Ascend kernels."""
-        return self.block_size // self.compress_ratio
+        """Return the physical block size consumed by Ascend kernels.
+
+        Upstream renamed the per-state token count from `compress_ratio` to
+        `tokens_per_state`; `num_states` is block_size // tokens_per_state.
+        """
+        return self.num_states
 
     @property
     def page_size_bytes(self) -> int:
