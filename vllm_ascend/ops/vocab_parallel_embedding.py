@@ -58,6 +58,8 @@ class AscendVocabParallelEmbedding(VocabParallelEmbedding):
         padding_size: int = DEFAULT_VOCAB_PADDING_SIZE,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
+        *,
+        quant_method: QuantizeMethodBase | None = None,
     ):
         nn.Module.__init__(self)
         self.forward_type = None
@@ -91,8 +93,7 @@ class AscendVocabParallelEmbedding(VocabParallelEmbedding):
             self.tp_size,
         )
         self.embedding_dim = embedding_dim
-        quant_method = None
-        if quant_config is not None:
+        if quant_method is None and quant_config is not None:
             quant_method = quant_config.get_quant_method(self, prefix=prefix)
         if quant_method is None:
             quant_method = UnquantizedEmbeddingMethod()
@@ -363,11 +364,17 @@ class AscendLogitsProcessor(LogitsProcessor):
         hidden_states: torch.Tensor,
         lm_head: AscendParallelLMHead,
         embedding_bias: torch.Tensor | None = None,
+        skip_gather: bool = False,
     ) -> torch.Tensor | None:
         if lmhead_tp_enable():
+            if skip_gather:
+                raise NotImplementedError(
+                    "skip_gather has no defined meaning with lm-head tensor "
+                    "parallelism, which gathers by construction."
+                )
             return self._get_logits_lmheadtp(hidden_states, lm_head, embedding_bias)
         else:
-            return self._get_logits_normal(hidden_states, lm_head, embedding_bias)
+            return self._get_logits_normal(hidden_states, lm_head, embedding_bias, skip_gather)
 
     def _get_logits_lmheadtp(
         self,
@@ -395,8 +402,12 @@ class AscendLogitsProcessor(LogitsProcessor):
         hidden_states: torch.Tensor,
         lm_head: AscendParallelLMHead,
         embedding_bias: torch.Tensor | None,
+        skip_gather: bool = False,
     ) -> torch.Tensor | None:
         logits = self._apply_head(lm_head, hidden_states, embedding_bias)
+        if skip_gather:
+            # Caller wants this rank's local, untrimmed logits.
+            return logits
         # Gather logits for tensor parallel
         if not get_ascend_config().enable_reduce_sample:
             logits = self._gather_logits(logits)
