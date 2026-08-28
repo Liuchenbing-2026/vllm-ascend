@@ -62,7 +62,12 @@ def _get_graph_update_backend(
     for groups in attn_groups:
         for group in groups:
             backend = group.backend
-            if backend.get_impl_cls() is not None:
+            try:
+                impl_cls = backend.get_impl_cls()
+            except NotImplementedError:
+                # Out-of-band state caches (e.g. QSA side caches) have no impl.
+                impl_cls = None
+            if impl_cls is not None:
                 return backend
     raise RuntimeError("No executable attention backend is available for full-graph parameter updates.")
 
@@ -176,6 +181,7 @@ class ModelAclGraphManager(ModelCudaGraphManager):
         block_tables: BlockTables,
         attn_groups: list[list[AttentionGroup]],
         kv_cache_config: KVCacheConfig,
+        pcp_manager=None,
         has_lora: bool = False,
         use_aux_hidden_state_outputs: bool = False,
         lora_capture_hook: Callable[[int, int, int], None] | None = None,
@@ -183,6 +189,7 @@ class ModelAclGraphManager(ModelCudaGraphManager):
     ) -> None:
         """Capture CUDA graphs for model forward pass."""
         model = ModelWithContext(model)
+        extra = {"pcp_manager": pcp_manager} if pcp_manager is not None else {}
         with communicator_switch():
             return super().capture(
                 model,
@@ -193,6 +200,7 @@ class ModelAclGraphManager(ModelCudaGraphManager):
                 attn_groups,
                 kv_cache_config,
                 has_lora=has_lora,
+                **extra,
                 use_aux_hidden_state_outputs=use_aux_hidden_state_outputs,
                 lora_capture_hook=lora_capture_hook,
                 progress_bar_desc=progress_bar_desc,

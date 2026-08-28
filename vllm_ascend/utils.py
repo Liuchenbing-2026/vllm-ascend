@@ -1192,9 +1192,14 @@ def refresh_block_size(vllm_config):
             cache_config.block_size = 32
         return
 
-    if model_config.is_hybrid:
+    spec_config = getattr(vllm_config, "speculative_config", None)
+    target_model_config = getattr(spec_config, "target_model_config", None)
+    target_is_hybrid = bool(getattr(target_model_config, "is_hybrid", False))
+    if model_config.is_hybrid or target_is_hybrid:
         # Hybrid attention+mamba models rely on the model-specific sizing
-        # logic rather than the generic platform default.
+        # logic rather than the generic platform default.  A draft model
+        # shares the target's cache config, so a non-hybrid drafter of a
+        # hybrid target must not shrink the block size either.
         return
 
     if cache_config.block_size != 128:

@@ -63,7 +63,9 @@ def unquantized_gemm_fake(
     weight: torch.Tensor,
     bias: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    output_shape = (x.shape[0], weight.shape[0])
+    # F.linear keeps every leading dim of x; the MTP drafter feeds a 3-D
+    # [T, hc_count, H] activation through here.
+    output_shape = (*x.shape[:-1], weight.shape[0])
     return torch.empty(output_shape, dtype=x.dtype, device=x.device)
 
 
