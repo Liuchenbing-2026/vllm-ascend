@@ -7,7 +7,17 @@ from vllm.utils.math_utils import next_power_of_2
 from vllm_ascend.ops.triton.fla.chunk import chunk_gated_delta_rule
 from vllm_ascend.ops.triton.fla.layernorm_guard import LayerNormFn
 
-triton.next_power_of_2 = next_power_of_2
+def _next_power_of_2_constexpr_safe(n):
+    """next_power_of_2 that also accepts a tl.constexpr.
+
+    Called from host code it receives a plain int; called from inside a
+    @triton.jit body the argument is wrapped in tl.constexpr, which has no
+    .bit_length().  Unwrap, then defer to the integer implementation.
+    """
+    return next_power_of_2(getattr(n, "value", n))
+
+
+triton.next_power_of_2 = _next_power_of_2_constexpr_safe
 
 fla_layernorm_guard.LayerNormFn = LayerNormFn
 fla_ops.chunk_gated_delta_rule = chunk_gated_delta_rule
