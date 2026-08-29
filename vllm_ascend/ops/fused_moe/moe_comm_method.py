@@ -465,6 +465,15 @@ class FusedMC2CommImpl(MoECommMethod):
                 buffer_max_recv_token_num,
                 required_buffer_mb,
             )
+            logger.info(
+                "CANN MegaMoe get_symm_buffer enter: ep_rank=%s group_type=%s "
+                "group_world=%s max_recv_tokens=%d dispatch_quant_mode=%d",
+                self.token_dispatcher.ep_rank_id,
+                type(group).__name__,
+                torch.distributed.get_world_size(group),
+                buffer_max_recv_token_num,
+                _CANN_MEGAMOE_DISPATCH_QUANT_MODE,
+            )
             sym_buffer = get_symm_buffer(
                 group,
                 num_experts,
@@ -475,6 +484,11 @@ class FusedMC2CommImpl(MoECommMethod):
                 max_recv_token_num=buffer_max_recv_token_num,
                 dispatch_quant_mode=_CANN_MEGAMOE_DISPATCH_QUANT_MODE,
                 dispatch_quant_out_dtype=torch.int8,
+            )
+            logger.info(
+                "CANN MegaMoe get_symm_buffer return: ep_rank=%s ccl_buffer_size=%s",
+                self.token_dispatcher.ep_rank_id,
+                getattr(sym_buffer, "ccl_buffer_size", None),
             )
             actual_buffer_bytes = int(getattr(sym_buffer, "ccl_buffer_size", 0))
             required_buffer_bytes = required_buffer_mb * 1024 * 1024
@@ -491,6 +505,12 @@ class FusedMC2CommImpl(MoECommMethod):
         fused_experts_input: MoEFusedExpertsInput,
         topk_ids: torch.Tensor,
     ):
+        logger.info_once(
+            "CANN MegaMoe runtime hit: ep_rank=%s tokens=%d topk=%d",
+            self.token_dispatcher.ep_rank_id,
+            fused_experts_input.hidden_states.shape[0],
+            topk_ids.shape[-1],
+        )
         quant_type = fused_experts_input.quant.quant_type
         if quant_type not in (QuantType.W8A8, QuantType.W4A8):
             raise RuntimeError(
@@ -551,6 +571,22 @@ class FusedMC2CommImpl(MoECommMethod):
             )
         )
         activation_clamp = fused_experts_input.swiglu_limit if fused_experts_input.swiglu_limit > 0 else None
+        logger.info_once(
+            "CANN MegaMoe kernel enter: ep_rank=%s tokens=%d padded_tokens=%d "
+            "quant=%s w1_shape=%s w2_shape=%s w1_dtype=%s w2_dtype=%s "
+            "scale1_shape=%s scale2_shape=%s weight_type=%s",
+            self.token_dispatcher.ep_rank_id,
+            original_num_tokens,
+            hidden_states.shape[0],
+            quant_type,
+            tuple(weight1[0].shape),
+            tuple(weight2[0].shape),
+            weight1[0].dtype,
+            weight2[0].dtype,
+            tuple(weight_scales1[0].shape),
+            tuple(weight_scales2[0].shape),
+            weight_type,
+        )
         output, expert_tokens = mega_moe(
             hidden_states,
             topk_ids.to(torch.int32),
@@ -567,6 +603,12 @@ class FusedMC2CommImpl(MoECommMethod):
             activation_clamp=activation_clamp,
             weight1_type=weight_type,
             weight2_type=weight_type,
+        )
+        logger.info_once(
+            "CANN MegaMoe kernel return: ep_rank=%s output_shape=%s expert_tokens_shape=%s",
+            self.token_dispatcher.ep_rank_id,
+            tuple(output.shape),
+            tuple(expert_tokens.shape),
         )
         return output[:original_num_tokens], expert_tokens
 

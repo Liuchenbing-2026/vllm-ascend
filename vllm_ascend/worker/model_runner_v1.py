@@ -339,6 +339,7 @@ class NPUModelRunner(GPUModelRunner):
         self._a2_megamoe_decode_graph_safe = False
         self._dp_tokens_are_uniform = True
         self._all_dp_ranks_have_tokens = True
+        self._has_continuation_prefill_across_dp = False
         set_weight_prefetch_method(self.ascend_config.weight_prefetch_config)
 
         # Dump / PrecisionDebugger configuration now comes from AscendConfig
@@ -681,6 +682,7 @@ class NPUModelRunner(GPUModelRunner):
         cudagraph_mode: CUDAGraphMode = CUDAGraphMode.NONE,
         allow_dp_padding: bool = False,
         actual_num_tokens: int | None = None,
+        has_continuation_prefill: bool = False,
     ) -> tuple[int, torch.Tensor | None, CUDAGraphMode]:
         # TODO: In vLLM, the only thing that needs to be synced is num_tokens, but in
         # our case, we still need to sync the other two flags as well. So we need to
@@ -691,6 +693,7 @@ class NPUModelRunner(GPUModelRunner):
         if self.dp_size == 1:
             self._dp_tokens_are_uniform = True
             self._all_dp_ranks_have_tokens = num_tokens > 0
+            self._has_continuation_prefill_across_dp = has_continuation_prefill
             return num_tokens, None, cudagraph_mode
 
         if actual_num_tokens is None:
@@ -700,6 +703,7 @@ class NPUModelRunner(GPUModelRunner):
             num_tokens_after_padding = torch.tensor([num_tokens] * self.dp_size, device="cpu", dtype=torch.int32)
             self._dp_tokens_are_uniform = True
             self._all_dp_ranks_have_tokens = actual_num_tokens > 0
+            self._has_continuation_prefill_across_dp = has_continuation_prefill
             return num_tokens, num_tokens_after_padding, cudagraph_mode
 
         # On certain devices, CPU-side all_reduce may return dirty data. 
@@ -710,10 +714,11 @@ class NPUModelRunner(GPUModelRunner):
             if self.ascend_config.dp_allreduce_on_npu
             else ("cpu", get_dp_group().cpu_group)
         )
-        packed_tensor = torch.zeros(3, self.dp_size, device=device_str, dtype=torch.int32)
+        packed_tensor = torch.zeros(4, self.dp_size, device=device_str, dtype=torch.int32)
         packed_tensor[0][self.dp_rank] = num_tokens
         packed_tensor[1][self.dp_rank] = cudagraph_mode.value
         packed_tensor[2][self.dp_rank] = actual_num_tokens
+        packed_tensor[3][self.dp_rank] = int(has_continuation_prefill)
         dist.all_reduce(packed_tensor, group=group)
         if device_str == "npu":
             packed_tensor = packed_tensor.cpu()
@@ -722,6 +727,7 @@ class NPUModelRunner(GPUModelRunner):
         num_tokens_across_dp = packed_tensor[0, :]
         max_tokens_across_dp = int(num_tokens_across_dp.max().item())
         actual_num_tokens_across_dp = packed_tensor[2, :]
+        self._has_continuation_prefill_across_dp = bool(packed_tensor[3, :].any().item())
         self._dp_tokens_are_uniform = bool(
             (actual_num_tokens_across_dp == actual_num_tokens_across_dp[0]).all().item()
         )
@@ -748,7 +754,9 @@ class NPUModelRunner(GPUModelRunner):
 
     def _get_step_moe_comm_type_override(self) -> MoECommType | None:
         needs_fallback = _is_a2_megamoe_enabled(self.ascend_config) and (
-            not self._dp_tokens_are_uniform or not self._all_dp_ranks_have_tokens
+            not self._dp_tokens_are_uniform
+            or not self._all_dp_ranks_have_tokens
+            or self._has_continuation_prefill_across_dp
         )
         return MoECommType.MC2 if needs_fallback else None
 
@@ -2989,6 +2997,7 @@ class NPUModelRunner(GPUModelRunner):
         self._a2_megamoe_decode_graph_safe = False
         self._dp_tokens_are_uniform = True
         self._all_dp_ranks_have_tokens = num_tokens > 0
+        self._has_continuation_prefill_across_dp = False
         if actual_num_tokens is None:
             actual_num_tokens = num_tokens
         num_tokens_padded = self._pad_for_sequence_parallelism(num_tokens)
@@ -3038,12 +3047,19 @@ class NPUModelRunner(GPUModelRunner):
         # across ranks
         should_ubatch, num_tokens_across_dp = False, None
         if self.vllm_config.parallel_config.data_parallel_size > 1:
+            has_continuation_prefill = bool(
+                np.any(
+                    (num_scheduled_tokens_np > self.uniform_decode_query_len)
+                    & (self.input_batch.num_computed_tokens_cpu[:num_reqs] > 0)
+                )
+            )
             (
                 _,
                 num_tokens_across_dp,
                 synced_cudagraph_mode,
             ) = self._sync_metadata_across_dp(
                 num_tokens=num_tokens_padded,
+                has_continuation_prefill=has_continuation_prefill,
                 actual_num_tokens=actual_num_tokens,
                 cudagraph_mode=cudagraph_mode,
                 allow_dp_padding=((cudagraph_mode != CUDAGraphMode.NONE)
