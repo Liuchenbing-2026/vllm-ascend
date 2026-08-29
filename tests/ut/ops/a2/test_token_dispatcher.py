@@ -15,6 +15,7 @@
 # limitations under the License.
 # This file is a part of the vllm-ascend project.
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import numpy as np
@@ -22,12 +23,11 @@ import pytest
 import torch
 
 from tests.ut.base import TestBase
-from vllm_ascend.ops.fused_moe.moe_runtime_args import (
+from vllm_ascend.ops.fused_moe.dataclass.router_input import MoeRouterInput
+from vllm_ascend.ops.fused_moe.dataclass.token_dispatcher import (
     MoEAllGatherCombineMetadata,
     MoEAllToAllCombineMetadata,
     MoEMC2CombineMetadata,
-    MoEQuantParams,
-    MoERoutingParams,
     MoETokenDispatchInput,
 )
 
@@ -39,7 +39,7 @@ from vllm_ascend.ops.fused_moe.token_dispatcher import (  # isort: skip
     TokenDispatcherWithAllGather,
     TokenDispatcherWithMC2,
 )
-from vllm_ascend.ops.fused_moe.moe_stage_params import MoEMxfpParams
+from vllm_ascend.ops.fused_moe.dataclass.moe_quant import MoEMxfpParams, MoEQuantParams
 from vllm_ascend.quantization.quant_type import QuantType
 
 MXFP4_TEST_DTYPE = getattr(torch, "float4_e2m1fn_x2", torch.float16)
@@ -58,18 +58,19 @@ def build_token_dispatch_input_fixture(
     comm_quant_mode: int | None = None,
     act_quant_type: torch.dtype | None = None,
     is_per_channel_weight: bool = False,
+    mc2_mask: torch.Tensor | None = None,
 ) -> MoETokenDispatchInput:
     mxfp_spec = None
-    if quant_type in (QuantType.MXFP8, QuantType.MXFP4):
+    if quant_type in (QuantType.W8A8MXFP, QuantType.W4A4MXFP):
         mxfp_spec = MoEMxfpParams(act_quant_type=act_quant_type)
     return MoETokenDispatchInput(
         hidden_states=hidden_states,
         topk_weights=topk_weights,
         topk_ids=topk_ids,
-        routing=MoERoutingParams(
+        routing=MoeRouterInput(
             expert_map=expert_map,
             global_redundant_expert_num=global_redundant_expert_num,
-            mc2_mask=None,
+            mc2_mask=mc2_mask,
             apply_router_weight_on_input=apply_router_weight_on_input,
             pertoken_scale=pertoken_scale,
         ),
@@ -90,7 +91,6 @@ class TestTokenDispatcherWithMC2(TestBase):
         mock_config = MagicMock()
 
         mock_config.scheduler_config.max_num_seqs = 256
-        mock_config.scheduler_config.decode_max_num_seqs = 256
 
         mock_config.compilation_config.custom_ops = ["all"]
 
@@ -99,6 +99,13 @@ class TestTokenDispatcherWithMC2(TestBase):
         mock_config.parallel_config.tensor_parallel_size = 1
 
         self.mock_get_config.return_value = mock_config
+        self.mc2_tokens_capacity = 128
+        self.mc2_capacity_patch = patch(
+            "vllm_ascend.ops.fused_moe.token_dispatcher.get_mc2_tokens_capacity",
+            return_value=self.mc2_tokens_capacity,
+        )
+        self.mock_get_mc2_tokens_capacity = self.mc2_capacity_patch.start()
+
         self.mc2_group = MagicMock()
         self.mc2_group.device_group.return_value._get_backend.return_value.get_hccl_comm_name.return_value = "hccl_123"
         self.mc2_group.rank_in_group = 0
@@ -125,9 +132,9 @@ class TestTokenDispatcherWithMC2(TestBase):
         )
         self.ascend_soc_version_patch.start()
 
-        # Mock get_ascend_config() and is_hierarchical_communication_enabled()
+        # Mock get_ascend_config()
         mock_ascend_config = MagicMock()
-        mock_ascend_config.enable_mc2_hierarchy_comm = False
+        mock_ascend_config.mc2_comm_alg = ""
         mock_ascend_config.eplb_config = MagicMock()
         mock_ascend_config.eplb_config.dynamic_eplb = False
         self.ascend_config_patch = patch(
@@ -136,32 +143,80 @@ class TestTokenDispatcherWithMC2(TestBase):
         self.ascend_config_patch.start()
         self.ascend_config_utils_patch = patch("vllm_ascend.utils.get_ascend_config", return_value=mock_ascend_config)
         self.ascend_config_utils_patch.start()
-        self.hier_comm_patch = patch(
-            "vllm_ascend.ops.fused_moe.token_dispatcher.is_hierarchical_communication_enabled", return_value=False
-        )
-        self.hier_comm_patch.start()
         self.skip_allreduce_patch = patch(
             "vllm_ascend.ops.fused_moe.token_dispatcher.should_skip_allreduce_across_dp_group", return_value=False
         )
-        self.skip_allreduce_patch.start()
+        self.mock_skip_allreduce = self.skip_allreduce_patch.start()
 
         kwargs = {"with_quant": False, "top_k": 8, "num_experts": 128}
         self.dispatcher = TokenDispatcherWithMC2(**kwargs)
 
     def tearDown(self):
+        self.config_patcher.stop()
+        self.mc2_capacity_patch.stop()
         self.mc2_group_patch.stop()
+        self.rank_group_patch.stop()
         self.forward_context_patch.stop()
         self.ascend_soc_version_patch.stop()
         self.ascend_config_patch.stop()
         self.ascend_config_utils_patch.stop()
-        self.hier_comm_patch.stop()
         self.skip_allreduce_patch.stop()
 
     def test_init(self):
         self.assertEqual(self.dispatcher.ep_rank_id, 0)
         self.assertEqual(self.dispatcher.ep_world_size, 8)
-        self.assertTrue(self.dispatcher.enable_dispatch_v2)
         self.assertTrue(self.dispatcher.need_extra_args)
+        self.assertEqual(self.dispatcher.global_bs, 0)
+
+    def test_init_uses_mc2_capacity_for_non_uniform_global_bs(self):
+        self.mock_get_config.return_value.parallel_config.tensor_parallel_size = 4
+        self.mock_skip_allreduce.return_value = True
+
+        dispatcher = TokenDispatcherWithMC2(with_quant=False, top_k=8, num_experts=128)
+
+        self.assertEqual(dispatcher.global_bs, 256)
+
+    def test_get_dispatch_mc2_kwargs_with_skip_allreduce_omits_mc2_mask(self):
+        self.mock_get_config.return_value.parallel_config.tensor_parallel_size = 4
+        self.mock_skip_allreduce.return_value = True
+        dispatcher = TokenDispatcherWithMC2(with_quant=False, top_k=8, num_experts=128)
+
+        hidden_states = torch.randn(10, 128)
+        topk_ids = torch.randint(0, 8, (10, 1))
+        topk_weights = torch.randn(10, 1)
+        expert_map = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7])
+        mc2_mask = torch.tensor([True, False, True, False])
+        token_dispatch_input = build_token_dispatch_input_fixture(
+            hidden_states=hidden_states,
+            topk_weights=topk_weights,
+            topk_ids=topk_ids,
+            expert_map=expert_map,
+            mc2_mask=mc2_mask,
+        )
+
+        kwargs = dispatcher.get_dispatch_mc2_kwargs(token_dispatch_input)
+
+        self.assertEqual(kwargs["global_bs"], 256)
+        self.assertNotIn("x_active_mask", kwargs)
+
+    def test_get_dispatch_mc2_kwargs_without_skip_allreduce_keeps_mc2_mask(self):
+        hidden_states = torch.randn(10, 128)
+        topk_ids = torch.randint(0, 8, (10, 1))
+        topk_weights = torch.randn(10, 1)
+        expert_map = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7])
+        mc2_mask = torch.tensor([True, False, True, False])
+        token_dispatch_input = build_token_dispatch_input_fixture(
+            hidden_states=hidden_states,
+            topk_weights=topk_weights,
+            topk_ids=topk_ids,
+            expert_map=expert_map,
+            mc2_mask=mc2_mask,
+        )
+
+        kwargs = self.dispatcher.get_dispatch_mc2_kwargs(token_dispatch_input)
+
+        self.assertEqual(kwargs["global_bs"], 0)
+        self.assertIs(kwargs["x_active_mask"], mc2_mask)
 
     def test_get_dispatch_mc2_kwargs_without_quant(self):
         hidden_states = torch.randn(10, 128)
@@ -187,9 +242,12 @@ class TestTokenDispatcherWithMC2(TestBase):
         topk_weights = torch.randn(10, 1)
         topk_ids = torch.randint(0, 8, (10, 1))
         expert_map = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7])
+        self.dispatcher.enable_dispatch_v2 = True
 
         with patch(
-            "torch_npu.npu_moe_distribute_dispatch_v2", return_value=(torch.randn(10, 128),) * 5 + (None, None)
+            "torch_npu.npu_moe_distribute_dispatch_v2",
+            return_value=(torch.randn(10, 128),) * 5 + (None, None),
+            create=True,
         ) as mock_dispatch:
             token_dispatch_input = build_token_dispatch_input_fixture(
                 hidden_states=hidden_states,
@@ -218,7 +276,9 @@ class TestTokenDispatcherWithMC2(TestBase):
             is_per_channel_weight=True,
         )
         with patch(
-            "torch_npu.npu_moe_distribute_dispatch_v2", return_value=(torch.randn(10, 128),) * 5 + (None, None)
+            "torch_npu.npu_moe_distribute_dispatch_v2",
+            return_value=(torch.randn(10, 128),) * 5 + (None, None),
+            create=True,
         ) as mock_dispatch:
             output = self.dispatcher.token_dispatch(token_dispatch_input=token_dispatch_input)
 
@@ -289,7 +349,7 @@ class TestTokenDispatcherWithMC2(TestBase):
             topk_weights=topk_weights,
             topk_ids=topk_ids,
             expert_map=expert_map,
-            quant_type=QuantType.MXFP8,
+            quant_type=QuantType.W8A8MXFP,
             act_quant_type=torch.float8_e4m3fn,
         )
 
@@ -311,7 +371,7 @@ class TestTokenDispatcherWithMC2(TestBase):
             topk_weights=topk_weights,
             topk_ids=topk_ids,
             expert_map=expert_map,
-            quant_type=QuantType.MXFP4,
+            quant_type=QuantType.W4A4MXFP,
             act_quant_type=MXFP4_TEST_DTYPE,
         )
         kwargs = self.dispatcher.get_dispatch_mc2_kwargs(token_dispatch_input)
@@ -320,6 +380,7 @@ class TestTokenDispatcherWithMC2(TestBase):
         self.assertEqual(kwargs["quant_mode"], 4)
         self.assertIn("y_dtype", kwargs)
         self.assertNotEqual(kwargs["y_dtype"], torch.float8_e4m3fn)
+        self.dispatcher.enable_dispatch_v2 = True
 
         with patch(
             "torch_npu.npu_moe_distribute_dispatch_v2",
@@ -332,12 +393,164 @@ class TestTokenDispatcherWithMC2(TestBase):
                 torch.tensor([10], dtype=torch.int64),
                 torch.randn(10, 1),
             ),
+            create=True,
         ) as mock_dispatch:
             output = self.dispatcher.token_dispatch(token_dispatch_input=token_dispatch_input)
 
         mock_dispatch.assert_called_once()
         self.assertIsNotNone(output.dynamic_scale)
         self.assertTrue(output.combine_metadata.quant.dispatch_with_quant)
+
+
+def test_allgather_token_dispatch_quant_mode_without_dynamic_scale():
+    dispatcher = TokenDispatcherWithAllGather(top_k=2, num_experts=128)
+    hidden_states = torch.randn(3, 128)
+    topk_weights = torch.tensor([[0.7, 0.3], [0.6, 0.4], [0.5, 0.5]])
+    topk_ids = torch.tensor([[0, 1], [1, 2], [2, 3]], dtype=torch.int32)
+    init_routing_output = (
+        torch.randn(6, 128),
+        torch.tensor([0, 1, 2, 3, 4, 5], dtype=torch.int32),
+        torch.tensor([2, 2, 2], dtype=torch.int32),
+        torch.randn(6, 4),
+    )
+
+    cases = [
+        {
+            "quant_type": QuantType.W8A8MXFP,
+            "act_quant_type": torch.float8_e4m3fn,
+            "expected_quant_mode": 3,
+            "expected_act_quant_type": torch.float8_e4m3fn,
+            "expect_dynamic_scale": True,
+        },
+        {
+            "quant_type": QuantType.W4A4MXFP,
+            "act_quant_type": MXFP4_TEST_DTYPE,
+            "expected_quant_mode": -1,
+            "expected_act_quant_type": None,
+            "expect_dynamic_scale": False,
+        },
+    ]
+    for case in cases:
+        token_dispatch_input = build_token_dispatch_input_fixture(
+            hidden_states=hidden_states,
+            topk_weights=topk_weights,
+            topk_ids=topk_ids,
+            quant_type=case["quant_type"],
+            act_quant_type=case["act_quant_type"],
+        )
+
+        with patch(
+            "vllm_ascend.ops.fused_moe.token_dispatcher.DeviceOperator.npu_moe_init_routing",
+            return_value=init_routing_output,
+        ) as mock_init_routing:
+            output = dispatcher.token_dispatch(token_dispatch_input=token_dispatch_input)
+
+        init_kwargs = mock_init_routing.call_args.kwargs
+        assert init_kwargs["quant_mode"] == case["expected_quant_mode"]
+        assert init_kwargs["act_quant_type"] == case["expected_act_quant_type"]
+        assert (output.dynamic_scale is not None) == case["expect_dynamic_scale"]
+
+
+def test_allgather_token_dispatch_mxfp4_keeps_prequantized_scale():
+    dispatcher = TokenDispatcherWithAllGather(top_k=2, num_experts=128)
+    hidden_states = torch.randn(3, 128)
+    topk_weights = torch.tensor([[0.7, 0.3], [0.6, 0.4], [0.5, 0.5]])
+    topk_ids = torch.tensor([[0, 1], [1, 2], [2, 3]], dtype=torch.int32)
+    pertoken_scale = torch.randn(3, 4)
+    returned_scale = torch.randn(6, 4)
+    init_routing_output = (
+        torch.randn(6, 128),
+        torch.tensor([0, 1, 2, 3, 4, 5], dtype=torch.int32),
+        torch.tensor([2, 2, 2], dtype=torch.int32),
+        returned_scale,
+    )
+
+    token_dispatch_input = build_token_dispatch_input_fixture(
+        hidden_states=hidden_states,
+        topk_weights=topk_weights,
+        topk_ids=topk_ids,
+        pertoken_scale=pertoken_scale,
+        quant_type=QuantType.W4A4MXFP,
+        act_quant_type=MXFP4_TEST_DTYPE,
+    )
+
+    with patch(
+        "vllm_ascend.ops.fused_moe.token_dispatcher.DeviceOperator.npu_moe_init_routing",
+        return_value=init_routing_output,
+    ) as mock_init_routing:
+        output = dispatcher.token_dispatch(token_dispatch_input=token_dispatch_input)
+
+    init_kwargs = mock_init_routing.call_args.kwargs
+    assert init_kwargs["scale"] is pertoken_scale
+    assert init_kwargs["quant_mode"] == -1
+    assert init_kwargs["act_quant_type"] == MXFP4_TEST_DTYPE
+    assert output.dynamic_scale is returned_scale
+
+
+@pytest.mark.parametrize(
+    ("no_lora", "expected_quant_mode", "expect_dynamic_scale"),
+    [(False, -1, False), (True, 1, True)],
+)
+def test_allgather_w8a8_lora_controls_dispatch_quantization(
+    no_lora,
+    expected_quant_mode,
+    expect_dynamic_scale,
+):
+    dispatcher = TokenDispatcherWithAllGather(top_k=1, num_experts=2)
+    dispatcher.set_lora_context(MagicMock(punica_wrapper=MagicMock(no_lora=no_lora)))
+    hidden_states = torch.randn(2, 4, dtype=torch.bfloat16)
+    returned_scale = torch.randn(2)
+    token_dispatch_input = build_token_dispatch_input_fixture(
+        hidden_states=hidden_states,
+        topk_weights=torch.ones(2, 1),
+        topk_ids=torch.tensor([[0], [1]], dtype=torch.int32),
+        quant_type=QuantType.W8A8,
+    )
+    init_routing_output = (
+        hidden_states,
+        torch.tensor([0, 1], dtype=torch.int32),
+        torch.tensor([1, 1], dtype=torch.int32),
+        returned_scale,
+    )
+
+    with patch(
+        "vllm_ascend.ops.fused_moe.token_dispatcher.DeviceOperator.npu_moe_init_routing",
+        return_value=init_routing_output,
+    ) as mock_init_routing:
+        output = dispatcher.token_dispatch(token_dispatch_input)
+
+    assert mock_init_routing.call_args.kwargs["quant_mode"] == expected_quant_mode
+    assert (output.dynamic_scale is not None) == expect_dynamic_scale
+
+
+def test_allgather_bf16_lora_skips_quant_backend_validation():
+    dispatcher = TokenDispatcherWithAllGather(top_k=1, num_experts=2)
+    dispatcher.set_lora_context(MagicMock(punica_wrapper=MagicMock(no_lora=False)))
+    hidden_states = torch.randn(2, 4, dtype=torch.bfloat16)
+    token_dispatch_input = build_token_dispatch_input_fixture(
+        hidden_states=hidden_states,
+        topk_weights=torch.ones(2, 1),
+        topk_ids=torch.tensor([[0], [1]], dtype=torch.int32),
+        quant_type=QuantType.NONE,
+    )
+    init_routing_output = (
+        hidden_states,
+        torch.tensor([0, 1], dtype=torch.int32),
+        torch.tensor([1, 1], dtype=torch.int32),
+        None,
+    )
+
+    with (
+        patch("vllm_ascend.ops.fused_moe.token_dispatcher.validate_quant_moe_lora_activation_input") as mock_validate,
+        patch(
+            "vllm_ascend.ops.fused_moe.token_dispatcher.DeviceOperator.npu_moe_init_routing",
+            return_value=init_routing_output,
+        ),
+    ):
+        output = dispatcher.token_dispatch(token_dispatch_input)
+
+    mock_validate.assert_not_called()
+    assert output.dynamic_scale is None
 
 
 class TestTokenDispatcherWithAllGather(TestBase):
@@ -354,9 +567,9 @@ class TestTokenDispatcherWithAllGather(TestBase):
         self.dispatcher = TokenDispatcherWithAllGather(**kwargs)
 
         # Mock NPU functions
-        self.patcher_npu_moe_init_routing_custom = patch("torch.ops._C_ascend.npu_moe_init_routing_custom")
-        self.mock_npu_moe_init_routing_custom = self.patcher_npu_moe_init_routing_custom.start()
-        self.mock_npu_moe_init_routing_custom.return_value = (
+        self.patcher_npu_moe_init_routing_v2 = patch("torch_npu.npu_moe_init_routing_v2")
+        self.mock_npu_moe_init_routing_v2 = self.patcher_npu_moe_init_routing_v2.start()
+        self.mock_npu_moe_init_routing_v2.return_value = (
             torch.randn(6, 128),  # sorted_hidden_states
             torch.tensor([0, 1, 2, 3, 4, 5]),  # expanded_row_idx
             torch.tensor([0, 1, 0, 1, 0, 1]),  # expanded_expert_idx
@@ -367,7 +580,7 @@ class TestTokenDispatcherWithAllGather(TestBase):
         self.mock_npu_moe_token_unpermute.return_value = torch.randn(6, 128)
 
     def tearDown(self):
-        self.patcher_npu_moe_init_routing_custom.stop()
+        self.patcher_npu_moe_init_routing_v2.stop()
         self.patcher_npu_moe_token_unpermute.stop()
 
     @pytest.mark.skip("Skip as register_kernels has NPU SocName checking in CANN 8.5.0.")
@@ -384,8 +597,8 @@ class TestTokenDispatcherWithAllGather(TestBase):
         results = self.dispatcher.token_dispatch(token_dispatch_input=token_dispatch_input)
 
         # Verify npu_moe_init_routing is called
-        self.mock_npu_moe_init_routing_custom.assert_called_once()
-        args, kwargs = self.mock_npu_moe_init_routing_custom.call_args
+        self.mock_npu_moe_init_routing_v2.assert_called_once()
+        args, kwargs = self.mock_npu_moe_init_routing_v2.call_args
 
         self.assertEqual(results.group_list_type, 1)
         self.assertIsInstance(results.combine_metadata, MoEAllGatherCombineMetadata)
@@ -405,8 +618,8 @@ class TestTokenDispatcherWithAllGather(TestBase):
         results = self.dispatcher.token_dispatch(token_dispatch_input=token_dispatch_input)
 
         # Verify npu_moe_init_routing is called
-        self.mock_npu_moe_init_routing_custom.assert_called_once()
-        args, kwargs = self.mock_npu_moe_init_routing_custom.call_args
+        self.mock_npu_moe_init_routing_v2.assert_called_once()
+        args, kwargs = self.mock_npu_moe_init_routing_v2.call_args
 
         self.assertEqual(results.group_list_type, 1)
         self.assertIsInstance(results.combine_metadata, MoEAllGatherCombineMetadata)
@@ -520,6 +733,14 @@ class TestTokenDispatcherWithAll2AllV(TestBase):
         self.mock_ep_rank_prop = patcher2.start()
         self.mock_ep_size_prop = patcher3.start()
 
+        # TokenDispatcherWithAll2AllV obtains the local rank while building
+        # the HCCL group name.  A MagicMock group alone is not sufficient on
+        # vLLM v0.26.0: torch.distributed.get_rank still attempts to resolve
+        # the uninitialized default process group first.
+        patcher_rank = patch("torch.distributed.get_rank", return_value=0)
+        self.mock_get_rank = patcher_rank.start()
+        self.addCleanup(patcher_rank.stop)
+
         # Mock torch_npu.npu_moe_token_permute
         patcher4 = patch("torch_npu.npu_moe_token_permute")
         self.mock_npu_moe_token_permute = patcher4.start()
@@ -533,7 +754,7 @@ class TestTokenDispatcherWithAll2AllV(TestBase):
         self.mock_npu_moe_token_unpermute.return_value = torch.randn(8, 16)
 
         # Mock async_all_to_all
-        patcher6 = patch("vllm_ascend.ops.fused_moe.comm_utils.async_all_to_all")
+        patcher6 = patch("vllm_ascend.ops.fused_moe.token_dispatcher.async_all_to_all")
         self.mock_async_all_to_all = patcher6.start()
         self.addCleanup(patcher6.stop)
         self.mock_async_all_to_all.return_value = (None, torch.randn(16, 16), MagicMock())
@@ -559,16 +780,16 @@ class TestTokenDispatcherWithAll2AllV(TestBase):
         self.mock_current_device.return_value = "cpu"
 
         # Mock torch_npu.npu_dynamic_quant
-        patcher10 = patch("torch_npu.npu_dynamic_quant")
+        patcher10 = patch("torch_npu.npu_dynamic_quant", create=True)
         self.mock_npu_dynamic_quant = patcher10.start()
         self.addCleanup(patcher10.stop)
         self.mock_npu_dynamic_quant.return_value = (torch.randn(16, 16), torch.randn(16))
 
-        # Mock torch.ops._C_ascend.npu_moe_init_routing_custom
-        patcher11 = patch("torch.ops._C_ascend.npu_moe_init_routing_custom")
-        self.mock_npu_moe_init_routing_custom = patcher11.start()
+        # Mock torch.ops._C_ascend.npu_moe_init_routing_v2
+        patcher11 = patch("torch_npu.npu_moe_init_routing_v2")
+        self.mock_npu_moe_init_routing_v2 = patcher11.start()
         self.addCleanup(patcher11.stop)
-        self.mock_npu_moe_init_routing_custom.return_value = (
+        self.mock_npu_moe_init_routing_v2.return_value = (
             torch.randn(16, 16),
             torch.arange(16),
             None,
@@ -605,6 +826,36 @@ class TestTokenDispatcherWithAll2AllV(TestBase):
         self.assertIsNotNone(result.group_list)
         self.assertEqual(result.group_list_type, 1)
         self.assertIsInstance(result.combine_metadata, MoEAllToAllCombineMetadata)
+
+    def test_w8a8_lora_dispatch_preserves_float_activations(self):
+        hidden_states = torch.randn(8, 16, dtype=torch.bfloat16)
+        topk_weights = torch.rand(8, 4)
+        topk_ids = torch.randint(0, 4, (8, 2)).long()
+        expert_map = torch.tensor([0, 1, 2, 3])
+
+        self.dispatcher.expert_ids_per_ep_rank = torch.tensor([0, 1], dtype=torch.int32)
+        self.dispatcher.local_expert_indices = [0, 1]
+        self.dispatcher.set_lora_context(
+            SimpleNamespace(
+                punica_wrapper=SimpleNamespace(no_lora=False),
+                split_lora_indices=None,
+            )
+        )
+        token_dispatch_input = build_token_dispatch_input_fixture(
+            hidden_states=hidden_states,
+            topk_weights=topk_weights,
+            topk_ids=topk_ids,
+            expert_map=expert_map,
+            quant_type=QuantType.W8A8,
+        )
+
+        # This test covers dispatch-side activation quantization, not the
+        # separately tested LoRA index exchange collective.
+        with patch("vllm_ascend.ops.fused_moe.token_dispatcher.all2all_lora_indices"):
+            result = self.dispatcher.token_dispatch(token_dispatch_input=token_dispatch_input)
+
+        self.mock_npu_dynamic_quant.assert_not_called()
+        self.assertIsNone(result.dynamic_scale)
 
     @pytest.mark.skip("Skip as register_kernels has NPU SocName checking in CANN 8.5.0.")
     def test_token_combine(self):
