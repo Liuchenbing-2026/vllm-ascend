@@ -499,7 +499,43 @@
 #       before grammar compilation or safely handles mixed-backend grammar
 #       failures without killing the engine.
 #
-# ** 20. File: platform/patch_torch_accelerator.py**
+# ** 20. File: platform/patch_tokenizer_cache.py**
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.renderers.base.BaseRenderer.__init__`
+#      `vllm.renderers.base.BaseRenderer._tokenize_prompt`
+#      `vllm.renderers.hf.safe_apply_chat_template`
+#      `vllm.renderers.deepseek_v4.DeepseekV4Renderer._apply_chat_template`
+#      `vllm.renderers.deepseek_v32.DeepseekV32Renderer._apply_chat_template`
+#    Why:
+#       PrefixCache removes the compute for a repeated conversation prefix, but
+#       tokenization stays O(full prompt) on every turn: the token ids must be
+#       known before the KV cache can be consulted. In agent workloads, where
+#       turn N re-sends turns 1..N-1 verbatim and appends a short suffix, that
+#       leaves the tokenizer as a large share of the frontend cost once the hit
+#       rate is high. Measured on 910B4 x8 with DeepSeek-V4-Flash (TP8, 50K
+#       prompts, 32 concurrent, ~99% hit): p95 TTFT -10.7%, throughput +11.8%;
+#       stacked with --renderer-num-workers 8, -16.8% / +20.0%.
+#    How:
+#       Cache tokenization per *segment*, delimited by the tokenizer's added
+#       vocabulary. A whole-prompt cache never hits here - turn N's prompt is
+#       never byte-identical to turn N-1's - but a segment cache hits on every
+#       repeated turn. Two identities are involved and both are verified at
+#       runtime rather than assumed, because each is a property of the tokenizer
+#       or the template: encode(A+B) == encode(A)++encode(B) at added-token
+#       boundaries, and apply_chat_template(tokenize=True) ==
+#       encode(apply_chat_template(tokenize=False)). A failing check disables
+#       that path permanently and logs why, so the request falls through to the
+#       original call and is bit-identical by construction. The first check does
+#       fire in practice: the mistral_common backend does not treat added tokens
+#       as atomic split points and is refused.
+#       Enable with VLLM_ASCEND_TOKENIZER_CACHE_GB; 0 (default) is a no-op.
+#    Related PR (if no, explain why):
+#       Not yet filed upstream. The equivalent change against vLLM main is kept
+#       alongside this patch so it can be contributed and this patch dropped.
+#    Future Plan:
+#       Remove this patch once vLLM carries the tokenizer cache itself.
+#
+# ** 21. File: platform/patch_torch_accelerator.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `torch.accelerator.memory_stats`, `torch.accelerator.memory_reserved`,
 #      `torch.accelerator.reset_peak_memory_stats`, `torch.accelerator.get_memory_info`,
@@ -519,7 +555,7 @@
 #       Remove this patch once `torch.accelerator` correctly routes to the NPU
 #       backend for these memory APIs.
 #
-# ** 21. File: platform/patch_tool_choice_none_content.py**
+# ** 22. File: platform/patch_tool_choice_none_content.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.entrypoints.openai.chat_completion.protocol.ChatCompletionResponse`
 #      `vllm.entrypoints.openai.chat_completion.protocol.ChatCompletionStreamResponse`
@@ -535,7 +571,7 @@
 #    Future Plan:
 #       Remove this patch once the supported vLLM version contains PR #44105.
 #
-# ** 22. File: platform/patch_use_v2_model_runner.py**
+# ** 23. File: platform/patch_use_v2_model_runner.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.config.vllm.VllmConfig.use_v2_model_runner`
 #    Why:
@@ -1149,7 +1185,7 @@
 #       Remove this patch once upstream `load_dspark_model` inherits the target
 #       quant config for same-checkpoint drafts.
 #
-# ** 34. File: platform/patch_vision.py**
+# ** 35. File: platform/patch_vision.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.model_executor.models.vision.FusedInputNorm.forward`
 #    Why:

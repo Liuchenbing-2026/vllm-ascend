@@ -32,6 +32,11 @@ env_variables: dict[str, Callable[[], Any]] = {
     # the number of CPU cores. If not set, the default value is None, which
     # means all number of CPU cores will be used.
     "MAX_JOBS": lambda: os.getenv("MAX_JOBS", None),
+    # Size of the incremental (segment-level) tokenizer cache, in GiB, per
+    # API server process. 0 (the default) disables it. Only pays off at very
+    # high PrefixCache hit rates, where tokenization - still O(full prompt)
+    # on every turn - dominates the frontend cost.
+    "VLLM_ASCEND_TOKENIZER_CACHE_GB": lambda: float(os.getenv("VLLM_ASCEND_TOKENIZER_CACHE_GB", "0")),
     # The build type of the package. It can be one of the following values:
     # Release, Debug, RelWithDebugInfo. If not set, the default value is Release.
     "CMAKE_BUILD_TYPE": lambda: os.getenv("CMAKE_BUILD_TYPE"),
