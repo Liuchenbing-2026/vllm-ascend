@@ -4,9 +4,13 @@ from unittest.mock import MagicMock, patch
 import torch
 from vllm.model_executor.layers.fused_moe import MoERunner, RoutedExperts
 from vllm.model_executor.layers.linear import LinearBase
+from vllm.model_executor.models import mistral3
 
 from tests.ut.base import TestBase
-from vllm_ascend.quantization.fp8_config import AscendDeepseekV4FP8Config
+from vllm_ascend.quantization.fp8_config import (
+    AscendDeepseekV4FP8Config,
+    AscendFp8Config,
+)
 
 
 class TestAscendDeepseekV4FP8Config(TestBase):
@@ -111,3 +115,44 @@ class TestAscendDeepseekV4FP8Config(TestBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_mistral4_fp8_config_maps_ignored_layers() -> None:
+    config = AscendFp8Config.from_config(
+        {
+            "activation_scheme": "static",
+            "modules_to_not_convert": [
+                "model.vision_tower",
+                "model.multi_modal_projector",
+                "lm_head",
+            ],
+            "quant_method": "fp8",
+            "weight_block_size": None,
+        }
+    )
+
+    mistral3_model = getattr(
+        mistral3,
+        "Mistral3For" "ConditionalGeneration",
+    )
+    config.apply_vllm_mapper(mistral3_model.hf_to_vllm_mapper)
+
+    assert config.is_per_tensor_fp8
+    assert not config.mistral4_dynamic_channelwise
+    assert config.ignored_layers == [
+        "vision_tower",
+        "multi_modal_projector",
+        "language_model.lm_head",
+    ]
+
+
+def test_block_fp8_keeps_non_mistral4_path() -> None:
+    config = AscendFp8Config.from_config(
+        {
+            "activation_scheme": "dynamic",
+            "quant_method": "fp8",
+            "weight_block_size": [128, 128],
+        }
+    )
+
+    assert not config.is_per_tensor_fp8

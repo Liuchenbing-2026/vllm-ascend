@@ -48,12 +48,22 @@ class GraphFusionPassManager:
 
     def configure(self, config: VllmConfig):
         from vllm_ascend.ascend_config import get_ascend_config
-        from vllm_ascend.utils import is_310p
+        from vllm_ascend.utils import AscendDeviceType, get_ascend_device_type, is_310p
 
-        # Consume the recursively validated config rather than re-reading the
-        # raw additional_config dict (where e.g. "false" is truthy).
         self.ascend_compilation_config = get_ascend_config().ascend_compilation_config
-        if self.ascend_compilation_config.fuse_norm_quant and not is_310p():
+        model_config = config.model_config
+        hf_config = getattr(model_config, "hf_config", None)
+        text_config = getattr(hf_config, "text_config", hf_config)
+        model_type = getattr(text_config, "model_type", None)
+        mistral_on_a2 = (
+            model_type in {"mistral3", "ministral3", "mistral4"}
+            and get_ascend_device_type() == AscendDeviceType.A2
+        )
+        if (
+            self.ascend_compilation_config.fuse_norm_quant
+            and not is_310p()
+            and not mistral_on_a2
+        ):
             from .passes.norm_quant_fusion_pass import AddRMSNormQuantFusionPass
 
             self.passes.append(AddRMSNormQuantFusionPass(config))
