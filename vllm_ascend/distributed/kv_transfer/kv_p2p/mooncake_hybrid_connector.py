@@ -589,6 +589,7 @@ class KVCacheRecvingThread(threading.Thread):
             return has_finished_marker
 
     def _handle_request(self, req_meta: dict[str, Any]):
+        transfer_succeeded = True
         request_id = req_meta["request_id"]
         remote_request_id = req_meta["remote_request_id"]
         remote_host = req_meta["remote_host"]
@@ -605,10 +606,19 @@ class KVCacheRecvingThread(threading.Thread):
             logger.debug("Finished transferring KV cache for request %s.", remote_request_id)
         except Exception:
             logger.exception("Failed to transfer KV cache for request %s.", remote_request_id)
+            transfer_succeeded = False
         finally:
             self._send_done_signal_to_free_remote_port(remote_request_id, remote_host, remote_port_send_num)
             if self._mark_request_task_done(request_id, all_task_done):
-                if len(req_meta["local_block_ids"]) > 0:
+                if not transfer_succeeded:
+                    # Never advertise a failed pull as a completed receive: the
+                    # consumer would then decode on KV blocks that were never
+                    # written, silently producing corrupted output or NaNs.
+                    logger.error(
+                        "KV cache transfer failed for request %s; not reporting it as received.",
+                        remote_request_id,
+                    )
+                elif len(req_meta["local_block_ids"]) > 0:
                     self.task_tracker.update_done_task_count(request_id)
                 with self.proc_not_transfer_request_lock:
                     self.proc_not_transfer_request.pop(remote_request_id, None)
