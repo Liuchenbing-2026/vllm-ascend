@@ -70,6 +70,14 @@ def _to_int32(t: torch.Tensor, tag: str = "") -> torch.Tensor:
     makes sharing safe across calls; ``tag`` separates index vs seq scratch
     when their numels collide (both are NR).
     """
+    # v2: identity.  Every kernel already narrows on load
+    # (`tl.load(indices + ...).to(tl.int32)`), so int64 tensors are fine as-is.
+    # The cast used to launch two extra device kernels per op call -- which
+    # aclgraph captures and then replays on EVERY decode step -- and it froze a
+    # _cast_scratch pointer into the captured graph.  Set TRITON_LORA_CAST=1 to
+    # restore the old behaviour.
+    if os.environ.get("TRITON_LORA_CAST", "0") == "0":
+        return t
     key = (tag, t.numel())
     s = _cast_scratch.get(key)
     if s is None or s.device != t.device:
@@ -608,6 +616,7 @@ def sgmv_shrink(inputs, lora_a_weights, output_tensor, b_seq_start_loc,
     seq32 = _to_int32(seq_len_tensor, "seq")
     kwargs = dict(H=H, R=R, L=L, NR=seq_len_tensor.numel(), scale=scaling)
     m2 = _timing_start("sgmv_shrink|lookup")
+    m3 = None  # v2: was only bound inside the _cpp_enabled() branch -> NameError
     if _cpp_enabled():
         case = _cpp_get_case(K.sgmv_shrink_kernel, kwargs,
                              (inputs, w, idx32, seq32,
@@ -623,7 +632,6 @@ def sgmv_shrink(inputs, lora_a_weights, output_tensor, b_seq_start_loc,
             _timing_end("sgmv_shrink|lookup", m2)
             _timing_end("sgmv_shrink|launch", m3)
             return output_tensor
-    _timing_end("sgmv_shrink", t0)
     _timing_end("sgmv_shrink|prep", m1)
     _timing_end("sgmv_shrink|lookup", m2)
     _timing_end("sgmv_shrink|launch", m3)
@@ -656,6 +664,7 @@ def sgmv_expand_slice(inputs, lora_b_weights, output_tensor, b_seq_start_loc,
                   BLOCK_HO=_expand_blk_ho(R), Y_HO=output_tensor.size(1),
                   SLICE_OFF=slice_offset)
     m2 = _timing_start("sgmv_expand_slice|lookup")
+    m3 = None  # v2: see sgmv_shrink
     if _cpp_enabled():
         case = _cpp_get_case(K.sgmv_expand, kwargs,
                              (inputs, w, idx32, seq32,
