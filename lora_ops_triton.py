@@ -603,9 +603,129 @@ def bgmv_expand_slice(inputs, lora_b_weights, output_tensor, lora_indices_tensor
     return output_tensor
 
 
+_V2 = os.environ.get("TRITON_LORA_V2", "1") != "0"
+_V2_EXACT = 1 if os.environ.get("TRITON_LORA_EXACT", "1") != "0" else 0
+
+
+_V2_BLK_CACHE = {}
+
+
+def _v2_blk(H: int) -> int:
+    """Largest power-of-two <= 512 dividing both H and the 11776 AscendC window
+    (so the per-window accumulator restart that keeps down_proj matching stays
+    on a block boundary)."""
+    b = _V2_BLK_CACHE.get(H)
+    if b is None:
+        b = 64
+        for c in (512, 256, 128, 64):
+            if H % c == 0 and 11776 % c == 0:
+                b = c
+                break
+        _V2_BLK_CACHE[H] = b
+    return b
+
+
+_V2_CFG_CACHE = {}
+
+
+def _v2_expand_cfg(Ho: int, R: int, NR: int, B: int):
+    """(BLOCK_HO, TB).
+
+    TB>1 makes one program own TB consecutive token rows so they share a single
+    loaded weight tile.  That is only correct when every row in the group maps
+    to the SAME lora id, which is guaranteed exactly when the batch is a single
+    segment (NR == 1).  `compute_meta` collapses consecutive equal ids, so an
+    all-one-adapter batch always yields NR == 1; with NR > 1 a group could
+    straddle a segment boundary, so fall back to one row per program, which is
+    per-row correct by construction.
+
+    TB is bucketed by B so a B=1 decode step does not pay for 3 masked-off
+    rows; every bucket computes each real row identically, so the bucket
+    choice cannot change results.
+    """
+    if NR != 1:
+        tb = 1
+    elif B <= 2:
+        tb = B
+    elif B <= 8:
+        tb = 4
+    else:
+        tb = 8
+    key = (Ho, R, NR, tb)
+    got = _V2_CFG_CACHE.get(key)
+    if got is not None:
+        return got
+    bh = 128
+    while bh > 32 and Ho % bh:
+        bh //= 2
+    while tb > 1 and tb * bh * R * 4 > 96 * 1024:
+        tb //= 2
+    _V2_CFG_CACHE[key] = (bh, tb)
+    return bh, tb
+
+
+def sgmv_shrink_v1(inputs, lora_a_weights, output_tensor, b_seq_start_loc,
+                   seq_len_tensor, lora_indices_tensor, batches, max_seq_length,
+                   token_nums, scaling):
+    return _sgmv_shrink_impl(inputs, lora_a_weights, output_tensor, b_seq_start_loc,
+                             seq_len_tensor, lora_indices_tensor, batches,
+                             max_seq_length, token_nums, scaling)
+
+
 def sgmv_shrink(inputs, lora_a_weights, output_tensor, b_seq_start_loc,
                 seq_len_tensor, lora_indices_tensor, batches, max_seq_length,
                 token_nums, scaling):
+    if not _V2:
+        return _sgmv_shrink_impl(inputs, lora_a_weights, output_tensor,
+                                 b_seq_start_loc, seq_len_tensor,
+                                 lora_indices_tensor, batches, max_seq_length,
+                                 token_nums, scaling)
+    t0 = _timing_start("sgmv_shrink")
+    B, H = inputs.shape
+    # vllm packs lora_a as [L, 1, R, H]; the kernel needs only L, R and the base
+    # pointer, and reshaping a contiguous tensor keeps the same data_ptr, so the
+    # reshape is materialised only on the plain-triton fallback path.
+    sh = lora_a_weights.shape
+    L, R = sh[0], sh[-2]
+    idx32 = _to_int32(lora_indices_tensor, "idx")
+    seq32 = _to_int32(seq_len_tensor, "seq")
+    blk = _v2_blk(H)
+    if H % blk:
+        # the v2 kernels step BLK through the row with unmasked loads; any H
+        # that 64 does not divide must take the masked v1 path (out-of-row
+        # reads otherwise -- not hit by any Qwen3.6-27B shape, found in audit).
+        return _sgmv_shrink_impl(inputs, lora_a_weights, output_tensor,
+                                 b_seq_start_loc, seq_len_tensor,
+                                 lora_indices_tensor, batches, max_seq_length,
+                                 token_nums, scaling)
+    kwargs = dict(scale=scaling, H=H, R=R, L=L, NR=seq_len_tensor.numel(),
+                  BLK=blk, NJ=blk // 64, EXACT=_V2_EXACT)
+    # decode batches leave most of the 40 AIV cores idle on a (B,) grid; the
+    # (B*R,) variant has the identical per-element summation order, so this
+    # dispatch cannot change results.
+    if B * R <= 40:
+        kern, grid = K.sgmv_shrink_v2s, B * R
+    else:
+        kern, grid = K.sgmv_shrink_v2, B
+    if _cpp_enabled():
+        case = _cpp_get_case(kern, kwargs,
+                             (inputs, lora_a_weights, idx32, seq32,
+                              output_tensor), (grid,))
+        if case is not None:
+            _cpp_launch(case, grid, [inputs.data_ptr(), lora_a_weights.data_ptr(),
+                                     idx32.data_ptr(), seq32.data_ptr(),
+                                     output_tensor.data_ptr()])
+            _timing_end("sgmv_shrink", t0)
+            return output_tensor
+    w = lora_a_weights.reshape(L, R, H)
+    kern[(grid,)](inputs, w, idx32, seq32, output_tensor, **kwargs)
+    _timing_end("sgmv_shrink", t0)
+    return output_tensor
+
+
+def _sgmv_shrink_impl(inputs, lora_a_weights, output_tensor, b_seq_start_loc,
+                      seq_len_tensor, lora_indices_tensor, batches, max_seq_length,
+                      token_nums, scaling):
     t0 = _timing_start("sgmv_shrink")
     m1 = _timing_start("sgmv_shrink|prep")
     B, H = inputs.shape
@@ -652,6 +772,55 @@ def sgmv_expand(inputs, lora_b_weights, output_tensor, b_seq_start_loc,
 def sgmv_expand_slice(inputs, lora_b_weights, output_tensor, b_seq_start_loc,
                       seq_len_tensor, lora_indices_tensor, batches, max_seq_length,
                       token_nums, slice_offset, slice_size, add_inputs=False):
+    if not _V2:
+        return _sgmv_expand_slice_impl(inputs, lora_b_weights, output_tensor,
+                                       b_seq_start_loc, seq_len_tensor,
+                                       lora_indices_tensor, batches, max_seq_length,
+                                       token_nums, slice_offset, slice_size,
+                                       add_inputs)
+    t0 = _timing_start("sgmv_expand_slice")
+    B, R = inputs.shape
+    sh = lora_b_weights.shape          # [L, 1, Ho, R]; reshape keeps data_ptr
+    L, Ho = sh[0], sh[-2]
+    idx32 = _to_int32(lora_indices_tensor, "idx")
+    seq32 = _to_int32(seq_len_tensor, "seq")
+    bh, tb = _v2_expand_cfg(Ho, R, seq_len_tensor.numel(), B)
+    if Ho % bh:
+        # the v2 kernel has no ho<Ho tail mask; a slice size that 32 does not
+        # divide must take the masked v1 path (silent missing tail columns
+        # otherwise -- not hit by any Qwen3.6-27B shape, found in audit).
+        return _sgmv_expand_slice_impl(inputs, lora_b_weights, output_tensor,
+                                       b_seq_start_loc, seq_len_tensor,
+                                       lora_indices_tensor, batches,
+                                       max_seq_length, token_nums, slice_offset,
+                                       slice_size, add_inputs)
+    nchunk = Ho // bh
+    grid = ((B + tb - 1) // tb) * nchunk
+    kwargs = dict(R=R, Ho=Ho, L=L, NR=seq_len_tensor.numel(), BLOCK_HO=bh,
+                  Y_HO=output_tensor.size(1), SLICE_OFF=slice_offset,
+                  NCHUNK=nchunk, TB=tb)
+    if _cpp_enabled():
+        case = _cpp_get_case(K.sgmv_expand_v2, kwargs,
+                             (inputs, lora_b_weights, idx32, seq32,
+                              output_tensor, output_tensor), (grid,))
+        if case is not None:
+            _cpp_launch(case, grid, [inputs.data_ptr(), lora_b_weights.data_ptr(),
+                                     idx32.data_ptr(), seq32.data_ptr(),
+                                     output_tensor.data_ptr(),
+                                     output_tensor.data_ptr()])
+            _timing_end("sgmv_expand_slice", t0)
+            return output_tensor
+    w = lora_b_weights.reshape(L, Ho, R)
+    K.sgmv_expand_v2[(grid,)](inputs, w, idx32, seq32, output_tensor,
+                              output_tensor, **kwargs)
+    _timing_end("sgmv_expand_slice", t0)
+    return output_tensor
+
+
+def _sgmv_expand_slice_impl(inputs, lora_b_weights, output_tensor, b_seq_start_loc,
+                            seq_len_tensor, lora_indices_tensor, batches,
+                            max_seq_length, token_nums, slice_offset, slice_size,
+                            add_inputs=False):
     t0 = _timing_start("sgmv_expand_slice")
     m1 = _timing_start("sgmv_expand_slice|prep")
     B, R = inputs.shape
