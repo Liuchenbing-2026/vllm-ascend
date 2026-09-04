@@ -1,62 +1,93 @@
 # 04 —— 未解问题与已知限制
 
-## 1. 多模态：模型是多模态的，但官方模板把图片关掉了
-
-这是本次最需要上游确认的一条。
+## 1. 多模态：模型是多模态的，但官方模板把图片吃掉了
 
 **模型确实是多模态的**，官方模型卡原话：
 
 > We introduce GLM-5.3-Flash, **the first natively multimodal model in the GLM-5 series** … our
 > latest **30T-token multimodal pre-training corpus**
 
-产物侧也全部对得上：`vision_config`（24 blocks / patch 14 / out_hidden 4096）、
-347 个 `model.visual.*` 张量、`image_token_id 154854` 与 `<|begin_of_image|>` 等真实 token、
-随包发的 `image_processing_glm5_next.py` + `processor_config.json`；
-vllm-ascend 也把 `Glm5NextForConditionalGeneration` 注册到 706 行的 `glm5_next_multimodal.py`，
-服务启动时解析出的架构就是它。
+**除了对话模板，整条链路是好的**（以下经 3 视角对抗验证）：
 
-**但官方随包的 `chat_template.jinja` 是纯文本模板**，遇到 image content part 直接拒绝：
+- ViT 用 `quant_config=None` 构建，**结构上不可能被量化碰到**；347 个 `model.visual.*`
+  经 `model.visual.` → `visual.` 一一对应装上 [F]
+- **vLLM 启动时的 `profile_run` 已经在设备上用 bf16 跑过一次 `model.embed_multimodal(...)`**
+  ——视觉塔是能加载、能跑的 [F]
+- 文件不缺：transformers 5.16 优先读嵌套的 `processor_config.json`，
+  它就是 legacy `preprocessor_config.json` 的现代替代 [F]
+- **prefix cache 覆盖图像 token 是正确的**：`_gen_mm_extra_hash_keys` 会把
+  `(内容哈希, 块内偏移)` 打进每一个与图像重叠的 640-token block [F]
+- vllm-ascend 内置的 `Glm5NextImageProcessor` **总是**胜过 checkpoint 里 `auto_map` 的远程代码
+  （`auto_map` / `image_processor_type` 两个键在 `glm5_next_multimodal.py:434-443` 被显式剥掉），
+  `--trust-remote-code` 不改变这一点 [F]
+
+### 唯一的 blocker 是模板
+
+`chat_template.jinja` 的 `visible_text` 宏（第 50 行定义，第 59-61 行）把每个
+image/video content part 映射成一句字面文本：
 
 ```jinja
 {%- elif item is mapping and item.type in ['image','image_url','video',...] -%}
-    {%- set media_type = item.type | replace('_url','') | replace('input_','') -%}
     {{- "<reminder>You are unable to process this " ~ media_type ~
         " because you don't have multi-modal input ability. Try different methods.</reminder>" }}
 ```
 
-而且 README frontmatter 写的是 `pipeline_tag: text-generation`。
+整个 8617 字节的模板里 `image` 只匹配到这一行，`<|image|>` / `<|begin_of_image|>` /
+`<|end_of_image|>` **一次都没出现过**。
 
-后果：模板不发 `<|image|>` 占位符，
-`Glm4vMultiModalProcessor._get_prompt_updates` 的
-`PromptReplacement(target=hf_processor.image_token, ...)` 找不到替换位置：
+**为什么这个分支会被走到**：同一个宏里的 `{%- for item in content -%}` 循环让 vLLM 把内容格式
+自动判成 `openai`（`renderers/hf.py:416-418`，日志里有
+`Detected the chat template content format to be 'openai'`）。openai 格式下
+`_parse_chat_message_content_part` 返回裸 dict `{"type":"image"}`，
+模型自带的 `get_placeholder_str` **被丢弃** —— 占位符本该由模板发，而这个模板不发。
+
+于是 `Glm4vMultiModalProcessor._get_prompt_updates`（`glm4_1v.py:1567-1571`）
+要找的 `target = hf_processor.image_token = "<|image|>"` 找不到：
 
 ```
 AssertionError: Failed to apply prompt replacement for mm_items['image'][0]
-  vllm/multimodal/processing/processor.py:1565 _apply_prompt_updates
+  vllm/multimodal/processing/processor.py:1565
 ```
 
-### 我们准备了什么
+（已在本机复现，见 `/data02/glm53_tiny/logs/real_full.log`，HTTP 500。）
 
-`serve/chat_template_mm.jinja` —— 从官方模板派生，**只改那一个分支**，
-改成发 `<|begin_of_image|><|image|><|end_of_image|>` / `<|begin_of_video|><|video|><|end_of_video|>`，
-其余字节完全一致（`serve/make_mm_chat_template.py` 可复现）。
+### 三种修法，推荐第一种
 
-已离线验证渲染正确：
+1. **`--chat-template-content-format string`**（推荐，**不碰厂商模板**）
+   内容以纯字符串到达模板，其中已由 `_get_full_multimodal_text_prompt`
+   （`chat_utils.py:1355-1405`）拼好 `<|begin_of_image|><|image|><|end_of_image|>`，
+   模板的 `content is string` 分支原样输出。
+   想保留图片在原位而不是被前置，再加 `--interleave-mm-strings`。
+2. `--chat-template <改过的模板>` —— 本仓库的 `serve/chat_template_mm.jinja` 就是这个
+   （在原有 media 分支**之前**插入 image/video 两个分支，其余字节不动）。
+   保留 openai 的交错语义。
+3. 免重启的临时口子：把 Jinja 直接放进**单次请求**的 `chat_template` 字段
+   （`renderers/hf.py:272-276` 里它优先级最高，且每请求重跑格式判定）。
+   **注意**：这条路没有端到端跑过（[U]）——`resolve_chat_template` 是把裸 Jinja 串交给
+   `tokenizer.get_chat_template()`，transformers 5.16 收到裸模板而非模板*名*时的行为只从
+   vLLM 侧读了代码，没实测。
 
-```
-[gMASK]<sop><|system|>Reasoning Effort: Max<|user|><|begin_of_image|><|image|><|end_of_image|>What colour is this?<|assistant|><think>
-<|image|> -> [154854]   <|begin_of_image|> -> [154830]   <|end_of_image|> -> [154831]
-```
-
-### 但没有启用，也不建议自作主张启用
+### 但没有启用
 
 **这是在覆盖厂商明确关掉的开关。** 分不清是「这版不开放图像输入」还是「模板发错了」，
-两种可能的处理方式完全不同。要用先跟上游确认。
+处理方式完全不同。要开先跟上游确认。
 
-用法（确认之后）：给 `serve.sh` 加一行
-`--chat-template /path/to/chat_template_mm.jinja`。
+**状态：图像通路一次都没产出过正确答案（[U]）。** 视觉塔的语义正确性
+（2×2 merge 块内的权重顺序、downsample/merger 的方向、`Glm5NextSiluAndMul` 在
+swiglu_limit=10.0 处的截断）目前只由「profiling 时没崩」支撑，**不是由任何输出支撑的**。
+修好模板后欠一次已知图像的对拍。
 
-**状态：图像通路一次都没跑通过（[U]）。** ViT 权重在、代码在、模板备好了，仅此而已。
+### 顺带记下的几条
+
+- **`--mm-processor-kwargs` 是有效的**（我最初判断它对本模型无效，被 3/3 推翻）：
+  服务级或单请求的 `max_image_tokens` / `min_image_tokens` 会作为 callable kwarg 传下去。
+  另外 `--limit-mm-per-prompt '{"image":1,"video":0}'` 也有效。
+- **mrope 没有启用** —— 图像 token 拿的是普通顺序位置。
+- **MTP drafter 看不到图像 embedding**，图像 prefill 之后头几个 token 的接受率会低。
+  **不要拿纯文本的 73% 去调 `num_speculative_tokens`**，图像流量要单独量。
+- 视频完全没碰过。`Glm5NextVideoProcessor` 在（max_frames 2048 / fps 2 /
+  max_image_tokens 240000），`get_supported_mm_limits` 允许 `video:1`，
+  编码器预算按视频定尺寸（16384）——真实视频会是这台机器见过的最大单次编码任务。
 
 ## 2. b0829 vs b0829se 的 A/B 没做
 
@@ -92,12 +123,19 @@ KDA prefill 的 `recurrent_state[state_indices]` gather（`ops/kimi_kda.py:427`�
 没试过的省内存旋钮：`finegrained_tp_config`（oproj / lmhead / embedding / mlp 各自的 TP）、
 `enable_shared_expert_dp`、`--kv-cache-dtype`、`enable_kv_nz`。
 
-## 5. 六个分析维度未经对抗验证
+## 5. 哪些结论经过对抗验证，哪些没有
 
-`docs/03-findings.md` 里只有 prefix cache 一节经过 3 视角对抗验证
-（12 条 verdict 全部 `refuted=false / confidence=high`）。
-图模式 / MTP / 量化加载 / 多模态 / 内存 / 交互矩阵这几节是单遍代码阅读 + 实测，
-其中标 [F] 的都有实测或明确的 file:line 支撑，标 [I] 的只是推断。
+经过 3 视角对抗验证的只有两块：
+
+- **prefix cache**：16 条 finding，12 条 verdict 全部 `refuted=false / confidence=high`
+- **多模态**：11 条 finding；blocker（模板吃掉占位符）3/3 确认；
+  其中我原本判断的「`--mm-processor-kwargs` 对本模型无效」被 **3/3 推翻**，已改正
+
+**没有**经过对抗验证的：图模式 / MTP / 量化加载 / 内存预算 / 交互矩阵。
+这几节是单遍代码阅读 + 实测 —— 标 [F] 的都有实测或明确 file:line 支撑，标 [I] 的只是推断。
+
+（第二轮审计原本还要查 QuaRot rot.weight、内存拆解、MTP conv state 三项，
+但那三个维度的 agent 全部 stalled，所以第 3/4/6 节仍然是空的。）
 
 ## 6. QuaRot 的 rot.weight 只在 MTP 层被消费
 

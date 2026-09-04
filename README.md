@@ -99,3 +99,21 @@ patches/README.md                  两个被证否的 vllm-ascend 补丁（不�
 | b0829se | 0829 + 一行 yaml | FLOAT | **347** ✓ | 113,095 | 312 G | b0829 的单变量对照 |
 
 b0829 vs b0829se 的精度/性能 A/B 还没做，见 `docs/04-open.md`。
+
+## 多模态
+
+模型**是**原生多模态的（官方模型卡原话），347 个 ViT 张量在 b0829 里齐全，
+vLLM 启动时的 profile_run 已经在设备上跑过一次视觉塔。
+
+**但官方随包的 `chat_template.jinja` 是纯文本模板**，会把 image content part
+换成一句 "You are unable to process this image"，占位符 `<|image|>` 从不出现，
+于是每个图像请求都是 HTTP 500（已复现）。
+
+最干净的修法是**一个启动参数、不碰厂商模板**：
+
+```
+--chat-template-content-format string   # 可选再加 --interleave-mm-strings
+```
+
+**当前没有启用** —— 这是在覆盖厂商明确关掉的开关，先跟上游确认。
+图像通路一次都没产出过正确答案。详见 `docs/04-open.md`。

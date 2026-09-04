@@ -2,8 +2,8 @@
 
 证据强度：**[F]** 读到代码/产物并引用；**[I]** 由读到的代码推断；**[U]** 未验证。
 
-其中「prefix cache」一节的 16 条结论经过 3 视角对抗验证（12 条 verdict 全部
-`refuted=false / confidence=high`）。其余各节是单遍代码阅读 + 实测，**未经对抗验证**。
+**prefix cache**（16 条）与**多模态**（11 条）两节经过 3 视角对抗验证；
+其余各节是单遍代码阅读 + 实测，**未经对抗验证**。
 
 ---
 
@@ -75,3 +75,22 @@
 | 42 | msmodelslim 峰值每卡 ~20 GB HBM（linear_quant DTS 阶段），卡上有别的负载会 OOM | [F] | 实测（被并发的 vLLM 挤掉过一次） |
 | 43 | KDA prefill 的 `recurrent_state[state_indices]` gather 开销随状态缓存规模走，`gpu-memory-utilization` 吃太满会自己撑死自己（迷你模型 TP2 上 0.85 时单次 6-token prompt 就要 20.13 GiB，0.35 通过） | [F] | `ops/kimi_kda.py:427` + 实测 |
 | 44 | 镜像里 pip index-url 指向不可达的 k8s 内网 cache | [F] | 实测 |
+
+
+## 多模态（经对抗验证）
+
+| # | 结论 | 强度 | 出处 |
+|---|---|---|---|
+| 45 | 官方 `chat_template.jinja` 是纯文本模板：整个 8617 B 里 `image` 只匹配 1 行，`<\|image\|>` 从未出现；image content part 被换成一句 "You are unable to process this image" | [F] | `chat_template.jinja:50-66,105` |
+| 46 | 该宏里的 `{%- for item in content -%}` 让 vLLM 把内容格式判成 `openai`，于是 image part 以裸 dict 到达、模型自带的 `get_placeholder_str` 被丢弃 —— 占位符本该由模板发 | [F] | `renderers/hf.py:416-418`, `entrypoints/chat_utils.py:1769-1776` |
+| 47 | ⇒ `PromptReplacement(target=hf_processor.image_token)` 找不到目标 → `AssertionError: Failed to apply prompt replacement`（已在本机复现，HTTP 500） | [F] | `multimodal/processing/processor.py:1565`, `glm4_1v.py:1567-1571` |
+| 48 | **最干净的修法是 `--chat-template-content-format string`**，不碰厂商模板：内容以字符串到达，占位符由 `_get_full_multimodal_text_prompt` 拼好 | [F] | `chat_utils.py:1355-1405` |
+| 49 | ViT 用 `quant_config=None` 构建，结构上不可能被量化碰到；347 个 `model.visual.*` 经 `model.visual.` → `visual.` 一一装上 | [F] | `glm5_next_multimodal.py` |
+| 50 | vLLM 启动的 `profile_run` 已在设备上 bf16 跑过一次 `embed_multimodal(...)` ⇒ 视觉塔能加载能跑 | [F] | 启动日志 |
+| 51 | vllm-ascend 内置 `Glm5NextImageProcessor` 总是胜过 checkpoint 的 `auto_map` 远程代码（两个键被显式剥掉），`--trust-remote-code` 不改变 | [F] | `glm5_next_multimodal.py:434-443` |
+| 52 | 文件不缺：transformers 5.16 优先读嵌套 `processor_config.json`，它是 legacy `preprocessor_config.json` 的现代替代 | [F] | — |
+| 53 | prefix cache 覆盖图像 token 是正确的：`_gen_mm_extra_hash_keys` 把 (内容哈希, 块内偏移) 打进每个重叠的 640-block | [F] | — |
+| 54 | `--mm-processor-kwargs` 对本模型**有效**（我原判断它无效，被 3/3 推翻）；`--limit-mm-per-prompt` 也有效 | [F] | `AscendGlm5NextProcessingInfo.get_hf_processor`, `processing/context.py:393-407` |
+| 55 | mrope **没有**启用，图像 token 拿普通顺序位置 | [F] | — |
+| 56 | MTP drafter 看不到图像 embedding ⇒ 图像 prefill 后头几个 token 接受率会低，别拿纯文本的 73% 去调参 | [I] | `glm5_next_mtp.py` |
+| 57 | 图像通路**一次都没产出过正确答案**；视觉塔语义正确性只由「profiling 没崩」支撑 | [U] | — |
