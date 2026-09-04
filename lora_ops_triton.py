@@ -332,12 +332,42 @@ def _cpp_setup():
 
 
 def _cpp_case_key(kernel_fn, kwargs, tensors):
+    # v2: two fixes.  (a) `tensors` is really example_args and may hold python
+    # scalars -- bgmv_shrink passes `scaling` -- so .dtype must be guarded, or
+    # every bgmv_shrink call raises AttributeError.  (b) sorted() + str() per
+    # kwarg on each of ~1200 op calls per forward is pure host tax; kwargs is
+    # built with a fixed key order at every call site, so the values alone
+    # identify the case.
     return (kernel_fn.__name__,
-            tuple(sorted((k, str(v)) for k, v in kwargs.items())),
-            tuple(str(t.dtype) for t in tensors))
+            tuple(kwargs.values()),
+            tuple(t.dtype for t in tensors if isinstance(t, torch.Tensor)))
 
 
-def _cpp_launch(case, grid_x, ptrs, floats=()):
+_NUM_AIV = None
+
+
+def _num_aiv() -> int:
+    """Physical AIV block count.  triton-ascend clamps blockDim to this in its
+    own launcher (backends/ascend/driver.py, `enable_auto_map_parallel_blocks`)
+    and the compiled kernel walks the logical grid -- which is passed in the arg
+    buffer -- with a grid-stride loop."""
+    global _NUM_AIV
+    if _NUM_AIV is None:
+        for mod, cls in (("triton.backends.ascend.driver", "NPUUtils"),
+                         ("triton.backends.ascend.utils", "NPUUtils")):
+            try:
+                import importlib
+                _NUM_AIV = int(getattr(importlib.import_module(mod), cls)()
+                               .get_aivector_core_num())
+                break
+            except Exception:
+                continue
+        if not _NUM_AIV:
+            _NUM_AIV = 40
+    return _NUM_AIV
+
+
+def _cpp_launch(case, grid_x, ptrs, floats=(), ints=()):
     CL, _ = _cpp_setup()
     b = case["buf"]
     off = 24  # [ffts][syncBlockLock][workspace]
@@ -347,11 +377,19 @@ def _cpp_launch(case, grid_x, ptrs, floats=()):
     for f in floats:
         struct.pack_into("<f", b, off, f)
         off += 4
+    for i in ints:
+        struct.pack_into("<i", b, off, int(i))
+        off += 4
     off = (off + 3) & ~3
     struct.pack_into("<iii", b, off, grid_x, 1, 1)
+    # v2 FIX: blockDim must be clamped to the physical block count.  Passing the
+    # full logical grid (up to max_num_batched_tokens) cost 3.2x device time at
+    # B=256 and 12.9x at B=1024, measured on 910B4 with the identical binary.
+    nb = _num_aiv()
+    block = grid_x if grid_x < nb else nb
     return CL.lora_launch_flat(case["func"],
                                torch.npu.current_stream().npu_stream,
-                               grid_x, b, off + 12)
+                               block, b, off + 12)
 
 
 def _cpp_peek_stub(func):
@@ -375,7 +413,11 @@ def _cpp_make_case(kernel_fn, kwargs, example_args, grid):
         return None
 
     tensors = [t for t in example_args if isinstance(t, torch.Tensor)]
-    floats = [f for f in example_args if not isinstance(f, torch.Tensor)]
+    # v2: ints (the expand kernel takes a runtime row count) must be packed as
+    # <i, not <f, in the verify-retry launch below.
+    floats = [f for f in example_args if isinstance(f, float)]
+    int_args = [f for f in example_args
+                if isinstance(f, int) and not isinstance(f, bool)]
     ti = [i for i, a in enumerate(example_args)
           if isinstance(a, torch.Tensor)]
 
@@ -407,7 +449,7 @@ def _cpp_make_case(kernel_fn, kwargs, example_args, grid):
         return None
 
     ptrs_d = [t.data_ptr() for t in dummy_args if isinstance(t, torch.Tensor)]
-    n = 24 + 8 * len(ptrs_d) + 4 * len(floats) + 16
+    n = 24 + 8 * len(ptrs_d) + 4 * (len(floats) + len(int_args)) + 16
     cbuf = ctypes.create_string_buffer(n)
     struct.pack_into("<QQQ", cbuf, 0, ffts, 0, 0)
     case = dict(func=func, buf=cbuf, nptrs=len(ptrs_d), nfloats=len(floats))
@@ -433,7 +475,7 @@ def _cpp_make_case(kernel_fn, kwargs, example_args, grid):
     while True:
         for p in y_positions:
             dummy_args[p].zero_()
-        ret = _cpp_launch(case, grid[0], ptrs_d, floats)
+        ret = _cpp_launch(case, grid[0], ptrs_d, floats, int_args)
         torch.npu.synchronize()
         tries += 1
         y_sum = sum(float(dummy_args[p].abs().sum()) for p in y_positions)
