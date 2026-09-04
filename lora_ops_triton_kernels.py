@@ -298,8 +298,9 @@ def sgmv_shrink_v2(X, lora_a, indices, token_nums, y,
     acc_t = tl.zeros([R], dtype=tl.float32)
     for h0 in range(tail, H, BLK):
         oh = h0 + tl.arange(0, BLK)
-        xb = tl.load(X + x_base + oh).to(tl.float32)
-        ab = tl.load(lora_a + a_base + offs_r[:, None] * H + oh[None, :]).to(tl.float32)
+        m = oh < H          # partial tail when BLK does not divide H (H%64!=0)
+        xb = tl.load(X + x_base + oh, mask=m, other=0.0).to(tl.float32)
+        ab = tl.load(lora_a + a_base + offs_r[:, None] * H + oh[None, :], mask=m[None, :], other=0.0).to(tl.float32)
         pr = ab * xb[None, :]
         if EXACT:
             p = tl.sum(tl.reshape(pr, (R, NJ, 64)), axis=2)
@@ -400,8 +401,9 @@ def sgmv_shrink_v2s(X, lora_a, indices, token_nums, y,
     acc_t = tl.zeros([1], dtype=tl.float32)
     for h0 in range(tail, H, BLK):
         oh = h0 + tl.arange(0, BLK)
-        xb = tl.load(X + x_base + oh).to(tl.float32)
-        ab = tl.load(lora_a + a_base + oh).to(tl.float32)
+        m = oh < H          # partial tail when BLK does not divide H (H%64!=0)
+        xb = tl.load(X + x_base + oh, mask=m, other=0.0).to(tl.float32)
+        ab = tl.load(lora_a + a_base + oh, mask=m, other=0.0).to(tl.float32)
         pr = ab * xb
         if EXACT:
             p = tl.sum(tl.reshape(pr, (1, NJ, 64)), axis=2)
@@ -477,8 +479,13 @@ def sgmv_expand_v2(X_ptr, lora_b_ptr, indices_ptr, token_nums_ptr,
                 mask=row_ok[:, None], other=0.0)
     xk = x * keep[:, None]
     h0 = c * BLOCK_HO
+    ho = h0 + tl.arange(0, BLOCK_HO)
+    ho_ok = ho < Ho          # partial last chunk when BLOCK_HO does not divide Ho
     flat = tl.arange(0, BLOCK_HO * R)
-    w = tl.reshape(tl.load(lora_b_ptr + base_id * (Ho * R) + h0 * R + flat),
+    # 1-D contiguous weight load (the fast path), masked past Ho for the tail
+    # chunk; flat // R is the row (ho) offset of each of the BLOCK_HO*R elements.
+    w = tl.reshape(tl.load(lora_b_ptr + base_id * (Ho * R) + h0 * R + flat,
+                           mask=(h0 + flat // R) < Ho, other=0.0),
                    (BLOCK_HO, R))
     pv = w.to(tl.float32)[None, :, :] * xk[:, None, :]   # [TB, BH, R]
     # A tl.sum over the CONTIGUOUS inner rank axis lowers to the hardware
@@ -489,16 +496,16 @@ def sgmv_expand_v2(X_ptr, lora_b_ptr, indices_ptr, token_nums_ptr,
     # differs on ~1/50k rounding-tie elements; bit-exactness wins here.
     acc = tl.sum(pv, axis=2)
 
-    ho = h0 + tl.arange(0, BLOCK_HO)
     out_offs = rows[:, None] * Y_HO + SLICE_OFF + ho[None, :]
+    smask = row_ok[:, None] & ho_ok[None, :]
     # AscendC skips lid<0 (no-lora) rows; adding acc==+/-0.0 instead would
     # flip a -0.0 y element to +0.0.  A combined (row_ok & lid>=0) DMA mask
     # crashes bishengir (scalar UB OOB), so keep the proven row_ok mask and do
     # the skip as a value select: for skipped rows store the original bf16
     # bits back unchanged (the bf16->fp32->bf16 round trip is the identity,
     # -0.0 included).
-    yb = tl.load(y_in_ptr + out_offs, mask=row_ok[:, None], other=0.0)
+    yb = tl.load(y_in_ptr + out_offs, mask=smask, other=0.0)
     yi = yb.to(tl.float32)
     upd = (yi + acc).to(y_out_ptr.dtype.element_ty)
     val = tl.where((lid >= 0)[:, None], upd, yb)
-    tl.store(y_out_ptr + out_offs, val, mask=row_ok[:, None])
+    tl.store(y_out_ptr + out_offs, val, mask=smask)

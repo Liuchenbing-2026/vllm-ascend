@@ -152,7 +152,11 @@ TTFT（median，max_tokens=1）：
    长 prompt 高并发场景建议后续做 AscendC 式 token-per-core 的逐位 prefill 核。
 2. base 请求与 adapter 同 serve 时，decode 图内 v2 算子对 idx=-1 行仍计算后丢弃
    （+5.4 ms/步 vs AscendC 的行内早退）；纯 adapter 流量无影响；后续可加标量早退。
-3. R≠16 的 expand 走快速树（~1 ulp，非逐位）；H 不被 64 整除或 slice 宽度不被
-   32 整除的形状由 wrapper 守卫自动回退 v1 掩码路径（对抗审计发现的越界/丢列
-   风险即来源于此，已闭环，含 idx=-1 −0.0 覆写修复）。
+3. R≠16 的 expand 走快速树（~1 ulp，非逐位）。对抗审计发现的三处正确性缺陷
+   已参考上游 AscendC 的任意形状支持，在 v2 内核内用掩码原生修复，不再回退慢路径：
+   (a) shrink 尾块加 oh<H 掩码（H%64≠0，如 Llama down_proj H=1376）；
+   (b) expand 加 ho<Ho 掩码 + ceil 分块（slice 宽 %bh≠0，如 head_dim=80）；
+   (c) idx<0（no-lora）行按 AscendC `continue` 语义跳过写回（−0.0 保号）。
+   实测：标准全矩阵 0 失配；边缘 {1008,2000,1376,112,80} 均逐位并吃到 v2 加速；
+   仅 <16 对齐形状（如 1000）不支持——AscendC 自身同样不支持（32B DMA 对齐）。
 4. bgmv_* 在 vLLM V1 下是死代码，但 `_cpp_case_key` 崩溃已修，防止未来启用时踩雷。

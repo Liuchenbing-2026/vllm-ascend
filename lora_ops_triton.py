@@ -690,14 +690,9 @@ def sgmv_shrink(inputs, lora_a_weights, output_tensor, b_seq_start_loc,
     idx32 = _to_int32(lora_indices_tensor, "idx")
     seq32 = _to_int32(seq_len_tensor, "seq")
     blk = _v2_blk(H)
-    if H % blk:
-        # the v2 kernels step BLK through the row with unmasked loads; any H
-        # that 64 does not divide must take the masked v1 path (out-of-row
-        # reads otherwise -- not hit by any Qwen3.6-27B shape, found in audit).
-        return _sgmv_shrink_impl(inputs, lora_a_weights, output_tensor,
-                                 b_seq_start_loc, seq_len_tensor,
-                                 lora_indices_tensor, batches, max_seq_length,
-                                 token_nums, scaling)
+    # v2 shrink now masks its partial tail (oh < H), so any H is handled
+    # natively -- no fallback needed.  blk always divides the 11776 window so
+    # the main loop stays exact; only the final tail block can be partial.
     kwargs = dict(scale=scaling, H=H, R=R, L=L, NR=seq_len_tensor.numel(),
                   BLK=blk, NJ=blk // 64, EXACT=_V2_EXACT)
     # decode batches leave most of the 40 AIV cores idle on a (B,) grid; the
@@ -785,16 +780,9 @@ def sgmv_expand_slice(inputs, lora_b_weights, output_tensor, b_seq_start_loc,
     idx32 = _to_int32(lora_indices_tensor, "idx")
     seq32 = _to_int32(seq_len_tensor, "seq")
     bh, tb = _v2_expand_cfg(Ho, R, seq_len_tensor.numel(), B)
-    if Ho % bh:
-        # the v2 kernel has no ho<Ho tail mask; a slice size that 32 does not
-        # divide must take the masked v1 path (silent missing tail columns
-        # otherwise -- not hit by any Qwen3.6-27B shape, found in audit).
-        return _sgmv_expand_slice_impl(inputs, lora_b_weights, output_tensor,
-                                       b_seq_start_loc, seq_len_tensor,
-                                       lora_indices_tensor, batches,
-                                       max_seq_length, token_nums, slice_offset,
-                                       slice_size, add_inputs)
-    nchunk = Ho // bh
+    # v2 expand now masks its partial last chunk (ho < Ho), so any Ho is
+    # handled natively; ceil so the tail chunk is launched.
+    nchunk = (Ho + bh - 1) // bh
     grid = ((B + tb - 1) // tb) * nchunk
     kwargs = dict(R=R, Ho=Ho, L=L, NR=seq_len_tensor.numel(), BLOCK_HO=bh,
                   Y_HO=output_tensor.size(1), SLICE_OFF=slice_offset,
