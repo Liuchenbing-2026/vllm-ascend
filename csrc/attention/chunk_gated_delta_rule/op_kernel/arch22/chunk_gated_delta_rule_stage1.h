@@ -18,15 +18,14 @@
 #include "kernel_tiling/kernel_tiling.h"
 #include "chunk_gated_delta_rule_utils.h"
 #include "../chunk_gated_delta_rule_tiling_data.h"
+#include "chunk_gated_delta_rule_matmul_basic.h"
 
 namespace ChunkGatedDeltaRule {
 using namespace AscendC;
 using namespace matmul;
 
-using aT1 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t>;
-using bT1 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t>;
-using cT1 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t>;
-using StageOneMT = matmul::MatmulImpl<aT1, bT1, cT1>;
+// basic API matmul（见 chunk_gated_delta_rule_matmul_basic.h），由 stage1/2/3 共用同一实例
+using StageOneMT = CGDRMatmulBasic;
 
 constexpr uint64_t UB_REST_BYTES = 140 * 1024;  // 140KB
 constexpr uint64_t INVERSE_SHAPE = 32;          // 对角块边长
@@ -296,18 +295,19 @@ private:
     __aicore__ inline void ParaChunkAIC(int32_t curParaNum)
     {
         AscendC::CrossCoreWaitFlag(0x9); // 同步0
-        // key @ key.transpose(-1,-2)
+        // key @ key.transpose(-1,-2)   A、B 同一块，SameAsA 省一次 GM->L1
         for (uint32_t i = 0; i < curParaNum; ++i) {
-            AICProcess(keyConGm_[i * ckOffset_], keyConGm_[i * ckOffset_], kkWsGm_[i * ccOffset_],
-                       {chunkSize_, chunkSize_, dk_, chunkSize_, chunkSize_, dk_}, true);
+            mm.Execute<false, true, false, bfloat16_t, BSource::SameAsA>(
+                keyConGm_[i * ckOffset_], keyConGm_[i * ckOffset_], kkWsGm_[i * ccOffset_],
+                chunkSize_, chunkSize_, dk_);
         }
         AscendC::CrossCoreSetFlag<0x2, PIPE_FIX>(0x8); // 同步1
 
         // query @ key.transpose(-1,-2)   stage1 out
         for (uint32_t i = 0; i < curParaNum; ++i) {
-            AICProcess(queryConGm_[i * ckOffset_], keyConGm_[i * ckOffset_], outQkGm_[chunkRowBase_[i] * chunkSize_],
-                       {validLenBatch_[i], validLenBatch_[i], dk_, validLenBatch_[i], validLenBatch_[i], dk_},
-                       true);
+            mm.Execute<false, true, false>(
+                queryConGm_[i * ckOffset_], keyConGm_[i * ckOffset_], outQkGm_[chunkRowBase_[i] * chunkSize_],
+                validLenBatch_[i], validLenBatch_[i], dk_);
         }
         AscendC::CrossCoreSetFlag<0x2, PIPE_FIX>(0xA); // 同步5
         AscendC::CrossCoreWaitFlag(0x7); // 同步2
@@ -318,17 +318,25 @@ private:
         }
         AscendC::CrossCoreWaitFlag(0x6); // 同步3
 
-        // attn @ k_cumdecay
+        // attn @ k_cumdecay（首笔 serial：paraNum==1 时与求逆 mm2 相邻且读它刚写的 attnWs）
         for (uint32_t i = 0; i < curParaNum; ++i) {
-            AICProcess(attnWsGm_[i * ccOffset_], gBKWsGm_[i * ckOffset_], outKCumdecayGm_[chunkRowBase_[i] * dk_],
-                       {chunkSize_, dk_, chunkSize_, chunkSize_, dk_, chunkSize_});
+            if (i == 0) {
+                mm.Execute<false, false, false, bfloat16_t, BSource::Copy, true>(
+                    attnWsGm_[i * ccOffset_], gBKWsGm_[i * ckOffset_], outKCumdecayGm_[chunkRowBase_[i] * dk_],
+                    chunkSize_, dk_, chunkSize_);
+            } else {
+                mm.Execute<false, false, false>(
+                    attnWsGm_[i * ccOffset_], gBKWsGm_[i * ckOffset_], outKCumdecayGm_[chunkRowBase_[i] * dk_],
+                    chunkSize_, dk_, chunkSize_);
+            }
         }
         AscendC::CrossCoreWaitFlag(0x5); // 同步4
 
         // attn @ v_beta    stage1 out
         for (uint32_t i = 0; i < curParaNum; ++i) {
-            AICProcess(attnWsGm_[i * ccOffset_], vBetaWsGm_[i * cvOffset_], outVInnerGm_[chunkRowBase_[i] * dv_],
-                       {chunkSize_, dv_, chunkSize_, chunkSize_, dv_, chunkSize_});
+            mm.Execute<false, false, false>(
+                attnWsGm_[i * ccOffset_], vBetaWsGm_[i * cvOffset_], outVInnerGm_[chunkRowBase_[i] * dv_],
+                chunkSize_, dv_, chunkSize_);
         }
     }
 
@@ -794,37 +802,20 @@ private:
         uint64_t leftDown = offset + chunkSize_ * INVERSE_SHAPE;
         uint64_t rightDown = leftDown + INVERSE_SHAPE;
         // 右矩阵左下角 @ 右矩阵左上角 -> 右矩阵左下角
-        InverseAICProcess(attnWsGm_[leftDown], attnWsGm_[offset], attnWsGm_[leftDown]);
-        int32_t eventID = static_cast<int32_t>(pipe_->FetchEventID(HardEvent::FIX_MTE2));
-        SetFlag<HardEvent::FIX_MTE2>(eventID);
-        WaitFlag<HardEvent::FIX_MTE2>(eventID);
+        InverseAICProcess<false>(attnWsGm_[leftDown], attnWsGm_[offset], attnWsGm_[leftDown]);
         // 右矩阵右下角 @ 右矩阵左下角 -> 右矩阵左下角
-        InverseAICProcess(attnWsGm_[rightDown], attnWsGm_[leftDown], attnWsGm_[leftDown]);
-        eventID = static_cast<int32_t>(pipe_->FetchEventID(HardEvent::FIX_MTE2));
-        SetFlag<HardEvent::FIX_MTE2>(eventID);
-        WaitFlag<HardEvent::FIX_MTE2>(eventID);
+        // serial：读上一笔刚写出的 leftDown，须等其 Fixpipe
+        InverseAICProcess<true>(attnWsGm_[rightDown], attnWsGm_[leftDown], attnWsGm_[leftDown]);
     }
 
-    __aicore__ inline void AICProcess(GlobalTensor<bfloat16_t> x, GlobalTensor<bfloat16_t> y,
-                                      GlobalTensor<bfloat16_t> z, const MatmulShapeParams &shape, bool transB = false)
-    {
-        mm.SetOrgShape(shape.m, shape.n, shape.k);
-        mm.SetSingleShape(shape.sm, shape.sn, shape.sk);
-        mm.SetTensorA(x);
-        mm.SetTensorB(y, transB);
-        mm.IterateAll(z);
-        mm.End();
-    }
-
+    template <bool serialMM>
     __aicore__ inline void InverseAICProcess(GlobalTensor<bfloat16_t> x, GlobalTensor<bfloat16_t> y,
                                              GlobalTensor<bfloat16_t> z)
     {
-        mm.SetOrgShape(chunkSize_, chunkSize_, chunkSize_);
-        mm.SetSingleShape(INVERSE_SHAPE, INVERSE_SHAPE, INVERSE_SHAPE);
-        mm.SetTensorA(x);
-        mm.SetTensorB(y);
-        mm.IterateAll(z);
-        mm.End();
+        // 32x32 子块，源/目的行距都是 chunkSize_
+        mm.Execute<false, false, false, bfloat16_t, BSource::Copy, serialMM>(
+            x, y, z, INVERSE_SHAPE, INVERSE_SHAPE, INVERSE_SHAPE,
+            chunkSize_, chunkSize_, chunkSize_);
     }
     
     TPipe *pipe_;

@@ -93,7 +93,7 @@ template <typename lowType, typename highType>
 class CGDR {
 public:
     __aicore__ inline CGDR(TPipe *pipe, const ChunkGatedDeltaRuleTilingData *tilingData)
-        : stageOneOp_(stage1MT_)
+        : stageOneOp_(mmBasic_)
     {
         pipe_ = pipe;
         tiling_ = tilingData;
@@ -101,12 +101,7 @@ public:
 
     __aicore__ inline void InitMatmul()
     {
-        if ASCEND_IS_AIC {
-            // 使用 tiling 中的 matmul tiling 数据初始化
-            stage1MT_.Init(&tiling_->matmulTilingFp32, pipe_);
-            stage2MT_.Init(&tiling_->matmulTilingFp32, pipe_);
-            stage3MT_.Init(&tiling_->matmulTilingFp32, pipe_);
-        }
+        // basic API matmul 无全局初始化；每个 stage 运行前 Init、pipe Reset 前 End（见 RunStageX）
     }
 
     __aicore__ inline void InitMask()
@@ -189,6 +184,9 @@ public:
         offset += sizeof(lowType) * tiling_->nv * tiling_->maxGroupLength * tiling_->chunkSize;
 
         highState_.SetGlobalBuffer(reinterpret_cast<__gm__ highType *>(user + offset));
+        // highState_ 从未被读写，把同一块 workspace 以 lowType 视图借作 Stage2 状态乒乓的第二块缓冲
+        // （fp32 尺寸 = bf16 状态的 2 倍，容量足够）
+        altState_.SetGlobalBuffer(reinterpret_cast<__gm__ lowType *>(user + offset));
         offset += sizeof(highType) * tiling_->b * tiling_->nv * tiling_->dv * tiling_->dk;
 
         stageOneMask_.SetGlobalBuffer(reinterpret_cast<__gm__ highType *>(user + offset));
@@ -206,10 +204,40 @@ public:
     __aicore__ inline void Process()
     {
         SyncAll<false>();
-        int64_t seqStart = 0;
-        int64_t seqEnd = 0;
         ChunkGroup cg;
         cg.chunkSize = tiling_->chunkSize;
+        // 多序列打包：只要前 b-1 个序列长度对齐 chunkSize，序列边界就都落在 chunk 边界上，
+        // 全 batch 的 chunk 在 T 维连续，可跨序列打满 maxGroupLength 的 group。
+        // 末序列长度任意——它的尾 chunk 就是整个 batch 的尾 chunk，
+        // stage1/stage3 现有的「group 末 chunk 不满」逻辑（按 cg.length 取余）天然处理。
+        //（stage1/stage3 是 chunk 局部计算，无需感知序列边界；stage2 按 (bid,nv) 段式链处理。）
+        bool packed = tiling_->b > 1;
+        int64_t totalTokens = 0;
+        for (int64_t bid = 0; bid < tiling_->b; bid++) {
+            int32_t length = actualSeqLens_.GetValue(bid);
+            totalTokens += (int64_t)length;
+            if (bid + 1 < tiling_->b && length % tiling_->chunkSize != 0) {
+                packed = false;
+            }
+        }
+        if (packed) {
+            for (int64_t pos = 0; pos < totalTokens; pos += tiling_->maxGroupLength) {
+                cg.startPos = pos;
+                cg.length = (pos + tiling_->maxGroupLength > totalTokens) ? (totalTokens - pos)
+                                                                          : tiling_->maxGroupLength;
+                RunStage1(cg);
+                SyncAll<false>();
+
+                RunStage2Packed(cg, pos / tiling_->chunkSize, totalTokens);
+                SyncAll<false>();
+
+                RunStage3(cg);
+                SyncAll<false>();
+            }
+            return;
+        }
+        int64_t seqStart = 0;
+        int64_t seqEnd = 0;
         for (int64_t bid = 0; bid < tiling_->b; bid++) {
             int32_t length = actualSeqLens_.GetValue(bid);
             seqStart = seqEnd;
@@ -230,7 +258,8 @@ public:
                 SyncAll<false>();
 
                 RunStage2(cg, curState,
-                          finalState_[bid * tiling_->nv * tiling_->dv * tiling_->dk]);
+                          finalState_[bid * tiling_->nv * tiling_->dv * tiling_->dk],
+                          altState_[bid * tiling_->nv * tiling_->dv * tiling_->dk]);
                 SyncAll<false>();
 
                 RunStage3(cg);
@@ -242,38 +271,59 @@ public:
 private:
     __aicore__ inline void RunStage1(const ChunkGroup& cg)
     {
+        mmBasic_.Init(pipe_);
         GDRStageOneInitParams initStageOneParams {query_, key_, value_, beta_, g_,
                                                 gCum_, kCumDecay_, vInner_, qPrime_, kg_, qkt_,
                                                 stageWsAddr_, stageOneMask_, cg, gFlag_};
         stageOneOp_.Init(initStageOneParams, pipe_, tiling_);
         stageOneOp_.Process();
+        mmBasic_.End();
         pipe_->Reset();
     }
 
     __aicore__ inline void RunStage2(ChunkGroup& cg, GlobalTensor<lowType> stateIn,
-                                     GlobalTensor<lowType> stateOut)
+                                     GlobalTensor<lowType> stateOut, GlobalTensor<lowType> stateAlt)
     {
+        mmBasic_.Init(pipe_);
         Stage2 stageTwoOp;
         StageTwoParams initStageTwoParams{
-            qPrime_, vInner_, gCum_, kCumDecay_, stateIn, stateOut, kg_,
-            out_[cg.startPos * tiling_->nv * tiling_->dv], stageWsAddr_, &stage2MT_, pipe_, &cg,
+            qPrime_, vInner_, gCum_, kCumDecay_, stateIn, stateOut, stateAlt, kg_,
+            out_[cg.startPos * tiling_->nv * tiling_->dv], stageWsAddr_, &mmBasic_, pipe_, &cg,
             tiling_->nv, tiling_->nk, tiling_->dv, tiling_->dk, gFlag_};
         stageTwoOp.Init(&initStageTwoParams, tiling_->aiCoreNum);
         stageTwoOp.Process();
+        mmBasic_.End();
+        pipe_->Reset();
+    }
+
+    // 打包模式：跨序列 group，stage2 内部按 (bid, nv[, Dv片]) 段式链分核
+    __aicore__ inline void RunStage2Packed(ChunkGroup& cg, int64_t groupChunkStart, int64_t totalTokens)
+    {
+        mmBasic_.Init(pipe_);
+        Stage2 stageTwoOp;
+        StageTwoParams initStageTwoParams{
+            qPrime_, vInner_, gCum_, kCumDecay_, initState_, finalState_, altState_, kg_,
+            out_[cg.startPos * tiling_->nv * tiling_->dv], stageWsAddr_, &mmBasic_, pipe_, &cg,
+            tiling_->nv, tiling_->nk, tiling_->dv, tiling_->dk, gFlag_};
+        stageTwoOp.Init(&initStageTwoParams, tiling_->aiCoreNum);
+        stageTwoOp.ProcessPacked(actualSeqLens_, tiling_->b, groupChunkStart, totalTokens);
+        mmBasic_.End();
         pipe_->Reset();
     }
 
     __aicore__ inline void RunStage3(ChunkGroup& cg)
     {
+        mmBasic_.Init(pipe_);
         Stage3 stageThreeOp;
         StageThreeParams initStageThreeParams{
             qkt_, gCum_, vInner_,
             stageThreeMask_[int(GetBlockIdx() / 2) * tiling_->chunkSize * tiling_->chunkSize],
             stageWsAddr_, out_[cg.startPos * tiling_->nv * tiling_->dv],
-            &stage3MT_, pipe_, &cg, tiling_->scale,
+            &mmBasic_, pipe_, &cg, tiling_->scale,
             tiling_->nv, tiling_->nk, tiling_->dv, tiling_->dk, gFlag_};
         stageThreeOp.Init(&initStageThreeParams, tiling_->aiCoreNum);
         stageThreeOp.Process();
+        mmBasic_.End();
         pipe_->Reset();
     }
 
@@ -299,6 +349,7 @@ private:
     GlobalTensor<lowType> kg_;           // (Nv, maxGroupLength, Dk)
     GlobalTensor<lowType> qkt_;          // (Nv, maxGroupLength, C)
     GlobalTensor<highType> highState_;
+    GlobalTensor<lowType> altState_;   // highState_ 的 lowType 视图，Stage2 状态乒乓的第二块缓冲
     // mask矩阵
     GlobalTensor<highType> stageOneMask_;          // (Nv, maxGroupLength, C)
     GlobalTensor<highType> stageThreeMask_;          // (Nv, maxGroupLength, C)
@@ -306,10 +357,8 @@ private:
 
     TBuf<TPosition::VECCALC> tmpBuff_;  // 构造mask矩阵
 
-    // Matmul objects
-    StageOneMT stage1MT_;
-    StageTwoMT stage2MT_;
-    StageThreeMT stage3MT_;
+    // 三个 stage 共用一个 basic API matmul 实例
+    CGDRMatmulBasic mmBasic_;
 
     // Stage operators
     Stage1 stageOneOp_;

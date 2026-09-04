@@ -18,15 +18,13 @@
 #include "kernel_tiling/kernel_tiling.h"
 #include "chunk_gated_delta_rule_utils.h"
 #include "../chunk_gated_delta_rule_tiling_data.h"
+#include "chunk_gated_delta_rule_matmul_basic.h"
 
 namespace ChunkGatedDeltaRule {
 using namespace AscendC;
 using namespace matmul;
 
-using aT3 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t, true>;
-using bT3 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t, true>;
-using cT3 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t>;
-using StageThreeMT = matmul::MatmulImpl<aT3, bT3, cT3>;
+using StageThreeMT = CGDRMatmulBasic;
 
 struct StageThreeParams {
     GlobalTensor<bfloat16_t> qkt;       // (Nv, Sp, Dk)
@@ -174,13 +172,9 @@ public:
                                       GlobalTensor<bfloat16_t>vInner,
                                       GlobalTensor<bfloat16_t>attnInter)
     {
-        // masked_qkt @ v_inner
-        sTP_->mm3->SetOrgShape(curChunkSize_, Dv_, curChunkSize_, curChunkSize_, Nv_ * Dv_);    // MNK
-        sTP_->mm3->SetSingleShape(curChunkSize_, Dv_, curChunkSize_); // SingleCoreMNK
-        sTP_->mm3->SetTensorA(tmpGM);
-        sTP_->mm3->SetTensorB(vInner);
-        sTP_->mm3->IterateAll(attnInter, 1);
-        sTP_->mm3->End();
+        // out += masked_qkt @ v_inner（输出行距 Nv*Dv）
+        sTP_->mm3->Execute<false, false, true>(tmpGM, vInner, attnInter,
+                                               curChunkSize_, Dv_, curChunkSize_, 0, 0, Nv_ * Dv_);
     }
 
     template <typename inType>
