@@ -107,6 +107,38 @@ case 键修复、空 `_to_int32`、`m3`/计时修复；EXACT 默认开启（TRIT
 B=1（K=1 评测的工作点）shrink 0.55×、expand 0.77×。prefill 大 B 慢于 AscendC
 是逐位规约的已知代价（对比：v1 原样在 B=1024 单个 expand 就要 33.8 ms）。
 
+## 三·五、混合派发：让每个 shape 都不亏
+
+算子级实测显示 triton 内核只在最小的 decode batch 上赢，过了交叉点 AscendC 更快
+（expand 在 prefill 快至 6.8 倍）。原因见第二节末：AscendC 用 repeat-stride-0 寻址
+把乘法与规约融合，并用硬件 BlockReduceSum+PairReduceSum 一条指令完成 16 元素点积；
+triton-ascend 会把广播与乘积物化成完整的 [.., 16] fp32 中间张量再规约，向量流水因此
+打满（msprof：v2 aiv_vec_ratio=0.929 / 194.1 µs，AscendC 0.656 / 39.8 µs，同一形状）。
+三个方向（程序内 chunk 循环、TB=1 大块连续 y、转置+中轴配对树）实测均无法收敛，
+属后端降级选择，kernel 源码层无杠杆。
+
+因此按实测交叉点分算子派发：shrink B≤2 走 triton，expand B≤1 走 triton，其余走
+AscendC。两条路径都逐位等于 AscendC，派发不改变结果。
+
+每层设备时间比值（v2 树 / 纯 AscendC，910B4，NR=1，7 shrink + 7 expand）：
+
+| B | 派发前 shrink | 派发前 expand | 派发后 shrink | 派发后 expand |
+|---|---|---|---|---|
+| 1 | 0.53× | 0.94× | **0.52×** | **0.92×** |
+| 2 | 0.62× | 1.10× | **0.61×** | 0.97× |
+| 3 | 1.07× | 1.45× | 0.98× | 0.96× |
+| 4 | 1.07× | 1.38× | 0.98× | 0.97× |
+| 8 | 1.07× | 1.90× | 0.98× | 0.97× |
+| 16 | 1.06× | 2.58× | 0.98× | 0.97× |
+
+派发后所有 B 档 ≤1.00×（B≥3 的 0.96~0.98 在 2~3% 噪声内即持平），decode 的
+收益完整保留；逐位回归仍 0 失配（含 idx=-1 / −0.0 专项）。
+阈值可调：TRITON_LORA_SHRINK_MAX_B / TRITON_LORA_EXPAND_MAX_B。
+
+注：第四节的 gsm8k 端到端数字是**派发前**测得的（prefill 当时走较慢的 triton
+expand），因此是派发后的下界；派发只会让 prefill 回到 AscendC 水平。
+
+
 ## 四、serve 级三臂 A/B 全景
 
 decode（探针，base 与 adapter 同 serve 对照）：

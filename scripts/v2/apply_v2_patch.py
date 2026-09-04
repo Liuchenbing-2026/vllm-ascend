@@ -504,6 +504,39 @@ S = sub(S, '''def sgmv_shrink(inputs, lora_a_weights, output_tensor, b_seq_start
         '''_V2 = os.environ.get("TRITON_LORA_V2", "1") != "0"
 _V2_EXACT = 1 if os.environ.get("TRITON_LORA_EXACT", "1") != "0" else 0
 
+# --- hybrid dispatch -------------------------------------------------------
+# Measured per-layer device time (7 shrink + 7 expand modules, 910B4, NR=1,
+# v2 exact config / AscendC):
+#     B      1      2      3      4      6      8     16
+#   shrink 0.53x  0.62x  1.07x  1.07x  1.10x  1.07x  1.06x
+#   expand 0.94x  1.10x  1.45x  1.38x  1.97x  1.90x  2.58x
+# The triton kernels win only at the smallest decode batches; past the
+# crossover the AscendC ops are faster (expand by up to 6.8x at prefill --
+# it fuses multiply+reduce with repeat-stride-0 addressing and hardware
+# BlockReduceSum, which triton-ascend cannot emit).  Route each op to
+# whichever is faster: no shape loses, and the decode win is kept.
+# Both paths are bit-identical to AscendC, so the dispatch cannot change
+# results.  Thresholds are the measured crossover; env-tunable.
+_V2_SHRINK_MAX_B = int(os.environ.get("TRITON_LORA_SHRINK_MAX_B", "2"))
+_V2_EXPAND_MAX_B = int(os.environ.get("TRITON_LORA_EXPAND_MAX_B", "1"))
+_ASCENDC_CACHE = None
+
+
+def _ascendc_ops():
+    """The stock AscendC sgmv ops, or None when this build lacks them."""
+    global _ASCENDC_CACHE
+    if _ASCENDC_CACHE is None:
+        try:
+            import vllm_ascend.vllm_ascend_C  # noqa: F401  (registers _C_ascend)
+        except Exception:
+            pass
+        try:
+            ops = torch.ops._C_ascend
+            _ASCENDC_CACHE = (ops.sgmv_shrink, ops.sgmv_expand)
+        except Exception:
+            _ASCENDC_CACHE = (None, None)
+    return _ASCENDC_CACHE
+
 
 _V2_BLK_CACHE = {}
 
@@ -585,6 +618,13 @@ def sgmv_shrink(inputs, lora_a_weights, output_tensor, b_seq_start_loc,
     # reshape is materialised only on the plain-triton fallback path.
     sh = lora_a_weights.shape
     L, R = sh[0], sh[-2]
+    if B > _V2_SHRINK_MAX_B:
+        asc = _ascendc_ops()[0]
+        if asc is not None:
+            asc(inputs, lora_a_weights.reshape(L, R, H), lora_indices_tensor,
+                seq_len_tensor, output_tensor, scaling)
+            _timing_end("sgmv_shrink", t0)
+            return output_tensor
     idx32 = _to_int32(lora_indices_tensor, "idx")
     seq32 = _to_int32(seq_len_tensor, "seq")
     blk = _v2_blk(H)
@@ -638,6 +678,13 @@ S = sub(S, '''def sgmv_expand_slice(inputs, lora_b_weights, output_tensor, b_seq
     B, R = inputs.shape
     sh = lora_b_weights.shape          # [L, 1, Ho, R]; reshape keeps data_ptr
     L, Ho = sh[0], sh[-2]
+    if B > _V2_EXPAND_MAX_B:
+        asc = _ascendc_ops()[1]
+        if asc is not None:
+            asc(inputs, lora_b_weights.reshape(L, Ho, R), lora_indices_tensor,
+                seq_len_tensor, output_tensor, slice_offset, slice_size)
+            _timing_end("sgmv_expand_slice", t0)
+            return output_tensor
     idx32 = _to_int32(lora_indices_tensor, "idx")
     seq32 = _to_int32(seq_len_tensor, "seq")
     bh, tb = _v2_expand_cfg(Ho, R, seq_len_tensor.numel(), B)
