@@ -21,6 +21,7 @@ The following speculative decoding methods are supported:
 | `mtp` | Multi-Token Prediction with shared embedding head |
 | `dflash` | Block diffusion-based parallel draft model |
 | `dspark` | Semi-autoregressive block drafting with a sequential Markov logit-bias head |
+| `uno` | Diffusion-augmented drafting from the target model itself via a gated LoRA (no draft model) |
 | `draft_model` | Generic external draft LLM |
 | `extract_hidden_states` | Extract hidden states for EAGLE training |
 
@@ -34,7 +35,7 @@ All speculative decoding methods are configured through the `speculative_config`
     >
     > 1. Hybrid Mamba models (e.g., Qwen-Next and Qwen3.5 series): `num_speculative_tokens` should be equal on P nodes and D nodes.
     > 2. Other models: `num_speculative_tokens` on P nodes should be 1, and `num_speculative_tokens` on D nodes should be greater or equal to 1.
-- **`model`** (str, optional): Path or HF repo ID for the draft model. Required for `eagle`, `eagle3`, `dflash`, `medusa`, and `draft_model`. Automatically resolved for `mtp` (reuses target model), `ngram`, `suffix`, and `extract_hidden_states`.
+- **`model`** (str, optional): Path or HF repo ID for the draft model. Required for `eagle`, `eagle3`, `dflash`, `medusa`, and `draft_model`. Automatically resolved for `mtp` (reuses target model), `ngram`, `suffix`, and `extract_hidden_states`. For `uno` it is not a draft model at all, but the path or HF repo ID of the gated draft **LoRA adapter**.
 - **`draft_tensor_parallel_size`** (int, optional): Tensor parallelism size for the draft model. Can only be `1` or the same as the target model's tensor parallel size.
 - **`disable_padded_drafter_batch`** (bool, default: `False`): Disable input padding for speculative decoding. If set to `True`, speculative input batches can contain sequences of different lengths, which may only be supported by certain attention backends. **Note:** Only effective with `eagle`, `eagle3`, `mtp`, `dflash`, `draft_model`, and `extract_hidden_states` methods.
 
@@ -269,6 +270,199 @@ The following code configures vLLM Ascend to use speculative decoding where prop
       --compilation-config '{"cudagraph_mode": "FULL_DECODE_ONLY"}' \
       --speculative-config '{"method": "dflash", "model": "z-lab/Qwen3-8B-DFlash-b16", "num_speculative_tokens": 7}'
     ```
+
+## Speculating using UNO
+
+UNO ("one model") has no draft model. Each decode cycle runs the target
+transformer twice: a **draft** forward whose noise rows are adapted by a trained
+gated LoRA, and the ordinary **verify** forward on base weights. Because the
+proposals come from the target's own weights plus a small adapter, there is no
+second checkpoint to load and no separate KV cache.
+
+For a request whose committed KV frontier is `C` and a forward width
+`F = num_speculative_tokens`:
+
+- the draft forward feeds `[last_token, noise x (F-1)]` at positions
+  `C .. C+F-1`, where the noise tokens are drawn uniformly from the vocabulary.
+  Row 0 runs on base weights and rows `1 .. F-1` on the adapter — that per-row
+  split is what the adapter was trained for. The `F` sampled tokens are the
+  proposal for positions `C+1 .. C+F`;
+- the verify forward is vLLM's standard speculative-decoding step over
+  `[last_token, proposal...]`, followed by the stock rejection sampler.
+
+The first proposal comes from the base row, so it is drawn from exactly the
+distribution the verify forward evaluates and is always accepted: every cycle
+emits at least 2 tokens for its 2 forwards, and output is distributionally
+identical to plain autoregressive decoding.
+
+### Checkpoints
+
+Use an adapter trained for the exact target checkpoint. The released bundle
+`s-sahoo/uno-qwen3-8B` keeps the frozen verifier at the repository root and the
+adapter (rank 128) under `adapter/`, so the target model and the LoRA path are
+two different arguments pointing into the same repository.
+
+For UNO, `namespace/repository/adapter` resolves the Hugging Face snapshot's
+`adapter/` directory before loading the LoRA. Only that subdirectory is
+downloaded, and `speculative_config["revision"]` can pin its revision. An
+existing local adapter directory also works, including in offline mode. With
+ModelScope, download bundled adapters first and pass their local directory.
+
+AR and UNO verification use different query widths. With the default kernels,
+rounding near an argmax tie can therefore change greedy tokens, including in
+BF16. For strict comparisons, enable `VLLM_BATCH_INVARIANT=1` for both engines
+and use eager execution or `PIECEWISE` ACL graphs; see
+[Batch Invariance](batch_invariance.md) for operator dependencies and supported
+graph modes. Keep the validation settings identical across the two runs.
+
+- Offline inference
+
+    ```python
+    from vllm import LLM, SamplingParams
+
+    prompts = [
+        "The future of AI is",
+    ]
+    sampling_params = SamplingParams(temperature=0.8, top_p=0.95)
+
+    llm = LLM(
+        model="s-sahoo/uno-qwen3-8B",
+        tensor_parallel_size=1,
+        max_model_len=4096,
+        max_num_seqs=16,
+        gpu_memory_utilization=0.8,
+        speculative_config={
+            "method": "uno",
+            "model": "s-sahoo/uno-qwen3-8B/adapter",
+            "num_speculative_tokens": 8,
+        },
+    )
+    outputs = llm.generate(prompts, sampling_params)
+
+    for output in outputs:
+        prompt = output.prompt
+        generated_text = output.outputs[0].text
+        print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
+    ```
+
+- Online inference
+
+    ```shell
+    vllm serve s-sahoo/uno-qwen3-8B \
+      --tensor-parallel-size 1 \
+      --max-model-len 4096 \
+      --max-num-seqs 256 \
+      --gpu-memory-utilization 0.8 \
+      --speculative-config '{"method": "uno", "model": "s-sahoo/uno-qwen3-8B/adapter", "num_speculative_tokens": 8}'
+    ```
+
+### FULL_DECODE_ONLY graphs for UNO
+
+Set `compilation_config={"cudagraph_mode": "FULL_DECODE_ONLY"}` to capture
+both the base-only verification pass and the gated-LoRA draft pass. Prefill
+runs outside the full decode graph. For explicit capture sizes, specify
+verification token counts: with `num_speculative_tokens=8`, request counts
+`[1, 2, 4, 8, 16]` correspond to `[9, 18, 36, 72, 144]`:
+
+```shell
+vllm serve s-sahoo/uno-qwen3-8B \
+  --tensor-parallel-size 1 \
+  --max-model-len 4096 \
+  --max-num-seqs 16 \
+  --gpu-memory-utilization 0.8 \
+  --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[9,18,36,72,144]}' \
+  --speculative-config '{"method":"uno","model":"s-sahoo/uno-qwen3-8B/adapter","num_speculative_tokens":8}'
+```
+
+UNO derives separate draft sizes `[8, 16, 32, 64, 128]` from these buckets.
+Draft batches whose exact request count was not captured run eagerly; the
+draft does not add padding requests to the shared KV cache. Include every
+desired request count times `F+1` to capture those draft batches too.
+Set `"enforce_eager": true` inside `speculative_config` to keep the verifier's
+full graph while disabling draft capture for a controlled comparison.
+
+Use `VLLM_BATCH_INVARIANT=0` for FULL_DECODE_ONLY. Batch-invariant attention
+currently supports eager and PIECEWISE execution only. Graph capture adds
+startup time and memory; measure acceptance and throughput on the intended
+workload before increasing capture sizes or concurrency.
+
+### Notes and limitations
+
+- **The LoRA subsystem is enabled automatically — do not pass `--enable-lora`.**
+  UNO's adapter is internal and never request-selectable, so vLLM Ascend creates
+  the `LoRAConfig` for you (`max_lora_rank=128`, `max_loras=1`, restricted to the
+  seven decoder projections). A user-supplied LoRA config is rejected at startup:
+  a request-selected adapter would also be applied to the verify forward, which
+  must stay on unadapted base weights, and it would compete for the slot the
+  draft adapter has to hold across every step.
+- **Choose `F` no larger than the checkpoint's diffusion block size.** The
+  adapter is trained on blocks of noised tokens that attend only within their
+  own block; a wider draft block puts rows outside the trained regime. It costs
+  acceptance, not correctness, so vLLM Ascend warns rather than failing.
+  `F = 8` matches the released Qwen3-8B bundle.
+- **`draft_sample_method` is forced to `probabilistic`.** UNO's first proposal
+  is drawn from the target's own distribution, which is why it is accepted with
+  certainty — but only when the draft rows are *sampled*. With the upstream
+  default (`greedy`), a `temperature > 0` request proposes an argmax that the
+  rejection sampler accepts with probability `p(x)`, which can leave a cycle
+  emitting fewer than 2 tokens for its 2 forwards, i.e. slower than not
+  speculating. vLLM Ascend overrides the setting and logs that it did. The cost
+  is a `[num_draft_tokens, vocab_size]` float32 probability tensor per step.
+- **Budget device memory for the draft sampler.** The draft logits and proposal
+  probabilities are allocated *after* the memory profile run, which never
+  executes a draft forward, so they are not covered by
+  `--gpu-memory-utilization`. The unit is one `[max_num_seqs * F, vocab_size]`
+  float32 buffer — 1.16 GiB at `--max-num-seqs 256`, `F = 8` and a 152k
+  vocabulary. The peak is roughly **7 of those (~8.2 GiB)** for a sampled batch
+  with `top_k`/`top_p` set, because the sort-based constraint step holds the
+  logits, `probs`, the sorted copy, the int64 sort indices, the cumulative sum
+  and two masks at once; ~2.4 GiB for a sampled batch without `top_k`/`top_p`,
+  and ~1.2 GiB for a purely greedy workload. The startup log prints all three.
+  Note the rejection sampler already pays the same constraint-step cost for the
+  *target* logits, so this is roughly a doubling of an existing transient rather
+  than a new class of allocation. Lower `--max-num-seqs` or
+  `--gpu-memory-utilization` if the KV cache leaves no room for it.
+- **`--max-num-batched-tokens` must be at least `max_num_seqs * F`.** The draft
+  forward pushes that many rows through the per-token LoRA index buffers, which
+  vLLM sizes from `max_num_batched_tokens`. This is checked at startup.
+- `(num_speculative_tokens + 1) <= 16` applies here as it does to every method
+  on Ascend, so `F <= 15`.
+- Pipeline parallelism, data parallelism and context parallelism are not
+  supported and are rejected at startup, as is dynamic speculative decoding
+  (the forward width is baked into the adapter's row routing). Tensor
+  parallelism is *not* rejected — the draft pass reuses the target's own
+  sharded weights and vLLM's LoRA layers are TP-aware — but it has not been
+  validated on hardware.
+- **UNO changes how `model_type: "sdar"` checkpoints load, engine-wide.** The
+  SDAR config class is registered at import time so a UNO bundle loads without
+  `--trust-remote-code` (the bundled remote code reads a `config.noise` key the
+  released `config.json` does not have). A consequence: any SDAR checkpoint now
+  loads as Qwen3 — correct for causal decoding, but *not* SDAR's block-diffusion
+  sampler, and it takes precedence over `--trust-remote-code`. A warning is
+  logged whenever the substitution happens.
+- Sampling features the draft pass knows nothing about — `min_p`, `logit_bias`,
+  penalties, `bad_words`, structured outputs — still produce **correct** output,
+  because the rejection sampler verifies against the fully constrained target
+  distribution. They only lower the acceptance rate, since the proposals were
+  drawn without those constraints.
+- Tree-mode UNO (multiple candidates per depth) is not implemented: it needs
+  tree-mask attention, which the Ascend attention backend does not provide.
+- **Draft and verification graphs have separate LoRA routing.** Verification
+  captures only the no-LoRA case. FULL_DECODE_ONLY captures a separate `F`-row
+  draft with the real adapter after target warmup finishes, and refreshes its
+  attention parameters on replay. Dense LoRA row masks keep fixed addresses
+  across routing changes. The draft always bypasses the target's compiled
+  callable, which was traced with LoRA omitted. Other graph modes retain eager
+  drafting. A cycle still reads the shared model weights twice and processes
+  `2F+1` rows per request, so graph capture alone does not guarantee a speedup
+  over autoregressive decoding.
+- UNO sets `parallel_drafting`, which makes vLLM reserve `(F - 1) * max_num_seqs`
+  tokens of the scheduler's token budget for drafting. With `F = 8` and
+  `--max-num-seqs 256` that is 1792 tokens off `--max-num-batched-tokens`, so
+  raise the latter if prefill throughput matters.
+- If acceptance length sits at exactly 2 tokens per step, the gated routing is
+  not reaching the model — the output stays correct in that case, so watch the
+  acceptance metrics rather than the text.
 
 ## Speculating using DSpark
 
