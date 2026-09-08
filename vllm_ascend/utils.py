@@ -982,9 +982,19 @@ def get_cann_megamoe_buffer_params(
     ep_world_size: int,
     num_experts: int,
     num_topk: int,
+    *,
+    replicated_dispatch: bool = False,
 ) -> tuple[int, int, int, int]:
     """Return max tokens, local experts, dummy rows, and receive bound."""
     dummy_token_capacity = get_cann_megamoe_dummy_token_capacity(num_experts, num_topk)
+    if replicated_dispatch:
+        if (ep_world_size, num_experts, num_topk) != (2, 256, 8) or not 1 <= base_num_max_tokens_per_rank <= 2048:
+            raise ValueError("Replicated dispatch requires EP2/E256/topk8 and per-source capacity in [1, 2048].")
+        # Reserve exactly the existing receive bound; full input contains each
+        # source's real rows and its own half of the global sentinel set.
+        full_tokens = base_num_max_tokens_per_rank * ep_world_size + dummy_token_capacity
+        receive_tokens = (base_num_max_tokens_per_rank + dummy_token_capacity) * ep_world_size * num_topk
+        return full_tokens, num_experts // ep_world_size, dummy_token_capacity, receive_tokens
     num_max_tokens_per_rank = base_num_max_tokens_per_rank + dummy_token_capacity
     if not 1 <= num_max_tokens_per_rank <= 4096:
         raise ValueError(f"CANN MegaMoe requires num_max_tokens_per_rank in [1, 4096], got {num_max_tokens_per_rank}.")
@@ -1037,12 +1047,15 @@ def calculate_cann_megamoe_hccl_buffer_size() -> int:
         )
     )
     hidden = int(getattr(hf_text_config, "hidden_size", None) or model_config.get_hidden_size())
+    replicated_dispatch = get_ascend_config().mega_moe_replicated_dispatch
     num_max_tokens_per_rank, _, dummy_token_capacity, max_recv_token_num = get_cann_megamoe_buffer_params(
         math.ceil(vllm_config.scheduler_config.max_num_batched_tokens / tp_size),
         ep_world_size,
         num_experts,
         num_topk,
+        replicated_dispatch=replicated_dispatch,
     )
+    comm_kwargs = {"comm_alg": "replicated_dispatch"} if replicated_dispatch else {}
     buffer_size_mb = int(
         get_mega_moe_ccl_buffer_size(
             ep_world_size,
@@ -1051,8 +1064,9 @@ def calculate_cann_megamoe_hccl_buffer_size() -> int:
             num_topk,
             hidden,
             max_recv_token_num=max_recv_token_num,
-            dispatch_quant_mode=2,
-            dispatch_quant_out_dtype=torch.int8,
+            dispatch_quant_mode=0 if replicated_dispatch else 2,
+            dispatch_quant_out_dtype=None if replicated_dispatch else torch.int8,
+            **comm_kwargs,
         )
     )
     if buffer_size_mb <= 0:

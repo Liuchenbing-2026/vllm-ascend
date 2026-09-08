@@ -368,6 +368,57 @@ class PrepareAndFinalizeWithMC2(PrepareAndFinalizeWithAll2All):
         return input_ids
 
 
+class PrepareAndFinalizeWithReplicatedDispatch(PrepareAndFinalizeWithMC2):
+    """Retain ordinary MC2 source halves for local dispatch and one TP sum."""
+
+    def __init__(self, moe_config: FusedMoEConfig):
+        super().__init__(moe_config)
+        if (
+            self.tp_size != 2
+            or moe_config.ep_size != 2
+            or moe_config.dp_size != 1
+            or moe_config.pcp_size != 1
+            or moe_config.is_sequence_parallel
+            or (moe_config.num_experts, moe_config.hidden_dim, moe_config.intermediate_size_per_partition)
+            != (256, 2048, 512)
+            or moe_config.experts_per_token != 8
+        ):
+            raise ValueError("Replicated dispatch requires the validated BF16 TP2/EP2 layout.")
+
+    def prepare(self, hidden_states, router_logits, replace_allreduce=False, quant_type=QuantType.NONE):
+        if replace_allreduce or quant_type != QuantType.NONE or hidden_states.dtype != torch.bfloat16:
+            raise ValueError("Replicated dispatch requires unsharded BF16 input and unquantized experts.")
+        self.num_tokens = hidden_states.shape[0]
+        self.replace_allreduce = False
+        target = _EXTRA_CTX.padded_num_tokens
+        mask = _EXTRA_CTX.mc2_mask
+        if target < self.num_tokens or target % 2 or mask is None or mask.shape[0] != target:
+            raise ValueError("Replicated dispatch requires the original even MC2 padding and full mask.")
+        if target > self.num_tokens:
+            hidden_states = nn.functional.pad(hidden_states, (0, 0, 0, target - self.num_tokens))
+            router_logits = nn.functional.pad(router_logits, (0, 0, 0, target - self.num_tokens))
+        return MoEPrepareOutput(
+            hidden_states=hidden_states,
+            router_logits=router_logits,
+            mc2_mask=mask,
+            padded_hidden_states_shape=hidden_states.shape,
+            pertoken_scale=None,
+        )
+
+    def finalize_tp_partial(self, hidden_states, padded_hidden_states_shape):
+        if hidden_states.shape != padded_hidden_states_shape:
+            raise ValueError("Replicated dispatch must preserve full padded token output shape.")
+        # Exactly one rank owns the full routed sum of each token. The caller
+        # combines it with the shared expert in the unchanged deferred TP sum.
+        return hidden_states[: self.num_tokens]
+
+    def finalize(self, hidden_states, reduce_results, padded_hidden_states_shape=None):
+        raise RuntimeError("Replicated dispatch requires deferred shared+routed TP reduction.")
+
+    def pad_and_split_input_ids(self, input_ids):
+        return nn.functional.pad(input_ids, (0, _EXTRA_CTX.padded_num_tokens - self.num_tokens))
+
+
 class PrepareAndFinalizeWithAllGather(PrepareAndFinalize):
     """
     MoE communication strategy using All-Gather + Reduce-Scatter on EP group.

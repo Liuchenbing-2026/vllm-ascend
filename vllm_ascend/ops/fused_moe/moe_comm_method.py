@@ -37,6 +37,7 @@ from vllm_ascend.ops.fused_moe.prepare_finalize import (
     PrepareAndFinalizeWithAll2All,
     PrepareAndFinalizeWithAllGather,
     PrepareAndFinalizeWithMC2,
+    PrepareAndFinalizeWithReplicatedDispatch,
 )
 from vllm_ascend.ops.fused_moe.token_dispatcher import (
     MoETokenDispatcher,
@@ -122,6 +123,53 @@ def _append_cann_megamoe_dummy_tokens(
         x_active_mask = torch.ones(original_num_tokens, dtype=torch.int8, device=hidden_states.device)
     x_active_mask = torch.cat((x_active_mask, dummy_mask), dim=0)
     return hidden_states, topk_ids, topk_weights, x_active_mask, original_num_tokens
+
+
+def _append_cann_megamoe_replicated_source_tokens(
+    hidden_states, topk_ids, topk_weights, x_active_mask, num_experts, ep_world_size, dummy_cache
+):
+    """Interleave the unchanged per-source sentinel blocks with full TP input."""
+    rows = hidden_states.shape[0]
+    if ep_world_size != 2 or rows % ep_world_size:
+        raise ValueError("Replicated dispatch requires two equal source token shards.")
+    if x_active_mask is None:
+        x_active_mask = torch.ones(rows, dtype=torch.int8, device=hidden_states.device)
+    if x_active_mask.dtype != torch.int8 or x_active_mask.shape[0] != rows:
+        raise ValueError("Replicated dispatch requires a full INT8 token mask.")
+    key = (
+        "replicated_dispatch",
+        num_experts,
+        topk_ids.shape[-1],
+        hidden_states.shape[-1],
+        hidden_states.dtype,
+        hidden_states.device,
+        topk_ids.dtype,
+        topk_weights.dtype,
+    )
+    sentinels = dummy_cache.get(key)
+    if sentinels is None:
+        # Empty source views produce exactly the existing helper's constants.
+        # Cache them; steady-state calls need only one concatenation per input.
+        sentinels = tuple(
+            _append_cann_megamoe_dummy_tokens(
+                hidden_states[:0],
+                topk_ids[:0],
+                topk_weights[:0],
+                x_active_mask[:0],
+                num_experts,
+                source,
+                ep_world_size,
+                dummy_cache=dummy_cache,
+            )[:4]
+            for source in range(ep_world_size)
+        )
+        dummy_cache[key] = sentinels
+    half = rows // ep_world_size
+    outputs = tuple(
+        torch.cat((tensor[:half], sentinels[0][i], tensor[half:], sentinels[1][i]), dim=0)
+        for i, tensor in enumerate((hidden_states, topk_ids, topk_weights, x_active_mask))
+    )
+    return (*outputs, rows)
 
 
 _MoECommMethods: dict[MoECommType | None, MoECommMethod] = {}
@@ -358,6 +406,8 @@ class FusedMC2CommImpl(MoECommMethod):
         return TokenDispatcherWithMC2()
 
     def _get_prepare_finalize(self):
+        if get_ascend_config().mega_moe_replicated_dispatch:
+            return PrepareAndFinalizeWithReplicatedDispatch(self.moe_config)
         return PrepareAndFinalizeWithMC2(self.moe_config)
 
     def _init_mega_moe_symm_buffer(
@@ -370,6 +420,7 @@ class FusedMC2CommImpl(MoECommMethod):
         # Assert it so mypy resolves those attributes off the base dispatcher.
         assert isinstance(self.token_dispatcher, TokenDispatcherWithMC2)
         group = get_mc2_group().device_group
+        replicated_dispatch = get_ascend_config().mega_moe_replicated_dispatch
         # The sym buffer is allocated by get_symm_buffer_for_mega_moe, a
         # collective handshake over the EP (mc2) group. Its shape params —
         # especially num_max_tokens_per_rank — MUST be identical on every EP
@@ -403,6 +454,7 @@ class FusedMC2CommImpl(MoECommMethod):
                 int(self.token_dispatcher.ep_world_size),
                 num_experts,
                 num_topk,
+                replicated_dispatch=replicated_dispatch,
             )
 
         logger.info(
@@ -416,6 +468,7 @@ class FusedMC2CommImpl(MoECommMethod):
             max_recv_token_num,
         )
 
+        comm_kwargs = {"comm_alg": "replicated_dispatch"} if replicated_dispatch else {}
         return self.get_symm_buffer_for_mega_moe(
             group,
             num_experts,
@@ -423,9 +476,14 @@ class FusedMC2CommImpl(MoECommMethod):
             num_topk,
             hidden=self.moe_config.hidden_dim,
             intermediate_hidden=2 * self.moe_config.intermediate_size_per_partition,
-            max_recv_token_num=0 if _is_a2_megamoe_enabled(get_ascend_config()) else max_recv_token_num,
+            max_recv_token_num=(
+                max_recv_token_num
+                if replicated_dispatch
+                else (0 if _is_a2_megamoe_enabled(get_ascend_config()) else max_recv_token_num)
+            ),
             dispatch_quant_mode=dispatch_quant_mode,
             dispatch_quant_out_dtype=dispatch_quant_out_dtype,
+            **comm_kwargs,
         )
 
     def _apply_cann_mega_moe(
@@ -492,7 +550,22 @@ class FusedMC2CommImpl(MoECommMethod):
         topk_ids = fused_experts_input.topk_ids
         topk_weights = fused_experts_input.topk_weights
         original_num_tokens = int(hidden_states.shape[0])
-        if _is_a2_megamoe_enabled(get_ascend_config()):
+        replicated_dispatch = get_ascend_config().mega_moe_replicated_dispatch
+        if replicated_dispatch:
+            if fused_experts_input.quant.quant_type != QuantType.NONE:
+                raise ValueError("Replicated dispatch requires unquantized BF16 experts.")
+            hidden_states, topk_ids, topk_weights, x_active_mask, original_num_tokens = (
+                _append_cann_megamoe_replicated_source_tokens(
+                    hidden_states,
+                    topk_ids,
+                    topk_weights,
+                    x_active_mask,
+                    int(self.moe_config.num_experts),
+                    int(self.token_dispatcher.ep_world_size),
+                    self._cann_megamoe_dummy_cache,
+                )
+            )
+        elif _is_a2_megamoe_enabled(get_ascend_config()):
             (
                 hidden_states,
                 topk_ids,
@@ -531,6 +604,12 @@ class FusedMC2CommImpl(MoECommMethod):
         # pre-allocated in/out buffer. The MegaMoe op returns a fresh
         # expert_tokens tensor that is consumed by the caller via the
         # return value, so there is nothing to keep on the instance.
+        if replicated_dispatch:
+            # Drop each source's sentinel block, retaining the zero opposite
+            # shard and the owner's complete routed result for the TP sum.
+            out = out.reshape(2, -1, out.shape[-1])[:, : original_num_tokens // 2].reshape(
+                original_num_tokens, out.shape[-1]
+            )
         return out[:original_num_tokens], expert_tokens
 
     def fused_experts(
