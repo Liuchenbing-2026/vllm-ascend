@@ -260,7 +260,7 @@ def test_a2_nonquantized_bf16_off_stays_on_allgather(monkeypatch):
 
 def test_a2_bf16_operator_call_keeps_quantization_disabled(monkeypatch):
     monkeypatch.setattr(comm_module, "_is_a2_megamoe_enabled", lambda _: True)
-    monkeypatch.setattr(comm_module, "get_ascend_config", lambda: SimpleNamespace())
+    monkeypatch.setattr(comm_module, "get_ascend_config", lambda: SimpleNamespace(mega_moe_replicated_dispatch=False))
     impl = object.__new__(comm_module.FusedMC2CommImpl)
     impl.token_dispatcher = object.__new__(comm_module.TokenDispatcherWithMC2)
     impl.token_dispatcher.global_bs = 0
