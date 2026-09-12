@@ -401,6 +401,8 @@ class AscendConfig:
     mega_moe_min_tokens: int = 512
     # A2 BF16 TP2: retain source shards and full-token reduction order.
     mega_moe_replicated_dispatch: bool = False
+    # A2 BF16 TP4: preserve the ALLGATHER local-expert partial-output contract.
+    mega_moe_local_partial: bool = False
     # The A2 MegaMoe integration bypasses the torch.compile'd model for every
     # batch it routes through the op. On A2 those batches are exactly the
     # prefill chunks (decode never reaches mega_moe_min_tokens), so the
@@ -656,6 +658,7 @@ class AscendConfig:
 
         self._validate_mc2_comm_alg(vc)
         self._validate_megamoe_replicated_dispatch(vc)
+        self._validate_megamoe_local_partial(vc)
 
         # mega_moe_max_tokens range
         if self.mega_moe_max_tokens <= 0:
@@ -723,6 +726,48 @@ class AscendConfig:
             raise ValueError(
                 "mega_moe_replicated_dispatch requires A2 BF16, MegaMoe enabled, TP2/EP2, DP1/PP1/PCP1/DCP1, "
                 "no sequence parallelism, E256/H2048/I512/topk8, at most 4096 batched tokens, and no LoRA/EPLB."
+            )
+
+    def _validate_megamoe_local_partial(self, vc: VllmConfig) -> None:
+        if not self.mega_moe_local_partial:
+            return
+        import torch
+
+        from vllm_ascend.utils import AscendDeviceType, get_ascend_device_type
+
+        pc, mc = vc.parallel_config, vc.model_config
+        hf = mc.hf_text_config
+        compatible = (
+            get_ascend_device_type() == AscendDeviceType.A2
+            and self.enable_fused_mc2 == 1
+            and is_mega_moe_supported()
+            and not self.mega_moe_replicated_dispatch
+            and pc.enable_expert_parallel
+            and pc.tensor_parallel_size == 4
+            and pc.data_parallel_size == 1
+            and pc.pipeline_parallel_size == 1
+            and pc.prefill_context_parallel_size == 1
+            and pc.decode_context_parallel_size == 1
+            and not self.enable_sp_by_pass
+            and vc.quant_config is None
+            and mc.dtype == torch.bfloat16
+            and not getattr(hf, "quantization_config", None)
+            and not getattr(hf, "quantize", None)
+            and int(mc.get_num_experts()) == 256
+            and int(hf.hidden_size) == 2048
+            and int(hf.moe_intermediate_size) == 512
+            and int(hf.num_experts_per_tok) == 8
+            and 1 <= vc.scheduler_config.max_num_batched_tokens <= 8192
+            and vc.lora_config is None
+            and not vc.use_v2_model_runner
+            and not self.eplb_config.dynamic_eplb
+            and getattr(pc, "expert_placement_strategy", "linear") == "linear"
+        )
+        if not compatible:
+            raise ValueError(
+                "mega_moe_local_partial requires A2 BF16 MegaMoe, TP4/EP4, DP1/PP1/PCP1/DCP1, "
+                "no SP, E256/H2048/I512/topk8, at most 8192 tokens, linear experts, no LoRA/EPLB, "
+                "and mega_moe_replicated_dispatch=False."
             )
 
     def _validate_mc2_comm_alg(self, vllm_config: VllmConfig) -> None:

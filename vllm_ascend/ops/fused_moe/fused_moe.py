@@ -101,6 +101,10 @@ class AscendMoERunner(MoERunner):  # type: ignore[no-redef]
 
         if get_ascend_config().mega_moe_replicated_dispatch and not self._a2_defer_tp_reduction:
             raise ValueError("Replicated dispatch requires the existing deferred shared+routed TP reduction.")
+        if getattr(get_ascend_config(), "mega_moe_local_partial", False) is True and not self._a2_defer_tp_reduction:
+            raise ValueError(
+                "Local partial requires deferred reduction with TP shared experts and no output transform."
+            )
         setup_moe_comm_method(self.moe_config)
         alltoall_comm = get_moe_comm_method(MoECommType.ALLTOALL)
         if alltoall_comm is not None:

@@ -82,6 +82,11 @@ class AscendUnquantizedFusedMoEMethod(UnquantizedFusedMoEMethod):
         w2_data = self._maybe_pad_weight(layer.w2_weight.data).transpose(1, 2).contiguous()
         replace_parameter(layer, "w2_weight", w2_data)
 
+        if getattr(get_ascend_config(), "mega_moe_local_partial", False) is True:
+            # V26 accepts packed ND weights. Retain the original 3D tensors so
+            # ALLGATHER decode uses exactly the OFF weight representation.
+            return
+
         # TODO: Current dispatch_ffn_combine/mega_moe fusion operator ONLY supports NZ format.
         # Therefore, we must cast weights to NZ when fusion is enabled.
         # Once the underlying dispatch_ffn_combine/mega_moe operator is updated to support

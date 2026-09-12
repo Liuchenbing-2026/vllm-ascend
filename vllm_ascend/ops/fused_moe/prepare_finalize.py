@@ -368,6 +368,53 @@ class PrepareAndFinalizeWithMC2(PrepareAndFinalizeWithAll2All):
         return input_ids
 
 
+class PrepareAndFinalizeWithLocalPartial(PrepareAndFinalizeWithMC2):
+    """Retain full inputs and the same local expert partials as non-SP ALLGATHER."""
+
+    def __init__(self, moe_config: FusedMoEConfig):
+        super().__init__(moe_config)
+        if (
+            self.tp_size != 4
+            or moe_config.ep_size != 4
+            or moe_config.dp_size != 1
+            or moe_config.pcp_size != 1
+            or moe_config.is_sequence_parallel
+            or (moe_config.num_experts, moe_config.hidden_dim, moe_config.intermediate_size_per_partition)
+            != (256, 2048, 512)
+            or moe_config.experts_per_token != 8
+        ):
+            raise ValueError("Local partial requires the BF16 TP4/EP4 full-input layout.")
+
+    def prepare(self, hidden_states, router_logits, replace_allreduce=False, quant_type=QuantType.NONE):
+        if replace_allreduce or quant_type != QuantType.NONE or hidden_states.dtype != torch.bfloat16:
+            raise ValueError("Local partial requires unsharded BF16 input and unquantized experts.")
+        self.num_tokens = hidden_states.shape[0]
+        self.replace_allreduce = False
+        mask = _EXTRA_CTX.mc2_mask
+        if not 1 <= self.num_tokens <= 8192 or mask is None or mask.shape[0] < self.num_tokens:
+            raise ValueError("Local partial requires 1..8192 tokens and the complete active mask.")
+        # The context may reserve TP-aligned padding. No token slicing or extra
+        # padding is needed when every rank owns the complete original input.
+        return MoEPrepareOutput(
+            hidden_states=hidden_states,
+            router_logits=router_logits,
+            mc2_mask=mask[: self.num_tokens],
+            padded_hidden_states_shape=hidden_states.shape,
+            pertoken_scale=None,
+        )
+
+    def finalize_tp_partial(self, hidden_states, padded_hidden_states_shape):
+        if hidden_states.shape != padded_hidden_states_shape:
+            raise ValueError("Local partial output must preserve the full input shape.")
+        return hidden_states
+
+    def finalize(self, hidden_states, reduce_results, padded_hidden_states_shape=None):
+        raise RuntimeError("Local partial requires deferred shared+routed TP reduction.")
+
+    def pad_and_split_input_ids(self, input_ids):
+        return input_ids
+
+
 class PrepareAndFinalizeWithReplicatedDispatch(PrepareAndFinalizeWithMC2):
     """Retain ordinary MC2 source halves for local dispatch and one TP sum."""
 

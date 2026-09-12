@@ -36,6 +36,7 @@ from vllm_ascend.ops.fused_moe.prepare_finalize import (
     PrepareAndFinalize,
     PrepareAndFinalizeWithAll2All,
     PrepareAndFinalizeWithAllGather,
+    PrepareAndFinalizeWithLocalPartial,
     PrepareAndFinalizeWithMC2,
     PrepareAndFinalizeWithReplicatedDispatch,
 )
@@ -406,6 +407,8 @@ class FusedMC2CommImpl(MoECommMethod):
         return TokenDispatcherWithMC2()
 
     def _get_prepare_finalize(self):
+        if getattr(get_ascend_config(), "mega_moe_local_partial", False) is True:
+            return PrepareAndFinalizeWithLocalPartial(self.moe_config)
         if get_ascend_config().mega_moe_replicated_dispatch:
             return PrepareAndFinalizeWithReplicatedDispatch(self.moe_config)
         return PrepareAndFinalizeWithMC2(self.moe_config)
@@ -421,6 +424,7 @@ class FusedMC2CommImpl(MoECommMethod):
         assert isinstance(self.token_dispatcher, TokenDispatcherWithMC2)
         group = get_mc2_group().device_group
         replicated_dispatch = get_ascend_config().mega_moe_replicated_dispatch
+        local_partial = getattr(get_ascend_config(), "mega_moe_local_partial", False) is True
         # The sym buffer is allocated by get_symm_buffer_for_mega_moe, a
         # collective handshake over the EP (mc2) group. Its shape params —
         # especially num_max_tokens_per_rank — MUST be identical on every EP
@@ -455,6 +459,7 @@ class FusedMC2CommImpl(MoECommMethod):
                 num_experts,
                 num_topk,
                 replicated_dispatch=replicated_dispatch,
+                local_partial=local_partial,
             )
 
         logger.info(
@@ -469,6 +474,8 @@ class FusedMC2CommImpl(MoECommMethod):
         )
 
         comm_kwargs = {"comm_alg": "replicated_dispatch"} if replicated_dispatch else {}
+        if local_partial:
+            comm_kwargs = {"comm_alg": "local_partial_tp4"}
         return self.get_symm_buffer_for_mega_moe(
             group,
             num_experts,
@@ -478,7 +485,7 @@ class FusedMC2CommImpl(MoECommMethod):
             intermediate_hidden=2 * self.moe_config.intermediate_size_per_partition,
             max_recv_token_num=(
                 max_recv_token_num
-                if replicated_dispatch
+                if replicated_dispatch or local_partial
                 else (0 if _is_a2_megamoe_enabled(get_ascend_config()) else max_recv_token_num)
             ),
             dispatch_quant_mode=dispatch_quant_mode,
@@ -530,8 +537,13 @@ class FusedMC2CommImpl(MoECommMethod):
             self.mega_moe_symm_buffer.dispatch_quant_out_dtype = dispatch_quant_out_dtype
 
         activation_clamp = self.swiglu_limit if self.swiglu_limit > 0 else None
+        local_partial = getattr(get_ascend_config(), "mega_moe_local_partial", False) is True
         x_active_mask = None
-        if self.token_dispatcher.global_bs == 0 and fused_experts_input.routing.mc2_mask is not None:
+        if (
+            not local_partial
+            and self.token_dispatcher.global_bs == 0
+            and fused_experts_input.routing.mc2_mask is not None
+        ):
             # mc2_mask comes from the reserved bool buffer in
             # ascend_forward_context.set_mc2_mask. MegaMoe wants int8 as
             # the per-token active mask, so cast only when the dtype does
@@ -551,7 +563,25 @@ class FusedMC2CommImpl(MoECommMethod):
         topk_weights = fused_experts_input.topk_weights
         original_num_tokens = int(hidden_states.shape[0])
         replicated_dispatch = get_ascend_config().mega_moe_replicated_dispatch
-        if replicated_dispatch:
+        if local_partial:
+            # Lazy import keeps Triton compilation out of CPU-only processes.
+            from vllm_ascend.ops.triton.megamoe_prepare import prepare_cann_megamoe_local_partial
+
+            if fused_experts_input.quant.quant_type != QuantType.NONE or self.token_dispatcher.global_bs != 0:
+                raise ValueError("Local partial requires unquantized experts and the uniform active-mask contract.")
+            hidden_states, topk_ids, topk_weights, x_active_mask, original_num_tokens = (
+                prepare_cann_megamoe_local_partial(
+                    hidden_states.contiguous(),
+                    topk_ids.to(torch.int32).contiguous(),
+                    topk_weights.contiguous(),
+                    fused_experts_input.routing.mc2_mask,
+                    int(self.moe_config.num_experts),
+                    0,
+                    1,
+                    preapply_active_mask=True,
+                )
+            )
+        elif replicated_dispatch:
             if fused_experts_input.quant.quant_type != QuantType.NONE:
                 raise ValueError("Replicated dispatch requires unquantized BF16 experts.")
             hidden_states, topk_ids, topk_weights, x_active_mask, original_num_tokens = (
