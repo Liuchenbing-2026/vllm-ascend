@@ -20,6 +20,7 @@ import torch_npu  # noqa: F401  (aclnn chunk_gated_delta_rule, PR#12607)
 from einops import rearrange
 from vllm.distributed import get_pcp_group
 from vllm.forward_context import get_forward_context
+from vllm.logger import init_logger
 from vllm.model_executor.layers.mamba.gdn.base import GatedDeltaNetAttention
 from vllm.model_executor.layers.mamba.mamba_utils import MambaStateShapeCalculator
 from vllm.third_party.flash_linear_attention.ops.l2norm import l2norm_fwd
@@ -35,6 +36,43 @@ from vllm_ascend.ops.triton.fla.chunk import chunk_gated_delta_rule
 from vllm_ascend.ops.triton.fla.fused_qkvzba_split_reshape import fused_qkvzba_split_reshape_cat
 from vllm_ascend.ops.triton.fla.utils import clear_ssm_states
 from vllm_ascend.ops.triton.mamba.causal_conv1d import extract_last_width
+
+logger = init_logger(__name__)
+_qk_fused_logged = False
+
+
+def _l2norm_qk(query: torch.Tensor, key: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """L2-normalise q and k with one Triton launch instead of two.
+
+    Every l2norm_fwd launch costs ~220 us of host Python whatever the row
+    count, and prefill steps run eagerly, so the launch count sets how long the
+    device idles. rearrange_mixed_qkv packs q, k and v back to back in one
+    buffer, which makes q and k adjacent contiguous views of one storage: they
+    can be normalised as a single (2N, D) tensor. The kernel is row-local, so
+    the result is bit-identical to two calls. Falls back to two calls if that
+    layout ever changes.
+    """
+    global _qk_fused_logged
+    n = query.numel()
+    if (
+        query.shape == key.shape
+        and query.is_contiguous()
+        and key.is_contiguous()
+        and key.storage_offset() == query.storage_offset() + n
+        and query.untyped_storage().data_ptr() == key.untyped_storage().data_ptr()
+    ):
+        d = query.shape[-1]
+        rows = n // d
+        y = l2norm_fwd(torch.as_strided(query, (2 * rows, d), (d, 1), query.storage_offset()))
+        if not _qk_fused_logged:
+            _qk_fused_logged = True
+            # warning, not info: vllm_ascend.* loggers have no handler, so INFO is dropped
+            logger.warning("GDN host fast path: fused q/k l2norm engaged")
+        return y[:rows].view(query.shape), y[rows:].view(key.shape)
+    if not _qk_fused_logged:
+        _qk_fused_logged = True
+        logger.warning("GDN host fast path: q/k not packed in one buffer, using two l2norm calls")
+    return l2norm_fwd(query), l2norm_fwd(key)
 
 
 class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
@@ -336,6 +374,17 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
         )
         num_decode_tokens = attn_metadata.num_decode_tokens
 
+        # Eager prefill/mixed steps normalise all non-spec q/k once and slice
+        # the decode and prefill parts out of it, instead of re-splitting the
+        # decode slice and paying four l2norm launches. Pure-decode steps are
+        # graph-replayed and keep their own path; pcp>1 hands raw q/k to the
+        # Triton entry, which normalises inside the kernel.
+        qk_prenormed = (
+            spec_sequence_masks is None and attn_metadata.num_prefills > 0 and get_pcp_group().world_size == 1
+        )
+        if qk_prenormed:
+            query_non_spec, key_non_spec = _l2norm_qk(query_non_spec, key_non_spec)
+
         # 2.1: Process the multi-query part
         if spec_sequence_masks is not None:
             actual_seq_lengths = attn_metadata.spec_decode_metadata.actual_seq_lengths
@@ -365,10 +414,17 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
             assert mixed_qkv_non_spec is not None
             assert g_non_spec is not None
             assert beta_non_spec is not None
-            query_decode, key_decode, value_decode = self.rearrange_mixed_qkv(mixed_qkv_non_spec[:num_decode_tokens])
+            if qk_prenormed:
+                query_decode = query_non_spec[:, :num_decode_tokens]
+                key_decode = key_non_spec[:, :num_decode_tokens]
+                value_decode = value_non_spec[:, :num_decode_tokens]
+            else:
+                query_decode, key_decode, value_decode = self.rearrange_mixed_qkv(
+                    mixed_qkv_non_spec[:num_decode_tokens]
+                )
+                query_decode = l2norm_fwd(query_decode)
+                key_decode = l2norm_fwd(key_decode)
             actual_seq_lengths = attn_metadata.non_spec_decode_metadata.actual_seq_lengths
-            query_decode = l2norm_fwd(query_decode)
-            key_decode = l2norm_fwd(key_decode)
             core_attn_out_decode = torch.ops._C_ascend.npu_recurrent_gated_delta_rule(
                 query=query_decode.squeeze(0),
                 key=key_decode.squeeze(0),
@@ -428,14 +484,27 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
                 # decode branch below passes it unturned too -- so unlike the
                 # Triton path there is no transpose in or out.
                 initial_state = ssm_state[prefill_state_indices].contiguous()
-                clear_ssm_states(initial_state, prefill_has_initial_state)
+                if prefill_has_initial_state.dtype == torch.bool and prefill_has_initial_state.device == initial_state.device:
+                    # Two aten launches instead of the Triton clear_ssm_states
+                    # wrapper; both write +0.0 into the rows without a state.
+                    initial_state.masked_fill_(
+                        ~prefill_has_initial_state.view(-1, *([1] * (initial_state.dim() - 1))), 0
+                    )
+                else:
+                    clear_ssm_states(initial_state, prefill_has_initial_state)
 
                 # q/k/v/g/beta are [1, T, H, *] (head_first=False, batch flat
                 # B=1 over the concatenated prefill tokens); the op wants TND.
                 # This op does NOT l2-normalise q/k internally -- the Triton
-                # entry did, via use_qk_l2norm_in_kernel=True -- so do it here.
-                q_tnd = l2norm_fwd(query_non_spec.squeeze(0))
-                k_tnd = l2norm_fwd(key_non_spec.squeeze(0))
+                # entry did, via use_qk_l2norm_in_kernel=True -- so normalise
+                # here. Without spec decoding that already happened above, once
+                # for the decode and prefill parts together.
+                if qk_prenormed:
+                    q_tnd = query_non_spec.squeeze(0)
+                    k_tnd = key_non_spec.squeeze(0)
+                else:
+                    q_tnd = l2norm_fwd(query_non_spec.squeeze(0))
+                    k_tnd = l2norm_fwd(key_non_spec.squeeze(0))
                 v_tnd = value_non_spec.squeeze(0)
                 beta_tnd = beta_non_spec.squeeze(0)
                 g_tnd = g_non_spec.squeeze(0)      # raw fp32 log-gate; op cumsums
