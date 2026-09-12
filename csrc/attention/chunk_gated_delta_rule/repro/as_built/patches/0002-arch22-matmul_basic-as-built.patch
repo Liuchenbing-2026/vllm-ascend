@@ -1,0 +1,54 @@
+From aad8b26865c172424d900b1d1b76251ef99d2872 Mon Sep 17 00:00:00 2001
+From: gdr <gdr@local>
+Date: Tue, 8 Sep 2026 15:26:44 +0800
+Subject: [PATCH 2/2] [chunk_gated_delta_rule] arch22: matmul_basic as built
+ and measured 2026-09-04 18:09 (installed .o md5 1d90ce85)
+
+---
+ .../op_kernel/chunk_gated_delta_rule_matmul_basic.h  | 12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_matmul_basic.h b/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_matmul_basic.h
+index bddbb42..a55bc80 100644
+--- a/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_matmul_basic.h
++++ b/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_matmul_basic.h
+@@ -145,13 +145,16 @@ public:
+ 
+         SetFlag<HardEvent::MTE1_M>(MM_FWD_ID[p]);
+ 
+-        // (3) Mmad —— unitFlag=0b11：Mmad 按 16 行单元逐个放行 Fixpipe，硬件接力，
+-        // 免掉 M->FIX 的 flag 对，且 Fixpipe 可与 Mmad 尾部重叠
++        // (3) Mmad
+         WaitFlag<HardEvent::MTE1_M>(MM_FWD_ID[p]);
+ 
+         DoMmad(l0cTensor_[p], l0aTensor_[p], l0bTensor_[p], m, n, k);
+ 
+-        // (4) L0C -> GM（unitFlag 接力，无需 M_FIX 同步）
++        SetFlag<HardEvent::M_FIX>(MM_FWD_ID[p]);
++
++        // (4) L0C -> GM
++        WaitFlag<HardEvent::M_FIX>(MM_FWD_ID[p]);
++
+         CopyL0CToGm<dstType, accum>(cGm, l0cTensor_[p], m, n, cDstStride);
+ 
+         SetFlag<HardEvent::FIX_MTE2>(MM_BACK_ID[p]);
+@@ -272,7 +275,6 @@ private:
+         mmadParams.k = static_cast<uint16_t>(k);
+         mmadParams.cmatrixInitVal = true;
+         mmadParams.cmatrixSource = false;
+-        mmadParams.unitFlag = 0b11;   // 单发 matmul：enable + 完成即翻转（可搬出）
+         Mmad(l0cTensor, l0aTensor, l0bTensor, mmadParams);
+         if ((mmadParams.m / MM_BLOCK_CUBE) * (mmadParams.n / MM_BLOCK_CUBE) < MM_SMALL_MN) {
+             PipeBarrier<PIPE_M>();
+@@ -289,7 +291,7 @@ private:
+         fixParams.srcStride = static_cast<uint16_t>(MmAlign(m, MM_BLOCK_CUBE));
+         fixParams.dstStride = dstStride;
+         fixParams.ndNum = 1;
+-        fixParams.unitFlag = 0b11;
++        fixParams.unitFlag = 0;
+ 
+         if constexpr (std::is_same<dstType, bfloat16_t>::value) {
+             fixParams.quantPre = QuantMode_t::F322BF16;
+-- 
+2.34.1
+

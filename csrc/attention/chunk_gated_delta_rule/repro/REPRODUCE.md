@@ -526,6 +526,121 @@ while the deployment uses the unquantized bf16 one. Set `QUANT=""` to run bf16.
 > comparing the operator's call count and per-call time. Treat the W8A8 and bf16
 > numbers as two measurements of the same ~1%, not as a bound and its interior.
 
+## 8c. The kernel alone is ~0 end to end. What converts it. (2026-09-12/13)
+
+Everything above section 8b measures the operator, or measures the server with
+only the operator changed. That second thing is worth stating plainly, because
+the first honest answer it gave was zero:
+
+| Date | Arms | Median TTFT | Verdict |
+|---|---|---|---|
+| 2026-09-08 | stock kernel vs this kernel, six-arm ABBA, production harness | **-0.29%** | indistinguishable from zero; 95% CI on duration [-3.06%, +2.36%] |
+| 2026-09-12 | same two arms, **both with the GDN host-dispatch patch** | **-2.12%** (p=0.029, arms separated) | real |
+
+Same kernel, same machine, same workload, same harness. The only thing that
+changed between the two rows is a host-side patch to `vllm_ascend/ops/gdn.py`
+that is not in this branch -- it is on `gdn-host-dispatch-opt` (`4c57a8c1`) in
+the same fork.
+
+The mechanism: the device time this kernel saves was landing in "device finished,
+now waiting for the host to dispatch the next op". Removing the host overhead in
+the GDN layer is what lets it show up on the clock.
+
+| | Ceiling from the operator's share | Before the host patch | After the host patch |
+|---|---|---|---|
+| Burst duration | -1.93% | -0.20% (10% converted) | **-1.78%** (92%) |
+| Median TTFT | -2.90% | -0.29% (10%) | **-2.12%** (73%) |
+
+Stacked against the unpatched base, both changes on: burst 6.116 -> 5.888 s
+(**-3.7%**), median TTFT 3042 -> 2907 ms. Quote that TTFT number as
+**-4.2% ~ -4.4%**, not -4.4%: the endpoint ratio is -4.44% but composing the two
+measured halves, (1-2.10%)(1-2.12%), gives -4.18%; the 0.26pp gap is the shared
+arm measuring 2978 in one round and 2970 in the other.
+
+**Independently reproduced 2026-09-13** by someone else on the same machine, six
+metrics, all same-direction. The kernel half nearly landed on the claim; the host
+half came in lighter:
+
+| Half | Claimed here | Reproduced |
+|---|---|---|
+| Kernel: duration / median TTFT / TPOT | -1.78% / -2.12% / -1.61% | -1.49% / **-2.04%** / -1.36% |
+| Host patch: duration / median TTFT / throughput | -2.01% / -2.12% / +2.04% | -1.30~-1.47% / -1.21~-1.45% / +1.40~+1.50% |
+
+That asymmetry is expected rather than troubling: the host patch pays off only at
+the moments the device is actually waiting on the host (it removes ~750 ms of host
+work per burst and ~123 ms of wall clock, a ~1/6 conversion), so its size moves
+with machine load, while the kernel half does not. Composed from the reproduced
+halves the stacked TTFT gain is -3.2% ~ -3.5%. **Give -3% ~ -4.5% as the
+expectation to anyone who has not measured their own box.**
+
+### Operator level on production shapes
+
+Section 7's table is measured on 64-aligned synthetic batches. Section 1c already
+warns that a live server never produces those. Measured directly on shapes taken
+from a production trace (TP4, nk=4/nv=8, one process per shape, round-level ABBA,
+per-row `/proc/self/maps` routing evidence, 32/32 rows consistent):
+
+| Shape | stock (us) | this kernel (us) | Delta |
+|---|---|---|---|
+| T=8189 B=3 lens 2730,2730,2729 | 2021.7 | 1722.6 | -14.79% |
+| T=8189 B=3 lens 4096,3000,1093 | 1962.9 | 1694.3 | -13.68% |
+| T=8190 B=2 | 1887.8 | 1642.6 | -12.99% |
+| T=8186 B=1 | 1967.2 | 1682.5 | -14.47% |
+| T=6154 B=1 | 1503.4 | 1312.5 | -12.70% |
+| T=4106 B=1 | 1062.4 | 948.9 | -10.68% |
+| **production total** | **10405.4** | **9003.4** | **-13.47%** |
+| control T=8192 B=1 / B=16 (aligned) | 1957.8 / 2753.7 | 1709.1 / 1499.5 | -12.70% / **-45.55%** |
+
+16/16 output tensors bit-exact (bf16 compared as int16 -- comparing as float lets
+`0.0 == -0.0` hide a bit difference).
+
+Contamination on a shared machine is one-sided: a neighbour can only make you
+slower. So the table reports the fastest round per arm, not the ABBA mean. It
+mattered: one stock round ran 19.6% slower than its own arm's first round when a
+neighbour started a service mid-run, which inflated the mean-based total to
+-15.04%. The other seven cells agree between the two estimators within 0.4pp.
+
+### Where the time went, and what is left
+
+The operator emits **one fused kernel**
+(`aclnnChunkGatedDeltaRule_ChunkGatedDeltaRule_C`), so Stage1/2/3 cannot be
+attributed separately from `kernel_details.csv`; only per-pipe shares are
+available. At T=8189 B=3, absolute pipe times in us (stock -> this kernel):
+
+```
+AIC  scalar 568.5 -> 311.4   fixpipe 443.9 -> 282.2   mte2 304.1 -> 277.3
+AIV  scalar 566.6 -> 604.9   vector  425.0 -> 428.1   mte2 307.9 -> 309.7   mte3 130.3 -> 134.6
+```
+
+Cube side is down 432 us net, 419 us of it from scalar and fixpipe alone; all four
+AIV pipes are unchanged. That matches the change list -- every one of the five
+changes touches the cube pipeline or the core partition, none touches the vector
+chain. AIC pipe sum 0.769 -> 0.628 (cube idle 23.1% -> 37.2%); AIV sum 0.757 ->
+0.911 with `aiv_time` ~ kernel duration.
+
+**The bottleneck has changed sides: the vector side is now the constraint.**
+`aic_mac_ratio` is 0.034 -> 0.042, so the MAC array is ~96% idle and this operator
+is not compute-bound in either state; "do less arithmetic" is not a direction.
+
+The top remaining candidate is therefore **Stage2/Stage3 using only half the AIV**
+(`GetSubBlockIdx() == 1` returns immediately) -- which is now supported by
+measurement rather than by reading the code, and is the same order of magnitude as
+the 605 us AIV scalar term. It is a candidate, not a verified gain. Section 9's
+first entry is the reason for that distinction.
+
+Profiling was used for attribution only. Any faster/slower conclusion comes from
+runs without collection: the same shape reads -14.14% with the profiler attached
+and -14.79% without.
+
+### Workload caveat
+
+All of the end-to-end numbers above are on a prefill-heavy burst (32 output
+tokens). On a decode-dominated run (160 prompts x 4096 in / 256 out) both halves
+fall below the detection floor and measure as zero -- 256 output tokens put
+87.5-88.2% of mean end-to-end latency in decode, and the six-arm floor on that
+workload is 2.71%. A null there is a statement about the instrument, not about the
+kernel.
+
 ## 9. Things that produced wrong numbers here
 
 **One shape per process.** Timing several shapes in one process inflated a

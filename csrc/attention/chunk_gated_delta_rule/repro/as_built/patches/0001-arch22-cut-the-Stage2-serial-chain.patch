@@ -1,0 +1,1048 @@
+From 48070c3945f5837d196dae17e0317ebed5bdafd2 Mon Sep 17 00:00:00 2001
+From: gdr-arch22 <noreply@anthropic.com>
+Date: Thu, 3 Sep 2026 19:34:32 +0000
+Subject: [PATCH 1/2] [chunk_gated_delta_rule] arch22: cut the Stage2 serial
+ chain, hand-written cube pipeline, 2D partition and cross-sequence packing
+
+Five independent changes to the arch22 (910B/v220) kernel. Every one is bit-exact
+against the stock operator: 36/36 output tensors compare equal with torch.equal
+across 18 shapes, covering odd/even chunk counts, sequences spanning chunk groups,
+varlen batches, the unaligned-tail and non-packable fallbacks, g=None, zero and
+random initial states, and TP1 head counts.
+
+1. Stage2 state ping-pong
+   curState and finalState aliased one GM buffer, so the AIV had to wait for the
+   AIC to finish reading the old state (CrossCore flag 0x2) before writing the
+   scaled state back. Read and write buffers are now separated by chunk parity,
+   reusing the never-read highState_ workspace as the second buffer (its fp32 size
+   is twice the bf16 state, so no workspace growth). The 0x2 edge disappears and
+   the AIV's 32KB read-scale-write overlaps the AIC's two matmuls. Phase is
+   anchored at the group tail so the last chunk always lands in finalState.
+
+2. Hand-written basic-API matmul (chunk_gated_delta_rule_matmul_basic.h)
+   Replaces all ten MatmulImpl call sites (six in stage1, three in stage2, one in
+   stage3) with an explicit GM->L1(Nd2Nz) -> L1->L0(LoadData/LoadDataWithTranspose)
+   -> Mmad -> Fixpipe(V220) pipeline. Every matmul in this operator fits a single
+   128x128 tile, so each Execute is single-shot. This ports the arch35
+   CGDRMatmulBasic approach to v220 APIs, keeping its BSource::SameAsA reuse for
+   stage1's K@K^T.
+
+3. Two-deep software pipelining across matmul calls
+   L1/L0A/L0B/L0C are double-buffered by call parity, using L0A/L0B/L0C in full.
+   Call i's top gate waits on call i-2's Fixpipe of the same buffer set, which
+   transitively protects every on-chip buffer. The two call pairs with a GM
+   read-after-write dependency are marked serial. stage2's CalAttnInter reuses the
+   state operand already resident in the other set's L1B.
+
+4. Stage2 (Nv, Dv) 2D partition
+   Stage2 partitioned on Nv alone, so with Nv=4 only 4 of 20 cube cores worked.
+   Dv is now split in two when twice the unit count still fits the core count, and
+   only when Dv is even. Both gates fall back to the original single-unit path, so
+   shapes that do not benefit run the original code.
+
+5. Cross-sequence chunk-group packing
+   Each batch entry ran as its own serial group of stage1/stage2/stage3 plus three
+   SyncAll. When every sequence but the last is chunkSize-aligned, chunk groups are
+   now packed across sequences and stage2 walks (bid, nv[, Dv slice]) segment
+   chains, carrying state across groups through finalState. The last sequence may
+   have any length: its tail chunk is the batch's tail chunk, which stage1 and
+   stage3 already handle. Any other alignment falls back to the per-sequence path.
+
+Operator-level, 910B4-1, CANN 9.1.0, paired per-process runs, median of 30,
+at Qwen3.6-35B-A3B GDN shapes (Dk=Dv=128, global Nk=16/Nv=32):
+
+  TP8  (Nk=2, Nv=4)   T=8192 B=1     1461.5 -> 1186.7 us   -18.8%
+  TP8                 T=8192 B=16    2152.8 ->  989.4 us   -54.0%
+  TP8                 T=2560 B=40    2537.5 ->  372.4 us   -85.3%
+  TP4  (Nk=4, Nv=8)   T=8192 B=1     1995.1 -> 1673.7 us   -16.1%
+  TP1  (Nk=16,Nv=32)  T=8192 B=1     4893.3 -> 4310.9 us   -11.9%
+
+End-to-end on Qwen3.6-35B-A3B-w8a8 (TP4, vllm bench serve, 4-arm ABBA with two
+consecutive passes per server instance, all eight medians non-overlapping;
+random 1024-token prompts, 128 requests, concurrency 32):
+
+  Median TTFT   1462.4 -> 1392.6 ms   -4.8%
+  Mean TTFT     1408.9 -> 1346.0 ms   -4.5%
+  Request tput   20.62 ->  21.60 r/s  +4.8%
+
+The end-to-end figure is bounded by the operator's share of prefill (~16% for this
+model), and it grows with how many sequences prefill in the same step, which is
+what changes 4 and 5 address.
+
+Ideas 1-3 apply to arch35 as well; the structural items behind 4 and 5 are present
+there verbatim (Process(), nvPerCore, the subBlockIdx==1 return).
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ .../op_kernel/chunk_gated_delta_rule.h        |  85 ++++-
+ .../chunk_gated_delta_rule_matmul_basic.h     | 310 ++++++++++++++++++
+ .../op_kernel/chunk_gated_delta_rule_stage1.h |  71 ++--
+ .../op_kernel/chunk_gated_delta_rule_stage2.h | 214 +++++++++---
+ .../op_kernel/chunk_gated_delta_rule_stage3.h |  16 +-
+ 5 files changed, 583 insertions(+), 113 deletions(-)
+ create mode 100644 attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_matmul_basic.h
+
+diff --git a/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule.h b/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule.h
+index 0579d4b..42748ed 100644
+--- a/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule.h
++++ b/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule.h
+@@ -93,7 +93,7 @@ template <typename lowType, typename highType>
+ class CGDR {
+ public:
+     __aicore__ inline CGDR(TPipe *pipe, const ChunkGatedDeltaRuleTilingData *tilingData)
+-        : stageOneOp_(stage1MT_)
++        : stageOneOp_(mmBasic_)
+     {
+         pipe_ = pipe;
+         tiling_ = tilingData;
+@@ -101,12 +101,7 @@ public:
+ 
+     __aicore__ inline void InitMatmul()
+     {
+-        if ASCEND_IS_AIC {
+-            // 使用 tiling 中的 matmul tiling 数据初始化
+-            stage1MT_.Init(&tiling_->matmulTilingFp32, pipe_);
+-            stage2MT_.Init(&tiling_->matmulTilingFp32, pipe_);
+-            stage3MT_.Init(&tiling_->matmulTilingFp32, pipe_);
+-        }
++        // basic API matmul 无全局初始化；每个 stage 运行前 Init、pipe Reset 前 End（见 RunStageX）
+     }
+ 
+     __aicore__ inline void InitMask()
+@@ -189,6 +184,9 @@ public:
+         offset += sizeof(lowType) * tiling_->nv * tiling_->maxGroupLength * tiling_->chunkSize;
+ 
+         highState_.SetGlobalBuffer(reinterpret_cast<__gm__ highType *>(user + offset));
++        // highState_ 从未被读写，把同一块 workspace 以 lowType 视图借作 Stage2 状态乒乓的第二块缓冲
++        // （fp32 尺寸 = bf16 状态的 2 倍，容量足够）
++        altState_.SetGlobalBuffer(reinterpret_cast<__gm__ lowType *>(user + offset));
+         offset += sizeof(highType) * tiling_->b * tiling_->nv * tiling_->dv * tiling_->dk;
+ 
+         stageOneMask_.SetGlobalBuffer(reinterpret_cast<__gm__ highType *>(user + offset));
+@@ -206,10 +204,40 @@ public:
+     __aicore__ inline void Process()
+     {
+         SyncAll<false>();
+-        int64_t seqStart = 0;
+-        int64_t seqEnd = 0;
+         ChunkGroup cg;
+         cg.chunkSize = tiling_->chunkSize;
++        // 多序列打包：只要前 b-1 个序列长度对齐 chunkSize，序列边界就都落在 chunk 边界上，
++        // 全 batch 的 chunk 在 T 维连续，可跨序列打满 maxGroupLength 的 group。
++        // 末序列长度任意——它的尾 chunk 就是整个 batch 的尾 chunk，
++        // stage1/stage3 现有的「group 末 chunk 不满」逻辑（按 cg.length 取余）天然处理。
++        //（stage1/stage3 是 chunk 局部计算，无需感知序列边界；stage2 按 (bid,nv) 段式链处理。）
++        bool packed = tiling_->b > 1;
++        int64_t totalTokens = 0;
++        for (int64_t bid = 0; bid < tiling_->b; bid++) {
++            int32_t length = actualSeqLens_.GetValue(bid);
++            totalTokens += (int64_t)length;
++            if (bid + 1 < tiling_->b && length % tiling_->chunkSize != 0) {
++                packed = false;
++            }
++        }
++        if (packed) {
++            for (int64_t pos = 0; pos < totalTokens; pos += tiling_->maxGroupLength) {
++                cg.startPos = pos;
++                cg.length = (pos + tiling_->maxGroupLength > totalTokens) ? (totalTokens - pos)
++                                                                          : tiling_->maxGroupLength;
++                RunStage1(cg);
++                SyncAll<false>();
++
++                RunStage2Packed(cg, pos / tiling_->chunkSize, totalTokens);
++                SyncAll<false>();
++
++                RunStage3(cg);
++                SyncAll<false>();
++            }
++            return;
++        }
++        int64_t seqStart = 0;
++        int64_t seqEnd = 0;
+         for (int64_t bid = 0; bid < tiling_->b; bid++) {
+             int32_t length = actualSeqLens_.GetValue(bid);
+             seqStart = seqEnd;
+@@ -230,7 +258,8 @@ public:
+                 SyncAll<false>();
+ 
+                 RunStage2(cg, curState,
+-                          finalState_[bid * tiling_->nv * tiling_->dv * tiling_->dk]);
++                          finalState_[bid * tiling_->nv * tiling_->dv * tiling_->dk],
++                          altState_[bid * tiling_->nv * tiling_->dv * tiling_->dk]);
+                 SyncAll<false>();
+ 
+                 RunStage3(cg);
+@@ -242,38 +271,59 @@ public:
+ private:
+     __aicore__ inline void RunStage1(const ChunkGroup& cg)
+     {
++        mmBasic_.Init(pipe_);
+         GDRStageOneInitParams initStageOneParams {query_, key_, value_, beta_, g_,
+                                                 gCum_, kCumDecay_, vInner_, qPrime_, kg_, qkt_,
+                                                 stageWsAddr_, stageOneMask_, cg, gFlag_};
+         stageOneOp_.Init(initStageOneParams, pipe_, tiling_);
+         stageOneOp_.Process();
++        mmBasic_.End();
+         pipe_->Reset();
+     }
+ 
+     __aicore__ inline void RunStage2(ChunkGroup& cg, GlobalTensor<lowType> stateIn,
+-                                     GlobalTensor<lowType> stateOut)
++                                     GlobalTensor<lowType> stateOut, GlobalTensor<lowType> stateAlt)
+     {
++        mmBasic_.Init(pipe_);
+         Stage2 stageTwoOp;
+         StageTwoParams initStageTwoParams{
+-            qPrime_, vInner_, gCum_, kCumDecay_, stateIn, stateOut, kg_,
+-            out_[cg.startPos * tiling_->nv * tiling_->dv], stageWsAddr_, &stage2MT_, pipe_, &cg,
++            qPrime_, vInner_, gCum_, kCumDecay_, stateIn, stateOut, stateAlt, kg_,
++            out_[cg.startPos * tiling_->nv * tiling_->dv], stageWsAddr_, &mmBasic_, pipe_, &cg,
+             tiling_->nv, tiling_->nk, tiling_->dv, tiling_->dk, gFlag_};
+         stageTwoOp.Init(&initStageTwoParams, tiling_->aiCoreNum);
+         stageTwoOp.Process();
++        mmBasic_.End();
++        pipe_->Reset();
++    }
++
++    // 打包模式：跨序列 group，stage2 内部按 (bid, nv[, Dv片]) 段式链分核
++    __aicore__ inline void RunStage2Packed(ChunkGroup& cg, int64_t groupChunkStart, int64_t totalTokens)
++    {
++        mmBasic_.Init(pipe_);
++        Stage2 stageTwoOp;
++        StageTwoParams initStageTwoParams{
++            qPrime_, vInner_, gCum_, kCumDecay_, initState_, finalState_, altState_, kg_,
++            out_[cg.startPos * tiling_->nv * tiling_->dv], stageWsAddr_, &mmBasic_, pipe_, &cg,
++            tiling_->nv, tiling_->nk, tiling_->dv, tiling_->dk, gFlag_};
++        stageTwoOp.Init(&initStageTwoParams, tiling_->aiCoreNum);
++        stageTwoOp.ProcessPacked(actualSeqLens_, tiling_->b, groupChunkStart, totalTokens);
++        mmBasic_.End();
+         pipe_->Reset();
+     }
+ 
+     __aicore__ inline void RunStage3(ChunkGroup& cg)
+     {
++        mmBasic_.Init(pipe_);
+         Stage3 stageThreeOp;
+         StageThreeParams initStageThreeParams{
+             qkt_, gCum_, vInner_,
+             stageThreeMask_[int(GetBlockIdx() / 2) * tiling_->chunkSize * tiling_->chunkSize],
+             stageWsAddr_, out_[cg.startPos * tiling_->nv * tiling_->dv],
+-            &stage3MT_, pipe_, &cg, tiling_->scale,
++            &mmBasic_, pipe_, &cg, tiling_->scale,
+             tiling_->nv, tiling_->nk, tiling_->dv, tiling_->dk, gFlag_};
+         stageThreeOp.Init(&initStageThreeParams, tiling_->aiCoreNum);
+         stageThreeOp.Process();
++        mmBasic_.End();
+         pipe_->Reset();
+     }
+ 
+@@ -299,6 +349,7 @@ private:
+     GlobalTensor<lowType> kg_;           // (Nv, maxGroupLength, Dk)
+     GlobalTensor<lowType> qkt_;          // (Nv, maxGroupLength, C)
+     GlobalTensor<highType> highState_;
++    GlobalTensor<lowType> altState_;   // highState_ 的 lowType 视图，Stage2 状态乒乓的第二块缓冲
+     // mask矩阵
+     GlobalTensor<highType> stageOneMask_;          // (Nv, maxGroupLength, C)
+     GlobalTensor<highType> stageThreeMask_;          // (Nv, maxGroupLength, C)
+@@ -306,10 +357,8 @@ private:
+ 
+     TBuf<TPosition::VECCALC> tmpBuff_;  // 构造mask矩阵
+ 
+-    // Matmul objects
+-    StageOneMT stage1MT_;
+-    StageTwoMT stage2MT_;
+-    StageThreeMT stage3MT_;
++    // 三个 stage 共用一个 basic API matmul 实例
++    CGDRMatmulBasic mmBasic_;
+ 
+     // Stage operators
+     Stage1 stageOneOp_;
+diff --git a/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_matmul_basic.h b/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_matmul_basic.h
+new file mode 100644
+index 0000000..bddbb42
+--- /dev/null
++++ b/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_matmul_basic.h
+@@ -0,0 +1,310 @@
++/**
++ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
++ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
++ * CANN Open Software License Agreement Version 2.0 (the "License").
++ * Please refer to the License for details. You may not use this file except in compliance with the License.
++ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
++ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
++ * See LICENSE in the root of the software repository for the full text of the License.
++ */
++
++/*!
++ * \file chunk_gated_delta_rule_matmul_basic.h
++ * \brief CGDR basic API matmul for arch22 (910B/v220):
++ *        manually controls GM->L1->L0A/L0B->Mmad->L0C->GM pipeline.
++ *        All matmuls in this operator fit a single 128x128 tile, so Execute is single-shot,
++ *        with 2-deep software pipelining across calls (all on-chip buffers ping-pong by call
++ *        parity; call i's top gate waits call i-2 on the same buffer set, which transitively
++ *        protects L1/L0A/L0B/L0C).
++ *        Adjacent calls with a GM read-after-write dependency must pass serial=true, which
++ *        additionally waits the other set's Fixpipe (i.e. call i-1) before loading.
++ */
++
++#ifndef CHUNK_GATED_DELTA_RULE_MATMUL_BASIC_H
++#define CHUNK_GATED_DELTA_RULE_MATMUL_BASIC_H
++
++#include "kernel_operator.h"
++
++namespace ChunkGatedDeltaRule {
++
++using namespace AscendC;
++
++constexpr uint32_t MM_BLOCK_CUBE = 16;
++constexpr uint32_t MM_B16_BLK = 16;       // b16: 32B fractal width / sizeof(b16)
++constexpr uint32_t MM_FRACTAL_ELEM = 256; // 16x16 elements per 512B fractal
++constexpr uint32_t MM_MAX_DIM = 128;
++constexpr uint32_t MM_L1_ELEM_CNT = MM_MAX_DIM * MM_MAX_DIM;  // 16384 b16 = 32KB
++constexpr uint32_t MM_SMALL_MN = 10;      // v220: (m/16)*(n/16) < 10 needs PIPE_M barrier after Mmad
++// FIX_MTE2 ids 4/5 (id 6 is FIX_MTE2_EVENT in stage2, ids 0-3 kept clear);
++// the three forward flags use ids 6/7 on their own channels (no other AIC users).
++constexpr int32_t MM_BACK_ID[2] = {4, 5};
++constexpr int32_t MM_FWD_ID[2] = {6, 7};
++
++enum class BSource {
++    Copy,
++    SameAsA,
++    Reuse
++};
++
++__aicore__ inline uint32_t MmAlign(uint32_t value, uint32_t align)
++{
++    return (value + align - 1) / align * align;
++}
++
++class CGDRMatmulBasic {
++public:
++    __aicore__ inline CGDRMatmulBasic() {}
++
++    // Re-init after every pipe Reset (per stage). AIC only.
++    __aicore__ inline void Init(TPipe *pipe)
++    {
++        if ASCEND_IS_AIV {
++            return;
++        }
++        pipe->InitBuffer(l1Buf_, 4 * MM_L1_ELEM_CNT * sizeof(bfloat16_t));  // 128KB: (A+B) x2 sets
++        pipe->InitBuffer(l0aBuf_, 2 * MM_L1_ELEM_CNT * sizeof(bfloat16_t)); // 64KB = full L0A
++        pipe->InitBuffer(l0bBuf_, 2 * MM_L1_ELEM_CNT * sizeof(bfloat16_t)); // 64KB = full L0B
++        pipe->InitBuffer(l0cBuf_, 2 * MM_L1_ELEM_CNT * sizeof(float));      // 128KB = full L0C
++        for (int32_t p = 0; p < 2; p++) {
++            l1aTensor_[p] = l1Buf_.GetWithOffset<bfloat16_t>(
++                MM_L1_ELEM_CNT, (2 * p) * MM_L1_ELEM_CNT * sizeof(bfloat16_t));
++            l1bTensor_[p] = l1Buf_.GetWithOffset<bfloat16_t>(
++                MM_L1_ELEM_CNT, (2 * p + 1) * MM_L1_ELEM_CNT * sizeof(bfloat16_t));
++            l0aTensor_[p] = l0aBuf_.GetWithOffset<bfloat16_t>(MM_L1_ELEM_CNT,
++                                                              p * MM_L1_ELEM_CNT * sizeof(bfloat16_t));
++            l0bTensor_[p] = l0bBuf_.GetWithOffset<bfloat16_t>(MM_L1_ELEM_CNT,
++                                                              p * MM_L1_ELEM_CNT * sizeof(bfloat16_t));
++            l0cTensor_[p] = l0cBuf_.GetWithOffset<float>(MM_L1_ELEM_CNT, p * MM_L1_ELEM_CNT * sizeof(float));
++            SetFlag<HardEvent::FIX_MTE2>(MM_BACK_ID[p]);
++        }
++        cnt_ = 0;
++    }
++
++    // Must be called before the owning pipe is Reset. AIC only.
++    __aicore__ inline void End()
++    {
++        if ASCEND_IS_AIV {
++            return;
++        }
++        WaitFlag<HardEvent::FIX_MTE2>(MM_BACK_ID[0]);
++        WaitFlag<HardEvent::FIX_MTE2>(MM_BACK_ID[1]);
++    }
++
++    template <bool transA, bool transB, bool accum, typename dstType = bfloat16_t, BSource bSrc = BSource::Copy,
++              bool serial = false>
++    __aicore__ inline void Execute(GlobalTensor<bfloat16_t> aGm, GlobalTensor<bfloat16_t> bGm,
++                                   GlobalTensor<dstType> cGm, uint32_t m, uint32_t n, uint32_t k,
++                                   uint32_t aGmRowStride = 0, uint32_t bGmRowStride = 0, uint32_t cGmRowStride = 0)
++    {
++        if ASCEND_IS_AIV {
++            return;
++        }
++
++        uint32_t p = cnt_ & 1;
++        cnt_++;
++        uint32_t aRows = transA ? k : m;
++        uint32_t aCols = transA ? m : k;
++        uint32_t bRows = transB ? n : k;
++        uint32_t bCols = transB ? k : n;
++        uint32_t aSrcD = (aGmRowStride == 0) ? aCols : aGmRowStride;
++        uint32_t bSrcD = (bGmRowStride == 0) ? bCols : bGmRowStride;
++        uint32_t cDstStride = (cGmRowStride == 0) ? n : cGmRowStride;
++
++        // (1) GM -> L1 (nd2nz)
++        if constexpr (serial) {
++            // 依赖上一笔（对面 set）的 Fixpipe 写回：等它、再补回一枚保持配对
++            WaitFlag<HardEvent::FIX_MTE2>(MM_BACK_ID[1 - p]);
++            SetFlag<HardEvent::FIX_MTE2>(MM_BACK_ID[1 - p]);
++        }
++        WaitFlag<HardEvent::FIX_MTE2>(MM_BACK_ID[p]);
++
++        CopyGmToL1(aGm, aRows, aCols, aSrcD, l1aTensor_[p]);
++        if constexpr (bSrc == BSource::Copy) {
++            CopyGmToL1(bGm, bRows, bCols, bSrcD, l1bTensor_[p]);
++        }
++
++        SetFlag<HardEvent::MTE2_MTE1>(MM_FWD_ID[p]);
++
++        // (2) L1 -> L0
++        WaitFlag<HardEvent::MTE2_MTE1>(MM_FWD_ID[p]);
++
++        if constexpr (transA) {
++            LoadAKm(l0aTensor_[p], l1aTensor_[p], MmAlign(aRows, MM_BLOCK_CUBE), MmAlign(m, MM_BLOCK_CUBE));
++        } else {
++            LoadAMk(l0aTensor_[p], l1aTensor_[p], MmAlign(m, MM_BLOCK_CUBE), MmAlign(k, MM_BLOCK_CUBE));
++        }
++        // Reuse 读的是上一笔（对面 set）拷入的 B；仅在上一笔与本笔及下一笔都 serial 时安全
++        LocalTensor<bfloat16_t> &l1bUse = (bSrc == BSource::SameAsA)
++                                              ? l1aTensor_[p]
++                                              : ((bSrc == BSource::Reuse) ? l1bTensor_[1 - p] : l1bTensor_[p]);
++        if constexpr (transB) {
++            LoadBNk(l0bTensor_[p], l1bUse, MmAlign(n, MM_BLOCK_CUBE), MmAlign(k, MM_BLOCK_CUBE));
++        } else {
++            LoadBKn(l0bTensor_[p], l1bUse, MmAlign(k, MM_BLOCK_CUBE), MmAlign(n, MM_BLOCK_CUBE));
++        }
++
++        SetFlag<HardEvent::MTE1_M>(MM_FWD_ID[p]);
++
++        // (3) Mmad —— unitFlag=0b11：Mmad 按 16 行单元逐个放行 Fixpipe，硬件接力，
++        // 免掉 M->FIX 的 flag 对，且 Fixpipe 可与 Mmad 尾部重叠
++        WaitFlag<HardEvent::MTE1_M>(MM_FWD_ID[p]);
++
++        DoMmad(l0cTensor_[p], l0aTensor_[p], l0bTensor_[p], m, n, k);
++
++        // (4) L0C -> GM（unitFlag 接力，无需 M_FIX 同步）
++        CopyL0CToGm<dstType, accum>(cGm, l0cTensor_[p], m, n, cDstStride);
++
++        SetFlag<HardEvent::FIX_MTE2>(MM_BACK_ID[p]);
++    }
++
++private:
++    TBuf<TPosition::A1> l1Buf_;
++    TBuf<TPosition::A2> l0aBuf_;
++    TBuf<TPosition::B2> l0bBuf_;
++    TBuf<TPosition::CO1> l0cBuf_;
++    LocalTensor<bfloat16_t> l1aTensor_[2];
++    LocalTensor<bfloat16_t> l1bTensor_[2];
++    LocalTensor<bfloat16_t> l0aTensor_[2];
++    LocalTensor<bfloat16_t> l0bTensor_[2];
++    LocalTensor<float> l0cTensor_[2];
++    uint32_t cnt_ = 0;
++
++    __aicore__ inline void CopyGmToL1(GlobalTensor<bfloat16_t> &gm, uint32_t rows, uint32_t cols, uint32_t srcDStride,
++                                      LocalTensor<bfloat16_t> &l1Tensor)
++    {
++        Nd2NzParams nd2nz;
++        nd2nz.ndNum = 1;
++        nd2nz.nValue = rows;
++        nd2nz.dValue = cols;
++        nd2nz.srcDValue = srcDStride;
++        nd2nz.dstNzC0Stride = MmAlign(rows, MM_BLOCK_CUBE);
++        nd2nz.dstNzNStride = 1;
++        nd2nz.srcNdMatrixStride = 0;
++        nd2nz.dstNzMatrixStride = 0;
++        DataCopy(l1Tensor, gm, nd2nz);
++    }
++
++    // A stored (m, k) in L1 as Nz with mAlign rows: plain 2D loads, one per 16-col k block.
++    __aicore__ inline void LoadAMk(LocalTensor<bfloat16_t> &l0Tensor, LocalTensor<bfloat16_t> &l1Tensor,
++                                   uint32_t mAlign, uint32_t kAlign)
++    {
++        LoadData2DParams params;
++        params.startIndex = 0;
++        params.srcStride = 1;
++        params.dstGap = kAlign / MM_B16_BLK - 1;
++        params.repeatTimes = static_cast<uint8_t>(mAlign / MM_BLOCK_CUBE);
++        params.ifTranspose = false;
++        uint32_t loopTimes = kAlign / MM_B16_BLK;
++        uint64_t l1Offset = mAlign * MM_B16_BLK;
++        uint64_t l0Offset = MM_FRACTAL_ELEM;
++        for (uint32_t loop = 0; loop < loopTimes; loop++) {
++            LoadData(l0Tensor[loop * l0Offset], l1Tensor[loop * l1Offset], params);
++        }
++    }
++
++    // A stored (k, m) in L1 as Nz with kAlign rows: transpose loads into L0A.
++    // L0A layout = m-major with k fractals contiguous (same as LoadAMk); per m column-block the
++    // k/16 source fractals are consecutive (srcStride=1) and written out in order (dstGap=0).
++    __aicore__ inline void LoadAKm(LocalTensor<bfloat16_t> &l0Tensor, LocalTensor<bfloat16_t> &l1Tensor,
++                                   uint32_t kAlign, uint32_t mAlign)
++    {
++        LoadData2dTransposeParams params;
++        params.startIndex = 0;
++        params.srcStride = 1;
++        params.dstFracGap = 0;
++        params.dstGap = 0;
++        params.repeatTimes = static_cast<uint8_t>(kAlign / MM_B16_BLK);
++        uint32_t loopTimes = mAlign / MM_B16_BLK;
++        uint64_t l1Offset = kAlign * MM_B16_BLK;
++        uint64_t l0Offset = kAlign * MM_B16_BLK;
++        for (uint32_t loop = 0; loop < loopTimes; loop++) {
++            LoadDataWithTranspose(l0Tensor[loop * l0Offset], l1Tensor[loop * l1Offset], params);
++        }
++    }
++
++    // B stored (k, n) in L1 as Nz with kAlign rows: transpose loads into L0B (Zn layout).
++    __aicore__ inline void LoadBKn(LocalTensor<bfloat16_t> &l0Tensor, LocalTensor<bfloat16_t> &l1Tensor,
++                                   uint32_t kAlign, uint32_t nAlign)
++    {
++        LoadData2dTransposeParams params;
++        params.startIndex = 0;
++        params.srcStride = 1;
++        params.dstFracGap = 0;
++        params.dstGap = static_cast<uint16_t>(nAlign / MM_BLOCK_CUBE - 1);
++        params.repeatTimes = static_cast<uint8_t>(kAlign / MM_B16_BLK);
++        uint32_t loopTimes = nAlign / MM_B16_BLK;
++        uint64_t l1Offset = kAlign * MM_B16_BLK;
++        uint64_t l0Offset = MM_FRACTAL_ELEM;
++        for (uint32_t loop = 0; loop < loopTimes; loop++) {
++            LoadDataWithTranspose(l0Tensor[loop * l0Offset], l1Tensor[loop * l1Offset], params);
++        }
++    }
++
++    // B stored (n, k) in L1 as Nz with nAlign rows: plain loads (already K-major for L0B).
++    __aicore__ inline void LoadBNk(LocalTensor<bfloat16_t> &l0Tensor, LocalTensor<bfloat16_t> &l1Tensor,
++                                   uint32_t nAlign, uint32_t kAlign)
++    {
++        LoadData2DParams params;
++        params.startIndex = 0;
++        params.srcStride = 1;
++        params.dstGap = 0;
++        params.ifTranspose = false;
++        if (nAlign == kAlign) {
++            params.repeatTimes = static_cast<uint8_t>((nAlign / MM_BLOCK_CUBE) * (kAlign / MM_B16_BLK));
++            LoadData(l0Tensor, l1Tensor, params);
++        } else {
++            params.repeatTimes = static_cast<uint8_t>(nAlign / MM_BLOCK_CUBE);
++            uint32_t loopTimes = kAlign / MM_B16_BLK;
++            uint64_t l1Offset = nAlign * MM_B16_BLK;
++            uint64_t l0Offset = nAlign * MM_B16_BLK;
++            for (uint32_t loop = 0; loop < loopTimes; loop++) {
++                LoadData(l0Tensor[loop * l0Offset], l1Tensor[loop * l1Offset], params);
++            }
++        }
++    }
++
++    __aicore__ inline void DoMmad(LocalTensor<float> &l0cTensor, LocalTensor<bfloat16_t> &l0aTensor,
++                                  LocalTensor<bfloat16_t> &l0bTensor, uint32_t m, uint32_t n, uint32_t k)
++    {
++        MmadParams mmadParams;
++        mmadParams.m = static_cast<uint16_t>((m < MM_BLOCK_CUBE) ? MM_BLOCK_CUBE : m);
++        mmadParams.n = static_cast<uint16_t>(n);
++        mmadParams.k = static_cast<uint16_t>(k);
++        mmadParams.cmatrixInitVal = true;
++        mmadParams.cmatrixSource = false;
++        mmadParams.unitFlag = 0b11;   // 单发 matmul：enable + 完成即翻转（可搬出）
++        Mmad(l0cTensor, l0aTensor, l0bTensor, mmadParams);
++        if ((mmadParams.m / MM_BLOCK_CUBE) * (mmadParams.n / MM_BLOCK_CUBE) < MM_SMALL_MN) {
++            PipeBarrier<PIPE_M>();
++        }
++    }
++
++    template <typename dstType, bool accum>
++    __aicore__ inline void CopyL0CToGm(GlobalTensor<dstType> &gm, LocalTensor<float> &l0cTensor, uint32_t m, uint32_t n,
++                                       uint32_t dstStride)
++    {
++        FixpipeParamsV220 fixParams;
++        fixParams.mSize = static_cast<uint16_t>(m);
++        fixParams.nSize = static_cast<uint16_t>(n);
++        fixParams.srcStride = static_cast<uint16_t>(MmAlign(m, MM_BLOCK_CUBE));
++        fixParams.dstStride = dstStride;
++        fixParams.ndNum = 1;
++        fixParams.unitFlag = 0b11;
++
++        if constexpr (std::is_same<dstType, bfloat16_t>::value) {
++            fixParams.quantPre = QuantMode_t::F322BF16;
++        }
++
++        if constexpr (accum) {
++            SetAtomicAdd<dstType>();
++        }
++        Fixpipe(gm, l0cTensor, fixParams);
++        if constexpr (accum) {
++            SetAtomicNone();
++        }
++    }
++};
++
++} // namespace ChunkGatedDeltaRule
++
++#endif // CHUNK_GATED_DELTA_RULE_MATMUL_BASIC_H
+diff --git a/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_stage1.h b/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_stage1.h
+index ffc1d70..897305e 100644
+--- a/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_stage1.h
++++ b/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_stage1.h
+@@ -18,15 +18,14 @@
+ #include "kernel_tiling/kernel_tiling.h"
+ #include "chunk_gated_delta_rule_utils.h"
+ #include "chunk_gated_delta_rule_tiling_data.h"
++#include "chunk_gated_delta_rule_matmul_basic.h"
+ 
+ namespace ChunkGatedDeltaRule {
+ using namespace AscendC;
+ using namespace matmul;
+ 
+-using aT1 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t>;
+-using bT1 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t>;
+-using cT1 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t>;
+-using StageOneMT = matmul::MatmulImpl<aT1, bT1, cT1>;
++// basic API matmul（见 chunk_gated_delta_rule_matmul_basic.h），由 stage1/2/3 共用同一实例
++using StageOneMT = CGDRMatmulBasic;
+ 
+ constexpr uint64_t UB_REST_BYTES = 140 * 1024;  // 140KB
+ constexpr uint64_t INVERSE_SHAPE = 32;          // 对角块边长
+@@ -296,18 +295,19 @@ private:
+     __aicore__ inline void ParaChunkAIC(int32_t curParaNum)
+     {
+         AscendC::CrossCoreWaitFlag(0x9); // 同步0
+-        // key @ key.transpose(-1,-2)
++        // key @ key.transpose(-1,-2)   A、B 同一块，SameAsA 省一次 GM->L1
+         for (uint32_t i = 0; i < curParaNum; ++i) {
+-            AICProcess(keyConGm_[i * ckOffset_], keyConGm_[i * ckOffset_], kkWsGm_[i * ccOffset_],
+-                       {chunkSize_, chunkSize_, dk_, chunkSize_, chunkSize_, dk_}, true);
++            mm.Execute<false, true, false, bfloat16_t, BSource::SameAsA>(
++                keyConGm_[i * ckOffset_], keyConGm_[i * ckOffset_], kkWsGm_[i * ccOffset_],
++                chunkSize_, chunkSize_, dk_);
+         }
+         AscendC::CrossCoreSetFlag<0x2, PIPE_FIX>(0x8); // 同步1
+ 
+         // query @ key.transpose(-1,-2)   stage1 out
+         for (uint32_t i = 0; i < curParaNum; ++i) {
+-            AICProcess(queryConGm_[i * ckOffset_], keyConGm_[i * ckOffset_], outQkGm_[chunkRowBase_[i] * chunkSize_],
+-                       {validLenBatch_[i], validLenBatch_[i], dk_, validLenBatch_[i], validLenBatch_[i], dk_},
+-                       true);
++            mm.Execute<false, true, false>(
++                queryConGm_[i * ckOffset_], keyConGm_[i * ckOffset_], outQkGm_[chunkRowBase_[i] * chunkSize_],
++                validLenBatch_[i], validLenBatch_[i], dk_);
+         }
+         AscendC::CrossCoreSetFlag<0x2, PIPE_FIX>(0xA); // 同步5
+         AscendC::CrossCoreWaitFlag(0x7); // 同步2
+@@ -318,17 +318,25 @@ private:
+         }
+         AscendC::CrossCoreWaitFlag(0x6); // 同步3
+ 
+-        // attn @ k_cumdecay
++        // attn @ k_cumdecay（首笔 serial：paraNum==1 时与求逆 mm2 相邻且读它刚写的 attnWs）
+         for (uint32_t i = 0; i < curParaNum; ++i) {
+-            AICProcess(attnWsGm_[i * ccOffset_], gBKWsGm_[i * ckOffset_], outKCumdecayGm_[chunkRowBase_[i] * dk_],
+-                       {chunkSize_, dk_, chunkSize_, chunkSize_, dk_, chunkSize_});
++            if (i == 0) {
++                mm.Execute<false, false, false, bfloat16_t, BSource::Copy, true>(
++                    attnWsGm_[i * ccOffset_], gBKWsGm_[i * ckOffset_], outKCumdecayGm_[chunkRowBase_[i] * dk_],
++                    chunkSize_, dk_, chunkSize_);
++            } else {
++                mm.Execute<false, false, false>(
++                    attnWsGm_[i * ccOffset_], gBKWsGm_[i * ckOffset_], outKCumdecayGm_[chunkRowBase_[i] * dk_],
++                    chunkSize_, dk_, chunkSize_);
++            }
+         }
+         AscendC::CrossCoreWaitFlag(0x5); // 同步4
+ 
+         // attn @ v_beta    stage1 out
+         for (uint32_t i = 0; i < curParaNum; ++i) {
+-            AICProcess(attnWsGm_[i * ccOffset_], vBetaWsGm_[i * cvOffset_], outVInnerGm_[chunkRowBase_[i] * dv_],
+-                       {chunkSize_, dv_, chunkSize_, chunkSize_, dv_, chunkSize_});
++            mm.Execute<false, false, false>(
++                attnWsGm_[i * ccOffset_], vBetaWsGm_[i * cvOffset_], outVInnerGm_[chunkRowBase_[i] * dv_],
++                chunkSize_, dv_, chunkSize_);
+         }
+     }
+ 
+@@ -794,37 +802,20 @@ private:
+         uint64_t leftDown = offset + chunkSize_ * INVERSE_SHAPE;
+         uint64_t rightDown = leftDown + INVERSE_SHAPE;
+         // 右矩阵左下角 @ 右矩阵左上角 -> 右矩阵左下角
+-        InverseAICProcess(attnWsGm_[leftDown], attnWsGm_[offset], attnWsGm_[leftDown]);
+-        int32_t eventID = static_cast<int32_t>(pipe_->FetchEventID(HardEvent::FIX_MTE2));
+-        SetFlag<HardEvent::FIX_MTE2>(eventID);
+-        WaitFlag<HardEvent::FIX_MTE2>(eventID);
++        InverseAICProcess<false>(attnWsGm_[leftDown], attnWsGm_[offset], attnWsGm_[leftDown]);
+         // 右矩阵右下角 @ 右矩阵左下角 -> 右矩阵左下角
+-        InverseAICProcess(attnWsGm_[rightDown], attnWsGm_[leftDown], attnWsGm_[leftDown]);
+-        eventID = static_cast<int32_t>(pipe_->FetchEventID(HardEvent::FIX_MTE2));
+-        SetFlag<HardEvent::FIX_MTE2>(eventID);
+-        WaitFlag<HardEvent::FIX_MTE2>(eventID);
+-    }
+-
+-    __aicore__ inline void AICProcess(GlobalTensor<bfloat16_t> x, GlobalTensor<bfloat16_t> y,
+-                                      GlobalTensor<bfloat16_t> z, const MatmulShapeParams &shape, bool transB = false)
+-    {
+-        mm.SetOrgShape(shape.m, shape.n, shape.k);
+-        mm.SetSingleShape(shape.sm, shape.sn, shape.sk);
+-        mm.SetTensorA(x);
+-        mm.SetTensorB(y, transB);
+-        mm.IterateAll(z);
+-        mm.End();
++        // serial：读上一笔刚写出的 leftDown，须等其 Fixpipe
++        InverseAICProcess<true>(attnWsGm_[rightDown], attnWsGm_[leftDown], attnWsGm_[leftDown]);
+     }
+ 
++    template <bool serialMM>
+     __aicore__ inline void InverseAICProcess(GlobalTensor<bfloat16_t> x, GlobalTensor<bfloat16_t> y,
+                                              GlobalTensor<bfloat16_t> z)
+     {
+-        mm.SetOrgShape(chunkSize_, chunkSize_, chunkSize_);
+-        mm.SetSingleShape(INVERSE_SHAPE, INVERSE_SHAPE, INVERSE_SHAPE);
+-        mm.SetTensorA(x);
+-        mm.SetTensorB(y);
+-        mm.IterateAll(z);
+-        mm.End();
++        // 32x32 子块，源/目的行距都是 chunkSize_
++        mm.Execute<false, false, false, bfloat16_t, BSource::Copy, serialMM>(
++            x, y, z, INVERSE_SHAPE, INVERSE_SHAPE, INVERSE_SHAPE,
++            chunkSize_, chunkSize_, chunkSize_);
+     }
+     
+     TPipe *pipe_;
+diff --git a/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_stage2.h b/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_stage2.h
+index cd4825a..f9116df 100644
+--- a/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_stage2.h
++++ b/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_stage2.h
+@@ -18,15 +18,13 @@
+ #include "kernel_tiling/kernel_tiling.h"
+ #include "chunk_gated_delta_rule_utils.h"
+ #include "chunk_gated_delta_rule_tiling_data.h"
++#include "chunk_gated_delta_rule_matmul_basic.h"
+ 
+ namespace ChunkGatedDeltaRule {
+ using namespace AscendC;
+ using namespace matmul;
+ 
+-using aT2 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t, true>;
+-using bT2 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t, true>;
+-using cT2 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t>;
+-using StageTwoMT = matmul::MatmulImpl<aT2, bT2, cT2>;
++using StageTwoMT = CGDRMatmulBasic;
+ 
+ struct StageTwoParams {
+     GlobalTensor<bfloat16_t> qPrime;    // (Nv, Sp, Dk)
+@@ -35,6 +33,7 @@ struct StageTwoParams {
+     GlobalTensor<bfloat16_t> kCumdecay; // (Nv, Sp, Dk)
+     GlobalTensor<bfloat16_t> curState;  // (Nv, Dv, Dk)
+     GlobalTensor<bfloat16_t> finalState;  // (Nv, Dv, Dk)
++    GlobalTensor<bfloat16_t> altState;  // (Nv, Dv, Dk) 状态乒乓的第二块缓冲（借用 highState_ 空间）
+     GlobalTensor<bfloat16_t> kg;
+     GlobalTensor<bfloat16_t> out;
+     GM_ADDR ws;
+@@ -94,41 +93,175 @@ public:
+         if ASCEND_IS_AIV {
+             coreId /= AIC_AIV_1_1;
+         }
+-        int64_t nvPerCore = (Nv_ + coreNum_ - 1) / coreNum_;
+-        int64_t nvStart = coreId * nvPerCore;
+-        int64_t nvEnd = nvStart + nvPerCore;
+-        nvEnd = nvEnd > Nv_ ? Nv_ : nvEnd;
++        // 门控 Dv 分核：2*Nv 个 (head, Dv/2) 单元放得进 coreNum 时 f=2（nv 小、核大量闲置的场景），
++        // 否则 f=1 走与原来完全相同的路径（TP1/nv>=coreNum 不受影响）。
++        int64_t f = (2 * Nv_ <= (int64_t)coreNum_ && Dv_ % 2 == 0) ? 2 : 1;
++        dvRows_ = Dv_ / f;
++        int64_t units = Nv_ * f;
++        int64_t unitsPerCore = (units + coreNum_ - 1) / coreNum_;
++        int64_t uStart = coreId * unitsPerCore;
++        int64_t uEnd = uStart + unitsPerCore;
++        uEnd = uEnd > units ? units : uEnd;
+         int64_t lastChunkSize = seqLength_ % chunkSize_ == 0 ? chunkSize_ : seqLength_ % chunkSize_;
+-        for (int64_t nvId = nvStart; nvId < nvEnd; nvId++) {
++        // 状态乒乓：读 buf 与写 buf 分离，砍掉「AIC 读完老状态之前 AIV 不能写」那条 0x2 跨核边，
++        // 让 AIV 的 32KB 读-缩放-写与 AIC 的 CalVPrime/CalAttnInter 并行。
++        // 相位锚定在 group 末尾：最后一个 chunk 必写 finalState（外层跨 group 用 finalState 接力）。
++        bool aliasIn = sTP_->curState.GetPhyAddr() == sTP_->finalState.GetPhyAddr();
++        for (int64_t u = uStart; u < uEnd; u++) {
++            int64_t nvId = u / f;
++            int64_t stateOff = nvId * Dv_ * Dk_ + (u % f) * dvRows_ * Dk_;   // 本单元负责的 Dv 行片
++            int64_t rowStart = (u % f) * dvRows_;
+             curChunkSize_ = chunkSize_;
+             for (int64_t cId = 0; cId < chunkNum_; cId++) {
+-                auto curState = (cId == 0) ? sTP_->curState[nvId * Dv_ * Dk_] : sTP_->finalState[nvId * Dv_ * Dk_];
+-                auto finalState = sTP_->finalState[nvId * Dv_ * Dk_];
++                bool writeFinal = ((chunkNum_ - 1 - cId) % 2) == 0;
++                auto writeState = writeFinal ? sTP_->finalState[stateOff]
++                                             : sTP_->altState[stateOff];
++                auto readState = (cId == 0) ? sTP_->curState[stateOff]
++                                : (writeFinal ? sTP_->altState[stateOff]
++                                              : sTP_->finalState[stateOff]);
++                // 读写同块只可能出现在 cId==0 且入口状态就在 finalState 且 chunkNum_ 为奇数，
++                // 此时退回旧握手（AIV 等 AIC 读完再回写）。AIC/AIV 用相同算式判定，flag 收发配对。
++                bool sameBuf = (cId == 0) && writeFinal && aliasIn;
+                 int64_t length = cId * chunkSize_;
+                 if (cId == chunkNum_ - 1) {
+                     curChunkSize_ = lastChunkSize;
+                 }
+                 if ASCEND_IS_AIV {
+                     if (GetSubBlockIdx() == 0) {
+-                        CopyIn(curState, Dv_, Dk_);
++                        CopyIn(readState, dvRows_, Dk_);
+                         CalGCumExp(sTP_->gCum[nvId * Sp_ + length]);
+                     }
+-                    CrossCoreWaitFlag(0x2);
++                    if (sameBuf) {
++                        CrossCoreWaitFlag(0x2);
++                    }
++                    if (GetSubBlockIdx() == 0) {
++                        CopyOutState(writeState);
++                    }
++                    CrossCoreSetFlag<0x2, PIPE_MTE3>(0x5);
++                    CrossCoreWaitFlag(0x4);
++                }
++                if ASCEND_IS_AIC {
++                    uint64_t mm_offset0 = nvId * Sp_ * Dk_ + length * Dk_;
++                    uint64_t mm_offset1 = nvId * Sp_ * Dv_ + length * Dv_ + rowStart;
++                    CalVPrime(sTP_->kCumdecay[mm_offset0], readState, sTP_->vInner[mm_offset1]);
++                    CalAttnInter(sTP_->qPrime[mm_offset0], readState,
++                                 sTP_->out[nvId * Dv_ + rowStart + cId * chunkSize_ * Nv_ * Dv_]);
++                    if (sameBuf) {
++                        CrossCoreSetFlag<0x2, PIPE_FIX>(0x2);   // 读完之前AIV不能写
++                    }
++                    CrossCoreWaitFlag(0x5);
++                    CalStateNew(sTP_->vInner[mm_offset1], sTP_->kg[mm_offset0], writeState);
++                    SetFlag<HardEvent::FIX_MTE2>(FIX_MTE2_EVENT);
++                    WaitFlag<HardEvent::FIX_MTE2>(FIX_MTE2_EVENT);
++                    CrossCoreSetFlag<0x2, PIPE_FIX>(0x4);
++                }
++            }
++        }
++    }
++
++    // 打包模式：group 跨序列（前提：所有序列长度为 chunkSize 整数倍，chunk 起点全局连续），
++    // 按 (bid, nv[, Dv片]) 段式链分核。此时 params 的 curState/finalState/altState 传的是
++    // 【未加 bid 偏移的基址】，bid 偏移在这里加。
++    __aicore__ inline void ProcessPacked(GlobalTensor<int32_t> seqLens, int64_t b, int64_t groupChunkStart,
++                                         int64_t totalTokens)
++    {
++        // 全局最后一个 chunk 的有效长度（只有末序列可能不对齐 chunkSize）
++        int64_t totalChunks = (totalTokens + chunkSize_ - 1) / chunkSize_;
++        int64_t globalLastLen = totalTokens % chunkSize_ == 0 ? chunkSize_ : totalTokens % chunkSize_;
++        int64_t coreId = GetBlockIdx();
++        if ASCEND_IS_AIV {
++            coreId /= AIC_AIV_1_1;
++        }
++        int64_t groupChunkEnd = groupChunkStart + chunkNum_;
++        // 与本 group 相交的 bid 区间 [bidFirst, bidLast]（所有核算出同一份，标量代价 O(b)）
++        int64_t bidFirst = -1;
++        int64_t bidLast = -1;
++        int64_t acc = 0;
++        int64_t prefFirst = 0;   // bidFirst 的起始全局 chunk 号
++        for (int64_t bid = 0; bid < b; bid++) {
++            int64_t nChunks = ((int64_t)seqLens.GetValue(bid) + chunkSize_ - 1) / chunkSize_;
++            if (acc + nChunks > groupChunkStart && acc < groupChunkEnd) {
++                if (bidFirst < 0) {
++                    bidFirst = bid;
++                    prefFirst = acc;
++                }
++                bidLast = bid;
++            }
++            acc += nChunks;
++        }
++        int64_t nBids = bidLast - bidFirst + 1;
++        // Dv 分核门：单元数不到核数一半才二分 Dv（单元本来就多时细分只会降 matmul 效率）
++        int64_t f = (2 * nBids * Nv_ <= (int64_t)coreNum_ && Dv_ % 2 == 0) ? 2 : 1;
++        dvRows_ = Dv_ / f;
++        int64_t units = nBids * Nv_ * f;
++        int64_t unitsPerCore = (units + coreNum_ - 1) / coreNum_;
++        int64_t uStart = coreId * unitsPerCore;
++        int64_t uEnd = uStart + unitsPerCore;
++        uEnd = uEnd > units ? units : uEnd;
++        // 增量维护当前 bid 的起始全局 chunk 号，避免每 unit 重扫前缀和（O(units+nBids) 而非 O(units*nBids)）
++        int64_t prevBid = -1;
++        int64_t bidChunkStart = 0;
++        int64_t bidChunkEnd = 0;
++        for (int64_t u = uStart; u < uEnd; u++) {
++            int64_t bid = bidFirst + u / (Nv_ * f);
++            int64_t nvId = (u / f) % Nv_;
++            int64_t rowStart = (u % f) * dvRows_;
++            if (bid != prevBid) {
++                if (prevBid < 0) {
++                    bidChunkStart = prefFirst;
++                    for (int64_t x = bidFirst; x < bid; x++) {
++                        bidChunkStart += (int64_t)seqLens.GetValue(x) / chunkSize_;
++                    }
++                } else {
++                    bidChunkStart = bidChunkEnd;   // 上一 bid 的末尾即本 bid 的开头（bid 单调递增）
++                }
++                bidChunkEnd = bidChunkStart + ((int64_t)seqLens.GetValue(bid) + chunkSize_ - 1) / chunkSize_;
++                prevBid = bid;
++            }
++            int64_t c0 = bidChunkStart > groupChunkStart ? bidChunkStart : groupChunkStart;
++            int64_t c1 = bidChunkEnd < groupChunkEnd ? bidChunkEnd : groupChunkEnd;
++            int64_t subLen = c1 - c0;
++            if (subLen <= 0) {
++                continue;
++            }
++            bool carried = c0 > bidChunkStart;   // 该序列更早的 chunk 在之前的 group 里
++            int64_t stateOff = bid * Nv_ * Dv_ * Dk_ + nvId * Dv_ * Dk_ + rowStart * Dk_;
++            for (int64_t j = 0; j < subLen; j++) {
++                int64_t groupRow = c0 - groupChunkStart + j;
++                // 只有全局最后一个 chunk 可能不满（前 b-1 个序列均对齐 chunkSize）
++                curChunkSize_ = ((c0 + j) == totalChunks - 1) ? globalLastLen : chunkSize_;
++                bool writeFinal = ((subLen - 1 - j) % 2) == 0;
++                auto writeState = writeFinal ? sTP_->finalState[stateOff] : sTP_->altState[stateOff];
++                auto readState = (j == 0)
++                    ? (carried ? sTP_->finalState[stateOff] : sTP_->curState[stateOff])
++                    : (writeFinal ? sTP_->altState[stateOff] : sTP_->finalState[stateOff]);
++                bool sameBuf = (j == 0) && writeFinal && carried;
++                int64_t length = groupRow * chunkSize_;
++                if ASCEND_IS_AIV {
+                     if (GetSubBlockIdx() == 0) {
+-                        CopyOutState(finalState);
++                        CopyIn(readState, dvRows_, Dk_);
++                        CalGCumExp(sTP_->gCum[nvId * Sp_ + length]);
++                    }
++                    if (sameBuf) {
++                        CrossCoreWaitFlag(0x2);
++                    }
++                    if (GetSubBlockIdx() == 0) {
++                        CopyOutState(writeState);
+                     }
+                     CrossCoreSetFlag<0x2, PIPE_MTE3>(0x5);
+                     CrossCoreWaitFlag(0x4);
+                 }
+                 if ASCEND_IS_AIC {
+                     uint64_t mm_offset0 = nvId * Sp_ * Dk_ + length * Dk_;
+-                    uint64_t mm_offset1 = nvId * Sp_ * Dv_ + length * Dv_;
+-                    CalVPrime(sTP_->kCumdecay[mm_offset0], curState, sTP_->vInner[mm_offset1]);
+-                    CalAttnInter(sTP_->qPrime[mm_offset0], curState,
+-                                 sTP_->out[nvId * Dv_ + cId * chunkSize_ * Nv_ * Dv_]);
+-                    CrossCoreSetFlag<0x2, PIPE_FIX>(0x2);   // 读完之前AIV不能写
++                    uint64_t mm_offset1 = nvId * Sp_ * Dv_ + length * Dv_ + rowStart;
++                    CalVPrime(sTP_->kCumdecay[mm_offset0], readState, sTP_->vInner[mm_offset1]);
++                    CalAttnInter(sTP_->qPrime[mm_offset0], readState,
++                                 sTP_->out[nvId * Dv_ + rowStart + groupRow * chunkSize_ * Nv_ * Dv_]);
++                    if (sameBuf) {
++                        CrossCoreSetFlag<0x2, PIPE_FIX>(0x2);   // 读完之前AIV不能写
++                    }
+                     CrossCoreWaitFlag(0x5);
+-                    CalStateNew(sTP_->vInner[mm_offset1], sTP_->kg[mm_offset0], finalState);
++                    CalStateNew(sTP_->vInner[mm_offset1], sTP_->kg[mm_offset0], writeState);
+                     SetFlag<HardEvent::FIX_MTE2>(FIX_MTE2_EVENT);
+                     WaitFlag<HardEvent::FIX_MTE2>(FIX_MTE2_EVENT);
+                     CrossCoreSetFlag<0x2, PIPE_FIX>(0x4);
+@@ -157,11 +290,11 @@ public:
+         auto stateOut = outQueue_.AllocTensor<bfloat16_t>();
+         SetFlag<HardEvent::MTE2_V>(MTE2_V_EVENT);
+         WaitFlag<HardEvent::MTE2_V>(MTE2_V_EVENT);
+-        Cast(tmpBuffer1_, stateIn, RoundMode::CAST_NONE, Dv_ * curDk_);
++        Cast(tmpBuffer1_, stateIn, RoundMode::CAST_NONE, dvRows_ * curDk_);
+         SetFlag<HardEvent::S_V>(S_V_EVENT);
+         WaitFlag<HardEvent::S_V>(S_V_EVENT);
+-        Muls(tmpBuffer1_, tmpBuffer1_, tmpFloat, Dv_ * curDk_);
+-        Cast(stateOut, tmpBuffer1_, RoundMode::CAST_RINT, Dv_ * curDk_);
++        Muls(tmpBuffer1_, tmpBuffer1_, tmpFloat, dvRows_ * curDk_);
++        Cast(stateOut, tmpBuffer1_, RoundMode::CAST_RINT, dvRows_ * curDk_);
+         SetFlag<HardEvent::V_MTE3>(V_MTE3_EVENT);
+         WaitFlag<HardEvent::V_MTE3>(V_MTE3_EVENT);
+         outQueue_.EnQue(stateOut);
+@@ -173,38 +306,30 @@ public:
+                                         GlobalTensor<bfloat16_t> out)
+     {
+         // q_prime @ state.transpose(0, 1)
+-        sTP_->mm1->SetOrgShape(curChunkSize_, Dv_, Dk_, Dk_, Nv_ * Dv_);    // MNKaKbN
+-        sTP_->mm1->SetSingleShape(curChunkSize_, Dv_, Dk_);                 // SingleCoreMNK
+-        sTP_->mm1->SetTensorA(qPrime, false);
+-        sTP_->mm1->SetTensorB(state, true);
+-        sTP_->mm1->IterateAll(out);
+-        sTP_->mm1->End();
++        // Reuse：state 已被 CalVPrime 拷进对面 set 的 L1B。安全性：MTE2 队列序保证 CalVPrime
++        // 的载入先完成；下一笔 CalStateNew 带 serial，不会提前覆写这块 L1B。
++        sTP_->mm1->Execute<false, true, false, bfloat16_t, BSource::Reuse>(
++            qPrime, state, out, curChunkSize_, dvRows_, Dk_, 0, 0, Nv_ * Dv_);
+     }
+ 
+     __aicore__ inline void CalVPrime(GlobalTensor<bfloat16_t> kCumdecay,
+                                      GlobalTensor<bfloat16_t> state,
+                                      GlobalTensor<bfloat16_t> vPrime)
+     {
+-        // v_inner += k_cumdecay @ state.transpose(0, 1)
+-        sTP_->mm1->SetOrgShape(curChunkSize_, Dv_, Dk_);    // MNK
+-        sTP_->mm1->SetSingleShape(curChunkSize_, Dv_, Dk_); // SingleCoreMNK
+-        sTP_->mm1->SetTensorA(kCumdecay, false);
+-        sTP_->mm1->SetTensorB(state, true);
+-        sTP_->mm1->IterateAll(vPrime, 1);
+-        sTP_->mm1->End();
++        // v_inner += k_cumdecay @ state.transpose(0, 1)（N 维只算本单元的 Dv 行片，输出行距 Dv）
++        // serial：state 由上一 chunk 的 CalStateNew（相邻一笔）写出，须等其 Fixpipe
++        sTP_->mm1->Execute<false, true, true, bfloat16_t, BSource::Copy, true>(
++            kCumdecay, state, vPrime, curChunkSize_, dvRows_, Dk_, 0, 0, Dv_);
+     }
+ 
+     __aicore__ inline void CalStateNew(GlobalTensor<bfloat16_t> vInner,
+                                        GlobalTensor<bfloat16_t> kg,
+                                        GlobalTensor<bfloat16_t> state)
+     {
+-        // state_out = v_new.transpose(0, 1) @ kg
+-        sTP_->mm1->SetOrgShape(Dv_, Dk_, curChunkSize_);    // MNK
+-        sTP_->mm1->SetSingleShape(Dv_, Dk_, curChunkSize_); // SingleCoreMNK
+-        sTP_->mm1->SetTensorA(vInner, true);
+-        sTP_->mm1->SetTensorB(kg, false);
+-        sTP_->mm1->IterateAll(state, 1);
+-        sTP_->mm1->End();
++        // state_out += v_new.transpose(0, 1) @ kg（M 维只算本单元的 Dv 行片，A 源行距 Dv）
++        // serial：与 CalAttnInter 的 Reuse 配套（保证不提前覆写其正在读的 L1B）
++        sTP_->mm1->Execute<true, false, true, bfloat16_t, BSource::Copy, true>(
++            vInner, kg, state, dvRows_, Dk_, curChunkSize_, Dv_);
+     }
+ 
+     template <typename inType>
+@@ -223,7 +348,7 @@ public:
+ 
+     __aicore__ inline void CopyOutState(GlobalTensor<bfloat16_t> stateNew)
+     {
+-        CopyOut<bfloat16_t>(stateNew, Dv_, Dk_, false);
++        CopyOut<bfloat16_t>(stateNew, dvRows_, Dk_, false);
+     }
+ 
+     template <typename outType>
+@@ -262,6 +387,7 @@ private:
+     int32_t curChunkSize_;
+     int32_t curDk_;
+     int64_t Sp_;
++    int64_t dvRows_ = 0;   // 本核每单元负责的 Dv 行数（f=1 时等于 Dv_）
+     int32_t chunkNum_;
+     int32_t coreNum_;
+     bool gOptional_;
+diff --git a/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_stage3.h b/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_stage3.h
+index d5d2945..dc5b2a7 100644
+--- a/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_stage3.h
++++ b/attention/chunk_gated_delta_rule/op_kernel/chunk_gated_delta_rule_stage3.h
+@@ -18,15 +18,13 @@
+ #include "kernel_tiling/kernel_tiling.h"
+ #include "chunk_gated_delta_rule_utils.h"
+ #include "chunk_gated_delta_rule_tiling_data.h"
++#include "chunk_gated_delta_rule_matmul_basic.h"
+ 
+ namespace ChunkGatedDeltaRule {
+ using namespace AscendC;
+ using namespace matmul;
+ 
+-using aT3 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t, true>;
+-using bT3 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t, true>;
+-using cT3 = MatmulType<TPosition::GM, CubeFormat::ND, bfloat16_t>;
+-using StageThreeMT = matmul::MatmulImpl<aT3, bT3, cT3>;
++using StageThreeMT = CGDRMatmulBasic;
+ 
+ struct StageThreeParams {
+     GlobalTensor<bfloat16_t> qkt;       // (Nv, Sp, Dk)
+@@ -174,13 +172,9 @@ public:
+                                       GlobalTensor<bfloat16_t>vInner,
+                                       GlobalTensor<bfloat16_t>attnInter)
+     {
+-        // masked_qkt @ v_inner
+-        sTP_->mm3->SetOrgShape(curChunkSize_, Dv_, curChunkSize_, curChunkSize_, Nv_ * Dv_);    // MNK
+-        sTP_->mm3->SetSingleShape(curChunkSize_, Dv_, curChunkSize_); // SingleCoreMNK
+-        sTP_->mm3->SetTensorA(tmpGM);
+-        sTP_->mm3->SetTensorB(vInner);
+-        sTP_->mm3->IterateAll(attnInter, 1);
+-        sTP_->mm3->End();
++        // out += masked_qkt @ v_inner（输出行距 Nv*Dv）
++        sTP_->mm3->Execute<false, false, true>(tmpGM, vInner, attnInter,
++                                               curChunkSize_, Dv_, curChunkSize_, 0, 0, Nv_ * Dv_);
+     }
+ 
+     template <typename inType>
+-- 
+2.34.1
+

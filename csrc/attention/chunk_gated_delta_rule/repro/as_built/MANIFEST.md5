@@ -1,0 +1,7 @@
+61d304ed7217869059ab0de4e08e742b  ops-transformer-9.1.0/chunk_gated_delta_rule.h
+806d1f38d91975307e669c6d0ef15c53  ops-transformer-9.1.0/chunk_gated_delta_rule_matmul_basic.h
+ffddbaee580786af406ced6e609e71c4  ops-transformer-9.1.0/chunk_gated_delta_rule_stage1.h
+ad38f55c520a4fe8aeca53b00925320c  ops-transformer-9.1.0/chunk_gated_delta_rule_stage2.h
+8b3fa725fccb3e6d18796c714a3b821e  ops-transformer-9.1.0/chunk_gated_delta_rule_stage3.h
+14805201cd6e796d8750f11380dc40a3  patches/0001-arch22-cut-the-Stage2-serial-chain.patch
+9f738b3ee01f0297b3cb818cec2c6b42  patches/0002-arch22-matmul_basic-as-built.patch
