@@ -175,6 +175,26 @@ def test_config_support_boundary(invalid, monkeypatch):
             ascend_config.AscendConfig._validate_megamoe_local_partial(cfg, vc)
 
 
+@pytest.mark.parametrize(
+    "enabled,local_partial,requested,expected",
+    [
+        (1, True, True, True),
+        (1, True, False, False),
+        (1, False, True, False),
+        (0, False, True, True),
+        (0, False, False, False),
+    ],
+)
+def test_shared_overlap_is_preserved_only_for_local_partial(enabled, local_partial, requested, expected):
+    cfg = SimpleNamespace(
+        enable_fused_mc2=enabled,
+        mega_moe_local_partial=local_partial,
+        multistream_overlap_shared_expert=requested,
+    )
+    ascend_config.AscendConfig._resolve_fused_mc2_shared_overlap(cfg)
+    assert cfg.multistream_overlap_shared_expert is expected
+
+
 def test_local_partial_preserves_shared_add_rounding(monkeypatch):
     # This fails for source-owner zero embedding even with an exact routed sum.
     monkeypatch.setattr(pf, "_EXTRA_CTX", SimpleNamespace(mc2_mask=torch.ones(1, dtype=torch.bool)))

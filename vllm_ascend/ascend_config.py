@@ -571,12 +571,6 @@ class AscendConfig:
             self.enable_fused_mc2 == 1
             and any(architecture.startswith("MiniMaxM3") for architecture in model_architectures)
         ), "MiniMax M3 does not support enable_fused_mc2=1. Please set additional_config.enable_fused_mc2 to 0."
-        if self.enable_fused_mc2 == 1 and self.multistream_overlap_shared_expert:
-            self.multistream_overlap_shared_expert = False
-            logger.warning_once(
-                "enable_fused_mc2 and multistream_overlap_shared_expert "
-                "cannot be enabled at the same time. Setting multistream_overlap_shared_expert to False."
-            )
         if self.enable_fused_mc2 == 1 and _MEGA_MOE_SUPPORTED and not self._is_megamoe_supported_by_config(vc):
             self.enable_fused_mc2 = 0
             logger.warning_once(
@@ -659,6 +653,7 @@ class AscendConfig:
         self._validate_mc2_comm_alg(vc)
         self._validate_megamoe_replicated_dispatch(vc)
         self._validate_megamoe_local_partial(vc)
+        self._resolve_fused_mc2_shared_overlap()
 
         # mega_moe_max_tokens range
         if self.mega_moe_max_tokens <= 0:
@@ -727,6 +722,21 @@ class AscendConfig:
                 "mega_moe_replicated_dispatch requires A2 BF16, MegaMoe enabled, TP2/EP2, DP1/PP1/PCP1/DCP1, "
                 "no sequence parallelism, E256/H2048/I512/topk8, at most 4096 batched tokens, and no LoRA/EPLB."
             )
+
+    def _resolve_fused_mc2_shared_overlap(self) -> None:
+        if self.enable_fused_mc2 != 1 or not self.multistream_overlap_shared_expert:
+            return
+        # The validated local-partial path has no dispatch/combine collective.
+        # Shared experts wait for their input event on the auxiliary stream;
+        # the main stream joins it before adding the two local TP partials.
+        if self.mega_moe_local_partial:
+            logger.info_once("BF16 local-partial MegaMoe retains shared-expert overlap.")
+            return
+        self.multistream_overlap_shared_expert = False
+        logger.warning_once(
+            "enable_fused_mc2 and multistream_overlap_shared_expert "
+            "cannot be enabled at the same time. Setting multistream_overlap_shared_expert to False."
+        )
 
     def _validate_megamoe_local_partial(self, vc: VllmConfig) -> None:
         if not self.mega_moe_local_partial:

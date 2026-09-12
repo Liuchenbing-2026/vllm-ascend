@@ -1198,6 +1198,49 @@ def test_sp_multistream_down_projection_and_reduce_scatter_wait_for_routed_final
     default_stream.wait_stream.assert_called_once_with(auxiliary_stream)
 
 
+def test_tp_fused_shared_overlap_joins_without_internal_routed_events(monkeypatch):
+    shared = AscendSharedExperts.__new__(AscendSharedExperts)
+    shared.multistream_overlap = True
+    shared.quant_type = QuantType.NONE
+    shared.lora_context = None
+    shared.parallel_mode = MagicMock(return_value=SharedExpertParallelMode.TENSOR_PARALLEL)
+    shared.layer = SimpleNamespace(gate_up_proj=SimpleNamespace(), down_proj=SimpleNamespace())
+    x = torch.randn(4, 4)
+    output = torch.randn(4, 4)
+    calls = []
+    default, auxiliary = MagicMock(), MagicMock()
+    state = {"stream": default}
+    ready = object()
+    auxiliary.wait_event.side_effect = lambda event: calls.append(("wait_input", event))
+    default.wait_stream.side_effect = lambda stream: calls.append(("join", stream))
+
+    @contextmanager
+    def switch(stream, enabled):
+        assert enabled and stream is auxiliary
+        state["stream"] = stream
+        try:
+            yield
+        finally:
+            state["stream"] = default
+
+    def part1(hidden):
+        assert hidden is x and state["stream"] is auxiliary
+        calls.append(("part1", auxiliary))
+        return x
+
+    def part2(hidden, intermediate):
+        assert hidden is x and intermediate is x and state["stream"] is auxiliary
+        calls.append(("part2", auxiliary))
+        return output
+
+    shared.part1, shared.part2 = part1, part2
+    monkeypatch.setattr(shared_experts_module, "npu_stream_switch", switch)
+    monkeypatch.setattr(shared_experts_module, "shared_experts_calculation_stream", lambda: auxiliary)
+    monkeypatch.setattr(shared_experts_module.torch.npu, "current_stream", lambda: state["stream"])
+    assert shared.forward(x, FusedMoEEvents(before_routed_experts=ready)) is output
+    assert calls == [("wait_input", ready), ("part1", auxiliary), ("part2", auxiliary), ("join", auxiliary)]
+
+
 def test_sequence_parallel_sedp_forward_skips_token_comms(monkeypatch):
     """SP+DP (replicated weights) computes directly on the SP shard without
     any token gather/scatter."""
