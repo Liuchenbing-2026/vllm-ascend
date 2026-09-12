@@ -26,6 +26,7 @@ def _prepare_local_partial_kernel(
     padded_active,
     tokens,
     HAS_ACTIVE: tl.constexpr,
+    PREAPPLY_ACTIVE: tl.constexpr,
     HIDDEN: tl.constexpr,
     TOP_K: tl.constexpr,
     EXPERTS: tl.constexpr,
@@ -46,19 +47,23 @@ def _prepare_local_partial_kernel(
         real = offsets < tokens * TOP_K
         expert = tl.load(ids + offsets, real, other=0)
         expert = tl.where(real, expert, (offsets - tokens * TOP_K) % EXPERTS)
+        if PREAPPLY_ACTIVE and HAS_ACTIVE:
+            is_active = tl.load(active + offsets // TOP_K, real, other=1) != 0
+            expert = tl.where(is_active, expert, EXPERTS)
         # Widening BF16 probabilities is exact. The dummy probability 1/8
         # is representable in both BF16 and FP32.
         probability = tl.load(weights + offsets, real, other=1.0 / TOP_K).to(tl.float32)
         tl.store(padded_ids + offsets, expert, offsets < rows * TOP_K)
         tl.store(padded_weights + offsets, probability, offsets < rows * TOP_K)
 
-    for block in range(pid, tl.cdiv(rows, ROUTING_BLOCK), programs):
-        offsets = block * ROUTING_BLOCK + tl.arange(0, ROUTING_BLOCK)
-        if HAS_ACTIVE:
-            mask = tl.load(active + offsets, offsets < tokens, other=1)
-        else:
-            mask = tl.full((ROUTING_BLOCK,), 1, tl.int8)
-        tl.store(padded_active + offsets, mask, offsets < rows)
+    if not PREAPPLY_ACTIVE:
+        for block in range(pid, tl.cdiv(rows, ROUTING_BLOCK), programs):
+            offsets = block * ROUTING_BLOCK + tl.arange(0, ROUTING_BLOCK)
+            if HAS_ACTIVE:
+                mask = tl.load(active + offsets, offsets < tokens, other=1)
+            else:
+                mask = tl.full((ROUTING_BLOCK,), 1, tl.int8)
+            tl.store(padded_active + offsets, mask, offsets < rows)
 
 
 def prepare_cann_megamoe_local_partial(
@@ -70,7 +75,9 @@ def prepare_cann_megamoe_local_partial(
     ep_rank_id: int,
     ep_world_size: int,
     dummy_cache: dict | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
+    *,
+    preapply_active_mask: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None, int]:
     """Prepare replicated A2 BF16 local-partial inputs in one device launch.
 
     The local-partial layout appends all 32 sentinel rows on every rank, so
@@ -79,6 +86,11 @@ def prepare_cann_megamoe_local_partial(
     CANN may modify routing IDs, and queued calls must remain independent.
     ``dummy_cache`` is accepted for the reference helper's calling convention;
     this kernel writes the constants directly and does not need a cache.
+
+    With ``preapply_active_mask``, inactive real routes receive expert ID 256,
+    exactly as A2 MegaMoe's ApplyXActiveMask does before sorting. The returned
+    mask is None so CANN skips its scalar mask traversal. Sentinel rows stay
+    active. This mode is specific to the local-partial CANN layout.
     """
     if (num_experts, ep_rank_id, ep_world_size) != (_NUM_EXPERTS, 0, 1):
         raise ValueError("Local-partial preparation requires 256 experts and sentinel rank/world 0/1.")
@@ -107,8 +119,12 @@ def prepare_cann_megamoe_local_partial(
     padded_hidden = torch.empty((rows, _HIDDEN_SIZE), dtype=torch.bfloat16, device=hidden_states.device)
     padded_ids = torch.empty((rows, _TOP_K), dtype=torch.int32, device=hidden_states.device)
     padded_weights = torch.empty((rows, _TOP_K), dtype=torch.float32, device=hidden_states.device)
-    padded_active = torch.empty(
-        rows, dtype=torch.int8 if x_active_mask is None else x_active_mask.dtype, device=hidden_states.device
+    padded_active = (
+        None
+        if preapply_active_mask
+        else torch.empty(
+            rows, dtype=torch.int8 if x_active_mask is None else x_active_mask.dtype, device=hidden_states.device
+        )
     )
     programs = min(triton.cdiv(rows * _HIDDEN_SIZE, _COPY_BLOCK), _A2_VECTOR_CORES)
     _prepare_local_partial_kernel[(programs,)](
@@ -119,9 +135,10 @@ def prepare_cann_megamoe_local_partial(
         padded_hidden,
         padded_ids,
         padded_weights,
-        padded_active,
+        padded_hidden if padded_active is None else padded_active,
         tokens,
         HAS_ACTIVE=x_active_mask is not None,
+        PREAPPLY_ACTIVE=preapply_active_mask,
         HIDDEN=_HIDDEN_SIZE,
         TOP_K=_TOP_K,
         EXPERTS=_NUM_EXPERTS,
