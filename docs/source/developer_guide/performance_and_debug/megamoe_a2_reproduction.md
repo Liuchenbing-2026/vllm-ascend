@@ -475,3 +475,86 @@ python3 "$ACC_REPRO/summarize_accuracy.py" \
 脚本按题目 ID 对齐，要求两组 prompt、gold/reference 完全相同；输出正确题数、准确率差值、双方都正确/都错误/仅开启正确/仅关闭正确的分布，并单列文本与提取答案一致数。`vllm:request_success_total` 的前后差值核对正式请求数量及 `stop`/`length`/`abort`/`error` 等结束原因。`length` 属于输出预算限制，必须报告，不能静默删除这些题。
 
 复核已保存结果时，将上述 `ACC_WORK` 换为解压结果包目录，并为 `--output` 指定新的目录即可；无需重做 NPU 推理。测试结束后按第 9 节核对本轮进程、8077/29541 端口和设备，恢复借用资源。
+
+## 11. Qwen3.6-35B 四卡 BF16：local-partial 接入
+
+本节是独立的非量化四卡实验，不能与前文八卡 W8A8 性能或 GSM8K 分数混用。使用当前已成功运行的容器，未切换到用户示例中的旧镜像。
+
+### 11.1 替换范围与精确版本
+
+在 TP4/EP4、DP1、非 SP 配置中，名为 ALLGATHER 的基线策略已经接收各 rank 的完整输入，其 prepare 分支没有输入 AllGather。每个 rank 计算本卡专家的 routed 部分结果，与本卡 shared 部分结果先相加，再执行一次 TP AllReduce。
+
+旧接入先按 token 切分再做跨卡 dispatch/combine，会增加本配置不需要的通信，还会改变 BF16 相加的分组。local-partial 接入改为完整输入、本卡专家部分输出，保留基线的相加顺序和最终 TP AllReduce。它融合的是本地路由、两次 GMM、激活和 unpermute；最终 AllReduce 仍有数学上的必要性。小于 512 token 的调用继续使用原回退路径。
+
+V30 内核将本卡行范围判断移入 unpermute，去掉一次 expandedRowIdx 全量读改写及同步，不改变浮点计算。V31 接入对通过支持范围检查的 local-partial 保留 shared expert overlap；shared 辅助流等待输入事件，主流在使用结果前等待辅助流结束。其他 fused 路径保留互斥规则。
+
+| 项目 | 精确身份 |
+| --- | --- |
+| 模型 | `/data2/weights/Qwen3.6-35B-A3B`，1045 个 BF16 tensor，未量化 |
+| 容器 | `mm_bf16_serve_20260907` |
+| 容器 ID | `a2d64204a8c4a69733be92c6cc606dd67493691dd2a5ca6ac46451b1c28141ca` |
+| 镜像 ID | `sha256:8dd949bff550c8e33211bbf6f0daa899c13eab3a1a140105bb2001509a6b568b` |
+| 运行时 | vLLM 0.27.1、torch-npu 2.10.0.post4、CANN 9.1.0 |
+| V31 接入源码 | `481b9570b7bf83b483f81d1a5450515e5f2a0e4a` |
+| V29 父版本 | `8f5344848ad86c3dc704b9b8b12e1900bbd43b08` |
+| V30 CANN 源码 | `23617531fd023f5a90612e6bddb8d21f951af234` |
+| V30 BF16 kernel SHA256 | `325ec7a0b8060e8070f8156c8a685003d3be4ffd1a3b7a8f54051fcf6154a42b` |
+| 沿用扩展 SHA256 | `3d0fe0d4dd3f86a5917f701ed434f176e8df1be4a95031f3e90500fe55bfb705` |
+
+V31 使用独立的 `model_v31_runtime` 源码目录，保留 V29 已验证部署；现有 ABI 文件单独校验，没有重建运行时。源码差异来自原始本地实现，未导入未合并的社区 PR。
+
+### 11.2 对齐配置与精度范围
+
+OFF 和 ON 均为物理卡 0–3、TP4/EP4、DP1/PP1/PCP1，shared overlap=true；其他共同设置包括 max-num-seqs=32、max-model-len=131072、max-num-batched-tokens=8192、GPU memory=0.90、async scheduling、prefix cache 关闭、chunked prefill、mamba cache BF16、FULL_DECODE_ONLY、CPU binding、fuse_muls_add、npugraph_ex、seed=1024 和 HCCL_DETERMINISTIC=true。
+
+仅 MegaMoe/local-partial 开关不同：OFF 为 MEGAMOE=0、enable_fused_mc2=0；ON 为 MEGAMOE=1、enable_fused_mc2=2（解析后为 1）、mega_moe_local_partial=true，mega_moe_min_tokens=512、mega_moe_skip_compiled=false。完整环境与命令保存在输入包的 `model/serve.sh`、`model/configs.json`。
+
+已完成 225 项 CPU 回归，检查配置边界、事件等待及原有 MoE 路径。V30 四卡算子检查包含 14 类边界、稀疏、偏斜和掩码用例，共 56 个 case/rank 的本地输出及最终归约结果与 OFF 逐位一致。V31 不改变该内核；模型每轮仍重新检查固定 511/513/2048/6144 token 请求的文本和 logprobs、各三次重复、4096 token 三次文本一致、短长语义请求返回 42，以及四个 worker 实际加载候选 vendor。
+
+这些有限用例不等价于任意输入的整模型无损，也不代表完成 BF16 全量 GSM8K。前文 W8A8 精度结果不作为本节证据。
+
+### 11.3 当前机器复现输入与执行顺序
+
+下载 [V31 BF16 四卡复现输入包](megamoe_bf16_v31_reproduction_inputs.zip)，ZIP SHA256：`717ef6e37d0944e4570947c1301cdc33918d560c4fd70df410ced47f98025e86`。
+
+包内保留实际模型/算子测试脚本、固定 OFF 参考及哈希清单，共 25 个文件，不含权重或完整运行时。使用当前保留机器可直接准备；其他机器应先恢复精确源码提交、依赖及模型，不能直接复制本机 ABI 即认定兼容。源代码传输使用精确提交的 git archive，二进制独立清单校验。
+
+以下在 Linux 宿主机运行。INPUTS 指向 ZIP 解压后的 `megamoe_bf16_v31_reproduction` 目录；WORK 必须是指定父目录下全新的 `bf16_repro_` 前缀目录。
+
+```bash
+set -euo pipefail
+INPUTS=/data1/megamoe_gain_20260905/bf16_e2e_20260907/bf16_v31_repro_inputs_20260913
+WORK=/data1/megamoe_gain_20260905/bf16_e2e_20260907/bf16_repro_v31_off_on_new_run
+test ! -e "$WORK"
+python3 "$INPUTS/prepare_current_machine.py" --work "$WORK" --order off-on
+```
+
+准备器只创建新目录，验证容器、镜像、源码提交及文件哈希、内核/扩展哈希、模型状态和配置字段一致性。确认卡 0–3、8001/29541 端口及 worker 空闲后运行：
+
+```bash
+bash "$WORK/run_performance.sh"
+bash "$WORK/collect_results.sh"
+```
+
+控制脚本使用测试锁，依次启动、验精度、验三次重复稳定性，再调用现有 `vllm bench serve`：输入 4096/6144、输出 256、并发 32、各 160 请求、固定随机输入、temperature=0、ignore-eos、关闭 prefix cache。每轮保存实际命令和详细结果；要求所有请求成功、输出全为 256、双方实际 input_lens/output_lens 一致。停止时按 PID、启动时间及进程组核对，只清理本轮进程，再验证端口和设备释放。
+
+反序使用另一个新 WORK，准备时指定 `--order on-off`。不得重跑已有目录，不在计时期间同时 profiling 或导出大型数据。首次对照清单曾遗留一个 `shared_overlap=false` 摘要字段，实际命令及运行日志均为 true；原始清单保留，结果另记勘误。本复现包已校正摘要，并强制检查其与各组实际配置一致。
+
+`operator/` 保存实际通过的 14 用例四卡脚本；它有意使用哈希锁定的 `model_v15a_runtime` OFF 算子参考、V30 vendor 与既有扩展。先确认资源空闲，再由 `run_env.sh` 调用 torchrun 四进程、端口 29541 执行 `bench_tp4_local_partial_edges.py`，输出路径必须全新。验收需四份 complete_rank 文件齐全以及 56 个 case/rank 的局部和最终输出逐位一致。
+
+### 11.4 性能结果与 profiling 限制
+
+V29 同 overlap=false 的对照为 4K −0.11%、6K +0.10%，基本持平。V30 同 overlap=false 的四轮对照均值为 +0.3605%、+0.4859%，但反序 4K 只有 +0.026%，不验收为稳定收益。
+
+V31 已完成 OFF A1 → ON B1 → ON B2 → OFF A2 四轮，同配置双方 shared overlap=true；单位为输出 token/s。
+
+| 输入 / 输出 / 并发 | OFF A1 | ON B1 | ON B2 | OFF A2 | 均值增幅 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 4096 / 256 / 32 | 519.360 | 526.733 | 526.990 | 519.937 | +1.388% |
+| 6144 / 256 / 32 | 427.350 | 433.787 | 433.164 | 428.204 | +1.332% |
+
+4096 输入正序 +1.420%、反序 +1.356%；6144 输入正序 +1.506%、反序 +1.158%。两项均满足两次配对提升超过事先声明的 0.2% 实用门槛，且最慢 ON 高于最快 OFF，验收为本机本配置下重复得到的端到端收益。四轮共八组、每组 160 请求全部成功，实际输入/输出长度对齐，固定精度与三次重复均通过；停止后四卡和端口核对已释放。没有宣称统计显著性或其他设备/负载必然收益。这个差值是整套接入相对 OFF 的改善，不能单独归因为 V31 的 overlap 改动。
+
+可下载 [四轮结果与精度证据](megamoe_bf16_v31_validation_evidence.zip)，ZIP SHA256：`33fe58fc001a962f2c9ecda39e6ceb0a7b9343d28e972efa82f5728eb2d38ed1`。复现输入包在第 11.3 节。完整提交 CI 尚需 Linux 工具环境完成，当前未推送候选分支。
+
+V29 实际 native profiling 已确认四 rank 大 prefill 走 full-input/local-partial MegaMoe，输入 `[8224,2048]` 为 8192 实际 token 加 32 sentinel；残留小 token GMM 属于回退路径。6K 的第二段导出缺少 decode 图记录，不能据此宣称 decode 被融合或统计整轮算子占比。HCCL 逻辑/物理记录未逐调用去重，不能把原始通信总时长直接相加当关键路径。端到端结论始终使用无 profiling 的同配置对照。
