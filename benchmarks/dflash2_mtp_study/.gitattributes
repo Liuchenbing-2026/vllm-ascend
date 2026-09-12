@@ -1,0 +1,5 @@
+# These scripts execute on Linux (Ascend hosts) and are submitted through a file queue
+# that rejects CR. autocrlf on a Windows checkout would silently break every one of them.
+*.sh  text eol=lf
+*.md  text eol=lf
+*.ps1 text eol=crlf
