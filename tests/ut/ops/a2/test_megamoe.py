@@ -212,7 +212,7 @@ def test_a2_megamoe_intermediate_hidden_range(monkeypatch, moe_intermediate_size
     assert afc.select_moe_comm_method(512, config) == expected
 
 
-@pytest.mark.parametrize("ep_world_size", [4, 8])
+@pytest.mark.parametrize("ep_world_size", [8, 16])
 @pytest.mark.parametrize("num_tokens", [32, 512, 4096, 4097])
 def test_a2_nonquantized_bf16_uses_megamoe_only_in_prefill_window(monkeypatch, ep_world_size, num_tokens):
     _patch_a2_megamoe_env(monkeypatch)
@@ -220,8 +220,31 @@ def test_a2_nonquantized_bf16_uses_megamoe_only_in_prefill_window(monkeypatch, e
     config = _make_a2_config(quantize=None, hidden_size=2048, moe_intermediate_size=512)
     config.model_config.dtype = torch.bfloat16
     config.parallel_config.world_size_across_dp = ep_world_size
-    expected = MoECommType.FUSED_MC2 if 512 <= num_tokens <= 4096 else MoECommType.ALLGATHER
+    # EP8 with 256 experts leaves 32 experts per rank and is slower on BF16;
+    # only the EP16 shape satisfies the measured MegaMoe guard.
+    expected = (
+        MoECommType.FUSED_MC2
+        if ep_world_size >= 16 and 512 <= num_tokens <= 4096
+        else MoECommType.ALLGATHER
+    )
     assert afc.select_moe_comm_method(num_tokens, config) == expected
+
+
+@pytest.mark.parametrize(
+    ("ep_world_size", "num_experts", "expected"),
+    [
+        (8, 256, MoECommType.ALLGATHER),
+        (16, 256, MoECommType.FUSED_MC2),
+        (16, 512, MoECommType.ALLGATHER),
+    ],
+)
+def test_a2_bf16_shape_guard(monkeypatch, ep_world_size, num_experts, expected):
+    _patch_a2_megamoe_env(monkeypatch)
+    monkeypatch.setattr(afc, "get_ep_group", lambda: SimpleNamespace(world_size=ep_world_size))
+    config = _make_a2_config(quantize=None, hidden_size=2048, moe_intermediate_size=512)
+    config.model_config.dtype = torch.bfloat16
+    config.model_config.get_num_experts = lambda: num_experts
+    assert afc.select_moe_comm_method(512, config) == expected
 
 
 @pytest.mark.parametrize(

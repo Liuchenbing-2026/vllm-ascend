@@ -42,6 +42,11 @@ _MC2_TOKENS_PER_RANK_LIMIT = 512
 _A2_CANN_MEGAMOE_SUPPORTED_EP_SIZES = {2, 4, 8, 16, 32}
 _A2_CANN_MEGAMOE_MAX_TOPK = 16
 _A2_CANN_MEGAMOE_MAX_EXPERTS_PER_RANK = 128
+# The BF16 dispatch path has a fixed per-expert setup cost.  Measurements on
+# Qwen3.6 show that small EP groups or many experts per rank lose to the
+# existing AllGather path, regardless of the local-partial mode.
+_A2_CANN_MEGAMOE_MIN_BF16_EP_SIZE = 16
+_A2_CANN_MEGAMOE_MAX_BF16_EXPERTS_PER_RANK = 24
 _A2_CANN_MEGAMOE_SUPPORTED_QUANT_NAMES = {
     "w8a8",
     "w4a8",
@@ -145,6 +150,19 @@ def _compute_a2_cann_megamoe_support(vllm_config: VllmConfig, is_draft_model: bo
         and getattr(model_config, "quantization", None) is None
         and getattr(model_config, "dtype", None) == torch.bfloat16
     )
+    if unquantized_bf16 and (
+        ep_world_size < _A2_CANN_MEGAMOE_MIN_BF16_EP_SIZE
+        or num_experts_per_rank > _A2_CANN_MEGAMOE_MAX_BF16_EXPERTS_PER_RANK
+    ):
+        logger.info_once(
+            "CANN MegaMoe BF16 shape guard: fallback to AllGather "
+            "(ep=%d, experts_per_rank=%d; requires ep>=%d and experts_per_rank<=%d)",
+            ep_world_size,
+            num_experts_per_rank,
+            _A2_CANN_MEGAMOE_MIN_BF16_EP_SIZE,
+            _A2_CANN_MEGAMOE_MAX_BF16_EXPERTS_PER_RANK,
+        )
+        return False
     return (
         hidden_min <= hidden_size <= hidden_max
         and hidden_size % _MEGA_MOE_DIM_ALIGNMENT == 0
@@ -372,7 +390,10 @@ def _select_a2_moe_comm_method(
             ep_world_size = get_ep_group().world_size
             num_experts = vllm_config.model_config.get_num_experts()
             experts_per_rank = num_experts // ep_world_size
-            if ep_world_size < 16 or experts_per_rank > 24:
+            if (
+                ep_world_size < _A2_CANN_MEGAMOE_MIN_BF16_EP_SIZE
+                or experts_per_rank > _A2_CANN_MEGAMOE_MAX_BF16_EXPERTS_PER_RANK
+            ):
                 logger.info_once(
                     "CANN MegaMoe shape guard: fallback to AllGather for BF16 local-partial "
                     "(ep=%d, experts_per_rank=%d)",
