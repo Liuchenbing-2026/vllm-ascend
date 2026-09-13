@@ -1,0 +1,249 @@
+##### mask leg 2026-09-13T02:19:50+00:00
+##### arm base1 (base) 2026-09-13T02:19:50+00:00
+pid=259377 tag=base1 log=/nt/logs/serve_base1.log mrv2=1 probe=0 check=0 prof=/nt/prof/base1
+READY after 352s
+[ 0] 990 chars  3.9s
+[ 1] 955 chars  8.3s
+[ 2] 1089 chars  13.2s
+[ 3] 1203 chars  19.1s
+[ 4] 1017 chars  23.3s
+[ 5] 506 chars  34.3s
+[ 6] 1256 chars  40.3s
+[ 7] 1074 chars  44.6s
+[ 8] 459 chars  52.3s
+[ 9] 1076 chars  56.6s
+[10] 1337 chars  61.9s
+[11] 582 chars  71.4s
+wrote /nt/logs/accept_base1_p1.json
+P99 ITL (ms):                            379.58    
+Mean E2EL (ms):                          14123.08  
+Median E2EL (ms):                        12091.08  
+--- /nt/logs/bench_base1_measure.log (rc=0)
+Successful requests:                     96        
+Benchmark duration (s):                  185.99    
+Output token throughput (tok/s):         132.14    
+Mean TTFT (ms):                          576.64    
+Median TTFT (ms):                        522.24    
+Mean TPOT (ms):                          55.88     
+Median TPOT (ms):                        52.08     
+Mean ITL (ms):                           87.09     
+Median ITL (ms):                         75.60     
+P99 ITL (ms):                            378.04    
+Mean E2EL (ms):                          14825.93  
+Median E2EL (ms):                        13803.74  
+--- pooled acceptance base1
+windows=38 Accepted=15448 Drafted=194936
+ratio=0.079247  pooled accept_len = 1 + 8*r = 1.6340
+=> mean(delta) predicted by `delta == rejected` is K*(1-r) = 7.3660
+##### arm c01 (c0) 2026-09-13T02:33:03+00:00
+pid=263877 tag=c01 log=/nt/logs/serve_c01.log mrv2=1 probe=0 check=0 prof=/nt/prof/c01
+READY after 354s
+[ 0] 990 chars  4.0s
+[ 1] 955 chars  8.5s
+[ 2] 1089 chars  13.5s
+[ 3] 1203 chars  19.4s
+[ 4] 1017 chars  23.7s
+[ 5] 506 chars  33.4s
+[ 6] 1256 chars  39.5s
+[ 7] 1074 chars  43.4s
+[ 8] 459 chars  50.4s
+[ 9] 1076 chars  54.8s
+[10] 1337 chars  60.2s
+[11] 582 chars  68.8s
+wrote /nt/logs/accept_c01_p1.json
+P99 ITL (ms):                            376.28    
+Mean E2EL (ms):                          11029.78  
+Median E2EL (ms):                        9752.39   
+--- /nt/logs/bench_c01_measure.log (rc=0)
+Successful requests:                     96        
+Benchmark duration (s):                  138.93    
+Output token throughput (tok/s):         176.90    
+Mean TTFT (ms):                          515.92    
+Median TTFT (ms):                        474.55    
+Mean TPOT (ms):                          42.35     
+Median TPOT (ms):                        43.02     
+Mean ITL (ms):                           62.18     
+Median ITL (ms):                         50.21     
+P99 ITL (ms):                            378.20    
+Mean E2EL (ms):                          11314.75  
+Median E2EL (ms):                        11442.07  
+--- pooled acceptance c01
+windows=28 Accepted=13118 Drafted=203800
+ratio=0.064367  pooled accept_len = 1 + 8*r = 1.5149
+=> mean(delta) predicted by `delta == rejected` is K*(1-r) = 7.4851
+##### arm mf1 (mf) 2026-09-13T02:45:03+00:00
+MASKFIX APPLIED /vllm-workspace/vllm-ascend/vllm_ascend/attention/attention_v1.py md5=dc5de1a8eb6bab24116cf5d9b06abbfe
+pid=268449 tag=mf1 log=/nt/logs/serve_mf1.log mrv2=1 probe=0 check=0 prof=/nt/prof/mf1
+READY after 354s
+[ 0] 990 chars  3.5s
+[ 1] 955 chars  7.4s
+[ 2] 1089 chars  11.7s
+[ 3] 1203 chars  16.8s
+[ 4] 1017 chars  20.5s
+[ 5] 506 chars  30.0s
+[ 6] 1256 chars  35.1s
+[ 7] 1074 chars  38.8s
+[ 8] 459 chars  45.3s
+[ 9] 1076 chars  49.0s
+[10] 1337 chars  53.4s
+[11] 582 chars  61.4s
+wrote /nt/logs/accept_mf1_p1.json
+P99 ITL (ms):                            364.32    
+Mean E2EL (ms):                          10296.15  
+Median E2EL (ms):                        9457.42   
+--- /nt/logs/bench_mf1_measure.log (rc=0)
+Successful requests:                     96        
+Benchmark duration (s):                  132.72    
+Output token throughput (tok/s):         185.17    
+Mean TTFT (ms):                          530.54    
+Median TTFT (ms):                        459.69    
+Mean TPOT (ms):                          39.58     
+Median TPOT (ms):                        39.00     
+Mean ITL (ms):                           61.42     
+Median ITL (ms):                         49.86     
+P99 ITL (ms):                            364.86    
+Mean E2EL (ms):                          10622.22  
+Median E2EL (ms):                        10615.85  
+--- pooled acceptance mf1
+windows=28 Accepted=15358 Drafted=195744
+ratio=0.078460  pooled accept_len = 1 + 8*r = 1.6277
+=> mean(delta) predicted by `delta == rejected` is K*(1-r) = 7.3723
+--- NT_MASKFIX positive control (rank 0); hit=0 would mean this arm IS c0
+(Worker_TP1_EP1 pid=268733) [NT_MASKFIX] calls=20000 capturing=0 hit=20000 noncausal=0 nonuniform_q=0 not_marked=2160 shape=0 sinks=0 verify_max_rel=0.0 verify_n=8
+(Worker_TP0_EP0 pid=268732) [NT_MASKFIX] calls=20000 capturing=0 hit=20000 noncausal=0 nonuniform_q=0 not_marked=2160 shape=0 sinks=0 verify_max_rel=0.0 verify_n=8
+(Worker_TP3_EP3 pid=268735) [NT_MASKFIX] calls=22000 capturing=0 hit=22000 noncausal=0 nonuniform_q=0 not_marked=2300 shape=0 sinks=0 verify_max_rel=0.0 verify_n=8
+(Worker_TP1_EP1 pid=268733) [NT_MASKFIX] calls=22000 capturing=0 hit=22000 noncausal=0 nonuniform_q=0 not_marked=2300 shape=0 sinks=0 verify_max_rel=0.0 verify_n=8
+(Worker_TP2_EP2 pid=268734) [NT_MASKFIX] calls=22000 capturing=0 hit=22000 noncausal=0 nonuniform_q=0 not_marked=2300 shape=0 sinks=0 verify_max_rel=0.0 verify_n=8
+(Worker_TP0_EP0 pid=268732) [NT_MASKFIX] calls=22000 capturing=0 hit=22000 noncausal=0 nonuniform_q=0 not_marked=2300 shape=0 sinks=0 verify_max_rel=0.0 verify_n=8
+##### arm mf2 (mf) 2026-09-13T02:56:48+00:00
+MASKFIX APPLIED /vllm-workspace/vllm-ascend/vllm_ascend/attention/attention_v1.py md5=dc5de1a8eb6bab24116cf5d9b06abbfe
+pid=272953 tag=mf2 log=/nt/logs/serve_mf2.log mrv2=1 probe=0 check=0 prof=/nt/prof/mf2
+READY after 338s
+[ 0] 990 chars  3.3s
+[ 1] 955 chars  7.2s
+[ 2] 1089 chars  11.4s
+[ 3] 1203 chars  16.4s
+[ 4] 1017 chars  20.0s
+[ 5] 506 chars  29.4s
+[ 6] 1256 chars  34.6s
+[ 7] 1074 chars  38.2s
+[ 8] 459 chars  44.7s
+[ 9] 1076 chars  48.4s
+[10] 1337 chars  52.8s
+[11] 582 chars  60.9s
+wrote /nt/logs/accept_mf2_p1.json
+P99 ITL (ms):                            362.93    
+Mean E2EL (ms):                          10225.07  
+Median E2EL (ms):                        9452.77   
+--- /nt/logs/bench_mf2_measure.log (rc=0)
+Successful requests:                     96        
+Benchmark duration (s):                  127.33    
+Output token throughput (tok/s):         193.02    
+Mean TTFT (ms):                          519.46    
+Median TTFT (ms):                        458.69    
+Mean TPOT (ms):                          38.97     
+Median TPOT (ms):                        35.28     
+Mean ITL (ms):                           62.12     
+Median ITL (ms):                         50.19     
+P99 ITL (ms):                            362.87    
+Mean E2EL (ms):                          10456.26  
+Median E2EL (ms):                        9595.36   
+--- pooled acceptance mf2
+windows=27 Accepted=14899 Drafted=185504
+ratio=0.080316  pooled accept_len = 1 + 8*r = 1.6425
+=> mean(delta) predicted by `delta == rejected` is K*(1-r) = 7.3575
+--- NT_MASKFIX positive control (rank 0); hit=0 would mean this arm IS c0
+(Worker_TP0_EP0 pid=273306) [NT_MASKFIX] calls=18000 capturing=0 hit=18000 noncausal=0 nonuniform_q=0 not_marked=1980 shape=0 sinks=0 verify_max_rel=0.0 verify_n=0
+(Worker_TP3_EP3 pid=273309) [NT_MASKFIX] calls=18000 capturing=0 hit=18000 noncausal=0 nonuniform_q=0 not_marked=1980 shape=0 sinks=0 verify_max_rel=0.0 verify_n=0
+(Worker_TP2_EP2 pid=273308) [NT_MASKFIX] calls=20000 capturing=0 hit=20000 noncausal=0 nonuniform_q=0 not_marked=2160 shape=0 sinks=0 verify_max_rel=0.0 verify_n=0
+(Worker_TP1_EP1 pid=273307) [NT_MASKFIX] calls=20000 capturing=0 hit=20000 noncausal=0 nonuniform_q=0 not_marked=2160 shape=0 sinks=0 verify_max_rel=0.0 verify_n=0
+(Worker_TP0_EP0 pid=273306) [NT_MASKFIX] calls=20000 capturing=0 hit=20000 noncausal=0 nonuniform_q=0 not_marked=2160 shape=0 sinks=0 verify_max_rel=0.0 verify_n=0
+(Worker_TP3_EP3 pid=273309) [NT_MASKFIX] calls=20000 capturing=0 hit=20000 noncausal=0 nonuniform_q=0 not_marked=2160 shape=0 sinks=0 verify_max_rel=0.0 verify_n=0
+##### arm c02 (c0) 2026-09-13T03:08:12+00:00
+pid=277476 tag=c02 log=/nt/logs/serve_c02.log mrv2=1 probe=0 check=0 prof=/nt/prof/c02
+READY after 342s
+[ 0] 990 chars  3.9s
+[ 1] 955 chars  8.3s
+[ 2] 1089 chars  13.4s
+[ 3] 1203 chars  19.4s
+[ 4] 1017 chars  23.7s
+[ 5] 506 chars  33.4s
+[ 6] 1256 chars  39.4s
+[ 7] 1074 chars  43.3s
+[ 8] 459 chars  50.2s
+[ 9] 1076 chars  54.5s
+[10] 1337 chars  59.8s
+[11] 582 chars  68.3s
+wrote /nt/logs/accept_c02_p1.json
+P99 ITL (ms):                            367.23    
+Mean E2EL (ms):                          11105.98  
+Median E2EL (ms):                        11449.45  
+--- /nt/logs/bench_c02_measure.log (rc=0)
+Successful requests:                     96        
+Benchmark duration (s):                  133.53    
+Output token throughput (tok/s):         184.04    
+Mean TTFT (ms):                          525.04    
+Median TTFT (ms):                        464.24    
+Mean TPOT (ms):                          40.45     
+Median TPOT (ms):                        35.02     
+Mean ITL (ms):                           61.44     
+Median ITL (ms):                         50.03     
+P99 ITL (ms):                            368.64    
+Mean E2EL (ms):                          10839.47  
+Median E2EL (ms):                        9409.64   
+--- pooled acceptance c02
+windows=28 Accepted=14047 Drafted=205384
+ratio=0.068394  pooled accept_len = 1 + 8*r = 1.5472
+=> mean(delta) predicted by `delta == rejected` is K*(1-r) = 7.4528
+##### arm base2 (base) 2026-09-13T03:19:54+00:00
+pid=281939 tag=base2 log=/nt/logs/serve_base2.log mrv2=1 probe=0 check=0 prof=/nt/prof/base2
+READY after 346s
+[ 0] 990 chars  3.8s
+[ 1] 955 chars  8.2s
+[ 2] 1089 chars  13.0s
+[ 3] 1203 chars  18.8s
+[ 4] 1017 chars  23.0s
+[ 5] 506 chars  33.8s
+[ 6] 1256 chars  39.7s
+[ 7] 1074 chars  43.8s
+[ 8] 459 chars  51.4s
+[ 9] 1076 chars  55.6s
+[10] 1337 chars  60.8s
+[11] 582 chars  70.3s
+wrote /nt/logs/accept_base2_p1.json
+P99 ITL (ms):                            379.83    
+Mean E2EL (ms):                          14676.48  
+Median E2EL (ms):                        14497.47  
+--- /nt/logs/bench_base2_measure.log (rc=0)
+Successful requests:                     96        
+Benchmark duration (s):                  187.14    
+Output token throughput (tok/s):         131.33    
+Mean TTFT (ms):                          554.08    
+Median TTFT (ms):                        520.35    
+Mean TPOT (ms):                          56.58     
+Median TPOT (ms):                        53.54     
+Mean ITL (ms):                           86.16     
+Median ITL (ms):                         75.11     
+P99 ITL (ms):                            381.27    
+Mean E2EL (ms):                          14982.84  
+Median E2EL (ms):                        14175.75  
+--- pooled acceptance base2
+windows=37 Accepted=14692 Drafted=199448
+ratio=0.073663  pooled accept_len = 1 + 8*r = 1.5893
+=> mean(delta) predicted by `delta == rejected` is K*(1-r) = 7.4107
+##### text identity (every arm must match base byte for byte)
+reference: accept_base1_p1.json (12 completions, 11544 chars)
+  accept_base1_p1.json         sha=df34ea140872348c  identical
+  accept_base2_p1.json         sha=df34ea140872348c  identical
+  accept_c01_p1.json           sha=df34ea140872348c  identical
+  accept_c02_p1.json           sha=df34ea140872348c  identical
+  accept_mf1_p1.json           sha=df34ea140872348c  identical
+  accept_mf2_p1.json           sha=df34ea140872348c  identical
+VERDICT: all arms byte-identical
+##### DONE 2026-09-13T03:33:05+00:00
+MASKFIX REVERTED /vllm-workspace/vllm-ascend/vllm_ascend/attention/attention_v1.py md5=a23140c0fc18af466c0779d996ad7b05
+REVERTED /vllm-workspace/vllm-ascend/vllm_ascend/device/utils.py md5=bbabf73267a32c812d6b254c4f7cedae
+3ffdd3667b206531740ed46c69285f41  vllm_ascend/attention/attention_v1.py
+1c0f4506d8ac713b1f1ec1b713431f56  vllm_ascend/attention/utils.py
+5c62dbcbc66dfc57f4c22ebcf9545ed8  vllm_ascend/worker/v2/attn_utils.py
+bc70fccf3b55d412cfe092b5daa91488  vllm_ascend/envs.py
