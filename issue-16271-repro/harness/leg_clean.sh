@@ -13,6 +13,14 @@ cleanup() {
   bash /nt/stop.sh >/dev/null 2>&1
   python3 /nt/maskfix_clean.py --revert | tail -2
   python3 /nt/nt_patch.py --revert | tail -1
+  # approx_patch.py has no --revert and nt_patch.py's FILES list does not cover
+  # envs.py, so its four added lines survived every previous leg. Harmless at
+  # runtime (the flag defaults to 0) but it leaves a shared machine dirty, and a
+  # later reader cannot tell it from someone else's edit. Take the tree back to
+  # what git says it should be, and drop the backup files the patchers leave.
+  git checkout -- vllm_ascend/envs.py 2>/dev/null
+  find vllm_ascend -name '*.nt-*orig' -delete 2>/dev/null
+  git status --porcelain | head -5
   md5sum vllm_ascend/attention/attention_v1.py vllm_ascend/envs.py
 }
 trap cleanup EXIT

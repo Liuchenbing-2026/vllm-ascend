@@ -23,6 +23,11 @@ cleanup() {
   bash /nt/stop.sh >/dev/null 2>&1
   python3 /nt/maskfix_patch.py --revert | tail -1
   python3 /nt/nt_patch.py --revert | tail -1
+  # approx_patch.py has no --revert and nt_patch.py's FILES list does not cover
+  # envs.py, so its four added lines survive every leg unless removed here.
+  git checkout -- vllm_ascend/envs.py 2>/dev/null
+  find vllm_ascend -name '*.nt-*orig' -delete 2>/dev/null
+  git status --porcelain | head -5
   md5sum vllm_ascend/attention/attention_v1.py vllm_ascend/attention/utils.py \
          vllm_ascend/worker/v2/attn_utils.py vllm_ascend/envs.py
 }
