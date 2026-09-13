@@ -1,19 +1,123 @@
-##### clean-form leg 2026-09-13T11:35:22+00:00
-##### arm cl1 (cl) 2026-09-13T11:35:22+00:00
+##### clean-form leg 2026-09-13T14:16:54+00:00
+##### arm cl1 (cl) 2026-09-13T14:16:54+00:00
 CLEAN APPLIED envs.py md5=ab0dd8f732573f450d1f2b650cb0ac2a
 CLEAN APPLIED attention_v1.py md5=8a50e2dced5f354fbbc518f9753cd1bc
-pid=294264 tag=cl1 log=/nt/logs/serve_cl1.log mrv2=1 probe=0 check=0 prof=/nt/prof/cl1
-READY after 342s
+pid=262 tag=cl1 log=/nt/logs/serve_cl1.log mrv2=1 probe=0 check=0 prof=/nt/prof/cl1
+READY after 352s
+[ 0] 990 chars  3.4s
+[ 1] 955 chars  7.3s
+[ 2] 1089 chars  11.6s
+[ 3] 1203 chars  16.9s
+[ 4] 1017 chars  20.6s
+[ 5] 506 chars  30.2s
+[ 6] 1256 chars  35.6s
+[ 7] 1074 chars  39.4s
+[ 8] 459 chars  46.1s
+[ 9] 1076 chars  49.8s
+[10] 1337 chars  54.3s
+[11] 582 chars  62.6s
+wrote /nt/logs/accept_cl1_p1.json
+Mean E2EL (ms):                          10882.86  
+Median E2EL (ms):                        10478.47  
+--- /nt/logs/bench_cl1_measure.log (rc=0)
+Successful requests:                     96        
+Benchmark duration (s):                  133.48    
+Output token throughput (tok/s):         184.12    
+Mean TTFT (ms):                          518.53    
+Median TTFT (ms):                        474.15    
+Mean TPOT (ms):                          39.81     
+Median TPOT (ms):                        36.91     
+Mean ITL (ms):                           63.09     
+Median ITL (ms):                         50.42     
+P99 ITL (ms):                            377.99    
+Mean E2EL (ms):                          10669.56  
+Median E2EL (ms):                        9892.20   
+--- pooled acceptance cl1
+windows=28 Accepted=15186 Drafted=193840
+ratio=0.078343  pooled accept_len = 1 + 8*r = 1.6267
+=> mean(delta) predicted by `delta == rejected` is K*(1-r) = 7.3733
+##### arm c0x (c0) 2026-09-13T14:28:40+00:00
+pid=4483 tag=c0x log=/nt/logs/serve_c0x.log mrv2=1 probe=0 check=0 prof=/nt/prof/c0x
+READY after 341s
+[ 0] 990 chars  3.9s
+[ 1] 955 chars  8.4s
+[ 2] 1089 chars  13.3s
+[ 3] 1203 chars  19.1s
+[ 4] 1017 chars  23.4s
+[ 5] 506 chars  33.1s
+[ 6] 1256 chars  39.2s
+[ 7] 1074 chars  43.1s
+[ 8] 459 chars  50.1s
+[ 9] 1076 chars  54.5s
+[10] 1337 chars  59.8s
+[11] 582 chars  68.5s
+wrote /nt/logs/accept_c0x_p1.json
+Mean E2EL (ms):                          11006.04  
+Median E2EL (ms):                        10532.61  
+--- /nt/logs/bench_c0x_measure.log (rc=0)
+Successful requests:                     96        
+Benchmark duration (s):                  141.72    
+Output token throughput (tok/s):         173.41    
+Mean TTFT (ms):                          520.37    
+Median TTFT (ms):                        467.23    
+Mean TPOT (ms):                          42.54     
+Median TPOT (ms):                        41.23     
+Mean ITL (ms):                           61.99     
+Median ITL (ms):                         50.31     
+P99 ITL (ms):                            371.44    
+Mean E2EL (ms):                          11368.84  
+Median E2EL (ms):                        10980.89  
+--- pooled acceptance c0x
+windows=29 Accepted=13479 Drafted=210816
+ratio=0.063937  pooled accept_len = 1 + 8*r = 1.5115
+=> mean(delta) predicted by `delta == rejected` is K*(1-r) = 7.4885
+##### arm cl2 (cl) 2026-09-13T14:40:30+00:00
+CLEAN APPLIED envs.py md5=ab0dd8f732573f450d1f2b650cb0ac2a
+CLEAN APPLIED attention_v1.py md5=8a50e2dced5f354fbbc518f9753cd1bc
+pid=8658 tag=cl2 log=/nt/logs/serve_cl2.log mrv2=1 probe=0 check=0 prof=/nt/prof/cl2
+READY after 345s
 [ 0] 990 chars  3.4s
 [ 1] 955 chars  7.1s
-[ 2] 1089 chars  11.3s
-[ 3] 1203 chars  16.2s
-[ 4] 1017 chars  19.8s
-[ 5] 506 chars  29.1s
-[ 6] 1256 chars  34.1s
-[ 7] 1074 chars  37.7s
-[ 8] 459 chars  44.2s
-[ 9] 1076 chars  47.8s
-[10] 1337 chars  52.1s
-[11] 582 chars  60.1s
-wrote /nt/logs/accept_cl1_p1.json
+[ 2] 1089 chars  11.4s
+[ 3] 1203 chars  16.5s
+[ 4] 1017 chars  20.2s
+[ 5] 506 chars  29.6s
+[ 6] 1256 chars  34.8s
+[ 7] 1074 chars  38.5s
+[ 8] 459 chars  45.0s
+[ 9] 1076 chars  48.8s
+[10] 1337 chars  53.2s
+[11] 582 chars  61.4s
+wrote /nt/logs/accept_cl2_p1.json
+Mean E2EL (ms):                          11396.40  
+Median E2EL (ms):                        11544.47  
+--- /nt/logs/bench_cl2_measure.log (rc=0)
+Successful requests:                     96        
+Benchmark duration (s):                  130.55    
+Output token throughput (tok/s):         188.25    
+Mean TTFT (ms):                          519.89    
+Median TTFT (ms):                        467.66    
+Mean TPOT (ms):                          39.92     
+Median TPOT (ms):                        34.82     
+Mean ITL (ms):                           62.59     
+Median ITL (ms):                         50.41     
+P99 ITL (ms):                            370.29    
+Mean E2EL (ms):                          10698.65  
+Median E2EL (ms):                        9346.40   
+--- pooled acceptance cl2
+windows=30 Accepted=14576 Drafted=202536
+ratio=0.071967  pooled accept_len = 1 + 8*r = 1.5757
+=> mean(delta) predicted by `delta == rejected` is K*(1-r) = 7.4243
+##### text identity vs the monkeypatch leg
+reference: accept_mf1_p1.json (12 completions, 11544 chars)
+  accept_mf1_p1.json           sha=df34ea140872348c  identical
+  accept_cl1_p1.json           sha=df34ea140872348c  identical
+  accept_c0x_p1.json           sha=df34ea140872348c  identical
+  accept_cl2_p1.json           sha=df34ea140872348c  identical
+VERDICT: all arms byte-identical
+##### DONE 2026-09-13T14:52:12+00:00
+CLEAN REVERTED envs.py md5=bc70fccf3b55d412cfe092b5daa91488
+CLEAN REVERTED attention_v1.py md5=a23140c0fc18af466c0779d996ad7b05
+NO BACKUP /vllm-workspace/vllm-ascend/vllm_ascend/device/utils.py
+3ffdd3667b206531740ed46c69285f41  vllm_ascend/attention/attention_v1.py
+348a3fbf05cd70fd37d80f9cb9a62b36  vllm_ascend/envs.py
