@@ -104,6 +104,15 @@ env_variables: dict[str, Callable[[], Any]] = {
     # Control the aclrtMemcpyBatchAsync compile path for KV cache offloading.
     # "1": force enable, "0": force disable, None: auto-detect from CANN headers.
     "VLLM_ASCEND_ENABLE_BATCH_MEMCPY": lambda: os.getenv("VLLM_ASCEND_ENABLE_BATCH_MEMCPY", None),
+    # LOSSY, OFF BY DEFAULT. Skip _correct_optimistic_seq_lens_cpu() in async
+    # speculative decode. That correction blocks the host on the previous
+    # step's sampling counts; skipping it overstates the KV length fed to
+    # attention by exactly this step's rejection count. Worth ~11 ms/step on
+    # Qwen3.6-35B-A3B + MTP k=1, at an accuracy cost that has NOT been
+    # measured. Do not enable without an accuracy benchmark.
+    "VLLM_ASCEND_MTP_SKIP_SEQ_LENS_CORRECTION": lambda: bool(
+        int(os.getenv("VLLM_ASCEND_MTP_SKIP_SEQ_LENS_CORRECTION", "0"))
+    ),
 }
 
 # end-env-vars-definition

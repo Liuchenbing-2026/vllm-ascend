@@ -111,6 +111,7 @@ from vllm.v1.worker.ubatch_utils import (
 from vllm.v1.worker.utils import AttentionGroup, select_common_block_size
 
 # yapf: enable
+import vllm_ascend.envs as envs_ascend
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.attention.attention_v1 import AscendAttentionBackend, AscendAttentionState
 from vllm_ascend.attention.context_parallel.dsa_cp import AscendDSACPMetadataBuilder
@@ -480,6 +481,16 @@ class NPUModelRunner(GPUModelRunner):
         self._needs_seq_lens_cpu_sync = self.use_compress or issubclass(
             self.attn_backend, (AscendAttentionBackend, AscendMLABackend)
         )
+        # Opt-in escape hatch: see VLLM_ASCEND_MTP_SKIP_SEQ_LENS_CORRECTION.
+        self._skip_optimistic_seq_lens_correction = (
+            envs_ascend.VLLM_ASCEND_MTP_SKIP_SEQ_LENS_CORRECTION
+        )
+        if self._skip_optimistic_seq_lens_correction and self._needs_seq_lens_cpu_sync:
+            logger.warning(
+                "VLLM_ASCEND_MTP_SKIP_SEQ_LENS_CORRECTION is set: attention will "
+                "see KV lengths overstated by each step's rejected draft tokens. "
+                "This trades accuracy for throughput and is not validated."
+            )
 
         # kv role
         self.is_kv_producer = False
@@ -1278,7 +1289,11 @@ class NPUModelRunner(GPUModelRunner):
             and valid_sampled_token_count_gpu is not None
             and prev_req_id_to_index
         )
-        if self._needs_seq_lens_cpu_sync and async_spec_decode_active:
+        if (
+            self._needs_seq_lens_cpu_sync
+            and async_spec_decode_active
+            and not self._skip_optimistic_seq_lens_correction
+        ):
             self._correct_optimistic_seq_lens_cpu(num_reqs)
 
         self.input_batch.block_table.compute_slot_mapping(
