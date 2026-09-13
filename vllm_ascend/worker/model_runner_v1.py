@@ -1100,7 +1100,45 @@ class NPUModelRunner(GPUModelRunner):
 
         # Sync num_accepted_tokens from CPU (set by
         # _update_states_after_model_execute for hybrid models).
-        if self.num_accepted_tokens_event is not None:
+        #
+        # The host only needs the accepted-token counts to undo the reordering
+        # condense() applied; the values themselves already live on the device.
+        # Reading them back blocks on the previous step's sampling, which under
+        # async scheduling has not run yet -- it collapses the whole pipeline.
+        # Redo the reordering on the device instead whenever nothing downstream
+        # reads the host mirror (see below).
+        gather_num_accepted_on_device = (
+            self.use_async_scheduling
+            and prev_req_id_to_index
+            and self.cache_config.mamba_cache_mode != "align"
+        )
+        if self.num_accepted_tokens_event is not None and gather_num_accepted_on_device:
+            # Device-side equivalent of the host branch below:
+            #     out[i] = src[prev[i]] if prev[i] >= 0 else 1,  tail = 1
+            # ``src`` is what the device already holds: the counts are written
+            # in place during sampling (vllm/v1/spec_decode/utils.py) and
+            # _update_states_after_model_execute only mirrors them to the host.
+            #
+            # The host mirror is deliberately left untouched. Its one live
+            # reader is preprocess_mamba, which runs only under
+            # mamba_cache_mode == "align" -- excluded by the predicate above.
+            #
+            # The synchronize() this replaces was also the ONLY ordering edge
+            # against _update_states_after_model_execute, which writes this
+            # tensor on global_stream() and never joins back. Keep that edge
+            # explicitly: without the wait_event the gather is a silent
+            # write/write race that mis-feeds the GDN state slots.
+            torch.npu.current_stream().wait_event(self.num_accepted_tokens_event)
+            if prev_positions_gpu is None:
+                self.prev_positions.copy_to_gpu(num_reqs)
+                prev_positions_gpu = self.prev_positions.gpu[:num_reqs]
+            src = self.num_accepted_tokens.gpu.clone()
+            gathered = src.index_select(0, prev_positions_gpu.clamp_min(0).long())
+            self.num_accepted_tokens.gpu[:num_reqs] = torch.where(
+                prev_positions_gpu >= 0, gathered, torch.ones_like(gathered)
+            )
+            self.num_accepted_tokens.gpu[num_reqs:].fill_(1)
+        elif self.num_accepted_tokens_event is not None:
             self.num_accepted_tokens_event.synchronize()
             # Async mode: condense() reordered indices, use prev_positions mapping
             if self.use_async_scheduling and prev_req_id_to_index:
