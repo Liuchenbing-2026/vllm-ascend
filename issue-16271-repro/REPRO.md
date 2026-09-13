@@ -35,6 +35,7 @@
 | **✅ §8.7 拿回来的办法找到了（2026-09-13 实测）** | `atten_mask` **不是 `ValueDepend`**，它可以合法地依赖设备上的 `seq_lens`。于是：**长度喂上界（宿主白拿）+ 尾巴用设备侧逐请求掩码盖掉**。TND 一律走 FAI split-fuse 模板（给掩码就只能 2048²+sm3/4），但草稿这一路每请求 q 恒为 K+1，**TND 和 BSND 是同一块内存的两个视图**，换 BSND 就落到通用模板，`sparse_mode=0` + `[B,≥Q_S,≥KV_S]` 逐请求掩码合法。**实测：候选与“喂精确长度”逐位同级**（滑窗 n=8/64 两档 rel 0.003493 / 0.002919 与参考**完全相同**），而 `c0` 是 0.19~0.27（**差 60~100 倍**）。成本：无滑窗持平（−5～+6%），滑窗下 n=8 +3.1%、n=64 **+50.8%**；掩码构造 ~153–170 µs 且与 n 无关、一步一次五层共用。➕ 坐实了一个必须照抄的语义：band 模式 `pre_tokens=W` 保留的是 **W+1** 个位置（两端都闭），写错误差 0.157 |
 
 | **🏆 §8.7.5 端到端 A/B：拿回来了（2026-09-13）** | 六臂回文序、每臂两个独立实例。**`mf` vs base：吞吐 +43.5%（131.74→189.09 tok/s）、中位 ITL −33.6%（50.02 ms）、accept_len +1.83%（与 base 区间重叠 = 统计上无法区分）**；`c0` vs base 是 +37.0% / −33.5% / **−5.00%**。`mf` 的两个实例在接受率和吞吐上**全部高于** `c0` 的两个，两两不重叠。**六臂输出逐字节相同**（sha `df34ea140872348c`）。踩在 §8.5.5 天花板上（天花板 50.0 ms vs 实测 50.02 ms）**且没付接受率**。正向对照：`calls=22000 hit=22000`、四个回退分支全 0、`verify_max_rel=0.0`（前 8 次 build 与精确长度参考四个 rank 全部 `rel=0`）。❗每臂只有 2 个实例，接受率贴地板（random 集 ratio≈0.07），大并发未测 |
+| **✅ §8.7.6 正式形态的接受率已锁死（2026-09-13）** | 整理后的正式补丁复跑被别人的 8 卡任务 SIGKILL（`exited 137`，非 OOM），bench 没跑成；但 **probe 跑完了，而 probe 是比 §8.7.5 更硬的尺子**（并发 1 + 贪婪 + `HCCL_DETERMINISTIC` ⇒ 计数器确定）。截到 probe 阶段汇总：**`cl1` = Accepted 1883 / Drafted 9496，与 `base1`/`base2`/`mf1`/`mf2` 逐计数器完全相同**；`c0` 在同一把尺子上是 1721 / 10832（accept_len 低 12.2%）⇒ **尺子有区分力，且排除了“掉回退”**（若掩码全回退，`cl1` 会**精确**等于 `c0`）。❗**正式形态的吞吐 / ITL 仍未实测** |
 
 
 **所以：issue 对问题的判断完全正确（代价比它说的还大），但它提的解法方向经实测是负优化。
@@ -1224,6 +1225,83 @@ window=2050 (+2)      0.1488
    c=8 时批量小。大并发要单独复测。
 4. 合入形态还没做：现在是 monkeypatch + 锚点插入，要变成正式补丁得改
    `forward_fused_infer_attention` 本体，并给 `nonuniform_q` 那条回退写单测。
+
+### 8.7.6 正式形态的复跑：被别人的 8 卡任务打断，但 **probe 已经把接受率这一半锁死了**（2026-09-13）
+
+§8.7.5 的数出自 monkeypatch 形态。整理成正式补丁（`scripts/maskfix_clean.py` →
+`vllm_ascend/attention/attention_v1.py` + `envs.py`，带 `VLLM_ASCEND_DSPARK_DRAFT_KV_DEVICE_MASK`
+开关）之后必须自己再跑一遍——**"整理完没跑过"正是这次调查反复踩的那类失败**
+（编译过、服务起得来、然后那个臂安静地退化成 do-nothing 臂）。
+
+`scripts/leg_clean.sh`（三臂 `cl1 c0x cl2`）排队等卡，`scripts/wait_and_launch.sh`
+在机器上轮询（等待放在机器上跑，本地长轮询会被内存回收杀掉）：
+
+```
+18:14:54 poll 1:  4=60360 5=60359 6=60359 7=60362      ← 别人占着
+...
+19:26:39 poll 71: 4=60359 5=60359 6=60359 7=60362
+19:35:21 cards free after 78 polls -- launching leg_clean.sh
+```
+
+`cl1` 起来了：
+
+```
+##### arm cl1 (cl) 2026-09-13T11:35:22+00:00
+CLEAN APPLIED envs.py         md5=ab0dd8f732573f450d1f2b650cb0ac2a
+CLEAN APPLIED attention_v1.py md5=8a50e2dced5f354fbbc518f9753cd1bc
+pid=294264 tag=cl1 log=/nt/logs/serve_cl1.log mrv2=1
+READY after 342s
+[ 0] 990 chars 3.4s ... [11] 582 chars 60.1s
+wrote /nt/logs/accept_cl1_p1.json
+```
+
+**19:42:36 容器被 SIGKILL**（`docker inspect` → `exited 137`，`OOMKilled=false`，
+宿主内存 1005 GB 只用了 42 GB ⇒ 不是 OOM，是外部 kill），随后 8 张卡全被一个
+TP8 的 `VLLMWorker_TP`（pid 999910-999917，每卡 56.5 GB）占满。bench 没跑成，
+`c0x` / `cl2` 也没跑。
+
+#### 但 probe 跑完了，而 probe 是比 §8.7.5 更硬的判据
+
+probe 是并发 1、贪婪、`HCCL_DETERMINISTIC=true`、固定 12 条 prompt，
+**计数器本身是确定的**——不像 §8.7.5 那张表要靠区间不重叠来论证。
+把每个臂的 serve 日志截到 probe 阶段（第 13 个 completion 响应之前，`scripts/probe_acc.py`）：
+
+| 臂 | Accepted | Drafted | ratio | probe accept_len |
+|---|---|---|---|---|
+| `base1` / `base2` | 1883 | 9496 | 0.198294 | 2.5864 |
+| `c01` / `c02` | 1721 | 10832 | 0.158881 | **2.2710** |
+| `mf1` / `mf2` | 1883 | 9496 | 0.198294 | 2.5864 |
+| **`cl1`** | **1883** | **9496** | **0.198294** | **2.5864** |
+
+三件事一起读出来：
+
+1. **`cl1` 与精确路径逐计数器相同**，接受、起草的 token 数一个不差。
+   不是"落在 `c0` 之上"，是重合。
+2. **尺子有区分力**：`c0` 在同一把尺子上读出 1721/10832——少接受 162 个、
+   多起草 1336 个（被拒之后还在继续提议），accept_len 低 12.2%。
+   所以 `cl1 == base` 不是"这个指标分不开"。
+3. **排除了整条回退**：`cl` 臂的 `VLLM_ASCEND_DSPARK_APPROX_DRAFT_KV` 一直是 1，
+   只有 `..._DEVICE_MASK` 在切换。掩码路径要是全回退了，`cl1` 会**精确**等于
+   `c0` 的 1721/10832。读到的是 base 那一组。
+
+逐窗口也能看出两者根本不是同一个过程（`logs/probe_acc.out` 里有原始行）：
+`cl1` 的七个窗口 per-position 首位是 0.756/0.697/0.266/0.583/0.550/0.350/0.200，
+`c01` 是 0.703/0.592/0.478/0.443/0.467/0.679/0.242。
+
+#### 还缺的
+
+**正式形态的吞吐 / ITL 仍未实测。** 已确立的是正确性与接受率等价；
+性能那一半目前只有 monkeypatch 形态的数（§8.7.5）。两者算法完全一致，
+但按这次调查自己的规矩（[[silent-noop-traps-and-ceiling-probe]]），
+没测就是没测。
+
+#### 收尾
+
+容器被 SIGKILL，所以 `leg_clean.sh` 的 `trap cleanup EXIT` 没执行，树是脏的
+（4 个 M + 5 个 `.nt-*orig`）。已重启容器还原并停回去：
+`git status --porcelain` 为空，`attention_v1.py` md5=`3ffdd3667b206531740ed46c69285f41`、
+`envs.py` md5=`348a3fbf05cd70fd37d80f9cb9a62b36`（均为 pristine 值），
+自己的进程一个不剩，卡上只有别人那个任务。
 
 ---
 

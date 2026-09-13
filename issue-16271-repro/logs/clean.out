@@ -1,0 +1,19 @@
+##### clean-form leg 2026-09-13T11:35:22+00:00
+##### arm cl1 (cl) 2026-09-13T11:35:22+00:00
+CLEAN APPLIED envs.py md5=ab0dd8f732573f450d1f2b650cb0ac2a
+CLEAN APPLIED attention_v1.py md5=8a50e2dced5f354fbbc518f9753cd1bc
+pid=294264 tag=cl1 log=/nt/logs/serve_cl1.log mrv2=1 probe=0 check=0 prof=/nt/prof/cl1
+READY after 342s
+[ 0] 990 chars  3.4s
+[ 1] 955 chars  7.1s
+[ 2] 1089 chars  11.3s
+[ 3] 1203 chars  16.2s
+[ 4] 1017 chars  19.8s
+[ 5] 506 chars  29.1s
+[ 6] 1256 chars  34.1s
+[ 7] 1074 chars  37.7s
+[ 8] 459 chars  44.2s
+[ 9] 1076 chars  47.8s
+[10] 1337 chars  52.1s
+[11] 582 chars  60.1s
+wrote /nt/logs/accept_cl1_p1.json

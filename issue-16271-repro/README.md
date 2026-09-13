@@ -280,6 +280,36 @@ attn_output, _ = torch_npu.npu_fused_infer_attention_score(
   四个 TP rank 全部 **`rel=0` 逐位相同**（`b=1 q=8 s2=8192 win=2048`）——
   窗口语义在真模型上确认（差一位这里会读到 ~0.15）。
 
+### 5.4 整理后的正式形态：接受率与精确路径**逐计数器相同**（`logs/probe_acc.out`）
+
+§5.2 的端到端数是 monkeypatch 形态（`harness/maskfix_patch.py`）跑的，正式形态（本分支的代码）
+的复跑排了队。卡在 19:35 空出来，`harness/leg_clean.sh` 自动起了第一臂 `cl1`：
+补丁应用、服务 342 s 起来、接受率 probe 12 条全部跑完、`accept_cl1_p1.json` 落盘——
+**然后 19:42 容器被 SIGKILL（`Exited (137)`，非 OOM），别人起了一个占满 8 卡的 TP8 任务。**
+bench 没跑成。
+
+但 probe 跑完了，而 probe 恰好是**比 §5.2 那张表更硬的判据**：并发 1、贪婪、
+`HCCL_DETERMINISTIC=true`、同样 12 条 prompt，所以计数器本身是确定的。
+把每个臂的日志都截到 probe 阶段（第 13 个 completion 响应之前，`harness/probe_acc.py`）：
+
+| 臂 | Accepted | Drafted | ratio | probe accept_len |
+|---|---|---|---|---|
+| `base1` / `base2`（精确长度） | 1883 | 9496 | 0.198294 | 2.5864 |
+| `c01` / `c02`（只喂上界） | 1721 | 10832 | 0.158881 | **2.2710** |
+| `mf1` / `mf2`（monkeypatch 形态） | 1883 | 9496 | 0.198294 | 2.5864 |
+| **`cl1`（本分支的正式形态）** | **1883** | **9496** | **0.198294** | **2.5864** |
+
+这不是"落在 `c0` 之上"，是**和精确路径逐计数器完全相同**——接受、起草的 token 数一个不差。
+判据有区分力：同一把尺子上 `c0` 读出 1721/10832（少接受 162 个、多起草 1336 个，accept_len −12.2%），
+所以 `cl1 == base` 不是"这个指标分不开"，是真的重合了。
+
+它同时排除了这次调查最怕的那种失败：**如果正式形态的掩码路径整条回退掉了，
+`cl1` 会精确等于 `c0` 的 1721/10832**（`cl` 臂的 `VLLM_ASCEND_DSPARK_APPROX_DRAFT_KV` 一直是 1，
+只有 `..._DEVICE_MASK` 在切换）。读到的是 base 那一组，所以掩码确实在工作。
+
+还缺的：**正式形态的吞吐 / ITL 仍未实测**（bench 没跑到）。
+已确立的是正确性与接受率等价，性能那一半只有 monkeypatch 形态的数（§5.2）。
+
 ---
 
 ## 6. 还没做的
@@ -294,7 +324,9 @@ attn_output, _ = torch_npu.npu_fused_infer_attention_score(
    本分支是整理后的正式形态。两者的算法完全一致，但**整理过程本身抓出了一个真 bug**：
    `attention_v1.py` 没有导入 `vllm_ascend.envs`，monkeypatch 那版直接读 `os.environ` 所以没暴露，
    **只有跑完整单测才会报 `NameError`**。已修。
-   正式形态的**端到端复跑还在排队等卡**（`harness/leg_clean.sh`，判据同样是接受率必须落在 `c0` 之上）。
+   正式形态的**接受率已在真机上验过，与精确路径逐计数器相同（→ §5.4）**；
+   没验到的是它的**吞吐 / ITL**——`leg_clean.sh` 的 bench 没跑成，容器被别人的 8 卡任务 SIGKILL 了。
+   性能那一半目前只有 monkeypatch 形态的数（§5.2）。
 
 ### 单测状态（在镜像内跑的，不占卡）
 
@@ -314,5 +346,8 @@ tests/ut/attention/test_attention_v1.py  43 passed, 0 failed
 | `harness/maskfix2.py` | 单卡算子级探针（§5.1 的数据） |
 | `harness/leg_mask.sh` | 六臂端到端 A/B |
 | `harness/leg_clean.sh` | 正式形态的复跑验证 |
-| `logs/mask.out` | 端到端 A/B 原始日志 |
+| `harness/probe_acc.py` | 把 serve 日志截到 probe 阶段再汇总接受率（§5.4 的尺子） |
+| `logs/mask.out` | 六臂端到端 A/B 原始日志 |
+| `logs/clean.out` | 正式形态复跑的那半截（到 `cl1` probe 为止，之后容器被杀） |
+| `logs/probe_acc.out` | §5.4 的计数器对比，含逐窗口原始行 |
 | `REPRO.md` | 完整过程，含所有被否定的方向与踩过的坑 |

@@ -1,0 +1,26 @@
+$ python3 probe_acc.py logs/serve_{base1,base2,c01,c02,mf1,mf2,cl1}.log
+base1    windows=8   Accepted=1883   Drafted=9496   ratio=0.198294  probe accept_len=2.5864
+base2    windows=8   Accepted=1883   Drafted=9496   ratio=0.198294  probe accept_len=2.5864
+c01      windows=7   Accepted=1721   Drafted=10832  ratio=0.158881  probe accept_len=2.2710
+c02      windows=7   Accepted=1721   Drafted=10832  ratio=0.158881  probe accept_len=2.2710
+mf1      windows=7   Accepted=1883   Drafted=9496   ratio=0.198294  probe accept_len=2.5864
+mf2      windows=7   Accepted=1883   Drafted=9496   ratio=0.198294  probe accept_len=2.5864
+cl1      windows=7   Accepted=1883   Drafted=9496   ratio=0.198294  probe accept_len=2.5864
+
+--- raw probe-phase SpecDecoding windows, cl1 (tidied form) ---
+Mean acceptance length: 3.78, Accepted throughput: 7.99 tokens/s, Drafted throughput: 22.97 tokens/s, Accepted: 501 tokens, Drafted: 1440 tokens, Per-position acceptance rate: 0.756, 0.561, 0.411, 0.306, 0.244, 0.200, 0.172, 0.133, Avg Draft acceptance rate: 34.8%
+Mean acceptance length: 3.02, Accepted throughput: 39.89 tokens/s, Drafted throughput: 158.38 tokens/s, Accepted: 399 tokens, Drafted: 1584 tokens, Per-position acceptance rate: 0.697, 0.455, 0.273, 0.192, 0.136, 0.106, 0.091, 0.066, Avg Draft acceptance rate: 25.2%
+Mean acceptance length: 1.40, Accepted throughput: 8.00 tokens/s, Drafted throughput: 159.18 tokens/s, Accepted: 80 tokens, Drafted: 1592 tokens, Per-position acceptance rate: 0.266, 0.060, 0.030, 0.015, 0.015, 0.005, 0.005, 0.005, Avg Draft acceptance rate: 5.0%
+Mean acceptance length: 2.71, Accepted throughput: 34.10 tokens/s, Drafted throughput: 159.18 tokens/s, Accepted: 341 tokens, Drafted: 1592 tokens, Per-position acceptance rate: 0.583, 0.382, 0.261, 0.191, 0.121, 0.075, 0.055, 0.045, Avg Draft acceptance rate: 21.4%
+Mean acceptance length: 2.84, Accepted throughput: 36.89 tokens/s, Drafted throughput: 159.97 tokens/s, Accepted: 369 tokens, Drafted: 1600 tokens, Per-position acceptance rate: 0.550, 0.410, 0.255, 0.215, 0.150, 0.115, 0.090, 0.060, Avg Draft acceptance rate: 23.1%
+Mean acceptance length: 1.90, Accepted throughput: 18.50 tokens/s, Drafted throughput: 164.79 tokens/s, Accepted: 185 tokens, Drafted: 1648 tokens, Per-position acceptance rate: 0.350, 0.194, 0.150, 0.102, 0.053, 0.029, 0.015, 0.005, Avg Draft acceptance rate: 11.2%
+Mean acceptance length: 2.60, Accepted throughput: 0.80 tokens/s, Drafted throughput: 4.00 tokens/s, Accepted: 8 tokens, Drafted: 40 tokens, Per-position acceptance rate: 0.200, 0.200, 0.200, 0.200, 0.200, 0.200, 0.200, 0.200, Avg Draft acceptance rate: 20.0%
+
+--- same, c01 (bound only) ---
+Mean acceptance length: 3.29, Accepted throughput: 6.40 tokens/s, Drafted throughput: 22.34 tokens/s, Accepted: 401 tokens, Drafted: 1400 tokens, Per-position acceptance rate: 0.703, 0.474, 0.309, 0.246, 0.194, 0.149, 0.126, 0.091, Avg Draft acceptance rate: 28.6%
+Mean acceptance length: 2.26, Accepted throughput: 24.60 tokens/s, Drafted throughput: 156.79 tokens/s, Accepted: 246 tokens, Drafted: 1568 tokens, Per-position acceptance rate: 0.592, 0.286, 0.173, 0.102, 0.056, 0.020, 0.015, 0.010, Avg Draft acceptance rate: 15.7%
+Mean acceptance length: 2.06, Accepted throughput: 21.30 tokens/s, Drafted throughput: 160.78 tokens/s, Accepted: 213 tokens, Drafted: 1608 tokens, Per-position acceptance rate: 0.478, 0.194, 0.119, 0.085, 0.070, 0.055, 0.040, 0.020, Avg Draft acceptance rate: 13.2%
+Mean acceptance length: 1.79, Accepted throughput: 15.80 tokens/s, Drafted throughput: 160.79 tokens/s, Accepted: 158 tokens, Drafted: 1608 tokens, Per-position acceptance rate: 0.443, 0.189, 0.090, 0.045, 0.015, 0.005, 0.000, 0.000, Avg Draft acceptance rate: 9.8%
+Mean acceptance length: 2.41, Accepted throughput: 28.00 tokens/s, Drafted throughput: 159.18 tokens/s, Accepted: 280 tokens, Drafted: 1592 tokens, Per-position acceptance rate: 0.467, 0.276, 0.236, 0.171, 0.111, 0.080, 0.050, 0.015, Avg Draft acceptance rate: 17.6%
+Mean acceptance length: 2.66, Accepted throughput: 32.60 tokens/s, Drafted throughput: 156.78 tokens/s, Accepted: 326 tokens, Drafted: 1568 tokens, Per-position acceptance rate: 0.679, 0.403, 0.250, 0.143, 0.077, 0.056, 0.041, 0.015, Avg Draft acceptance rate: 20.8%
+Mean acceptance length: 1.52, Accepted throughput: 9.70 tokens/s, Drafted throughput: 148.78 tokens/s, Accepted: 97 tokens, Drafted: 1488 tokens, Per-position acceptance rate: 0.242, 0.108, 0.070, 0.043, 0.027, 0.022, 0.005, 0.005, Avg Draft acceptance rate: 6.5%
