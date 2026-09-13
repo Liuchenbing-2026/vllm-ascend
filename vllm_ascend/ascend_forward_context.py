@@ -356,12 +356,30 @@ def _select_a2_moe_comm_method(
     mc2_tokens_capacity: int,
     is_draft_model: bool,
 ) -> MoECommType:
-    min_tokens = get_ascend_config().mega_moe_min_tokens
+    ascend_config = get_ascend_config()
+    min_tokens = ascend_config.mega_moe_min_tokens
     if (
         num_tokens is not None
         and min_tokens <= num_tokens <= mc2_tokens_capacity
         and _a2_cann_megamoe_supported_by_config(vllm_config, is_draft_model)
     ):
+        # BF16 local-partial keeps the TP partial-output contract, but the
+        # dispatch operator has a fixed per-expert tax. On small EP groups
+        # with many experts per rank this is slower than AllGather (measured
+        # on A2 for EP4/64 experts per rank). Keep MegaMoe for favorable
+        # shapes and make the measured fallback deterministic.
+        if getattr(ascend_config, "mega_moe_local_partial", False):
+            ep_world_size = get_ep_group().world_size
+            num_experts = vllm_config.model_config.get_num_experts()
+            experts_per_rank = num_experts // ep_world_size
+            if ep_world_size < 16 or experts_per_rank > 24:
+                logger.info_once(
+                    "CANN MegaMoe shape guard: fallback to AllGather for BF16 local-partial "
+                    "(ep=%d, experts_per_rank=%d)",
+                    ep_world_size,
+                    experts_per_rank,
+                )
+                return MoECommType.ALLGATHER
         return MoECommType.FUSED_MC2
 
     num_experts = vllm_config.model_config.get_num_experts()
