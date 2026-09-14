@@ -19,6 +19,8 @@
 import torch
 from vllm.config import VllmConfig
 
+from vllm_ascend.worker.v2.spec_decode.dflash2 import is_dflash2_draft
+
 
 def init_speculator(
     vllm_config: VllmConfig,
@@ -36,7 +38,7 @@ def init_speculator(
 
         return AscendDSparkSpeculator(vllm_config, device)
     if speculative_config.use_dflash():
-        if vllm_config._is_dflash2_draft():
+        if is_dflash2_draft(vllm_config):
             from vllm_ascend.worker.v2.spec_decode.dflash2.speculator import (
                 AscendDFlash2Speculator,
             )

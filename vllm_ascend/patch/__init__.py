@@ -91,7 +91,26 @@
 #       Remove this patch once the supported vLLM version contains PR #50580
 #       and PR #51296.
 #
-# ** 4. File: platform/patch_distributed.py**
+# ** 4. File: platform/patch_dflash_causality.py**
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.model_executor.models.qwen3_dflash._dflash_layer_causal`
+#    Why:
+#       DFlash2 checkpoints (e.g. z-lab/Qwen3.8-27B-DFlash2) declare their
+#       attention semantics with a top-level `is_causal=false` over all-sliding
+#       `layer_types`. vLLM 0.26 ignores `is_causal` and resolves every sliding
+#       layer as causal, unlike the checkpoint and vLLM #52816.
+#    How:
+#       Rebind `_dflash_layer_causal` to the #52816 resolution order: top-level
+#       `is_causal`, then `dflash_config.causal`, then layer types.
+#       `dflash_has_any_non_causal` and `_resolve_layer_attention` look the
+#       helper up at call time, so both follow it. worker/__init__.py imports
+#       this platform patch so worker processes resolve causality the same way.
+#    Related PR (if no, explain why):
+#       https://github.com/vllm-project/vllm/pull/52816
+#    Future Plan:
+#       Remove this patch once the supported vLLM version contains PR #52816.
+#
+# ** 5. File: platform/patch_distributed.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `torch.distributed.all_reduce`, `torch.distributed.broadcast`
 #    Why:
@@ -103,7 +122,7 @@
 #    Future Plan:
 #       Find a better way to support tensor alignment for 310p without this patch.
 #
-# ** 5. File: platform/patch_dp_device_ids.py**
+# ** 6. File: platform/patch_dp_device_ids.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.v1.core.dp_utils.get_physical_gpu_ids_for_local_dp_rank`
 #    Why:
@@ -127,7 +146,7 @@
 #       handles a pre-sharded visible-devices env var, or vLLM-Ascend stops
 #       relying on application-level device slicing for DP.
 #
-# ** 6. File: platform/patch_fused_moe.py**
+# ** 7. File: platform/patch_fused_moe.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.model_executor.layers.fused_moe.FusedMoE`
 #    Why:
@@ -163,7 +182,7 @@
 #    Future Plan:
 #       Remove this patch once both upstream fixes are in the supported vLLM.
 #
-# ** 7. File: platform/patch_kimi_k3_parsers.py**
+# ** 8. File: platform/patch_kimi_k3_parsers.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.parser.parser_manager.ParserManager`
 #      `vllm.reasoning.abs_reasoning_parsers.ReasoningParserManager`
@@ -191,7 +210,7 @@
 #       Kimi K3 parser stack and the Ascend PD path no longer sends incomplete
 #       prefill output through the response parser.
 #
-# ** 8. File: platform/patch_kimi_k3_renderer.py**
+# ** 9. File: platform/patch_kimi_k3_renderer.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.config.model.ModelConfig.__post_init__`
 #      `vllm.tokenizers.TokenizerRegistry`
@@ -214,7 +233,7 @@
 #       Remove this patch when every supported vLLM revision contains the native
 #       Kimi K3 Python renderer, request mapping, and automatic tokenizer mode.
 #
-# ** 9. File: platform/patch_kv_cache_coordinator.py**
+# ** 10. File: platform/patch_kv_cache_coordinator.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.v1.core.kv_cache_coordinator.HybridKVCacheCoordinator.find_longest_cache_hit_per_group`
 #    Why:
@@ -238,7 +257,7 @@
 #       Remove this patch when vLLM PR #42524 and #44243 is included in the supported
 #       upstream vLLM version.
 #
-# ** 10. File: platform/patch_kv_cache_utils.py**
+# ** 11. File: platform/patch_kv_cache_utils.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.v1.core.kv_cache_utils.resolve_kv_cache_block_sizes`
 #      `vllm.v1.engine.core.resolve_kv_cache_block_sizes`
@@ -272,7 +291,7 @@
 #       Remove this part of the patch when the supported vLLM release includes
 #       PR #48776.
 #
-# ** 11. File: platform/patch_mamba_config.py**
+# ** 12. File: platform/patch_mamba_config.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.model_executor.models.config.HybridAttentionMambaModelConfig.verify_and_update_config`
 #    Why:
@@ -284,7 +303,7 @@
 #    Future Plan:
 #       Remove this patch when vLLM merges the PR.
 #
-# ** 12. File: platform/patch_mamba_config_310.py**
+# ** 13. File: platform/patch_mamba_config_310.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.model_executor.models.config.HybridAttentionMambaModelConfig.verify_and_update_config`
 #    Why:
@@ -301,7 +320,7 @@
 #    Future Plan:
 #       Remove this patch once upstream supports 310P-aligned mamba block sizing.
 #
-# ** 13. File: platform/patch_mamba_manager.py**
+# ** 14. File: platform/patch_mamba_manager.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.v1.core.single_type_kv_cache_manager.MambaManager`
 #    Why:
@@ -321,7 +340,7 @@
 #          hybrid prefix cache lookup for DCP.
 #       2. Remove this patch once upstream accept 46892 pr or fixed the bug by other pr.
 #
-# ** 14. File: platform/patch_media_connector.py**
+# ** 15. File: platform/patch_media_connector.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.multimodal.media.connector.MediaConnector`
 #      `vllm.multimodal.media.image.ImageMediaIO`
@@ -338,7 +357,7 @@
 #    Future Plan:
 #       Remove this patch when all supported vLLM releases contain PR #49159.
 #
-# ** 15. File: platform/patch_minimax_m2_config.py**
+# ** 16. File: platform/patch_minimax_m2_config.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.config.model.ModelConfig._verify_quantization`
 #    Why:
@@ -399,7 +418,7 @@
 #       Drop the alias once upstream registry includes it or the checkpoint
 #       standardizes architecture strings.
 #
-# ** 16. File: platform/patch_mla_prefill_backend.py**
+# ** 17. File: platform/patch_mla_prefill_backend.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.v1.attention.backends.mla.common.get_mla_prefill_backend`
 #    Why:
@@ -421,7 +440,7 @@
 #       platform/device hook so Ascend can be selected (or skipped) without
 #       monkey-patching.
 #
-# ** 17. File: platform/patch_multiproc_executor.py**
+# ** 18. File: platform/patch_multiproc_executor.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.v1.executor.multiproc_executor.MultiprocExecutor`
 #    Why:
@@ -434,7 +453,7 @@
 #    Future Plan:
 #       Remove this patch when vLLM fix the issue.
 #
-# ** 18. File: platform/patch_pp_mtp.py**
+# ** 19. File: platform/patch_pp_mtp.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.v1.outputs.ModelRunnerOutput`
 #    Why:
@@ -524,7 +543,7 @@
 #       supports local drafter models with PP > 1, or moves the PP validation to a
 #       separate hook that can be overridden per-model-type.
 #
-# ** 19. File: platform/patch_profiling_chunk.py**
+# ** 20. File: platform/patch_profiling_chunk.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.v1.engine.core.EngineCore.__init__`
 #   2. `vllm.v1.engine.core.EngineCoreProc.run_engine_core`
@@ -552,7 +571,7 @@
 #       profiling startup and per-step timing callbacks without monkey-patching
 #       `EngineCore` and the multiprocess entry point.
 #
-# ** 20. File: platform/patch_speculative_config.py**
+# ** 21. File: platform/patch_speculative_config.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.config.speculative.SpeculativeConfig.hf_config_override`
 #    Why:
@@ -591,7 +610,7 @@
 #    Future Plan:
 #       Remove this patch when the supported vLLM release includes both fixes.
 #
-# ** 21. File: platform/patch_structured_output.py**
+# ** 22. File: platform/patch_structured_output.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.sampling_params.SamplingParams._validate_structured_outputs`
 #      `vllm.v1.structured_output.StructuredOutputManager.grammar_init`
@@ -613,7 +632,7 @@
 #       before grammar compilation or safely handles mixed-backend grammar
 #       failures without killing the engine.
 #
-# ** 22. File: platform/patch_torch_accelerator.py**
+# ** 23. File: platform/patch_torch_accelerator.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `torch.accelerator.memory_stats`, `torch.accelerator.memory_reserved`,
 #      `torch.accelerator.reset_peak_memory_stats`, `torch.accelerator.get_memory_info`,
@@ -633,7 +652,7 @@
 #       Remove this patch once `torch.accelerator` correctly routes to the NPU
 #       backend for these memory APIs.
 #
-# ** 23. File: platform/patch_tool_choice_none_content.py**
+# ** 24. File: platform/patch_tool_choice_none_content.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.entrypoints.openai.chat_completion.protocol.ChatCompletionResponse`
 #      `vllm.entrypoints.openai.chat_completion.protocol.ChatCompletionStreamResponse`
@@ -649,7 +668,7 @@
 #    Future Plan:
 #       Remove this patch once the supported vLLM version contains PR #44105.
 #
-# ** 24. File: platform/patch_use_v2_model_runner.py**
+# ** 25. File: platform/patch_use_v2_model_runner.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.config.vllm.VllmConfig.use_v2_model_runner`
 #    Why:
@@ -674,7 +693,7 @@
 #       (model architecture, Triton, feature checks) without crashes or
 #       degraded functionality.
 #
-# ** 25. File: platform/patch_weight_transfer_engine.py**
+# ** 26. File: platform/patch_weight_transfer_engine.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.distributed.weight_transfer.factory.WeightTransferEngineFactory._registry["nccl"]`
 #    Why:

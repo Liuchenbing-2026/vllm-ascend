@@ -60,6 +60,11 @@ import vllm_ascend.patch.worker.patch_deepseek_v2  # noqa
 # when the env var is explicitly set.
 import vllm_ascend.patch.worker.patch_v2.patch_use_v2_model_runner  # noqa
 
+# DFlash draft layers resolve their causality while the model is built in the
+# worker. Reuse the platform patch so this does not depend on which process
+# applied the platform patches.
+import vllm_ascend.patch.platform.patch_dflash_causality  # noqa
+
 import vllm_ascend.patch.worker.patch_fused_moe  # noqa
 
 import vllm_ascend.patch.worker.patch_v2.patch_uva  # noqa
