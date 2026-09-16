@@ -520,13 +520,26 @@ def build_draft_tail_mask(
     query_len: int,
     kv_span: int,
     sliding_window: int | None,
+    causal: bool = True,
 ) -> torch.Tensor:
     """Per-request attention mask for a draft build, built on the device.
 
     ``seq_lens`` is the exact device-side KV length L per request; the op is
-    told the optimistic bound U >= L instead, which costs no host sync. Query
-    token j of request i may attend KV positions up to ``L_i - query_len + j``,
-    so masking beyond that reproduces exactly what passing L would have
+    told the optimistic bound U >= L instead, which costs no host sync. What
+    each query token may attend follows the draft's causality:
+
+    * causal: query token j of request i may attend up to ``L_i - query_len +
+      j`` -- the prefix plus the block's own earlier positions;
+    * non-causal, which is what a DSpark query-block forward is: every query
+      token gets the whole visible prefix, so the bound is flat at ``L_i - 1``
+      and does not advance with j.
+
+    Resolving causality from the draft config is not optional. vLLM defaults a
+    DFlash/DSpark draft whose layers are all ``full_attention`` -- every stock
+    Qwen3 DSpark drafter -- to non-causal, so a causal-only mask would silently
+    bail on exactly the models this path exists for.
+
+    Masking beyond that bound reproduces exactly what passing L would have
     computed -- and hides the [L_i, U_i) tail, which holds the draft KV this
     step rolled back. Feeding U without this mask is what costs the approximate
     path its acceptance.
@@ -548,7 +561,10 @@ def build_draft_tail_mask(
     offsets = torch.arange(query_len, device=device, dtype=torch.int32)
     cols = torch.arange(kv_span, device=device, dtype=torch.int32).view(1, 1, -1)
     # [num_reqs, query_len, 1]: the last KV position each query token may see.
-    last = ((lens - query_len).view(-1, 1) + offsets.view(1, -1)).unsqueeze(-1)
+    if causal:
+        last = ((lens - query_len).view(-1, 1) + offsets.view(1, -1)).unsqueeze(-1)
+    else:
+        last = (lens - 1).view(-1, 1, 1).expand(-1, query_len, 1)
     mask = cols > last
     if sliding_window:
         mask |= cols < (last - sliding_window)
@@ -1473,9 +1489,10 @@ class AscendAttentionBackendImpl(AttentionImpl):
         """
         if not attn_metadata.draft_kv_upper_bound:
             return None
-        # A learnable sink or a non-causal build changes what the mask would
-        # have to express; neither occurs on this path today.
-        if self.sinks is not None or not attn_metadata.causal or block_table is None:
+        # A learnable sink changes what the mask would have to express and does
+        # not occur on this path today. Causality does occur, and is handled by
+        # ``build_draft_tail_mask``.
+        if self.sinks is not None or block_table is None:
             return None
         query_lens = attn_metadata.draft_query_lens
         num_reqs = len(query_lens) if query_lens else 0
@@ -1490,11 +1507,12 @@ class AscendAttentionBackendImpl(AttentionImpl):
         # Under paged attention the mask's last dimension must cover the whole
         # addressable KV span, not just the longest actual sequence.
         kv_span = int(block_table.shape[1]) * int(block_size)
-        cache_key = (kv_span, query_len, self.sliding_window)
+        cache_key = (kv_span, query_len, self.sliding_window, attn_metadata.causal)
         mask = attn_metadata.draft_tail_mask_cache.get(cache_key)
         if mask is None:
             mask = build_draft_tail_mask(
-                attn_metadata.seq_lens, num_reqs, query_len, kv_span, self.sliding_window
+                attn_metadata.seq_lens, num_reqs, query_len, kv_span,
+                self.sliding_window, attn_metadata.causal,
             )
             attn_metadata.draft_tail_mask_cache[cache_key] = mask
 
