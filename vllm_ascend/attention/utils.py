@@ -211,11 +211,17 @@ def using_paged_attention(runtime_shape: int, vllm_config: VllmConfig, head_size
     # TODO: Remove this fallback when A2/A3 FIA TND supports Gemma4's
     # 512-dim global attention heads. Decode can use PA directly; prefill is
     # handled by the device adaptor.
-    if head_size == FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE:
-        return True
     from vllm.config.compilation import CUDAGraphMode
 
     cudagraph_mode = vllm_config.compilation_config.cudagraph_mode
+    if head_size == FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE:
+        # ATB paged attention cannot be captured into an ACL graph: its
+        # workspace lookup rejects the capture stream
+        # (`aclrtAllocatorGetByStream failed ... The stream is not registered
+        # with any allocator`), which aborts the whole capture. Full-graph
+        # decode therefore serves these heads through FIA's BNSD layout, see
+        # `AscendAttentionBackendImpl.full_graph_fia_bnsd_large_head`.
+        return cudagraph_mode != CUDAGraphMode.FULL_DECODE_ONLY
     if cudagraph_mode != CUDAGraphMode.FULL_DECODE_ONLY:
         return False
 

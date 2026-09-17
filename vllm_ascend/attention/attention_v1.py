@@ -62,6 +62,7 @@ from vllm_ascend.compilation.acl_graph import (
 )
 from vllm_ascend.device.device_op import DeviceOperator
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
+from vllm_ascend.device.utils import FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.attention_fence import record_attention_compute_start
 from vllm_ascend.utils import vllm_version_is, weak_ref_tensors
 
@@ -73,6 +74,32 @@ else:
 # default max value of sliding window size
 SWA_INT_MAX = 2147483647
 _ATTN_KEYS_BUFFER = None
+
+
+def bnsd_large_head_decode_args(attn_metadata, num_tokens: int):
+    """Paged KV arguments for a BNSD large-head decode call.
+
+    `query` may be padded past the request count (graph capture sizes pad the
+    batch dimension), and FIA validates the KV length list against the batch
+    size it derives from that padded query, so the tail rows need entries too.
+    The extra rows are dummy padding whose output is trimmed downstream, so a
+    length of one against the zero block row is enough - the same trick the TND
+    path relies on.
+    """
+    seq_lens_list = list(attn_metadata.seq_lens_list)
+    if len(seq_lens_list) < num_tokens:
+        seq_lens_list += [1] * (num_tokens - len(seq_lens_list))
+    actual_seq_lengths_kv = torch.tensor(seq_lens_list[:num_tokens], dtype=torch.int32)
+    block_table = attn_metadata.block_tables
+    if block_table.shape[0] < num_tokens:
+        block_table = torch.cat(
+            [
+                block_table,
+                block_table.new_zeros((num_tokens - block_table.shape[0], block_table.shape[1])),
+            ],
+            dim=0,
+        )
+    return block_table[:num_tokens], actual_seq_lengths_kv
 
 
 @register_backend(AttentionBackendEnum.CUSTOM, "ASCEND")
@@ -862,7 +889,9 @@ class AscendAttentionBackendImpl(AttentionImpl):
                         c8_v_aq_scale,
                         c8_v_aq_offset,
                         layer_name,
+                        *extra,
                     ) = param
+                    large_head_bnsd = bool(extra) and bool(extra[0])
 
                     if _EXTRA_CTX.is_draft_model:
                         draft_step, key = draft_attn_key_steps[attn_count]
@@ -887,6 +916,35 @@ class AscendAttentionBackendImpl(AttentionImpl):
                         # block_tables from attn_metadata.
                         if not sliding_window:
                             block_tables = attn_metadata[metadata_key].block_tables
+                        metadata = attn_metadata[metadata_key]
+
+                    if large_head_bnsd:
+                        # 512-dim global heads replay through FIA's BNSD layout, see
+                        # `full_graph_fia_bnsd_large_head`. The padded batch rows get a
+                        # KV length and a zero block row here, and the query lengths are
+                        # all one, so both are rebuilt instead of rebound.
+                        bnsd_num_tokens = query.shape[0]
+                        bnsd_head_size = key_cache.shape[-1]
+                        bnsd_block_table, bnsd_seq_lens = bnsd_large_head_decode_args(metadata, bnsd_num_tokens)
+                        torch.npu.graph_task_update_begin(update_stream, handle)
+                        torch_npu.npu_fused_infer_attention_score.out(
+                            query=query.view(bnsd_num_tokens, num_heads, 1, bnsd_head_size),
+                            key=key_cache.view(-1, block_size, num_kv_heads * bnsd_head_size),
+                            value=value.view(-1, block_size, num_kv_heads * bnsd_head_size),
+                            block_table=bnsd_block_table,
+                            input_layout="BNSD",
+                            block_size=block_size,
+                            actual_seq_lengths=query_start_loc,
+                            actual_seq_lengths_kv=bnsd_seq_lens,
+                            num_key_value_heads=num_kv_heads,
+                            num_heads=num_heads,
+                            scale=scale,
+                            workspace=workspace,
+                            out=[attn_output, softmax_lse],
+                        )
+                        torch.npu.graph_task_update_end(update_stream)
+                        event.record(update_stream)
+                        continue
                     layer_count += 1
 
                     torch.npu.graph_task_update_begin(update_stream, handle)
@@ -928,6 +986,133 @@ class AscendAttentionBackendImpl(AttentionImpl):
 
     def process_weights_after_loading(self, act_dtype: torch.dtype):
         super().process_weights_after_loading(act_dtype)
+
+    def _use_fia_bnsd_large_head_graph(self) -> bool:
+        """Whether a captured decode step must use FIA's BNSD layout.
+
+        ATB paged attention rejects the ACL capture stream, so FIA BNSD is the
+        only graph-safe decode path for `FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE`
+        heads, which FIA's own TND layout refuses.
+        """
+        return (
+            self.head_size == FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE and self.sinks is None and not self.enable_c8_quant
+        )
+
+    def full_graph_fia_bnsd_large_head(
+        self,
+        query: torch.Tensor,
+        attn_metadata: AscendMetadata,
+        output: torch.Tensor,
+    ):
+        """Graph-captured FIA decode for Gemma4's 512-dim global attention heads.
+
+        FIA's TND layout refuses `FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE` heads and
+        the ATB paged attention fallback cannot run inside an ACL graph, so the
+        captured decode feeds FIA a BNSD query over the same paged KV cache the
+        TND path uses. The captured task group is replayed by `update_graph_params`,
+        which rebinds the block table and the KV lengths from the per-layer
+        metadata.
+        """
+        num_tokens = query.shape[0]
+        if self.key_cache is None or self.value_cache is None:
+            raise RuntimeError("key_cache/value_cache must be initialized for large-head decode attention")
+        num_block, block_size, num_kv_heads, head_size = self.key_cache.shape
+        block_table, actual_seq_lengths_kv = bnsd_large_head_decode_args(attn_metadata, num_tokens)
+        key = self.key_cache.view(num_block, block_size, num_kv_heads * head_size)
+        value = self.value_cache.view(num_block, block_size, num_kv_heads * head_size)
+        # One query token per padded batch row; unlike the TND path this list is
+        # constant for a given capture size, so it is captured once and reused.
+        actual_seq_lengths = torch.ones(num_tokens, dtype=torch.int32)
+        query_bnsd = query.view(num_tokens, self.num_heads, 1, head_size)
+        attn_output = output.view(num_tokens, self.num_heads, 1, head_size)
+        softmax_lse = torch.empty(1, dtype=query.dtype, device=query.device)
+        if _EXTRA_CTX.is_draft_model:
+            if _EXTRA_CTX.is_draft_model_prefill:
+                graph_params = get_draft_graph_prefill_params()
+            else:
+                graph_params = get_draft_graph_params()
+        else:
+            graph_params = get_graph_params()
+        workspace = cache_graph_workspace(
+            graph_params,
+            num_tokens,
+            torch_npu._npu_fused_infer_attention_score_get_max_workspace(
+                query=query_bnsd,
+                key=key,
+                value=value,
+                atten_mask=None,
+                block_table=block_table,
+                input_layout="BNSD",
+                block_size=block_size,
+                actual_seq_lengths=actual_seq_lengths,
+                actual_seq_lengths_kv=actual_seq_lengths_kv,
+                num_key_value_heads=num_kv_heads,
+                num_heads=self.num_heads,
+                sparse_mode=0,
+                pre_tokens=SWA_INT_MAX,
+                next_tokens=0,
+                scale=self.scale,
+            ),
+            use_max_workspace=self._use_max_workspace_for_fia_graph,
+        )
+        if _EXTRA_CTX.is_draft_model:
+            update_draft_graph_params_workspaces(num_tokens, workspace)
+        else:
+            update_graph_params_workspaces(num_tokens, workspace)
+
+        stream = torch_npu.npu.current_stream()
+        event = torch.npu.ExternalEvent()
+        event.wait(stream)
+        event.reset(stream)
+        graph_params.events[num_tokens].append(event)
+        layer_name = self._graph_metadata_layer_name() if self._use_layer_aware_fia_graph_replay else None
+        graph_params.attn_params[num_tokens].append(
+            (
+                weak_ref_tensors(query),
+                weak_ref_tensors(self.key_cache),
+                weak_ref_tensors(self.value_cache),
+                block_table,
+                None,
+                block_size,
+                actual_seq_lengths_kv,
+                actual_seq_lengths,
+                num_kv_heads,
+                self.num_heads,
+                self.scale,
+                weak_ref_tensors(attn_output),
+                weak_ref_tensors(softmax_lse),
+                0,
+                SWA_INT_MAX,
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                layer_name,
+                True,
+            )
+        )
+
+        torch.npu.graph_task_group_begin(stream)
+        torch_npu.npu_fused_infer_attention_score.out(
+            query=query_bnsd,
+            key=key,
+            value=value,
+            block_table=block_table,
+            input_layout="BNSD",
+            block_size=block_size,
+            actual_seq_lengths=actual_seq_lengths,
+            actual_seq_lengths_kv=actual_seq_lengths_kv,
+            num_key_value_heads=num_kv_heads,
+            num_heads=self.num_heads,
+            scale=self.scale,
+            workspace=workspace,
+            out=[attn_output, softmax_lse],
+        )
+        handle = torch.npu.graph_task_group_end(stream)
+        graph_params.handles[num_tokens].append(handle)
+        return output, num_tokens
 
     def full_graph_fia(
         self,
@@ -1358,6 +1543,10 @@ class AscendAttentionBackendImpl(AttentionImpl):
         # runner v2, there is not capturing attribute in forward_context,
         # just use getattr to avoid attribute error.
         if _EXTRA_CTX.capturing:
+            if self._use_fia_bnsd_large_head_graph():
+                # The BNSD capture writes the attention result in place into
+                # `output`, so there is nothing left to copy back here.
+                return self.full_graph_fia_bnsd_large_head(query, attn_metadata, output)[0]
             if self.sinks is not None:
                 attn_output, num_tokens = self.full_graph_fia_v2(query, key, value, attn_metadata, output)
                 output[:num_tokens] = attn_output[:num_tokens]
@@ -1805,7 +1994,12 @@ class AscendAttentionBackendImpl(AttentionImpl):
             attn_output = self.forward_impl(query, key, value, kv_cache, attn_metadata, output_padded)
         else:
             attn_output = self.forward_impl(query, key, value, kv_cache, attn_metadata, output)
-        output[:num_tokens] = attn_output[:num_tokens]
+        # `forward_impl` writes the attention result in place into the `output`
+        # buffer and hands the very same tensor back, so the copy below would be
+        # a pure self-assignment (`output[:n] = output[:n]`) that still launches
+        # one extra inplace-copy kernel per attention layer.
+        if attn_output is not output:
+            output[:num_tokens] = attn_output[:num_tokens]
         return output
 
 

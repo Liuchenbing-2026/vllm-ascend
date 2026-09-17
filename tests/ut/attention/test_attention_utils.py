@@ -14,9 +14,11 @@
 # limitations under the License.
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import torch
 
+from vllm_ascend.attention.attention_v1 import bnsd_large_head_decode_args
 from vllm_ascend.attention.utils import filter_chunked_req_indices, get_or_register_attention_buffer
 
 
@@ -68,3 +70,41 @@ def test_filter_chunked_req_indices_mixed_mask() -> None:
     )
 
     torch.testing.assert_close(indices, torch.tensor([0, 1, 3, 4, 5]))
+
+
+class TestBnsdLargeHeadDecodeArgs:
+    """The BNSD decode call validates its KV lengths against the padded batch."""
+
+    def _metadata(self, seq_lens: list[int], rows: int) -> MagicMock:
+        metadata = MagicMock()
+        metadata.seq_lens_list = list(seq_lens)
+        metadata.block_tables = torch.arange(1, rows * 2 + 1, dtype=torch.int32).reshape(rows, 2)
+        return metadata
+
+    def test_pads_capture_rows_with_a_zero_block_row(self) -> None:
+        metadata = self._metadata([7, 9], rows=2)
+
+        block_table, seq_lens = bnsd_large_head_decode_args(metadata, 4)
+
+        torch.testing.assert_close(
+            block_table,
+            torch.tensor([[1, 2], [3, 4], [0, 0], [0, 0]], dtype=torch.int32),
+        )
+        assert seq_lens.dtype == torch.int32
+        assert seq_lens.tolist() == [7, 9, 1, 1]
+
+    def test_trims_rows_beyond_the_request_count(self) -> None:
+        metadata = self._metadata([7, 9, 11], rows=3)
+
+        block_table, seq_lens = bnsd_large_head_decode_args(metadata, 2)
+
+        torch.testing.assert_close(block_table, torch.tensor([[1, 2], [3, 4]], dtype=torch.int32))
+        assert seq_lens.tolist() == [7, 9]
+
+    def test_matching_shapes_are_returned_as_is(self) -> None:
+        metadata = self._metadata([5, 6], rows=2)
+
+        block_table, seq_lens = bnsd_large_head_decode_args(metadata, 2)
+
+        torch.testing.assert_close(block_table, metadata.block_tables)
+        assert seq_lens.tolist() == [5, 6]
