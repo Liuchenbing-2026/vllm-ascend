@@ -202,6 +202,25 @@ class BaseDeviceAdaptor:
         )
 
     @staticmethod
+    def npu_mm_all_reduce_base(
+        x1: torch.Tensor,
+        x2: torch.Tensor,
+        hcom: str,
+        *,
+        reduce_op: str = "sum",
+        bias: torch.Tensor | None = None,
+        comm_turn: int = 0,
+    ):
+        return torch_npu.npu_mm_all_reduce_base(
+            x1,
+            x2,
+            hcom,
+            reduce_op=reduce_op,
+            bias=bias,
+            comm_turn=comm_turn,
+        )
+
+    @staticmethod
     def npu_dynamic_quant(
         hidden_states: torch.Tensor,
         dynamic_scale: torch.Tensor | None = None,

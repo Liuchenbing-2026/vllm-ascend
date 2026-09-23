@@ -556,7 +556,7 @@ class KVPoolWorker:
                 self.kv_send_thread = KVCacheStoreSendingThread(
                     self.m_store,
                     self.token_database,
-                    self.grouped_block_size,
+                    self.block_size,
                     self.tp_rank,
                     self.tp_size,
                     self.dcp_size,
@@ -573,13 +573,11 @@ class KVPoolWorker:
                 self.kv_recv_thread = KVCacheStoreRecvingThread(
                     self.m_store,
                     self.token_database,
-                    self.grouped_block_size,
+                    self.block_size,
                     self.tp_rank,
                     self.tp_size,
                     self.dcp_size,
                     ready_event,
-                    invalid_block_ids=self._invalid_block_ids,
-                    invalid_block_ids_lock=self._invalid_block_ids_lock,
                 )
                 self.kv_recv_thread.start()
                 ready_event.wait()
@@ -2238,18 +2236,12 @@ class KVPoolWorker:
         return f"{key[:value_start]}{value}{key[value_end:]}"
 
     def _expand_lookup_keys_by_rank(self, keys: list[str], group_id: int) -> list[str]:
-        # All-rank KV pool lookup currently assumes PCP=1.
         expanded: list[str] = []
-        num_head_or_tp_ranks = self.get_group_tp_size(group_id)
-        # Keep each rank shard's block/layer keys contiguous to match
-        # lookup_scheduler()'s [rank_shard][block] result slicing.
         for pp_rank in range(self.pp_size):
-            for dcp_rank in range(self.dcp_size):
-                for head_or_tp_rank in range(num_head_or_tp_ranks):
-                    for key in keys:
-                        rank_key = self._replace_key_field(key, "dcp", dcp_rank)
-                        rank_key = self._replace_key_field(rank_key, "head_or_tp_rank", head_or_tp_rank)
-                        expanded.append(self._replace_key_field(rank_key, "pp_rank", pp_rank))
+            for tp_rank in range(self.get_group_tp_size(group_id)):
+                for key in keys:
+                    tp_key = self._replace_key_field(key, "head_or_tp_rank", tp_rank)
+                    expanded.append(self._replace_key_field(tp_key, "pp_rank", pp_rank))
         return expanded
 
     def _expand_lookup_key_variants(self, key: str, group_id: int, include_all_ranks: bool) -> list[str]:

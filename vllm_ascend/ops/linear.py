@@ -20,11 +20,15 @@ AscendMergedColumnParallelLinear, AscendMergedColumnParallelLinear,
 AscendRowParallelLinear and AscendColumnParallelLinear.
 """
 
+import os
+
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 from vllm.config import get_current_vllm_config
-from vllm.distributed import divide
+from vllm.distributed import divide, split_tensor_along_last_dim
+from vllm.distributed.parallel_state import get_tp_group
+from vllm.logger import logger
 from vllm.model_executor.layers.linear import (  # noqa
     WEIGHT_LOADER_V2_SUPPORTED,
     ColumnParallelLinear,
@@ -36,6 +40,7 @@ from vllm.model_executor.layers.linear import (  # noqa
     RowParallelLinear,
     UnquantizedLinearMethod,
 )
+from vllm.model_executor.parameter import BasevLLMParameter
 from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
 from vllm.model_executor.utils import set_weight_attrs
 from vllm.utils.torch_utils import direct_register_custom_op
@@ -80,20 +85,37 @@ def _should_keep_nd_for_310p_weight(weight: torch.Tensor) -> bool:
     return is_310p() and weight.ndim >= 2 and (weight.shape[-1] == 1 or weight.shape[-2] == 1)
 
 
+def _keep_nd_scalar_weight(weight: torch.Tensor) -> bool:
+    """True when the weight-side matrix has a unit inner or outer dim.
+
+    FRACTAL_NZ matmul is rejected outright for that shape -- the ACLNN error is
+    ``AclNN_Parameter_Error(EZ1001): Not supported mat2 n = 1 or k = 1 when
+    format is FRACTAL_NZ`` -- which is exactly the shape of scalar gates such as
+    Qwen MoE's ``shared_expert_gate`` (``Linear(hidden, 1)``).  The 310P branch
+    above already keeps those in ND; with ``weight_nz_mode=2`` every other
+    platform needs the same exemption or start-up dies inside the first
+    ``linear`` call.  Staying in ND is a layout decision only: the numerics are
+    identical, since ND and NZ are two views of the same matmul.
+    """
+    return weight.ndim >= 2 and (weight.shape[-1] == 1 or weight.shape[-2] == 1)
+
+
 class AscendUnquantizedLinearMethod(UnquantizedLinearMethod):
     """Linear method without quantization"""
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         super().process_weights_after_loading(layer)
-        keep_nd_weight = _should_keep_nd_for_310p_weight(layer.weight.data)
+        keep_nd_weight = _should_keep_nd_for_310p_weight(layer.weight.data) or _keep_nd_scalar_weight(
+            layer.weight.data
+        )
         # must use fp32 to avoid accuracy degradation in dsv4.
         if getattr(layer, "precast_fp32_weight", False):
             weight_fp32 = layer.weight.data.to(torch.float32)
             layer.weight_fp32 = weight_fp32 if keep_nd_weight else maybe_trans_nz(weight_fp32)
         if "conv1d" not in layer.prefix:
-            # 310P torch_npu rejects FRACTAL_NZ matmul when the weight-side
-            # matrix has n=1 or k=1. Keep scalar gates such as Qwen MoE's
-            # shared_expert_gate in ND format, leaving non-310P policy intact.
+            # torch_npu rejects FRACTAL_NZ matmul when the weight-side matrix
+            # has n=1 or k=1. Keep scalar gates such as Qwen MoE's
+            # shared_expert_gate in ND format on every platform.
             if not keep_nd_weight:
                 layer.weight.data = maybe_trans_nz(layer.weight.data)
 
@@ -137,6 +159,12 @@ class AscendLinearBase(LinearBase):
             self.quant_method = quant_config.get_quant_method(self, prefix=prefix)
         self.return_bias = return_bias
         self.disable_tp = disable_tp
+
+    def update_param_tp_status(self):
+        for param in self.parameters():
+            if isinstance(param, BasevLLMParameter):
+                param.tp_rank = self.tp_rank
+                param.tp_size = self.tp_size
 
 
 class AscendQKVParallelLinear(QKVParallelLinear):
@@ -275,6 +303,106 @@ class AscendMergedColumnParallelLinear(MergedColumnParallelLinear):
         return super().forward(input_)
 
 
+def _mm_all_reduce_enabled() -> bool:
+    return os.environ.get("QWEN38_MM_AR", "0") == "1"
+
+
+_mm_ar_warned = False
+
+_hcom_name_logged: set[int] = set()
+
+
+def _resolve_tp_hcom_name(tp_rank: int) -> str | None:
+    """Resolve the TP HCCL communicator name **eagerly**, once per rank.
+
+    This must never run inside a compiled region.  ``ProcessGroup._get_backend``
+    is a C++ method that Dynamo cannot trace (``Unsupported method call``) and
+    the capture used here takes no graph breaks, so either calling it in the
+    graph or wrapping it in ``torch.compiler.disable`` aborts the whole
+    npugraph_ex capture -- both have been observed on this build.
+
+    The name is a per-rank constant, so it is resolved where the layer is
+    *constructed* (always eager) and read back inside the graph as a plain
+    attribute.  Returns ``None`` -- and the caller falls back to the stock
+    matmul + all-reduce -- when the group is not up yet.
+    """
+    try:
+        name = get_tp_group().device_group._get_backend(torch.device("npu")).get_hccl_comm_name(tp_rank)
+    except Exception:  # noqa: BLE001 - unresolved name just disables the fusion
+        logger.warning("QWEN38_MM_AR: could not resolve HCCL comm name for tp_rank=%s", tp_rank, exc_info=True)
+        return None
+    if tp_rank not in _hcom_name_logged:
+        _hcom_name_logged.add(tp_rank)
+        logger.info("QWEN38_MM_AR: TP HCCL comm name for tp_rank=%s is %s", tp_rank, name)
+    return name
+
+
+def _maybe_fused_mm_all_reduce(layer, input_: torch.Tensor) -> torch.Tensor | None:
+    """Fuse the row-parallel matmul with its TP all-reduce (MC2).
+
+    ``Y = all_reduce(X_i @ W_i^T)`` collapses into a single
+    ``torch_npu.npu_mm_all_reduce_base`` call that pipelines the matmul against the
+    HCCL all-reduce instead of running them back to back on one stream.  This is
+    the *only* place the non sequence-parallel row-parallel layers reduce, so it
+    covers every ``o_proj`` / ``down_proj`` of the model.
+
+    Returns ``None`` when the fused path is disabled or does not apply, in which
+    case the caller keeps the stock matmul + ``all_reduce``.
+    """
+    if not _mm_all_reduce_enabled():
+        return None
+    if layer.tp_size <= 1 or not layer.reduce_results:
+        return None
+    if not isinstance(layer.quant_method, UnquantizedLinearMethod):
+        return None
+    weight = getattr(layer, "weight", None)
+    if weight is None or weight.dim() != 2 or weight.dtype != torch.bfloat16:
+        return None
+
+    if layer.input_is_parallel:
+        x = input_
+    else:
+        x = split_tensor_along_last_dim(input_, num_partitions=layer.tp_size)[layer.tp_rank].contiguous()
+    if x.dim() != 2:
+        return None
+    try:
+        min_tokens = int(os.environ.get("QWEN38_MM_AR_MIN_TOKENS", "512"))
+    except ValueError:
+        min_tokens = 512
+    if x.shape[0] < min_tokens:
+        return None
+
+    from vllm_ascend.device.device_op import DeviceOperator
+
+    # Read the communicator name that was resolved at construction time.  A
+    # call of any kind here would be traced into the graph, and this capture
+    # tolerates no graph break -- see _resolve_tp_hcom_name.
+    hcom_name = getattr(layer, "_mm_ar_hcom_name", None)
+    if hcom_name is None:
+        return None
+
+    try:
+        out = DeviceOperator.npu_mm_all_reduce_base(
+            x.contiguous(),
+            weight.t(),
+            hcom_name,
+            reduce_op="sum",
+            comm_turn=0,
+        )
+    except Exception:  # noqa: BLE001 - fall back to the stock unfused path
+        global _mm_ar_warned
+        if not _mm_ar_warned:
+            _mm_ar_warned = True
+            logger.warning("QWEN38_MM_AR: fused mm+allreduce failed for %s, falling back", layer.prefix, exc_info=True)
+        return None
+
+    # Rank 0 normally fuses the bias into its local GEMM before the reduction;
+    # after the fused all-reduce the bias has to be added once on every rank.
+    if layer.bias is not None and not layer.skip_bias_add:
+        out = out + layer.bias.to(out.dtype)
+    return out
+
+
 class AscendRowParallelLinear(RowParallelLinear):
     """Linear layer with row parallelism.
     Use the MLP tensor parallelism group in the MLP module,
@@ -363,8 +491,19 @@ class AscendRowParallelLinear(RowParallelLinear):
         else:
             self.register_parameter("bias", None)
 
+        self.update_param_tp_status()
+
         if self.custom_op is not None:
             self.custom_op.update_attrs()
+
+        # QWEN38_MM_AR needs the TP HCCL communicator name of this rank, and it
+        # has to be a plain attribute by the time the forward runs inside a
+        # captured graph: resolving it lazily would put
+        # ``ProcessGroup._get_backend`` into the trace and abort the capture
+        # (see _resolve_tp_hcom_name).  Layer construction is always eager, so
+        # this is where the name is looked up.  ``None`` (group not up yet, or
+        # the switch is off) simply keeps the stock matmul + all-reduce.
+        self._mm_ar_hcom_name = _resolve_tp_hcom_name(self.tp_rank) if _mm_all_reduce_enabled() else None
 
     def forward(
         self,
@@ -373,6 +512,12 @@ class AscendRowParallelLinear(RowParallelLinear):
     ) -> torch.Tensor | tuple[torch.Tensor, Parameter | None]:
         if self.custom_op is not None:
             return self.custom_op.apply(input_)
+
+        fused = _maybe_fused_mm_all_reduce(self, input_)
+        if fused is not None:
+            if not self.return_bias:
+                return fused
+            return fused, (self.bias if self.skip_bias_add else None)
 
         return super().forward(input_)
 
@@ -458,6 +603,8 @@ class AscendColumnParallelLinear(ColumnParallelLinear):
             )
         else:
             self.register_parameter("bias", None)
+
+        self.update_param_tp_status()
 
         if self.custom_op is not None:
             self.custom_op.update_attrs()
@@ -581,6 +728,8 @@ class AscendReplicatedLinear(ReplicatedLinear):
             )
         else:
             self.register_parameter("bias", None)
+
+        self.update_param_tp_status()
 
         if self.custom_op is not None:
             self.custom_op.update_attrs()

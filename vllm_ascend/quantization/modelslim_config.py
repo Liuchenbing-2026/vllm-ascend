@@ -392,6 +392,49 @@ def _is_missing_v_shard(shard_key: str, quant_description: Mapping[str, Any]) ->
     return f"{shard_prefix}q_proj.weight" in quant_description and f"{shard_prefix}k_proj.weight" in quant_description
 
 
+# MoE checkpoints saved by ModelSlim may key expert weights either as one
+# packed entry ("<prefix>.weight") or per expert ("<prefix>.0.gate_proj.weight").
+# The latter is the common ModelSlim layout (deepseek_v3, qwen3_moe, ...) and is
+# normally resolved through packed_modules_mapping. Some model types (e.g.
+# qwen4_exp) do not register an "experts" entry there, so sniff the first
+# expert's projection keys as a fallback instead of raising a bare KeyError.
+_EXPERT_SHARD_SUFFIXES = (
+    "0.gate_proj.weight",
+    "0.up_proj.weight",
+    "0.down_proj.weight",
+    "0.w1.weight",
+    "0.w2.weight",
+    "0.w3.weight",
+)
+
+
+# Some checkpoints (e.g. the Qwen3.8-Flash-Next MTP draft) describe the MoE
+# experts with fused keys that have no trailing ``.weight``.
+_FUSED_EXPERT_QUANT_SUFFIXES = (
+    "gate_up_proj",
+    "down_proj",
+    "gate_proj",
+    "up_proj",
+    "w13_weight",
+    "w2_weight",
+)
+
+
+def _per_expert_quant_type(quant_description: Mapping[str, Any], prefix: str) -> str | None:
+    """Resolve a quant type from per-expert ModelSlim keys of ``prefix``."""
+    if not prefix.endswith(".experts"):
+        return None
+    for suffix in _EXPERT_SHARD_SUFFIXES:
+        key = f"{prefix}.{suffix}"
+        if key in quant_description:
+            return quant_description[key]
+    for suffix in _FUSED_EXPERT_QUANT_SUFFIXES:
+        key = f"{prefix}.{suffix}"
+        if key in quant_description:
+            return quant_description[key]
+    return None
+
+
 def get_linear_quant_type(
     quant_description: dict[str, Any], prefix: str, packed_modules_mapping: dict[str, Any]
 ) -> str | None:
@@ -430,7 +473,11 @@ def get_linear_quant_type(
                 logger.error(err_msg)
                 raise ValueError(err_msg)
     else:
-        quant_type = quant_description[prefix + ".weight"]
+        quant_type = quant_description.get(prefix + ".weight")
+        if quant_type is None:
+            quant_type = _per_expert_quant_type(quant_description, prefix)
+        if quant_type is None:
+            quant_type = quant_description[prefix + ".weight"]
     return quant_type
 
 
@@ -779,6 +826,15 @@ class AscendModelSlimConfig(QuantizationConfig):
                 key.startswith(prefix) and key.endswith(".weight") and value == "FLOAT"
                 for key, value in self.quant_description.items()
             )
+            if not is_skipped and prefix.endswith(".experts"):
+                # Some checkpoints (e.g. the Qwen3.8-Flash-Next MTP draft)
+                # describe fused MoE experts with keys that do not carry a
+                # trailing ``.weight`` (``...experts.gate_up_proj``), so the
+                # scan above misses them and the layer would be routed into an
+                # unsupported FLOAT MoE scheme.
+                experts_quant_type = _per_expert_quant_type(self.quant_description, prefix)
+                if experts_quant_type is not None:
+                    is_skipped = experts_quant_type == "FLOAT"
 
         assert is_skipped is not None
         return is_skipped

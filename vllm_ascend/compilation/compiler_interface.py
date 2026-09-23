@@ -119,6 +119,20 @@ def _configure_backend(
             "clone_input": False,
             "clone_output": False,
         }
+        # QWEN38_NGE_INPLACE / _INPUT re-enable npugraph_ex's two reinplace
+        # passes.  Upstream vllm-ascend disables the first one because a gelu
+        # fallback used to become a host<->device copy; Qwen3.8 uses silu, so
+        # that failure mode does not apply here.  What the disable costs is
+        # visible in the shipping config's profile: TensorMove 8678 device
+        # kernels / 70 ms plus 36432 host-side aclnnInplaceCopy calls, i.e. the
+        # out-of-place -> in-place rewrites that never happened.  Default off:
+        # every other row of the campaign keeps the upstream behaviour.
+        if os.environ.get("QWEN38_NGE_INPLACE", "0") == "1":
+            options["inplace_pass"] = True
+        if os.environ.get("QWEN38_NGE_INPLACE_INPUT", "0") == "1":
+            options["input_inplace_pass"] = True
+        if os.environ.get("QWEN38_NGE_CLONE_INPUT", "0") == "1":
+            options["clone_input"] = True
         if ascend_compilation_config.enable_static_kernel:
             logger.info_once(
                 "enable_static_kernel is enabled, static shape kernel will be used to accelerate aclgraph execution.",
@@ -244,6 +258,13 @@ class AscendCompiler(CompilerInterface):
             "torch_npu_version": torch_npu.__version__,
             "enable_npugraph_ex": ascend_compilation_config.enable_npugraph_ex,
             "enable_static_kernel": ascend_compilation_config.enable_static_kernel,
+            # The npugraph_ex option block is built from the environment (see
+            # _configure_backend), so the reinplace switches must take part in
+            # the compile hash -- otherwise a row that flips them would
+            # silently reuse the artifact compiled by the previous row.
+            "nge_inplace": os.environ.get("QWEN38_NGE_INPLACE", "0"),
+            "nge_inplace_input": os.environ.get("QWEN38_NGE_INPLACE_INPUT", "0"),
+            "nge_clone_input": os.environ.get("QWEN38_NGE_CLONE_INPUT", "0"),
         }
         logger.info("AscendCompiler hash factors: %s", factors)
         return sha256(str(factors).encode(), usedforsecurity=False).hexdigest()[:10]

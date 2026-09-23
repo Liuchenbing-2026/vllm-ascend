@@ -1079,6 +1079,15 @@ def calculate_dp_buffer_size() -> int:
     return max(dp_buffer_size, _MIN_DP_BUFFER_SIZE)
 
 
+# Currently, when in A2, setting the environment variables HCCL_INTRA_PCIE_ENABLE=1
+# and HCCL_INTRA_ROCE_ENABLE=0 can reduce cross-machine communication traffic and
+# significantly improve communication performance of MC2 ops dispatch/combine.
+def is_hierarchical_communication_enabled():
+    return (
+        os.getenv("HCCL_INTRA_ROCE_ENABLE", "") == "0" and os.getenv("HCCL_INTRA_PCIE_ENABLE", "") == "1"
+    ) or get_ascend_config().enable_mc2_hierarchy_comm
+
+
 def is_pd_decode_recompute_scheduler_enabled(vllm_config: VllmConfig | None = None) -> bool:
     """True on PD-disaggregated decode nodes with recompute_scheduler_enable.
 
@@ -1180,10 +1189,7 @@ def should_skip_allreduce_across_dp_group(vllm_config: VllmConfig, is_draft_mode
     computed once in init, and select_moe_comm_method is just config lookups, so
     this is cheap and avoids id-reuse / stale-cache / init-ordering hazards.
     """
-    ascend_config = get_ascend_config()
-    # When mc2_comm_alg == "hierarchy", dispatch/combine op don't support dynamic global_bs,
-    # we need to do allreduce and pad token across dp every step.
-    if ascend_config.get_mc2_comm_alg() == "hierarchy":
+    if is_hierarchical_communication_enabled():
         return False
 
     # For dense models, since we don't actually need dp communication, we simply skip it.
@@ -1205,11 +1211,9 @@ def should_skip_allreduce_across_dp_group(vllm_config: VllmConfig, is_draft_mode
 
     scheduler_config = vllm_config.scheduler_config
     # potential_max_tokens is read from the set/get global (computed once in init).
-    decode_comm_method = select_moe_comm_method(get_potential_max_tokens(), vllm_config, is_draft_model=is_draft_model)
+    decode_comm_method = select_moe_comm_method(get_potential_max_tokens(), vllm_config)
     # For prefill, use the scheduler's max_num_batched_tokens for a single batch.
-    prefill_comm_method = select_moe_comm_method(
-        scheduler_config.max_num_batched_tokens, vllm_config, is_draft_model=is_draft_model
-    )
+    prefill_comm_method = select_moe_comm_method(scheduler_config.max_num_batched_tokens, vllm_config)
 
     if use_cann_megamoe(vllm_config):
         return False
@@ -1224,7 +1228,9 @@ def should_skip_allreduce_across_dp_group(vllm_config: VllmConfig, is_draft_mode
     uniform_cudagraph_mode = not vllm_config.compilation_config.cudagraph_mode.separate_routine()
 
     chunked_prefill_can_skip = prefill_must_use_mc2 and uniform_cudagraph_mode
-    return decode_can_skip and (chunked_prefill_can_skip or ascend_config.scheduler_config.recompute_scheduler_enable)
+    return decode_can_skip and (
+        chunked_prefill_can_skip or get_ascend_config().scheduler_config.recompute_scheduler_enable
+    )
 
 
 def has_layer_idx(model_instance: torch.nn.Module) -> bool:

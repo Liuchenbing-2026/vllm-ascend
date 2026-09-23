@@ -254,9 +254,29 @@ class NPUWorker(WorkerBase):
         allocator = CaMemAllocator.get_instance()
         allocator.wake_up(tags=tags)
 
+        hidden_size = self.vllm_config.model_config.hf_text_config.hidden_size
+        model = self.model_runner.model
+        if self.vllm_config.quant_config is None and (tags is None or "weights" in tags):
+            for name, param in model.named_parameters():
+                if "w2_weight" in name and param.shape[2] == hidden_size:
+                    parts = name.split(".")
+                    param_name = parts[-1]
+                    parent_module = model.get_submodule(".".join(parts[:-1]))
+
+                    w2_data = param.transpose(1, 2)
+                    w2_data = torch.nn.Parameter(w2_data, requires_grad=False)
+                    setattr(parent_module, param_name, w2_data)
+                elif "w13_weight" in name and param.shape[1] == hidden_size:
+                    parts = name.split(".")
+                    param_name = parts[-1]
+                    parent_module = model.get_submodule(".".join(parts[:-1]))
+
+                    w13_data = param.transpose(1, 2)
+                    w13_data = torch.nn.Parameter(w13_data, requires_grad=False)
+                    setattr(parent_module, param_name, w13_data)
+
         # Restore the buffers after level 2 sleep
         if len(self._sleep_saved_buffers):
-            model = self.model_runner.model
             for name, buffer in model.named_buffers():
                 if name in self._sleep_saved_buffers:
                     buffer.data.copy_(self._sleep_saved_buffers[name].data)
@@ -826,10 +846,7 @@ class NPUWorker(WorkerBase):
         # worker process before migratepages/taskset run.
         if get_ascend_config().enable_cpu_binding:
             try:
-                bind_cpus(
-                    self.local_rank,
-                    npu_id=current_platform.device_id_to_physical_device_id(self.local_rank),
-                )
+                bind_cpus(self.local_rank)
             except Exception as e:
                 logger.warning("Bind cpus failed in rank%s: %s Skip binding cpu.", self.local_rank, e)
 

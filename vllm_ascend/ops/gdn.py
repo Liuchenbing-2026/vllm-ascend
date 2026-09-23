@@ -36,6 +36,40 @@ from vllm_ascend.ops.triton.fla.utils import clear_ssm_states
 from vllm_ascend.ops.triton.mamba.causal_conv1d import extract_last_width
 
 
+# ``npu_causal_conv1d_custom`` wants the kernel-major weight ``[K, C]``, but
+# the checkpoint stores ``[C, 1, K]``, so a ``transpose(0, 1)`` shows up in
+# every GDN layer of every decode step.  That view is non-contiguous and gets
+# materialised by an ``aclnnContiguous_Transpose`` on ``[1280, 4]`` (measured
+# 23us x 36 layers per step, ~3.3% of the decode window).  The weight is a
+# load-time constant, so the materialised transpose is cached here and the
+# per-step kernel disappears.
+#
+# The cache must be keyed on the *parameter* (``conv1d.weight``), not on the
+# ``view(...)`` handle: that view is a fresh Python object on every call, so a
+# view-keyed cache never hits at trace time and the transpose stays in the
+# graph.  ``_version`` invalidates the entry if the weight is ever rewritten
+# in place after loading.
+_CONV_W_T_CACHE: dict = {}
+
+
+def _conv_weight_t(weight: torch.Tensor) -> torch.Tensor:
+    """Return a cached, contiguous ``[K, C]`` view of a conv weight.
+
+    ``weight`` must be the stable ``nn.Conv1d`` parameter, not a transient
+    ``.view(...)`` of it.
+    """
+    key = (id(weight), weight._version)
+    entry = _CONV_W_T_CACHE.get(key)
+    if entry is None or entry[0] is not weight:
+        flat = weight.view(weight.size(0), weight.size(2))
+        entry = (weight, flat.transpose(0, 1).contiguous())
+        _CONV_W_T_CACHE[key] = entry
+        if len(_CONV_W_T_CACHE) > 512:
+            _CONV_W_T_CACHE.clear()
+            _CONV_W_T_CACHE[key] = entry
+    return entry[1]
+
+
 class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
     def _split_ba_for_tp(self, ba: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         if hasattr(self, "split_ba"):
@@ -181,6 +215,7 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
 
         # 1. Convolution sequence transformation
         conv_weights = self.conv1d.weight.view(self.conv1d.weight.size(0), self.conv1d.weight.size(2))
+        conv_weights_t = _conv_weight_t(self.conv1d.weight)
         if spec_sequence_masks is not None:
             if attn_metadata.num_prefills == 0 and attn_metadata.num_decodes == 0:
                 mixed_qkv_spec = mixed_qkv
@@ -194,7 +229,7 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
 
         # 1.1: Process the multi-query part
         if spec_sequence_masks is not None:
-            conv_weights_T = conv_weights.transpose(0, 1)
+            conv_weights_T = conv_weights_t
             activation_num = 1 if self.activation else 0
             spec_causal_conv1d_meta = attn_metadata.spec_decode_metadata.spec_causal_conv1d
             spec_query_start_loc_device = spec_causal_conv1d_meta.query_start_loc
@@ -223,7 +258,7 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
                 cache_indices_opt = non_spec_causal_conv1d_meta.cache_indices
                 initial_state_mode_opt = non_spec_causal_conv1d_meta.initial_state_mode
                 if get_pcp_group().world_size > 1:
-                    conv_weights_T = conv_weights.transpose(0, 1)
+                    conv_weights_T = conv_weights_t
                     activation_num = 1 if self.activation else 0
                     non_spec_query_start_loc = attn_metadata.non_spec_query_start_loc
                     assert non_spec_query_start_loc is not None
@@ -266,7 +301,7 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
                             -1, ...
                         ].transpose(-1, -2)
                 else:
-                    conv_weights_T = conv_weights.transpose(0, 1)
+                    conv_weights_T = conv_weights_t
                     activation_num = 1 if self.activation else 0
                     mixed_qkv_non_spec_output = torch.empty_like(mixed_qkv_non_spec)
                     torch.ops._C_ascend.npu_causal_conv1d_custom(
@@ -285,7 +320,7 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
                     )
                     mixed_qkv_non_spec = mixed_qkv_non_spec_output
         elif attn_metadata.num_decodes > 0:
-            conv_weights_T = conv_weights.transpose(0, 1)
+            conv_weights_T = conv_weights_t
             activation_num = 1 if self.activation else 0
             non_spec_causal_conv1d_meta = attn_metadata.non_spec_decode_metadata.causal_conv1d
             non_spec_query_start_loc_device = non_spec_causal_conv1d_meta.query_start_loc

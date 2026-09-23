@@ -69,11 +69,7 @@ from vllm_ascend.distributed.utils import (
     get_decode_context_model_parallel_rank,
     get_decode_context_model_parallel_world_size,
 )
-from vllm_ascend.utils import (
-    enable_custom_op,
-    enable_sfa_dcp_replicated_indexer,
-    model_uses_sfa_sparse,
-)
+from vllm_ascend.utils import enable_custom_op, enable_sfa_dcp_replicated_indexer
 
 # isort: off
 if TYPE_CHECKING:
@@ -470,12 +466,6 @@ class KVCacheRecvingThread(threading.Thread):
         self.remote_block_stride_per_addr: dict[str, dict[int, list[list[int]]]] = SizedDict()
         self.remote_kv_group2layeridx: dict[str, dict[int, dict[int, tuple[dict[str, Any], list[int]]]]] = SizedDict()
         self.remote_metadata_lock = threading.Lock()
-        # Reformat metadata keyed by request_id then CP shard index. Populated by the
-        # last TP-offset pull task for each shard; applied once all pull tasks finish.
-        self.pending_reformat: defaultdict[str, dict[int, list[tuple[int, list[list[int]], int, list[int]]]]] = (
-            defaultdict(dict)
-        )
-        self.pending_reformat_lock = threading.Lock()
 
         self.request_queue: queue.Queue[Any] = queue.Queue()
         first_kv_cache = next(iter(self.kv_caches.values()))
@@ -572,7 +562,6 @@ class KVCacheRecvingThread(threading.Thread):
         remote_port_send_num: dict[int, RemotePortInfo] | None = None,
         num_computed_tokens: int = 0,
         all_task_done: bool = False,
-        shard_idx: int = 0,
         local_block_ids_replicate_k: BlockIds | None = None,
         remote_block_ids_replicate_k: BlockIds | None = None,
     ):
@@ -593,7 +582,6 @@ class KVCacheRecvingThread(threading.Thread):
             "num_computed_tokens": num_computed_tokens,
             "remote_port_send_num": remote_port_send_num,
             "all_task_done": all_task_done,
-            "shard_idx": shard_idx,
             "remote_block_size": remote_block_size,
         }
         logger.debug("Adding request %s to the queue.Trans info:%s", request_id, trans_info)
@@ -733,24 +721,7 @@ class KVCacheRecvingThread(threading.Thread):
                     self._mark_failed_recv_request(request_id, req_meta["local_block_ids"])
                     logger.exception("Failed to transfer KV cache for request %s: %s", remote_request_id, e)
         finally:
-            all_tasks_done = self._mark_request_task_done(request_id, all_task_done)
-            if all_tasks_done:
-                if transfer_failed or self._is_failed_recv_request(request_id):
-                    with self.pending_reformat_lock:
-                        self.pending_reformat.pop(request_id, None)
-                else:
-                    try:
-                        self._reformat_pending_kv_caches(request_id)
-                    except Exception as e:
-                        transfer_failed = True
-                        self._mark_failed_recv_request(request_id, req_meta["local_block_ids"])
-                        with self.pending_reformat_lock:
-                            self.pending_reformat.pop(request_id, None)
-                        logger.exception(
-                            "Failed to reformat KV cache after all pulls for request %s: %s",
-                            remote_request_id,
-                            e,
-                        )
+            if self._mark_request_task_done(request_id, all_task_done):
                 self.task_tracker.update_done_task_count(request_id)
                 with self.proc_not_transfer_request_lock:
                     self.proc_not_transfer_request.pop(remote_request_id, None)
@@ -819,7 +790,7 @@ class KVCacheRecvingThread(threading.Thread):
         attention_group_reformat_block_ids: list[tuple[tuple[int, list[list[int]], int, list[int]], bool]] = []
         grouped_remote_k_block_ids: list[list[int]] = []
         grouped_local_k_block_ids: list[list[int]] = []
-        if has_replicate_k_blocks:
+        if self.enable_sfa_dcp_replicated_indexer and has_replicate_k_blocks:
             grouped_remote_k_block_ids, grouped_local_k_block_ids = group_concurrent_contiguous(
                 remote_block_ids_replicate_k[0],
                 local_block_ids_replicate_k[0],
@@ -954,10 +925,12 @@ class KVCacheRecvingThread(threading.Thread):
                     block_stride = self.block_stride_per_addr[layer_idx][cache_idx]
                     remote_block_stride = remote_block_stride_per_addr[layer_idx][cache_idx]
                     inner_block_len = block_len // tp_num_need_pulls
-                    is_sfa_indexer_group = group_spec["kv_cache_spec_type"] == "AscendSFAIndexerCacheSpec"
-                    if is_sfa_indexer_group and has_replicate_k_blocks:
-                        transfer_remote_block_ids = grouped_remote_k_block_ids
-                        transfer_local_block_ids = grouped_local_k_block_ids
+                    if self.enable_sfa_dcp_replicated_indexer and self.block_size_scale[layer_idx][cache_idx] > 1:
+                        if has_replicate_k_blocks:
+                            transfer_remote_block_ids = grouped_remote_k_block_ids
+                            transfer_local_block_ids = grouped_local_k_block_ids
+                        else:
+                            continue
                     else:
                         if not has_group_blocks:
                             continue
@@ -1022,38 +995,6 @@ class KVCacheRecvingThread(threading.Thread):
         for reformat_group, is_group_transfer_end in attention_group_reformat_block_ids:
             if is_group_transfer_end:
                 ready_attention_group_reformat_block_ids.append(reformat_group)
-        if ready_attention_group_reformat_block_ids:
-            shard_idx = int(req_meta.get("shard_idx", 0))
-            self._stash_pending_reformat(
-                req_meta["request_id"],
-                shard_idx,
-                ready_attention_group_reformat_block_ids,
-            )
-
-    def _stash_pending_reformat(
-        self,
-        request_id: str,
-        shard_idx: int,
-        ready_attention_group_reformat_block_ids: list[tuple[int, list[list[int]], int, list[int]]],
-    ) -> None:
-        with self.pending_reformat_lock:
-            self.pending_reformat[request_id][shard_idx] = ready_attention_group_reformat_block_ids
-
-    def _reformat_pending_kv_caches(self, request_id: str) -> None:
-        with self.pending_reformat_lock:
-            shard_reformats = self.pending_reformat.pop(request_id, {})
-        for shard_idx in sorted(shard_reformats):
-            logger.debug(
-                "Reformatting KV cache after all pulls completed. request_id=%s shard_idx=%s",
-                request_id,
-                shard_idx,
-            )
-            self._apply_kv_cache_reformat(shard_reformats[shard_idx])
-
-    def _apply_kv_cache_reformat(
-        self,
-        ready_attention_group_reformat_block_ids: list[tuple[int, list[list[int]], int, list[int]]],
-    ) -> None:
         if not ready_attention_group_reformat_block_ids:
             return
 
@@ -1556,7 +1497,6 @@ class MooncakeConnectorMetadata(KVConnectorMetadata):
 class MooncakeConnector(KVConnectorBase_V1, SupportsHMA):
     def __init__(self, vllm_config: VllmConfig, role: KVConnectorRole, kv_cache_config: KVCacheConfig | None = None):
         assert vllm_config.kv_transfer_config is not None
-        self._kv_transfer_config = vllm_config.kv_transfer_config
         self.engine_id = vllm_config.kv_transfer_config.engine_id
         self._connector_metadata = MooncakeConnectorMetadata()
 
@@ -1955,27 +1895,11 @@ class MooncakeConnectorScheduler:
             "MooncakeConnector request_finished, request_status=%s, kv_transfer_params=%s", request.status, params
         )
 
-        if params is None:
-            return False, None
-
-        # A remote-prefill request can be rejected before scheduler admission
-        # (for example, when prompt + max_tokens exceeds max_model_len). In
-        # that case update_state_after_alloc() never gets a chance to schedule
-        # the receive, so explicitly enqueue an empty receive. The worker skips
-        # the data transfer for empty block IDs but still sends the completion
-        # signal to the P node, allowing it to release the stranded KV blocks.
-        if params.get("do_remote_prefill"):
-            empty_block_ids: BlockIds = tuple([] for _ in self.kv_cache_groups)
-            self._reqs_need_recv[request.request_id] = (
-                request,
-                empty_block_ids,
-                empty_block_ids,
-                0,
-            )
-            params["do_remote_prefill"] = False
-            return False, None
-
-        if not params.get("do_remote_decode") or request.status != RequestStatus.FINISHED_LENGTH_CAPPED:
+        if (
+            params is None
+            or not params.get("do_remote_decode")
+            or request.status != RequestStatus.FINISHED_LENGTH_CAPPED
+        ):
             return False, None
 
         num_prompt_blocks = math.ceil(len(request.prompt_token_ids) / self.block_size)
@@ -3469,10 +3393,7 @@ class MooncakeConnectorWorker:
         self,
         meta: ReqMeta,
     ) -> tuple[BlockIds, BlockIds]:
-        remote_uses_replicated_indexer = (
-            model_uses_sfa_sparse(self.vllm_config.model_config) and meta.remote_dcp_size > 1
-        )
-        if not (self.enable_sfa_dcp_replicated_indexer or remote_uses_replicated_indexer):
+        if not self.enable_sfa_dcp_replicated_indexer:
             return tuple(), tuple()
         if meta.num_external_tokens <= 0 or not meta.remote_block_ids or not meta.local_block_ids:
             return tuple(), tuple()
@@ -3626,7 +3547,6 @@ class MooncakeConnectorWorker:
                             pcp_dcp_rank == len(remote_handshake_port_list) - 1
                             and remote_tp_offset == len(remote_ports) - 1
                         ),
-                        shard_idx=pcp_dcp_rank,
                         remote_block_size=meta.remote_block_size,
                         local_block_ids_replicate_k=local_block_ids_replicate_k_for_port,
                         remote_block_ids_replicate_k=remote_block_ids_replicate_k_for_port,

@@ -37,6 +37,7 @@ Row parallel op follows a similar approach - inherit from RowColumnParallelOp an
 get_row_parallel_op.
 """
 
+import os
 from functools import lru_cache
 from types import SimpleNamespace
 
@@ -121,6 +122,66 @@ class CustomColumnParallelOp(CustomLinearOp):
     def update_attrs(self):
         super().update_attrs()
         self.gather_output = self.layer.gather_output
+
+
+def _mm_all_reduce_min_tokens() -> int:
+    """Token-per-rank threshold for the MC2 (fused matmul+all-reduce) path.
+
+    The fused op only overlaps on full (prefill) batches; on incremental decode
+    batches the surrounding sync latency dominates, so it is kept off there by
+    default.  ``QWEN38_MM_AR`` turns the path on at all, ``QWEN38_MM_AR_MIN_TOKENS``
+    tunes the threshold (0 = also use it for decode).
+    """
+    if os.environ.get("QWEN38_MM_AR", "0") != "1":
+        return -1
+    try:
+        return int(os.environ.get("QWEN38_MM_AR_MIN_TOKENS", "256"))
+    except ValueError:
+        return 256
+
+
+def _try_mm_all_reduce(op: "SequenceRowParallelOp", x: torch.Tensor) -> torch.Tensor | None:
+    """Fuse ``x @ weight.T`` with the TP all-reduce via ``npu_mm_all_reduce_base``.
+
+    Returns the reduced tensor, or ``None`` when the fused path is disabled or the
+    layer does not qualify (callers then keep the plain matmul + all-reduce).
+    """
+    min_tokens = _mm_all_reduce_min_tokens()
+    if min_tokens < 0 or op.tp_size <= 1 or not op.reduce_results:
+        return None
+    if x.dim() != 2 or x.shape[0] < min_tokens:
+        return None
+    weight = getattr(op.layer, "weight", None)
+    if weight is None or weight.dim() != 2 or weight.dtype != torch.bfloat16:
+        return None
+
+    from vllm.model_executor.layers.linear import UnquantizedLinearMethod
+
+    if not isinstance(op.layer.quant_method, UnquantizedLinearMethod):
+        return None
+
+    # Resolved eagerly when the layer was constructed -- see
+    # vllm_ascend.ops.linear._resolve_tp_hcom_name: any call in here lands in
+    # the captured graph and this capture takes no graph breaks.
+    hcom_name = getattr(op.layer, "_mm_ar_hcom_name", None)
+    if hcom_name is None:
+        return None
+
+    try:
+        out = DeviceOperator.npu_mm_all_reduce_base(
+            x.contiguous(),
+            weight.t(),
+            hcom_name,
+            reduce_op="sum",
+            comm_turn=0,
+        )
+    except Exception:  # noqa: BLE001 - fall back to the unfused path
+        logger.warning("QWEN38_MM_AR: fused mm+allreduce failed for %s, falling back", op.layer.prefix, exc_info=True)
+        return None
+
+    if op.bias is not None and not op.skip_bias_add:
+        out = out + op.bias
+    return out
 
 
 class CustomRowParallelOp(CustomLinearOp):
@@ -351,6 +412,9 @@ class SequenceRowParallelOp(CustomRowParallelOp):
         x = input_parallel
 
         if not flash_comm_v1_enabled:
+            fused = _try_mm_all_reduce(self, x)
+            if fused is not None:
+                return fused
             output_parallel = self.layer.quant_method.apply(self.layer, x, bias=bias_)
             return tensor_model_parallel_all_reduce(output_parallel)
 
@@ -360,7 +424,13 @@ class SequenceRowParallelOp(CustomRowParallelOp):
             x = F.pad(x, (0, 0, 0, pad_size))
 
         world_size = self.layer.tp_size
-        hcom_name = get_tp_group().device_group._get_backend(torch.device("npu")).get_hccl_comm_name(self.layer.tp_rank)
+        hcom_name = getattr(self.layer, "_mm_ar_hcom_name", None)
+        if hcom_name is None:
+            # The per-rank communicator name could not be resolved eagerly (or
+            # was never primed), so the MC2 variants of this path are not
+            # available; fall back to the plain matmul + collectives rather
+            # than handing ``None`` to the op.
+            mmrs_fusion = False
 
         from vllm.model_executor.layers.linear import UnquantizedLinearMethod
 
