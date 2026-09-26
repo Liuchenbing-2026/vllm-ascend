@@ -181,11 +181,6 @@ class DeepseekV41Indexer(nn.Module):
             if is_candidate_source:
                 candidates = torch.full(candidate_shape, -1, dtype=torch.int32, device=query.device)
             return selected, candidates
-        if source_metadata.max_cache_seq_len == 0:
-            selected = torch.full((query.shape[0], 0), -1, dtype=torch.int32, device=query.device)
-            if is_candidate_source:
-                candidates = torch.full(candidate_shape, -1, dtype=torch.int32, device=query.device)
-            return selected, candidates
 
         quantized_query, query_scale = quantize_indexer_query(query)
         weights = weights.to(torch.float16)
@@ -224,4 +219,16 @@ class DeepseekV41Indexer(nn.Module):
             **common,
         )
         selected = prepare_indexer_indices(selected.squeeze(1), positions, self.compress_ratio)
+        # An empty source plane has no position to select from. Its length only
+        # exists on the device (``cache_seq_lens``), so the check must stay a
+        # tensor predicate: a host branch here is resolved once, while capturing
+        # a FULL decode graph, and that capture always runs a dummy batch whose
+        # compressed cache length is zero. Such a branch therefore bakes "empty
+        # cache" into the graph and publishes -1 indices on every replay.
+        cache_lens = source_metadata.cache_seq_lens
+        if cache_lens is not None and cache_lens.numel() > 0:
+            empty = cache_lens.max() == 0
+            selected = torch.where(empty, selected.new_full((), -1), selected)
+            if is_candidate_source:
+                candidate_out = torch.where(empty, candidate_out.new_full((), -1), candidate_out)
         return selected, candidate_out if is_candidate_source else candidates
