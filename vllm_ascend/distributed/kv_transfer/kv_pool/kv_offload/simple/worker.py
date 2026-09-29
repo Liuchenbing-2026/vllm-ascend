@@ -108,8 +108,12 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
         seen_ptrs: set[int] = set()
         for layer_name, value in kv_caches.items():
             for sub_idx, tensor in enumerate(_flatten_kv_value(value)):
-                storage = tensor.untyped_storage()
-                ptr = storage.data_ptr()
+                # Dedup on the tensor data pointer, not on
+                # storage.data_ptr(): on Ascend every per-layer KV cache is
+                # a view into one big runner allocation, so the storage base is
+                # identical for all layers and storage-based dedup would
+                # collapse ~170 KV views into a single one.
+                ptr = tensor.data_ptr()
                 if ptr in seen_ptrs:
                     continue
                 seen_ptrs.add(ptr)

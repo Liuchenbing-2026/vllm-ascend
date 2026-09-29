@@ -186,6 +186,13 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
             )
             for i, kv_cache_group in enumerate(self.kv_cache_config.kv_cache_groups)
         )
+        # Upstream KVCacheCoordinator exposes `group_block_sizes`; the patched
+        # Ascend constructor must mirror it because consumers such as the
+        # SimpleCPUOffloadScheduler read it after construction.
+        self.group_block_sizes = tuple(
+            manager.block_size for manager in self.single_type_managers
+        )
+
         # vLLM #53614 aligns exported Mamba checkpoints with EAGLE replay.
         if use_eagle:
             for manager in self.single_type_managers:
