@@ -16,7 +16,9 @@
 #
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
+import pytest
 import torch
 from torch import nn
 from vllm.model_executor.layers.quantization.base_config import QuantizeMethodBase
@@ -32,6 +34,27 @@ from vllm_ascend.ops.gdn import (
     _get_packed_conv_weights,
     initialize_packed_conv_weight,
 )
+from vllm_ascend.ops.triton.fla.l2norm import l2norm_packed_qk
+
+
+@pytest.mark.parametrize("layout", ["packed", "offset", "separate", "strided", "reversed"])
+def test_packed_qk_normalization_preserves_rows_and_falls_back(layout):
+    values = torch.arange(1, 81, dtype=torch.float32).reshape(10, 8)
+    q, k = values[1:3], values[3:5]
+    if layout == "packed":
+        q, k = values[:2], values[2:4]
+    elif layout == "separate":
+        k = k.clone()
+    elif layout == "strided":
+        q, k = q[:, ::2], k[:, ::2]
+    elif layout == "reversed":
+        q, k = k, q
+    reference = lambda x: torch.nn.functional.normalize(x, dim=-1)
+    with patch("vllm_ascend.ops.triton.fla.l2norm.l2norm_fwd", side_effect=reference) as normalize:
+        actual_q, actual_k = l2norm_packed_qk(q, k)
+    torch.testing.assert_close(actual_q, reference(q), rtol=0, atol=0)
+    torch.testing.assert_close(actual_k, reference(k), rtol=0, atol=0)
+    assert normalize.call_count == (1 if layout in ("packed", "offset") else 2)
 
 
 class _RecordingQuantMethod(QuantizeMethodBase):
