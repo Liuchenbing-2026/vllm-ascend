@@ -15,7 +15,7 @@
 # This file is a part of the vllm-ascend project.
 #
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -48,6 +48,8 @@ from vllm_ascend.attention.utils import (
     AscendCommonAttentionMetadata,
     _select_seq_lens,
     enable_dcp,
+    fia_physical_block_table,
+    fia_physical_kv_views,
     needs_layer_aware_fia_graph_replay,
     notify_kv_cache_written,
     split_decodes_and_prefills,
@@ -204,6 +206,8 @@ class AscendMetadata:
     # Block addresses per sequence (Seq id -> list of physical block).
     # (batch_size, max_blocks_per_seq)
     block_tables: torch.Tensor = None
+    # Read-only physical page addresses, shared only within this metadata step.
+    fia_block_tables: dict[int, torch.Tensor] = field(default_factory=dict)
 
     # The indices of the token slots that input tokens will be stored into.
     # E.g., if `slot_mapping` is [35, 2, 17] and the block size is 16, the
@@ -515,6 +519,7 @@ class FIAParamProvider:
     layer_name: str | None
     sliding_window: int | None
     is_draft_model: bool = False
+    block_stride: int = 1
 
     def resolve(self, attn_metadata) -> dict[str, Any]:
         metadata = attn_metadata[self.layer_name]
@@ -523,7 +528,7 @@ class FIAParamProvider:
             return {
                 "actual_seq_lengths": metadata.actual_seq_lengths_q,
                 "actual_seq_lengths_kv": metadata.seq_lens_list,
-                "block_table": metadata.block_tables,
+                "block_table": fia_physical_block_table(metadata, self.block_stride),
             }
         else:
             return {
@@ -791,7 +796,12 @@ class AscendAttentionBackendImpl(AttentionImpl):
                 "out": [output_view, softmax_lse],
                 **extra_args,
             },
-            FIAParamProvider(self._layer_name, self.sliding_window, _EXTRA_CTX.is_draft_model),
+            FIAParamProvider(
+                self._layer_name,
+                self.sliding_window,
+                _EXTRA_CTX.is_draft_model,
+                getattr(self, "_fia_block_stride", 1),
+            ),
         )
         return output, num_tokens
 
@@ -946,6 +956,16 @@ class AscendAttentionBackendImpl(AttentionImpl):
             key, value, block_size = self._get_kv_cache_view(self.key_cache, self.value_cache)
             block_table = attn_metadata.block_tables
             actual_seq_lengths_kv = attn_metadata.seq_lens_list
+        self._fia_block_stride = 1
+        if (
+            block_table is not None
+            and type(self) is AscendAttentionBackendImpl
+            and self.sinks is None
+            and not self.use_bnsd_kv_cache
+        ):
+            key, value, self._fia_block_stride = fia_physical_kv_views(key, value)
+            if self._fia_block_stride != 1:
+                block_table = fia_physical_block_table(attn_metadata, self._fia_block_stride)[: block_table.shape[0]]
         return key, value, block_size, block_table, actual_seq_lengths_kv
 
     def _forward_draft_tail_masked(
@@ -1001,7 +1021,8 @@ class AscendAttentionBackendImpl(AttentionImpl):
             return None
         # Bound temporary storage by the existing cache, including when many
         # requests share a long prefix. The fallback needs no gathered copy.
-        if num_reqs * blocks_per_req > key.shape[0]:
+        logical_blocks = (key.shape[0] - 1) // getattr(self, "_fia_block_stride", 1) + 1
+        if num_reqs * blocks_per_req > logical_blocks:
             return None
         kv_span = blocks_per_req * block_size
         block_offsets = torch.arange(blocks_per_req, device=key.device) * block_size
