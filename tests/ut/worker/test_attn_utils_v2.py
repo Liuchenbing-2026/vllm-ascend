@@ -1537,6 +1537,11 @@ def _patch_optimistic_bound(monkeypatch, *, enabled):
     )
 
 
+@pytest.fixture(autouse=True)
+def _default_host_mirror_switch(monkeypatch):
+    _patch_optimistic_bound(monkeypatch, enabled=False)
+
+
 def _build_draft_metadata(monkeypatch, *, approx_enabled):
     """Run ``build_attn_metadata`` for a *draft* build (no ``seq_lens_np``)."""
     _patch_optimistic_bound(monkeypatch, enabled=approx_enabled)
@@ -1592,8 +1597,8 @@ def test_draft_build_publishes_the_optimistic_bound_when_opted_in(monkeypatch):
     assert cad.seq_lens_cpu.tolist() == [7]
 
 
-def test_target_build_is_unaffected_by_the_approximation_flag(monkeypatch):
-    """A target build has ``seq_lens_np`` and must stay exact either way."""
+def test_target_host_fast_path_is_opt_in_without_changing_cpu_values(monkeypatch):
+    """False retains main dispatch; True authorizes the known-exact CPU view."""
     for approx_enabled in (False, True):
         _patch_optimistic_bound(monkeypatch, enabled=approx_enabled)
         builder = _RecordingStateBuilder()
@@ -1622,6 +1627,6 @@ def test_target_build_is_unaffected_by_the_approximation_flag(monkeypatch):
             positions=torch.tensor([0], dtype=torch.int64),
         )
         cad = builder.common_attn_metadata
-        assert cad.seq_lens_cpu_is_exact is True
+        assert cad.seq_lens_cpu_is_exact is approx_enabled
         assert cad.seq_lens_cpu_is_approximate is False
         assert cad.seq_lens_cpu.tolist() == [5]

@@ -334,12 +334,12 @@ def build_attn_metadata(
     """Build attention metadata for Ascend NPUs."""
     if skip_ring_state_update is None:
         skip_ring_state_update = ring_state_update_skipped()
-    seq_lens_cpu_is_exact = seq_lens_np is not None
-    seq_lens_cpu_is_approximate = bool(
-        not seq_lens_cpu_is_exact
-        and seq_lens_cpu_upper_bound is not None
-        and get_ascend_config().enable_dspark_draft_kv_optimistic_bound
-    )
+    # The switch controls both host-mirror fast paths. Publishing an exact
+    # mirror also skips a device synchronization, so keep it opt-in to retain
+    # main's dispatch behavior when the feature is disabled.
+    use_cpu_mirrors = get_ascend_config().enable_dspark_draft_kv_optimistic_bound
+    seq_lens_cpu_is_exact = bool(use_cpu_mirrors and seq_lens_np is not None)
+    seq_lens_cpu_is_approximate = bool(use_cpu_mirrors and seq_lens_np is None and seq_lens_cpu_upper_bound is not None)
     if seq_lens_np is None:
         if seq_lens_cpu_upper_bound is not None:
             # FIA needs a CPU-side seq_lens upper bound for each request when
