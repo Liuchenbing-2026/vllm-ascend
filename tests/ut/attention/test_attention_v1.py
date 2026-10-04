@@ -1129,11 +1129,11 @@ class TestForwardDraftTailMasked(TestBase):
         return meta
 
     def _call(self, impl, meta, num_tokens=6, block_table=None):
-        block_table = torch.zeros((2, 2), dtype=torch.int32) if block_table is None else block_table
+        block_table = torch.zeros((2, 3), dtype=torch.int32) if block_table is None else block_table
         query = torch.zeros(num_tokens, impl.num_heads, impl.head_size)
         output = torch.zeros(num_tokens, impl.num_heads, impl.head_size)
         return AscendAttentionBackendImpl._forward_draft_tail_masked(
-            impl, query, torch.zeros(1), torch.zeros(1), meta, block_table, 4, [10, 12], num_tokens, output
+            impl, query, torch.zeros(6, 4, 4), torch.zeros(6, 4, 4), meta, block_table, 4, [10, 12], num_tokens, output
         )
 
     def test_falls_through_when_the_build_is_not_a_bounded_draft(self):
@@ -1192,7 +1192,7 @@ class TestForwardDraftTailMasked(TestBase):
         # The KV lengths handed to the operator stay the host-side bound.
         self.assertEqual(kwargs["actual_seq_lengths_kv"], [10, 12])
         self.assertEqual(tuple(kwargs["query"].shape), (2, 3, 2, 4))
-        self.assertEqual(tuple(kwargs["atten_mask"].shape), (2, 3, 2 * 4))
+        self.assertEqual(tuple(kwargs["atten_mask"].shape), (2, 3, 3 * 4))
 
     def test_mask_is_built_once_and_reused_across_layers(self):
         """One mask per step, shared by every layer in the attention group."""
@@ -1210,26 +1210,52 @@ class TestForwardDraftTailMasked(TestBase):
 
     def test_block_strided_cache_preserves_values_and_bsnd_layout_contract(self):
         impl, meta = self._impl(), self._metadata()
-        backing = torch.arange(4 * 2 * 4 * 4, dtype=torch.float32).reshape(4, 2, 4, 4)
+        backing = torch.arange(6 * 2 * 4 * 4, dtype=torch.float32).reshape(6, 2, 4, 4)
         key, value = backing[:, 0], backing[:, 1]
         before = backing.clone()
         self.assertFalse(key.is_contiguous())
         query = torch.zeros(6, 2, 4)
         output = torch.empty_like(query)
 
+        block_table = torch.tensor([[2, 1, -77], [3, 5, 4]], dtype=torch.int32)
+        indices = torch.tensor([2, 1, 0, 3, 5, 4])
+        expected_key = key.index_select(0, indices).view(2, 12, 4)
+        expected_value = value.index_select(0, indices).view(2, 12, 4)
+        for req, length in enumerate([7, 9]):
+            expected_key[req, length:] = 0
+            expected_value[req, length:] = 0
+
         def require_contiguous(**kwargs):
             self.assertTrue(kwargs["key"].is_contiguous())
             self.assertTrue(kwargs["value"].is_contiguous())
-            torch.testing.assert_close(kwargs["key"], key)
-            torch.testing.assert_close(kwargs["value"], value)
+            torch.testing.assert_close(kwargs["key"], expected_key.view(6, 4, 4))
+            torch.testing.assert_close(kwargs["value"], expected_value.view(6, 4, 4))
             return torch.ones(2, 3, 2, 4), None
 
         with patch.object(attn_module.torch_npu, "npu_fused_infer_attention_score", require_contiguous):
             AscendAttentionBackendImpl._forward_draft_tail_masked(
-                impl, query, key, value, meta, torch.zeros((2, 2), dtype=torch.int32), 4, [10, 12], 6, output
+                impl, query, key, value, meta, block_table, 4, [10, 12], 6, output
             )
         torch.testing.assert_close(backing, before)
         torch.testing.assert_close(output, torch.ones_like(output))
+
+    def test_unsupported_cache_layout_keeps_exact_length_fallback(self):
+        impl, meta = self._impl(), self._metadata()
+        query = torch.zeros(6, 2, 4)
+        key = torch.zeros(6, 1, 4, 4)
+        result = AscendAttentionBackendImpl._forward_draft_tail_masked(
+            impl, query, key, key, meta, torch.zeros(2, 3, dtype=torch.int32), 4, [10, 12], 6, query
+        )
+        self.assertIsNone(result)
+
+    def test_shared_prefix_gather_cannot_exceed_backing_cache_size(self):
+        impl, meta = self._impl(), self._metadata()
+        query = torch.zeros(6, 2, 4)
+        key = torch.zeros(3, 4, 4)
+        result = AscendAttentionBackendImpl._forward_draft_tail_masked(
+            impl, query, key, key, meta, torch.zeros(2, 3, dtype=torch.int32), 4, [10, 12], 6, query
+        )
+        self.assertIsNone(result)
 
     def test_ineligible_draft_passes_exact_lengths_to_fallback_once(self):
         impl = self._impl()

@@ -250,9 +250,9 @@ class AscendCommonAttentionMetadata(CommonAttentionMetadata):
     #
     # This is separate from ``seq_lens_cpu_is_exact`` on purpose -- that flag
     # must keep meaning "equals the device tensor", so that anything needing a
-    # genuinely exact value can still tell the two apart. Reading a few stale
-    # KV positions costs draft quality (acceptance rate), not output
-    # correctness: the target verifies every token it emits. See issue #16271.
+    # genuinely exact value can still tell the two apart. Consumers must use
+    # exact device lengths to mask and sanitize the unread KV tail; the bound
+    # does not authorize attention to stale values. See issue #16271.
     seq_lens_cpu_is_approximate: bool = False
 
     # CPU tensor of already computed tokens count per request.
