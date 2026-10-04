@@ -182,6 +182,18 @@ class AscendMetadata:
     seq_lens: torch.Tensor = None
     seq_lens_cpu: torch.Tensor = None
     seq_lens_list: list[int] = None  # type: ignore
+
+    # issue #16271. Set when ``seq_lens_list`` is the *optimistic upper
+    # bound* rather than the truth: a parallel-drafting draft build whose
+    # rejection count is resolved on the device. ``seq_lens`` still holds
+    # the exact lengths, on the device, and the attention impl masks the
+    # difference away instead of reading them back.
+    draft_kv_upper_bound: bool = False
+    # Per-request query lengths (BSND takes these; TND takes the
+    # cumulative form). Host-side and free: the scheduler set them.
+    draft_query_lens: list[int] = None  # type: ignore
+    # One mask per step, shared by every layer in the attention group.
+    draft_tail_mask_cache: dict = None  # type: ignore
     actual_seq_lengths_q: list[int] = None  # type: ignore
 
     query_start_loc: torch.Tensor = None
@@ -322,6 +334,28 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
             speculative_config=self.speculative_config,
             vllm_config=self.vllm_config,
         )
+        selected_device_lengths = seq_lens is common_attn_metadata.seq_lens
+        # Only the standard, eager, non-context-parallel implementation below
+        # consumes an upper bound with a device-side tail mask. Other builders
+        # must keep the original exact-length path.
+        can_mask_draft_tail = (
+            type(self) is AscendAttentionMetadataBuilder and not self.pcp_enabled and not _EXTRA_CTX.capturing
+        )
+        seq_lens_cpu_mirror = None if selected_device_lengths else seq_lens
+        if (
+            seq_lens_cpu_mirror is None
+            and not isinstance(self.kv_cache_spec, CrossAttentionSpec)
+            and (
+                common_attn_metadata.seq_lens_cpu_is_exact
+                or (can_mask_draft_tail and common_attn_metadata.seq_lens_cpu_is_approximate)
+            )
+        ):
+            seq_lens_cpu_mirror = common_attn_metadata._seq_lens_cpu
+            if seq_lens_cpu_mirror is None:
+                seq_lens_cpu_mirror = common_attn_metadata.seq_lens_cpu
+            if seq_lens_cpu_mirror is not None:
+                seq_lens_cpu_mirror = seq_lens_cpu_mirror[:num_reqs]
+        seq_lens_mirrored_on_host = seq_lens_cpu_mirror is not None
         slot_mapping = common_attn_metadata.slot_mapping[:num_actual_tokens]
         # this slot_mapping override doesn't work since vllm will override it again. We should fix it vllm.
         # see: https://github.com/vllm-project/vllm/blob/ce88756b967c2c5006746a424c15dd59a284ed8c/vllm/model_executor/layers/attention/cross_attention.py#L117
@@ -337,7 +371,13 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
         query_start_loc = query_start_loc_cpu.pin_memory().to(self.device, non_blocking=True)
 
         actual_seq_lengths_q = query_start_loc_cpu[1:].tolist()
-        seq_lens_list = seq_lens.tolist()
+        if seq_lens_mirrored_on_host:
+            seq_lens_list = seq_lens_cpu_mirror.tolist()
+        else:
+            # No exact host mirror for this build. Removing this last copy needs
+            # the FIA call to accept ``actual_seq_lengths_kv`` as a device
+            # tensor, the way ``full_graph_fia_v2`` already does.
+            seq_lens_list = seq_lens.tolist()
         # Sequence-parallel (or cudagraph) padding makes the model runner insert a
         # dummy padding request into query_start_loc to satisfy the FIA TND-layout
         # constraint (sum of q lengths == hidden_states.shape[0]), bumping the
@@ -372,6 +412,20 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
                 dim=0,
             )
 
+        # issue #16271: a draft build under the optimistic bound keeps the exact
+        # lengths on the device; record enough for the impl to mask the
+        # difference rather than read them back. Only a producer that enabled
+        # ``enable_dspark_draft_kv_optimistic_bound`` ever publishes an
+        # approximate mirror, so that flag doubles as the opt-in here.
+        draft_kv_upper_bound = bool(
+            selected_device_lengths
+            and can_mask_draft_tail
+            and not isinstance(self.kv_cache_spec, CrossAttentionSpec)
+            and common_attn_metadata.seq_lens_cpu_is_approximate
+            and not common_attn_metadata.seq_lens_cpu_is_exact
+        )
+        draft_query_lens = (query_start_loc_cpu[1:] - query_start_loc_cpu[:-1]).tolist()
+
         backend_metadata = self._build_backend_metadata(
             common_attn_metadata,
             block_table=block_table,
@@ -390,6 +444,9 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
             seq_lens_list=seq_lens_list,
             max_query_len=common_attn_metadata.max_query_len,
             actual_seq_lengths_q=actual_seq_lengths_q,
+            draft_kv_upper_bound=draft_kv_upper_bound,
+            draft_query_lens=draft_query_lens,
+            draft_tail_mask_cache={},
             slot_mapping=slot_mapping,
             attn_mask=attn_mask,
             attn_state=attn_state,
@@ -494,6 +551,67 @@ class PAParamProvider:
             "context_lens": metadata.seq_lens,
             "block_table": metadata.block_tables,
         }
+
+
+# A draft query block holds the seed token plus one token per speculative step.
+# A block of a single token therefore carries no drafted token and no rolled-back
+# tail to mask, and the regular path serves it; the BSND mask path needs at least
+# this many query tokens per request.
+def build_draft_tail_mask(
+    seq_lens: torch.Tensor,
+    num_reqs: int,
+    query_len: int,
+    kv_span: int,
+    sliding_window: int | None,
+    causal: bool = True,
+) -> torch.Tensor:
+    """Per-request attention mask for a draft build, built on the device.
+
+    ``seq_lens`` is the exact device-side KV length L per request; the op is
+    told the optimistic bound U >= L instead, which costs no host sync. What
+    each query token may attend follows the draft's causality:
+
+    * causal: query token j of request i may attend up to ``L_i - query_len +
+      j`` -- the prefix plus the block's own earlier positions;
+    * non-causal, which is what a DSpark query-block forward is: every query
+      token gets the whole visible prefix, so the bound is flat at ``L_i - 1``
+      and does not advance with j.
+
+    Resolving causality from the draft config is not optional. vLLM defaults a
+    DFlash/DSpark draft whose layers are all ``full_attention`` -- every stock
+    Qwen3 DSpark drafter -- to non-causal, so a causal-only mask would silently
+    bail on exactly the models this path exists for.
+
+    Masking beyond that bound reproduces exactly what passing L would have
+    computed -- and hides the [L_i, U_i) tail, which holds the draft KV this
+    step rolled back. Feeding U without this mask is what costs the approximate
+    path its acceptance.
+
+    ``atten_mask`` is an ordinary device tensor and is not declared
+    ``ValueDepend`` in the operator's IR, so unlike ``actual_seq_lengths_kv``
+    it may legally depend on device-resident values.
+
+    The sliding window is folded into the same mask. Band mode's
+    ``pre_tokens=W`` keeps W+1 positions -- ``[last - W, last]``, closed at
+    both ends -- so the comparison here is ``< last - W`` and not
+    ``<= last - W``. Getting that boundary wrong does not fail loudly; it
+    quietly changes the scores.
+
+    Returns an int8 [num_reqs, query_len, kv_span] tensor, 1 = masked out.
+    """
+    device = seq_lens.device
+    lens = seq_lens[:num_reqs].to(torch.int32)
+    offsets = torch.arange(query_len, device=device, dtype=torch.int32)
+    cols = torch.arange(kv_span, device=device, dtype=torch.int32).view(1, 1, -1)
+    # [num_reqs, query_len, 1]: the last KV position each query token may see.
+    if causal:
+        last = ((lens - query_len).view(-1, 1) + offsets.view(1, -1)).unsqueeze(-1)
+    else:
+        last = (lens - 1).view(-1, 1, 1).expand(-1, query_len, 1)
+    mask = cols > last
+    if sliding_window:
+        mask |= cols < (last - sliding_window)
+    return mask.to(torch.int8)
 
 
 class AscendAttentionBackendImpl(AttentionImpl):
@@ -828,6 +946,88 @@ class AscendAttentionBackendImpl(AttentionImpl):
             actual_seq_lengths_kv = attn_metadata.seq_lens_list
         return key, value, block_size, block_table, actual_seq_lengths_kv
 
+    def _forward_draft_tail_masked(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_metadata: AscendMetadata,
+        block_table: torch.Tensor,
+        block_size: int,
+        actual_seq_lengths_kv: list[int],
+        num_tokens: int,
+        output: torch.Tensor,
+    ) -> torch.Tensor | None:
+        """Exact draft attention from an optimistic KV bound. See #16271.
+
+        Returns ``None`` when this is not an eligible draft build, so the
+        caller falls through to the normal path.
+
+        The layout switch is not cosmetic. ``IsUsingFAI`` in the operator's
+        tiling begins with ``inputLayout == "TND"``, so a TND call is routed to
+        the split-fuse template, whose mask check accepts only sparse_mode 3/4
+        with a 2048x2048 mask -- a per-request mask is impossible there. Every
+        request in a parallel-drafting draft build contributes the same number
+        of query tokens, so TND [T, N, D] is the same buffer as
+        BSND [B, S, N, D]; relabelling it leaves that template for the general
+        one, which accepts [B, >=Q_S, >=KV_S] with sparse_mode 0.
+        """
+        if not attn_metadata.draft_kv_upper_bound:
+            return None
+        # A learnable sink changes what the mask would have to express and does
+        # not occur on this path today. Causality does occur, and is handled by
+        # ``build_draft_tail_mask``.
+        if self.sinks is not None or block_table is None:
+            return None
+        query_lens = attn_metadata.draft_query_lens
+        num_reqs = len(query_lens) if query_lens else 0
+        query_len = int(query_lens[0]) if num_reqs else 0
+        # BSND needs a rectangular batch. Parallel drafting always produces
+        # one, but a padded or ragged build must not be silently reshaped.
+        min_draft_query_block_len = 2
+        if query_len < min_draft_query_block_len or any(int(q) != query_len for q in query_lens):
+            return None
+        if num_tokens != num_reqs * query_len or attn_metadata.seq_lens.shape[0] < num_reqs:
+            return None
+
+        # Under paged attention the mask's last dimension must cover the whole
+        # addressable KV span, not just the longest actual sequence.
+        kv_span = int(block_table.shape[1]) * int(block_size)
+        cache_key = (kv_span, query_len, self.sliding_window, attn_metadata.causal)
+        mask = attn_metadata.draft_tail_mask_cache.get(cache_key)
+        if mask is None:
+            mask = build_draft_tail_mask(
+                attn_metadata.seq_lens,
+                num_reqs,
+                query_len,
+                kv_span,
+                self.sliding_window,
+                attn_metadata.causal,
+            )
+            attn_metadata.draft_tail_mask_cache[cache_key] = mask
+
+        attn_output, _ = torch_npu.npu_fused_infer_attention_score(
+            query=query.view(num_reqs, query_len, self.num_heads, self.head_size),
+            # The paged BSND template requires contiguous K/V, while hybrid
+            # cache allocation may expose block-strided views. Preserve the
+            # backing cache and materialize only the reader inputs.
+            key=key.contiguous(),
+            value=value.contiguous(),
+            atten_mask=mask,
+            block_table=block_table,
+            input_layout="BSND",
+            block_size=block_size,
+            # BSND takes per-request query lengths, not the cumulative form.
+            actual_seq_lengths=[query_len] * num_reqs,
+            actual_seq_lengths_kv=actual_seq_lengths_kv,
+            num_key_value_heads=self.num_kv_heads,
+            num_heads=self.num_heads,
+            scale=self.scale,
+            sparse_mode=0,
+        )
+        output[:num_tokens] = attn_output.reshape(num_tokens, self.num_heads, self.head_size)
+        return output
+
     def forward_fused_infer_attention(
         self,
         query: torch.Tensor,
@@ -855,6 +1055,26 @@ class AscendAttentionBackendImpl(AttentionImpl):
         )
         num_tokens = attn_metadata.actual_seq_lengths_q[-1]
         query = query[:num_tokens]
+        draft_output = self._forward_draft_tail_masked(
+            query,
+            key,
+            value,
+            attn_metadata,
+            block_table,
+            block_size,
+            actual_seq_lengths_kv,
+            num_tokens,
+            output,
+        )
+        if draft_output is not None:
+            return draft_output
+        if attn_metadata.draft_kv_upper_bound:
+            # A sink, ragged batch or unsupported layout cannot use the tail
+            # mask. Materialize exact lengths once before the ordinary FIA
+            # fallback; passing the optimistic bound here would expose stale KV.
+            actual_seq_lengths_kv = attn_metadata.seq_lens.tolist()
+            attn_metadata.seq_lens_list = actual_seq_lengths_kv
+            attn_metadata.draft_kv_upper_bound = False
         if (
             attn_metadata.attn_state == AscendAttentionState.PrefillNoCache
             and self.attn_type != AttentionType.ENCODER_DECODER
