@@ -18,6 +18,7 @@ import torch
 from vllm.triton_utils import tl, triton
 
 from vllm_ascend.ops.triton.triton_utils import get_ub_size_bytes, get_vectorcore_num
+from vllm_ascend.ops.triton.rope_copy import rope_copy_forward
 
 _FP8_E4M3_MAX = 448.0
 
@@ -571,6 +572,26 @@ def rope_forward_triton(
         )
     if q_out is not None or k_out is not None:
         raise ValueError("q_out and k_out require an FP8 output dtype")
+
+    # Fuse the copies into full NeoX RoPE for small, dense per-token head
+    # groups. Both inputs must require copies: preserve the original in-place
+    # contract for contiguous tensors by leaving those on the existing path.
+    if (
+        is_neox_style and cos_sin_cache is not None and positions is not None
+        and q.ndim == k.ndim == 3 and q.shape[0] > 1
+        and q.dtype == k.dtype == cos_sin_cache.dtype == torch.bfloat16
+        and q.shape[-1] == k.shape[-1] == rope_dim == 128
+        and 0 < q.shape[1] <= 16 and 0 < k.shape[1] <= 16
+        and q.shape[0] == k.shape[0] == positions.numel()
+        and q.stride(-1) == k.stride(-1) == cos_sin_cache.stride(-1) == 1
+        and q.stride(-2) == k.stride(-2) == rope_dim
+        and cos_sin_cache.ndim == 2 and cos_sin_cache.shape[1] == rope_dim
+        and positions.ndim == 1 and positions.is_contiguous()
+        and not q.is_contiguous() and not k.is_contiguous()
+        and max(q.shape[0] * q.stride(0), k.shape[0] * k.stride(0),
+                cos_sin_cache.numel()) < 2**31
+    ):
+        return rope_copy_forward(q, k, cos_sin_cache, positions, get_vectorcore_num())
 
     if not q.is_contiguous():
         q = q.contiguous()
