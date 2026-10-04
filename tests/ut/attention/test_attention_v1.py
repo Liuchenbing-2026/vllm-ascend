@@ -312,14 +312,6 @@ class TestAscendAttentionMetadataBuilder(TestBase):
         self.assertFalse(metadata.draft_kv_upper_bound)
         self.assertTrue(any(src is device_lens for src in sources))
 
-    def test_graph_capture_keeps_exact_lengths(self):
-        with patch.object(attn_module._EXTRA_CTX, "capturing", True):
-            metadata, sources, device_lens, _ = self._build_parallel_drafting_metadata(
-                seq_lens_cpu_is_exact=False, seq_lens_cpu_is_approximate=True
-            )
-        self.assertFalse(metadata.draft_kv_upper_bound)
-        self.assertTrue(any(src is device_lens for src in sources))
-
     def test_specialized_builder_keeps_exact_lengths(self):
         class SpecializedBuilder(AscendAttentionMetadataBuilder):
             pass
@@ -1262,7 +1254,7 @@ class TestForwardDraftTailMasked(TestBase):
         )
         fake = MagicMock(return_value=(torch.ones_like(query), None))
         with (
-            patch.object(attn_module._EXTRA_CTX, "capturing", False),
+            patch.object(attn_module, "_EXTRA_CTX", SimpleNamespace(capturing=False)),
             patch.object(attn_module.torch_npu, "npu_fused_infer_attention_score", fake),
         ):
             for _ in range(2):

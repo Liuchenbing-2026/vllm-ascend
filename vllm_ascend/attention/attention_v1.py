@@ -343,7 +343,6 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
             and not self.pcp_enabled
             and self.speculative_config is not None
             and self.speculative_config.enforce_eager
-            and not _EXTRA_CTX.capturing
         )
         seq_lens_cpu_mirror = None if selected_device_lengths else seq_lens
         if (
