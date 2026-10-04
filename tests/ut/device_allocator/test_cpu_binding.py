@@ -224,6 +224,7 @@ class TestDeviceInfo(unittest.TestCase):
     @patch("vllm_ascend.cpu_binding.execute_command")
     def test_parse_topo_affinity_skips_affinity_header_and_non_npu_rows(self, mock_execute_command):
         device_info = object.__new__(DeviceInfo)
+        device_info.npu_map_info = {"0": {"0": "0"}}
         mock_execute_command.return_value = (
             "HEADER\nNPU Chip Affinity\nnot-an-npu row\nNPU0 x x x 2-3",
             0,
@@ -243,6 +244,22 @@ class TestDeviceInfo(unittest.TestCase):
         )
 
         self.assertEqual(device_info.parse_topo_affinity(), {})
+
+    @patch("vllm_ascend.cpu_binding.execute_command")
+    def test_topo_affinity_maps_container_physical_to_logical(self, mock_command):
+        info = object.__new__(DeviceInfo)
+        info.npu_map_info = {"6": {"0": "0"}, "7": {"0": "1"}}
+        mock_command.return_value = ("NPU6 X HCCS 48-95\nNPU7 HCCS X 48-95", 0)
+        self.assertEqual(info.parse_topo_affinity(), {0: list(range(48, 96)), 1: list(range(48, 96))})
+
+    @patch("vllm_ascend.cpu_binding.execute_command")
+    def test_topo_affinity_maps_all_chips_and_skips_unmapped_boards(self, mock_command):
+        info = object.__new__(DeviceInfo)
+        info.npu_map_info = {"4": {"0": "0", "1": "1", "2": "-"}}
+        mock_command.return_value = ("NPU4 X HCCS 8-11\nNPU5 HCCS X 12-15", 0)
+        affinity = info.parse_topo_affinity()
+        self.assertEqual(affinity, {0: [8, 9, 10, 11], 1: [8, 9, 10, 11]})
+        self.assertIsNot(affinity[0], affinity[1])
 
     def test_resolve_logic_id_from_npu_only_single_chip_map(self):
         device_info = object.__new__(DeviceInfo)
