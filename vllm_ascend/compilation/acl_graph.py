@@ -110,6 +110,9 @@ class ACLGraphWrapper:
         self.compilation_config = vllm_config.compilation_config
         self.enable_super_kernel = get_ascend_config().ascend_compilation_config.enable_super_kernel
 
+        self.enable_replay_event_sync = get_ascend_config().ascend_compilation_config.enable_replay_event_sync
+        self._replay_done_event = None
+        self._last_replay_descriptor = None
         self.first_run_finished = False
         self.is_debugging_mode = envs.VLLM_LOGGING_LEVEL == "DEBUG"
         self._runnable_str = str(runnable) if self.is_debugging_mode else None
@@ -165,6 +168,7 @@ class ACLGraphWrapper:
             # matches. This enables properly dispatching to the correct
             # CUDAGraphWrapper when nesting multiple instances with different
             # runtime modes.
+            self._last_replay_descriptor = None
             return self.runnable(*args, **kwargs)
 
         if batch_descriptor not in self.concrete_aclgraph_entries:
@@ -174,6 +178,7 @@ class ACLGraphWrapper:
         entry = self.concrete_aclgraph_entries[batch_descriptor]
 
         if entry.aclgraph is None:
+            self._last_replay_descriptor = None
             if self.aclgraph_options.debug_log_enable:
                 # Since we capture aclgraph for many different shapes and
                 # capturing is fast, we don't need to log it for every
@@ -292,12 +297,34 @@ class ACLGraphWrapper:
         # When FULL + EAGLE draft (merge path), replay does not need this barrier.
         is_draft_eagle = _EXTRA_CTX.is_draft_model and self.use_eagle
         need_sync = self.runtime_mode == CUDAGraphMode.FULL and not is_draft_eagle
+        event_sync = (
+            self.enable_replay_event_sync
+            and need_sync
+            and not self.enable_enpu
+            and self.vllm_config.speculative_config is None
+            and self.vllm_config.parallel_config.tensor_parallel_size == 1
+            and self.vllm_config.parallel_config.pipeline_parallel_size == 1
+            and use_updatable_graph(self.attn_backend)
+        )
+        stream = torch.npu.current_stream()
         if not self.enable_enpu and need_sync:
-            torch.npu.current_stream().synchronize()
+            if event_sync and self._last_replay_descriptor == batch_descriptor:
+                # Keep a host barrier for task-param ownership. Work submitted
+                # after the last replay stays ordered on its original stream.
+                self._replay_done_event.synchronize()
+            else:
+                stream.synchronize()
+        self._last_replay_descriptor = None
         if self.runtime_mode == CUDAGraphMode.FULL and use_updatable_graph(self.attn_backend):
             self._updatable_graph_replay(forward_context, entry.aclgraph)
         else:
             entry.aclgraph.replay()
+        if event_sync:
+            if self._replay_done_event is None:
+                self._replay_done_event = torch.npu.Event()
+            self._replay_done_event.record(stream)
+            self._last_replay_descriptor = batch_descriptor
+            logger.info_once("Replay completion event synchronization is active.")
         logger.info_once("ACL graph replay is active (logged once).")
         return entry.output
 

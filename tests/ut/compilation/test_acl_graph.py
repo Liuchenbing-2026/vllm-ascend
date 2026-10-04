@@ -124,6 +124,7 @@ class TestACLGraphWrapper(TestBase):
         self.mock_get_ascend_config = self.get_ascend_config_patcher.start()
         self.addCleanup(self.get_ascend_config_patcher.stop)
         self.mock_get_ascend_config.return_value.ascend_compilation_config.enable_super_kernel = False
+        self.mock_get_ascend_config.return_value.ascend_compilation_config.enable_replay_event_sync = False
 
         self.exit_stack = contextlib.ExitStack()
         self.addCleanup(self.exit_stack.close)
