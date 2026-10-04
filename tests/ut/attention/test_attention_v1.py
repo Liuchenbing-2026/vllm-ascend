@@ -183,7 +183,9 @@ class TestAscendAttentionMetadataBuilder(TestBase):
         self.assertTrue(torch.equal(unpadded_metadata._seq_lens_cpu, internal_seq_lens_cpu[:2]))
         self.assertIsNone(unpadded_metadata.seq_lens_cpu)
 
-    def _build_parallel_drafting_metadata(self, *, seq_lens_cpu_is_exact, seq_lens_cpu_is_approximate=False):
+    def _build_parallel_drafting_metadata(
+        self, *, seq_lens_cpu_is_exact, seq_lens_cpu_is_approximate=False, enforce_eager=True
+    ):
         """Run ``build`` for a parallel-drafting batch, recording every tolist.
 
         Returns ``(metadata, tolist_sources)``.
@@ -209,7 +211,9 @@ class TestAscendAttentionMetadataBuilder(TestBase):
             attn_state=AscendAttentionState.DecodeOnly,
             max_seq_len=6,
         )
-        self.builder.speculative_config = SimpleNamespace(parallel_drafting=True, use_dspark=lambda: False)
+        self.builder.speculative_config = SimpleNamespace(
+            parallel_drafting=True, use_dspark=lambda: False, enforce_eager=enforce_eager
+        )
 
         tolist_sources = []
         original_tolist = torch.Tensor.tolist
@@ -300,6 +304,13 @@ class TestAscendAttentionMetadataBuilder(TestBase):
         metadata, _, _, _ = self._build_parallel_drafting_metadata(seq_lens_cpu_is_exact=True)
 
         self.assertFalse(metadata.draft_kv_upper_bound)
+
+    def test_graph_enabled_draft_keeps_exact_lengths(self):
+        metadata, sources, device_lens, _ = self._build_parallel_drafting_metadata(
+            seq_lens_cpu_is_exact=False, seq_lens_cpu_is_approximate=True, enforce_eager=False
+        )
+        self.assertFalse(metadata.draft_kv_upper_bound)
+        self.assertTrue(any(src is device_lens for src in sources))
 
     def test_graph_capture_keeps_exact_lengths(self):
         with patch.object(attn_module._EXTRA_CTX, "capturing", True):

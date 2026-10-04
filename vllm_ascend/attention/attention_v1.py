@@ -339,7 +339,11 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
         # consumes an upper bound with a device-side tail mask. Other builders
         # must keep the original exact-length path.
         can_mask_draft_tail = (
-            type(self) is AscendAttentionMetadataBuilder and not self.pcp_enabled and not _EXTRA_CTX.capturing
+            type(self) is AscendAttentionMetadataBuilder
+            and not self.pcp_enabled
+            and self.speculative_config is not None
+            and self.speculative_config.enforce_eager
+            and not _EXTRA_CTX.capturing
         )
         seq_lens_cpu_mirror = None if selected_device_lengths else seq_lens
         if (
