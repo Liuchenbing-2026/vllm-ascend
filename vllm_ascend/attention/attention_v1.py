@@ -576,14 +576,13 @@ def build_draft_tail_mask(
 
     * causal: query token j of request i may attend up to ``L_i - query_len +
       j`` -- the prefix plus the block's own earlier positions;
-    * non-causal, which is what a DSpark query-block forward is: every query
-      token gets the whole visible prefix, so the bound is flat at ``L_i - 1``
+    * non-causal: every query token gets the whole visible prefix, so the
+      bound is flat at ``L_i - 1``
       and does not advance with j.
 
-    Resolving causality from the draft config is not optional. vLLM defaults a
-    DFlash/DSpark draft whose layers are all ``full_attention`` -- every stock
-    Qwen3 DSpark drafter -- to non-causal, so a causal-only mask would silently
-    bail on exactly the models this path exists for.
+    Honor causality from the draft metadata. Full-attention DFlash/DSpark
+    drafters may be non-causal, while sliding-attention drafters can remain
+    causal; neither mode can be assumed for every draft model.
 
     Masking beyond that bound reproduces exactly what passing L would have
     computed -- and hides the [L_i, U_i) tail, which holds the draft KV this

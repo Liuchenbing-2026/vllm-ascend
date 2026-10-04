@@ -1148,10 +1148,7 @@ class TestForwardDraftTailMasked(TestBase):
         self.assertIsNone(self._call(self._impl(sinks=torch.zeros(1)), self._metadata()))
 
     def test_non_causal_build_is_eligible_and_is_not_aliased_to_the_causal_mask(self):
-        """Every stock Qwen3 DSpark drafter is non-causal, so bailing here would
-        drop exactly the models this path exists for -- and the two masks differ,
-        so the cache key has to carry causality.
-        """
+        """Non-causal drafts remain eligible without aliasing the causal mask."""
         impl = self._impl()
         seq_lens = torch.tensor([5, 7], dtype=torch.int32)
         non_causal_meta = self._metadata(causal=False, seq_lens=seq_lens)
