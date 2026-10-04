@@ -1112,6 +1112,27 @@ class TestBuildDraftTailMask(TestBase):
 class TestForwardDraftTailMasked(TestBase):
     """Eligibility. Every rejected case must fall through, not compute wrongly."""
 
+    def setUp(self):
+        # CPU tests exercise eligibility/FIA wiring; real NPU tests cover the
+        # fused gather kernel, including non-finite tails and changing lengths.
+        super().setUp()
+        mock_gather = patch.object(attn_module, "gather_draft_kv", side_effect=self._reference_gather)
+        mock_gather.start()
+        self.addCleanup(mock_gather.stop)
+
+    @staticmethod
+    def _reference_gather(key, value, table, lengths, batch, pages):
+        page_size, width = key.shape[1:]
+        out_key = torch.zeros(batch * pages, page_size, width, dtype=key.dtype)
+        out_value = torch.zeros_like(out_key)
+        for request in range(batch):
+            for token in range(int(lengths[request])):
+                page, offset = divmod(token, page_size)
+                source = int(table[request, page])
+                out_key[request * pages + page, offset] = key[source, offset]
+                out_value[request * pages + page, offset] = value[source, offset]
+        return out_key, out_value, torch.arange(batch * pages, dtype=table.dtype).view(batch, pages)
+
     def _impl(self, **overrides):
         impl = SimpleNamespace(sinks=None, sliding_window=None, num_heads=2, num_kv_heads=1, head_size=4, scale=0.5)
         impl.__dict__.update(overrides)
@@ -1235,6 +1256,15 @@ class TestForwardDraftTailMasked(TestBase):
             )
         torch.testing.assert_close(backing, before)
         torch.testing.assert_close(output, torch.ones_like(output))
+
+    def test_inner_strided_cache_keeps_exact_length_fallback(self):
+        impl, meta = self._impl(), self._metadata()
+        cache = torch.zeros(6, 4, 8)[..., ::2]
+        query = torch.zeros(6, 2, 4)
+        result = AscendAttentionBackendImpl._forward_draft_tail_masked(
+            impl, query, cache, cache, meta, torch.zeros(2, 3, dtype=torch.int32), 4, [10, 12], 6, query
+        )
+        self.assertIsNone(result)
 
     def test_unsupported_cache_layout_keeps_exact_length_fallback(self):
         impl, meta = self._impl(), self._metadata()

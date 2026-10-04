@@ -62,6 +62,7 @@ from vllm_ascend.compilation.updatable_graph import (
 from vllm_ascend.device.device_op import DeviceOperator
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.attention_fence import attention_transfer_window
+from vllm_ascend.ops.triton.draft_kv_gather import gather_draft_kv
 
 # default max value of sliding window size
 SWA_INT_MAX = 2147483647
@@ -1016,6 +1017,8 @@ class AscendAttentionBackendImpl(AttentionImpl):
         # layouts on the exact-length fallback rather than reinterpret storage.
         if key.ndim != 3 or value.shape != key.shape or key.shape[1] != block_size:
             return None
+        if key.stride(-1) != 1 or value.stride(-1) != 1:
+            return None
         blocks_per_req = (max(actual_seq_lengths_kv) + block_size - 1) // block_size
         if blocks_per_req <= 0 or blocks_per_req > block_table.shape[1]:
             return None
@@ -1025,21 +1028,8 @@ class AscendAttentionBackendImpl(AttentionImpl):
         if num_reqs * blocks_per_req > logical_blocks:
             return None
         kv_span = blocks_per_req * block_size
-        block_offsets = torch.arange(blocks_per_req, device=key.device) * block_size
-        exact_lengths = attn_metadata.seq_lens[:num_reqs].view(-1, 1)
-        active_blocks = block_offsets.view(1, -1) < exact_lengths
-        source_blocks = torch.where(active_blocks, block_table[:num_reqs, :blocks_per_req], 0)
-        source_indices = source_blocks.reshape(-1).to(torch.int64)
-        key = key.index_select(0, source_indices)
-        value = value.index_select(0, source_indices)
-        valid_kv = torch.arange(kv_span, device=key.device).view(1, -1) < exact_lengths
-        # A score mask cannot isolate NaN/Inf in unread KV: zero probability
-        # times a non-finite value still contaminates the reduction. Sanitize
-        # only the private reader copies, never the shared backing cache.
-        key.view(num_reqs, kv_span, -1).masked_fill_(~valid_kv.unsqueeze(-1), 0)
-        value.view(num_reqs, kv_span, -1).masked_fill_(~valid_kv.unsqueeze(-1), 0)
-        block_table = torch.arange(num_reqs * blocks_per_req, device=block_table.device, dtype=block_table.dtype).view(
-            num_reqs, blocks_per_req
+        key, value, block_table = gather_draft_kv(
+            key, value, block_table, attn_metadata.seq_lens, num_reqs, blocks_per_req
         )
         cache_key = (kv_span, query_len, self.sliding_window, attn_metadata.causal)
         mask = attn_metadata.draft_tail_mask_cache.get(cache_key)
@@ -1056,8 +1046,7 @@ class AscendAttentionBackendImpl(AttentionImpl):
 
         attn_output, _ = torch_npu.npu_fused_infer_attention_score(
             query=query.view(num_reqs, query_len, self.num_heads, self.head_size),
-            # index_select produces compact reader inputs even for a
-            # block-strided hybrid cache, without copying the entire pool.
+            # The fused reader emits compact pages without touching shared KV.
             key=key,
             value=value,
             atten_mask=mask,
