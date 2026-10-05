@@ -607,6 +607,8 @@ class AscendConfig:
     msmonitor_use_daemon: bool = False
     enable_transpose_kv_cache_by_block: bool = True
     weight_nz_mode: int = 1
+    # Avoid a full-vocabulary FP32 copy for unprocessed, logprob-free greedy batches.
+    enable_native_greedy_sampling: bool = False
 
     # ---- sub-configs (no vllm_config dep): pydantic dict→dataclass coercion ----
     ascend_compilation_config: AscendCompilationConfig = dataclasses.field(default_factory=AscendCompilationConfig)

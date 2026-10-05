@@ -2,10 +2,13 @@ import torch
 import vllm.envs as envs
 from vllm.logger import logger
 from vllm.triton_utils import HAS_TRITON
+from vllm.v1.outputs import SamplerOutput
+from vllm.v1.sample.logits_processor import LogitBiasLogitsProcessor, MinTokensLogitsProcessor
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.ops.topk_topp_sampler import TopKTopPSampler
 from vllm.v1.sample.sampler import Sampler
 
+from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.sample.penalties import apply_all_penalties
 from vllm_ascend.utils import global_stream, npu_stream_switch
@@ -43,6 +46,39 @@ def random_sample(
 
 
 class AscendSampler(Sampler):
+    def forward(self, logits, sampling_metadata, predict_bonus_token=False, logprobs_mode_override=None):
+        if (
+            get_ascend_config().enable_native_greedy_sampling
+            and logits.dtype in (torch.bfloat16, torch.float16)
+            and sampling_metadata.all_greedy
+            and not sampling_metadata.all_random
+            and sampling_metadata.no_penalties
+            and sampling_metadata.max_num_logprobs is None
+            and not sampling_metadata.logprob_token_ids
+            and sampling_metadata.allowed_token_ids_mask is None
+            and not sampling_metadata.bad_words_token_ids
+            and sampling_metadata.thinking_budget_state_holder is None
+            and not predict_bonus_token
+            and self._has_no_active_greedy_processors(sampling_metadata)
+        ):
+            return SamplerOutput(
+                sampled_token_ids=self.greedy_sample(logits).to(torch.int32).unsqueeze(-1),
+                logprobs_tensors=None,
+            )
+        return super().forward(logits, sampling_metadata, predict_bonus_token, logprobs_mode_override)
+
+    @staticmethod
+    def _has_no_active_greedy_processors(sampling_metadata):
+        # Builtins are retained even when no request uses them. Only recognize
+        # their exact types: a subclass or custom processor must use the parent.
+        for processor in sampling_metadata.logitsprocs.non_argmax_invariant:
+            if type(processor) is LogitBiasLogitsProcessor and not processor.biases:
+                continue
+            if type(processor) is MinTokensLogitsProcessor and not processor.min_toks:
+                continue
+            return False
+        return True
+
     @staticmethod
     def apply_penalties(
         logits: torch.Tensor,
