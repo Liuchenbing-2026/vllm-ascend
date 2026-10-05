@@ -356,3 +356,16 @@ non-hybrid MLA, and does not support DCP or KV transfer connectors. PCP gathers
 prefill KV before cache writes; layer broadcasts restore prior-forward cache
 contents before attention. The broadcast decision uses the global scheduled
 batch, not PCP-local segment offsets.
+
+### Experimental dense weight orientation
+
+`weight_nz_transpose_modules` defaults to `[]`. With `weight_nz_mode=2`, matching
+unquantized FP16/BF16 linear module prefixes use K,N-oriented NZ storage while
+preserving the public N,K weight shape. Entries are case-sensitive shell globs,
+for example `["*.mlp.gate_up_proj", "*.mlp.down_proj"]`.
+
+This is an experimental per-module opt-in. It changes GEMM dispatch and can change
+floating-point rounding; synthetic operator checks do not establish model accuracy
+or serving throughput. Benchmark representative batch sizes and validate model
+outputs before deployment. Quantized weights, non-matching modules, and weights
+excluded by the existing NZ policy retain their original handling.
