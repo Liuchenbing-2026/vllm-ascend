@@ -24,6 +24,7 @@ import json
 import math
 import os
 from contextlib import contextmanager, nullcontext
+from fnmatch import fnmatchcase
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -351,15 +352,27 @@ def maybe_trans_nz(
     weight: torch.Tensor,
     customize_dtype: torch.dtype | None = None,
     input_dtype: torch.dtype | None = None,
+    *,
+    prefix: str | None = None,
 ) -> torch.Tensor:
     if not _should_trans_nz(weight):
         return weight
+    transpose = (
+        isinstance(prefix, str)
+        and weight.ndim == 2
+        and weight.dtype in (torch.float16, torch.bfloat16)
+        and any(fnmatchcase(prefix, pattern) for pattern in get_ascend_config().weight_nz_transpose_modules)
+    )
+    if transpose:
+        weight = weight.t().contiguous()
     kwargs = {}
     if customize_dtype is not None:
         kwargs["customize_dtype"] = customize_dtype
     if input_dtype is not None:
         kwargs["input_dtype"] = input_dtype
-    return torch_npu.npu_format_cast(weight, ACL_FORMAT_FRACTAL_NZ, **kwargs)
+    packed = torch_npu.npu_format_cast(weight, ACL_FORMAT_FRACTAL_NZ, **kwargs)
+    # Preserve the public N,K shape and weight-loader contract.
+    return packed.t() if transpose else packed
 
 
 def maybe_trans_nz_with_scale(

@@ -607,6 +607,8 @@ class AscendConfig:
     msmonitor_use_daemon: bool = False
     enable_transpose_kv_cache_by_block: bool = True
     weight_nz_mode: int = 1
+    # Opt-in module globs: pack dense FP16/BF16 weights in K,N orientation.
+    weight_nz_transpose_modules: list[str] = dataclasses.field(default_factory=list)
 
     # ---- sub-configs (no vllm_config dep): pydantic dict→dataclass coercion ----
     ascend_compilation_config: AscendCompilationConfig = dataclasses.field(default_factory=AscendCompilationConfig)

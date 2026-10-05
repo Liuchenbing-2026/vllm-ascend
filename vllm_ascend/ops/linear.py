@@ -120,7 +120,7 @@ class AscendUnquantizedLinearMethod(WeightSwitchMixin, UnquantizedLinearMethod):
             # matrix has n=1 or k=1. Keep scalar gates such as Qwen MoE's
             # shared_expert_gate in ND format, leaving non-310P policy intact.
             if not keep_nd_weight:
-                layer.weight.data = maybe_trans_nz(layer.weight.data)
+                layer.weight.data = maybe_trans_nz(layer.weight.data, prefix=layer.prefix)
 
         # DSV4 wo_a is consumed by npu_transpose_batchmatmul in the 3D layout
         # [n_local_groups, hidden_size, o_lora_rank]. Reshape it here so it
