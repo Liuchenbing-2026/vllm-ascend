@@ -131,7 +131,7 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
             unique_caches = descriptor_caches
         per_tensor_bpb = [t.stride(0) * t.element_size() for t in unique_caches.values()]
         total_bytes_per_block = sum(per_tensor_bpb)
-        if descriptor_caches is not None:
+        if getattr(self.kv_cache_config, "kv_cache_tensors", ()):
             # Include unused tuple padding in capacity accounting, as the
             # scheduler does when deriving the CPU configuration.
             pool_bytes_per_block = self.kv_cache_config.kv_cache_tensors[0].size // num_blocks
@@ -273,6 +273,10 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
                 if allocation is not None and allocation != identity:
                     return None
                 allocation = identity
+                # Blocks-outermost descriptors interleave layers within a page.
+                page_offset = offset
+                if 0 < descriptor.layer_stride < page_bytes:
+                    page_offset -= layer_index * descriptor.layer_stride
                 for tensor in components:
                     if (
                         tensor.ndim < 1
@@ -281,11 +285,11 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
                         or tensor.untyped_storage().data_ptr() != storage.data_ptr()
                     ):
                         return None
-                    component_offset = tensor.storage_offset() * tensor.element_size() - offset
+                    component_offset = tensor.storage_offset() * tensor.element_size() - page_offset
                     span = 1 + sum((n - 1) * s for n, s in zip(tensor.shape[1:], tensor.stride()[1:]))
                     if component_offset < 0 or component_offset + span * tensor.element_size() > page_bytes:
                         return None
-                regions.setdefault((offset, page_bytes), (name, first))
+                regions.setdefault((page_offset, page_bytes), (name, first))
         if allocation is None:
             return None
         previous_end = 0
@@ -334,6 +338,8 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
             # Single-segment, blocks-outermost.
             page_size_bytes = tensor.stride(0) * el
             data_bytes = num_blocks * page_size_bytes
+            if storage_offset_bytes + data_bytes > storage.nbytes():
+                raise ValueError(f"Offload block view {key} exceeds its backing storage")
             raw = torch.empty(0, dtype=torch.int8, device=tensor.device).set_(
                 storage, storage_offset_bytes, (data_bytes,)
             )
@@ -358,6 +364,9 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
         seg_stride_bytes = tensor.stride(0) * el
         n_segments = tensor.shape[0]
         total_bytes = (n_segments - 1) * seg_stride_bytes + seg_data_bytes
+
+        if storage_offset_bytes + total_bytes > storage.nbytes():
+            raise ValueError(f"Offload block view {key} exceeds its backing storage")
 
         raw = torch.empty(0, dtype=torch.int8, device=tensor.device).set_(storage, storage_offset_bytes, (total_bytes,))
         segs: dict[str, torch.Tensor] = {}
