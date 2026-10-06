@@ -1,0 +1,18 @@
+[{
+    "op": "KvCacheTurboQuant",
+    "language": "cpp",
+    "input_desc": [
+        {"name": "kv_vectors", "param_type": "required", "format": ["ND"], "type": ["bfloat16"]},
+        {"name": "rotation_matrix", "param_type": "required", "format": ["ND"], "type": ["float32"]},
+        {"name": "qjl_matrix", "param_type": "required", "format": ["ND"], "type": ["float32"]}
+    ],
+    "output_desc": [
+        {"name": "quant_idx", "param_type": "required", "format": ["ND"], "type": ["uint8"]},
+        {"name": "quant_qjl", "param_type": "required", "format": ["ND"], "type": ["uint8"]},
+        {"name": "quant_norm", "param_type": "required", "format": ["ND"], "type": ["bfloat16"]},
+        {"name": "quant_gamma", "param_type": "required", "format": ["ND"], "type": ["bfloat16"]}
+    ],
+    "attr": [
+        {"name": "mse_bits", "type": "int", "default_value": "3", "param_type": "required"}
+    ]
+}]

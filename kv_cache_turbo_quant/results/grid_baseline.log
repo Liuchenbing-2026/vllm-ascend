@@ -1,0 +1,89 @@
+=== label=baseline input=16384 conc=1 num_prompts=4 ===
+Successful requests:                     4         
+Mean TTFT (ms):                          1314.54   
+Median TTFT (ms):                        1322.94   
+P99 TTFT (ms):                           1325.29   
+Mean TPOT (ms):                          15.93     
+Median TPOT (ms):                        15.94     
+P99 TPOT (ms):                           16.10     
+Mean ITL (ms):                           15.93     
+Median ITL (ms):                         15.86     
+P99 ITL (ms):                            17.78     
+=== label=baseline input=16384 conc=4 num_prompts=8 ===
+Successful requests:                     8         
+Mean TTFT (ms):                          3637.10   
+Median TTFT (ms):                        4207.94   
+P99 TTFT (ms):                           4836.70   
+Mean TPOT (ms):                          20.12     
+Median TPOT (ms):                        19.57     
+P99 TPOT (ms):                           22.76     
+Mean ITL (ms):                           20.12     
+Median ITL (ms):                         18.51     
+P99 ITL (ms):                            22.64     
+=== label=baseline input=16384 conc=16 num_prompts=32 ===
+Successful requests:                     32        
+Mean TTFT (ms):                          8226.25   
+Median TTFT (ms):                        5930.35   
+P99 TTFT (ms):                           19017.10  
+Mean TPOT (ms):                          49.09     
+Median TPOT (ms):                        51.55     
+P99 TPOT (ms):                           55.73     
+Mean ITL (ms):                           49.09     
+Median ITL (ms):                         38.76     
+P99 ITL (ms):                            66.82     
+=== label=baseline input=16384 conc=32 num_prompts=48 ===
+Successful requests:                     48        
+Mean TTFT (ms):                          15639.88  
+Median TTFT (ms):                        11297.65  
+P99 TTFT (ms):                           38224.80  
+Mean TPOT (ms):                          75.08     
+Median TPOT (ms):                        87.61     
+P99 TPOT (ms):                           95.61     
+Mean ITL (ms):                           75.08     
+Median ITL (ms):                         62.10     
+P99 ITL (ms):                            1200.63   
+=== label=baseline input=32768 conc=1 num_prompts=4 ===
+Successful requests:                     4         
+Mean TTFT (ms):                          3361.85   
+Median TTFT (ms):                        3360.30   
+P99 TTFT (ms):                           3413.50   
+Mean TPOT (ms):                          16.48     
+Median TPOT (ms):                        16.53     
+P99 TPOT (ms):                           16.56     
+Mean ITL (ms):                           16.50     
+Median ITL (ms):                         16.56     
+P99 ITL (ms):                            18.15     
+=== label=baseline input=32768 conc=4 num_prompts=8 ===
+Successful requests:                     8         
+Mean TTFT (ms):                          8630.30   
+Median TTFT (ms):                        9210.23   
+P99 TTFT (ms):                           12743.47  
+Mean TPOT (ms):                          27.73     
+Median TPOT (ms):                        27.18     
+P99 TPOT (ms):                           33.20     
+Mean ITL (ms):                           27.73     
+Median ITL (ms):                         23.84     
+P99 ITL (ms):                            25.12     
+=== label=baseline input=32768 conc=16 num_prompts=32 ===
+Successful requests:                     32        
+Mean TTFT (ms):                          19091.82  
+Median TTFT (ms):                        10834.46  
+P99 TTFT (ms):                           50184.97  
+Mean TPOT (ms):                          86.48     
+Median TPOT (ms):                        93.77     
+P99 TPOT (ms):                           100.94    
+Mean ITL (ms):                           86.48     
+Median ITL (ms):                         56.50     
+P99 ITL (ms):                            1895.54   
+=== label=baseline input=32768 conc=32 num_prompts=48 ===
+Successful requests:                     48        
+Mean TTFT (ms):                          91828.30  
+Median TTFT (ms):                        117891.32 
+P99 TTFT (ms):                           159751.78 
+Mean TPOT (ms):                          96.36     
+Median TPOT (ms):                        100.59    
+P99 TPOT (ms):                           151.97    
+Mean ITL (ms):                           96.36     
+Median ITL (ms):                         57.31     
+P99 ITL (ms):                            1912.91   
+GRID baseline DONE

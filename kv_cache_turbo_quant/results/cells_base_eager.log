@@ -1,0 +1,25 @@
+=== label=base_eager input=16384 conc=32 num_prompts=48 ===
+Successful requests:                     48        
+Mean TTFT (ms):                          21946.76  
+Median TTFT (ms):                        12698.74  
+P99 TTFT (ms):                           145580.11 
+Mean TPOT (ms):                          221.14    
+Median TPOT (ms):                        224.24    
+P99 TPOT (ms):                           318.76    
+=== label=base_eager input=32768 conc=32 num_prompts=48 ===
+Successful requests:                     48        
+Mean TTFT (ms):                          209901.22 
+Median TTFT (ms):                        258445.86 
+P99 TTFT (ms):                           498423.34 
+Mean TPOT (ms):                          227.55    
+Median TPOT (ms):                        231.47    
+P99 TPOT (ms):                           238.50    
+=== label=base_eager input=32768 conc=48 num_prompts=64 ===
+Successful requests:                     64        
+Mean TTFT (ms):                          366955.49 
+Median TTFT (ms):                        505589.37 
+P99 TTFT (ms):                           753823.57 
+Mean TPOT (ms):                          231.98    
+Median TPOT (ms):                        234.71    
+P99 TPOT (ms):                           240.70    
+CELLS base_eager DONE

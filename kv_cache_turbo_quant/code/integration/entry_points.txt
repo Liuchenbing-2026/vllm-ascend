@@ -1,0 +1,2 @@
+[vllm.general_plugins]
+kv_cache_turbo_quant_shadow = kvtq_vllm_plugin:register
