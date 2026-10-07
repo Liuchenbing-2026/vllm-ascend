@@ -123,6 +123,21 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
                         continue
                     seen_views.add(view_key)
 
+                    # A registered physical page can already contain this
+                    # component (for example V following K in every page).
+                    if tensor.ndim >= 1 and tensor.shape[0] >= num_blocks:
+                        span = (
+                            1 + sum((n - 1) * s for n, s in zip(tensor.shape[1:], tensor.stride()[1:]))
+                        ) * tensor.element_size()
+                        if any(
+                            page.untyped_storage().data_ptr() == storage.data_ptr()
+                            and page.stride(0) == tensor.stride(0) * tensor.element_size()
+                            and tensor.data_ptr() - page.data_ptr() >= 0
+                            and tensor.data_ptr() - page.data_ptr() + span <= page.shape[1]
+                            for page in unique_caches.values()
+                        ):
+                            continue
+
                     key = layer_name if sub_idx == 0 else f"{layer_name}.{sub_idx}"
                     unique_caches.update(self._build_block_views(key, tensor, num_blocks))
 
@@ -333,6 +348,24 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
         el = tensor.element_size()
         storage = tensor.untyped_storage()
         storage_offset_bytes = tensor.storage_offset() * el
+
+        # MRV1 may expose (K/V, blocks, ...) while interleaving K and V
+        # within each physical page. Copy that page once, not one full
+        # block stride starting at each component's offset.
+        if tensor.ndim >= 2 and tensor.shape[1] >= num_blocks and tensor.stride(0) < tensor.stride(1):
+            page_size_bytes = tensor.stride(1) * el
+            page_span = 1 + sum(
+                (size - 1) * stride for dim, (size, stride) in enumerate(zip(tensor.shape, tensor.stride())) if dim != 1
+            )
+            if page_span * el <= page_size_bytes:
+                data_bytes = num_blocks * page_size_bytes
+                if storage_offset_bytes + data_bytes > storage.nbytes():
+                    raise ValueError(f"Offload block view {key} exceeds its backing storage")
+                return {
+                    key: torch.empty(0, dtype=torch.int8, device=tensor.device).set_(
+                        storage, storage_offset_bytes, (num_blocks, page_size_bytes)
+                    )
+                }
 
         if tensor.ndim >= 1 and tensor.shape[0] >= num_blocks:
             # Single-segment, blocks-outermost.

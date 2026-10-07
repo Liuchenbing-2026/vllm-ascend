@@ -361,6 +361,44 @@ def test_offload_rejects_view_past_storage_without_resizing():
     assert backing.untyped_storage().nbytes() == 64
 
 
+@pytest.mark.parametrize("padding", [0, 16])
+@pytest.mark.parametrize("split_components", [False, True])
+@pytest.mark.parametrize("num_layers", [1, 2])
+def test_offload_interleaved_kv_tensor_copies_each_physical_page_once(
+    monkeypatch, padding, split_components, num_layers
+):
+    """MRV1 exposes (K/V, blocks, ...) with K and V interleaved per block."""
+    monkeypatch.setattr(torch, "npu", SimpleNamespace(Stream=lambda: object()), raising=False)
+    monkeypatch.setattr(worker_module, "is_pin_memory_available", lambda: False)
+    worker = SimpleCPUOffloadNPUWorker.__new__(SimpleCPUOffloadNPUWorker)
+    worker._backend = SimpleNamespace(init=lambda *args: None)
+    worker.cpu_capacity_bytes = 256
+    names = [f"layer{i}" for i in range(num_layers)]
+    worker.kv_cache_config = SimpleNamespace(
+        num_blocks=4,
+        kv_cache_tensors=[
+            SimpleNamespace(layers=names, size=64 * num_layers, offset=0, layer_stride=64, block_stride=16)
+        ],
+    )
+    backings = [torch.arange(64 + padding, dtype=torch.uint8) for _ in names]
+    caches = [backing.as_strided((2, 4, 8), (8, 16, 1), storage_offset=padding) for backing in backings]
+    worker.register_kv_caches(
+        {name: tuple(cache.unbind(0)) if split_components else cache for name, cache in zip(names, caches)}
+    )
+    assert len(worker.gpu_kv_caches) == num_layers
+    assert worker.num_cpu_blocks == 16 // num_layers
+    for name, backing, cache in zip(names, backings, caches):
+        page = worker.gpu_kv_caches[name]
+        assert torch.equal(page.view(torch.uint8), backing[padding:].view(4, 16))
+        assert backing.untyped_storage().nbytes() == 64 + padding
+        mirror = worker.cpu_kv_caches[name]
+        expected = cache[:, 2].clone()
+        mirror[0].copy_(page[2])
+        cache[:, 2].zero_()
+        page[2].copy_(mirror[0])
+        assert torch.equal(cache[:, 2], expected)
+
+
 def test_offload_rejects_fallback_larger_than_scheduler_budget():
     worker = SimpleCPUOffloadNPUWorker.__new__(SimpleCPUOffloadNPUWorker)
     worker.cpu_capacity_bytes = 256
