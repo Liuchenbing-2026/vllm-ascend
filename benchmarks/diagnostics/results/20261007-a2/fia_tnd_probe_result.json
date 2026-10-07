@@ -1,0 +1,221 @@
+{
+  "scope": "operator-only, TND, noncausal, paged BF16; not TP4 serving",
+  "rows": [
+    {
+      "batch": 1,
+      "query_len": 1,
+      "step": 0,
+      "variant": "v1_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.12424848973751068
+    },
+    {
+      "batch": 1,
+      "query_len": 1,
+      "step": 0,
+      "variant": "v2_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.1228155568242073
+    },
+    {
+      "batch": 1,
+      "query_len": 1,
+      "step": 0,
+      "variant": "v2_tensor",
+      "scalar_reads_requested": 1,
+      "status": "pass",
+      "synchronized_wall_ms": 0.22553503513336182
+    },
+    {
+      "batch": 1,
+      "query_len": 1,
+      "step": 1,
+      "variant": "v1_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.1229400048032403
+    },
+    {
+      "batch": 1,
+      "query_len": 1,
+      "step": 1,
+      "variant": "v2_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.12415251694619656
+    },
+    {
+      "batch": 1,
+      "query_len": 1,
+      "step": 1,
+      "variant": "v2_tensor",
+      "scalar_reads_requested": 1,
+      "status": "pass",
+      "synchronized_wall_ms": 0.2261425368487835
+    },
+    {
+      "batch": 1,
+      "query_len": 9,
+      "step": 0,
+      "variant": "v1_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.12448555789887905
+    },
+    {
+      "batch": 1,
+      "query_len": 9,
+      "step": 0,
+      "variant": "v2_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.12425598688423634
+    },
+    {
+      "batch": 1,
+      "query_len": 9,
+      "step": 0,
+      "variant": "v2_tensor",
+      "scalar_reads_requested": 1,
+      "status": "pass",
+      "synchronized_wall_ms": 0.22349499631673098
+    },
+    {
+      "batch": 1,
+      "query_len": 9,
+      "step": 1,
+      "variant": "v1_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.12220949865877628
+    },
+    {
+      "batch": 1,
+      "query_len": 9,
+      "step": 1,
+      "variant": "v2_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.12511855456978083
+    },
+    {
+      "batch": 1,
+      "query_len": 9,
+      "step": 1,
+      "variant": "v2_tensor",
+      "scalar_reads_requested": 1,
+      "status": "pass",
+      "synchronized_wall_ms": 0.2254600403830409
+    },
+    {
+      "batch": 8,
+      "query_len": 1,
+      "step": 0,
+      "variant": "v1_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.13203551061451435
+    },
+    {
+      "batch": 8,
+      "query_len": 1,
+      "step": 0,
+      "variant": "v2_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.13319149147719145
+    },
+    {
+      "batch": 8,
+      "query_len": 1,
+      "step": 0,
+      "variant": "v2_tensor",
+      "scalar_reads_requested": 8,
+      "status": "pass",
+      "synchronized_wall_ms": 0.42274161241948605
+    },
+    {
+      "batch": 8,
+      "query_len": 1,
+      "step": 1,
+      "variant": "v1_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.1310605090111494
+    },
+    {
+      "batch": 8,
+      "query_len": 1,
+      "step": 1,
+      "variant": "v2_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.13332050293684006
+    },
+    {
+      "batch": 8,
+      "query_len": 1,
+      "step": 1,
+      "variant": "v2_tensor",
+      "scalar_reads_requested": 8,
+      "status": "pass",
+      "synchronized_wall_ms": 0.42168209329247475
+    },
+    {
+      "batch": 8,
+      "query_len": 9,
+      "step": 0,
+      "variant": "v1_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.12938554864376783
+    },
+    {
+      "batch": 8,
+      "query_len": 9,
+      "step": 0,
+      "variant": "v2_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.1314300112426281
+    },
+    {
+      "batch": 8,
+      "query_len": 9,
+      "step": 0,
+      "variant": "v2_tensor",
+      "scalar_reads_requested": 8,
+      "status": "pass",
+      "synchronized_wall_ms": 0.4208395490422845
+    },
+    {
+      "batch": 8,
+      "query_len": 9,
+      "step": 1,
+      "variant": "v1_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.13112355954945087
+    },
+    {
+      "batch": 8,
+      "query_len": 9,
+      "step": 1,
+      "variant": "v2_list",
+      "scalar_reads_requested": 0,
+      "status": "pass",
+      "synchronized_wall_ms": 0.1314349938184023
+    },
+    {
+      "batch": 8,
+      "query_len": 9,
+      "step": 1,
+      "variant": "v2_tensor",
+      "scalar_reads_requested": 8,
+      "status": "pass",
+      "synchronized_wall_ms": 0.42219655588269234
+    }
+  ]
+}

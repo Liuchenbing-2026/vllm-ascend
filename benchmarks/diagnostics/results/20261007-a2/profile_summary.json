@@ -1,0 +1,30 @@
+[
+  {
+    "variant": "v2_list",
+    "calls": 14274,
+    "requested_seconds": 3.0,
+    "kernel_columns": 47,
+    "marker_count": 14274,
+    "scalar_count": 0,
+    "related_events": {
+      "AscendCL@aclrtSynchronizeDeviceWithTimeout": 2
+    },
+    "trace_path": "/work/profile_lengths_clean/v2_list/kylin10-6018_734_20261007143330360_ascend_pt/ASCEND_PROFILER_OUTPUT"
+  },
+  {
+    "variant": "v2_tensor",
+    "calls": 4450,
+    "requested_seconds": 3.0,
+    "kernel_columns": 47,
+    "marker_count": 4450,
+    "scalar_count": 35600,
+    "related_events": {
+      "aten::_local_scalar_dense": 35600,
+      "aten::item": 35600,
+      "AscendCL@aclrtSynchronizeStreamWithTimeout": 35600,
+      "AscendCL@aclrtMemcpy": 35600,
+      "AscendCL@aclrtSynchronizeDeviceWithTimeout": 2
+    },
+    "trace_path": "/work/profile_lengths_clean/v2_tensor/kylin10-6018_734_20261007143350667_ascend_pt/ASCEND_PROFILER_OUTPUT"
+  }
+]
