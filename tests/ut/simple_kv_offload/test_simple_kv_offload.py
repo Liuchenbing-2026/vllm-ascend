@@ -268,7 +268,7 @@ def test_descriptor_path_does_not_merge_separately_allocated_components(monkeypa
     assert torch.equal(worker.gpu_kv_caches["layer.1"], value)
 
 
-def test_get_finished_records_store_barrier_on_npu(
+def test_transfer_hooks_record_store_barrier_once_on_npu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeEvent:
@@ -295,7 +295,7 @@ def test_get_finished_records_store_barrier_on_npu(
 
     worker = SimpleCPUOffloadNPUWorker.__new__(SimpleCPUOffloadNPUWorker)
     worker._backend = RecordingBackend()
-    worker._connector_metadata = SimpleCPUOffloadMetadata(
+    metadata = SimpleCPUOffloadMetadata(
         load_event=1,
         load_gpu_blocks=[2],
         load_cpu_blocks=[3],
@@ -310,7 +310,17 @@ def test_get_finished_records_store_barrier_on_npu(
     worker._pending_store_event_indices = set()
     worker._completed_store_events = {}
 
+    worker.bind_connector_metadata(metadata)
+    # Completion polling must not submit transfers. The engine invokes the
+    # load and store hooks separately from get_finished.
+    worker._pending_load_event_indices.clear()
+    worker._pending_store_event_indices.clear()
     assert worker.get_finished(set()) == (None, None)
+    assert worker._backend.calls == []
+    worker.start_load_kv()
+    worker.wait_for_save()
+    worker.wait_for_save()
+    worker.clear_connector_metadata()
 
     load_call, store_call = worker._backend.calls
     assert load_call["is_store"] is False
@@ -319,6 +329,9 @@ def test_get_finished_records_store_barrier_on_npu(
     store_event = store_call["wait_event"]
     assert isinstance(store_event, FakeEvent)
     assert store_event.recorded_stream is current_stream
+    worker.bind_connector_metadata(metadata)
+    worker.wait_for_save()
+    assert len(worker._backend.calls) == 3
 
 
 @pytest.mark.parametrize("padding", [0, 16])
