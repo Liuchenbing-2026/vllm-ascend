@@ -261,6 +261,7 @@ def test_sparse_mla_full_forward_uses_real_rows_and_latent_values(graph_mode, em
     )
     ascend_config = SimpleNamespace(
         enable_sparse_sfa_c8=enable_c8,
+        enable_sparse_sfa_turboquant=False,
         enable_mlapo=False,
         rl_config=SimpleNamespace(enabled=False),
     )
@@ -331,7 +332,7 @@ def test_sparse_mla_full_forward_uses_real_rows_and_latent_values(graph_mode, em
         ) as sparse_attention,
         patch.object(
             torch.ops._C_ascend,
-            "npu_kv_quant_sparse_flash_attention",
+            "npu_kv_quant_sparse_flash_attention_vllm",
             side_effect=_reference_quantized_sparse_attention,
             create=True,
         ) as quantized_sparse_attention,

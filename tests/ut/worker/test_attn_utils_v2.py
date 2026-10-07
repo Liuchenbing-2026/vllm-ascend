@@ -1,3 +1,4 @@
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
@@ -20,8 +21,15 @@ from vllm.v1.kv_cache_interface import (
 from vllm.v1.worker.gpu import attn_utils as upstream_attn_utils
 from vllm.v1.worker.utils import AttentionGroup
 
-from vllm_ascend.attention import dsa_v1
-from vllm_ascend.attention.attention_v1 import AscendAttentionBackend, AscendAttentionState
+from vllm_ascend.attention import dsa_attn_kv_plan, dsa_v1
+from vllm_ascend.attention import utils as attention_utils
+from vllm_ascend.attention.attention_v1 import (
+    AscendAttentionBackend,
+    AscendAttentionBackendImpl,
+    AscendAttentionState,
+    AscendC8AttentionBackendImpl,
+)
+from vllm_ascend.attention.context_parallel.attention_cp import AscendAttentionDCPImpl
 from vllm_ascend.attention.dsa_v1 import (
     AscendDSAC4Backend,
     AscendDSAC4StateBackend,
@@ -84,10 +92,38 @@ def _spec_compress_ratio(spec) -> int:
     return spec.tokens_per_state
 
 
+@pytest.fixture(autouse=True)
+def default_pa_disabled(monkeypatch):
+    monkeypatch.setattr(attn_utils, "requires_contiguous_pa_kv_cache", lambda *_args, **_kwargs: False)
+
+
+def _configure_pa_allocation_check(monkeypatch, vllm_config, pa_enabled):
+    """Exercise PA allocation policy using actual config and Attention implementations."""
+    vllm_config.speculative_config = None
+    vllm_config.compilation_config = SimpleNamespace(cudagraph_mode=CUDAGraphMode.FULL_DECODE_ONLY)
+    monkeypatch.setattr(attn_utils, "requires_contiguous_pa_kv_cache", attention_utils.requires_contiguous_pa_kv_cache)
+    monkeypatch.setattr(
+        attention_utils, "get_current_hardware_profile", lambda: get_hardware_profile(AscendDeviceType.A3)
+    )
+    monkeypatch.setattr(
+        attention_utils, "get_ascend_config", lambda: SimpleNamespace(pa_shape_list=[32] if pa_enabled else [])
+    )
+
+
 @pytest.mark.parametrize(("block_size", "kernel_block_size"), [(128, 128), (1152, 128), (2048, 128)])
 @pytest.mark.parametrize("kv_transfer", [False, True])
-@pytest.mark.parametrize("cache_kind", ["full", "sliding_window", "sparse", "full_sparse", "mixed"])
-def test_main_allocator_attention_layout(monkeypatch, block_size, kernel_block_size, kv_transfer, cache_kind):
+@pytest.mark.parametrize(
+    ("cache_kind", "pa_enabled"),
+    [
+        (cache_kind, pa_enabled)
+        for cache_kind in ("full", "sliding_window", "sparse", "full_sparse", "mixed")
+        for pa_enabled in (False, True)
+    ]
+    + [("c8", True), ("dcp", True)],
+)
+def test_main_allocator_attention_layout(
+    monkeypatch, block_size, kernel_block_size, kv_transfer, cache_kind, pa_enabled
+):
     layer_name = "model.layers.0.self_attn.attn"
     second_layer_name = "model.layers.1.self_attn.attn"
     spec_type = SlidingWindowSpec if cache_kind == "sliding_window" else FullAttentionSpec
@@ -113,15 +149,23 @@ def test_main_allocator_attention_layout(monkeypatch, block_size, kernel_block_s
         ],
         kv_cache_groups=[KVCacheGroupSpec(layer_names=[layer_name, second_layer_name], kv_cache_spec=spec)],
     )
+    impl_cls = {
+        "c8": AscendC8AttentionBackendImpl,
+        "dcp": AscendAttentionDCPImpl,
+    }.get(cache_kind, AscendAttentionBackendImpl)
+    impl = impl_cls.__new__(impl_cls)
+    impl.sliding_window = extra_args.get("sliding_window")
     layer = SimpleNamespace(
         get_attn_backend=lambda: (SparseAttentionBackend if cache_kind == "full_sparse" else AscendAttentionBackend),
         kv_sharing_target_layer_name=None,
         num_heads=8,
+        impl=impl,
     )
     second_layer = SimpleNamespace(
         get_attn_backend=lambda: SparseAttentionBackend if cache_kind == "mixed" else layer.get_attn_backend(),
         kv_sharing_target_layer_name=None,
         num_heads=8,
+        impl=impl,
     )
     vllm_config = SimpleNamespace(
         additional_config={},
@@ -138,6 +182,7 @@ def test_main_allocator_attention_layout(monkeypatch, block_size, kernel_block_s
     )
     monkeypatch.setattr(attn_utils, "enable_sfa", lambda *_args, **_kwargs: cache_kind == "sparse")
     monkeypatch.setattr(attn_utils, "enable_fa_quant", lambda *_args, **_kwargs: False)
+    _configure_pa_allocation_check(monkeypatch, vllm_config, pa_enabled)
 
     kv_caches = attn_utils.allocate_kv_cache_main(
         kv_cache_config,
@@ -159,7 +204,7 @@ def test_main_allocator_attention_layout(monkeypatch, block_size, kernel_block_s
     assert second_key.shape == expected_shape
     assert second_value.shape == expected_shape
     block_elements = kernel_block_size * spec.num_kv_heads * spec.head_size
-    if cache_kind in ("full", "mixed"):
+    if cache_kind in ("c8", "dcp") or (cache_kind in ("full", "mixed") and not pa_enabled):
         assert not key_cache.is_contiguous()
         assert not value_cache.is_contiguous()
         assert key_cache.stride(0) == value_cache.stride(0) == 2 * block_elements
@@ -189,6 +234,52 @@ def test_main_allocator_attention_layout(monkeypatch, block_size, kernel_block_s
     assert torch.count_nonzero(value_cache[3:]) == 0
     assert torch.count_nonzero(second_key) == 0
     assert torch.count_nonzero(second_value) == 0
+
+
+@pytest.mark.parametrize("pa_enabled", [False, True])
+def test_hybrid_allocator_keeps_shared_backing_with_pa_configured(monkeypatch, pa_enabled):
+    attn_name = "model.layers.0.self_attn.attn"
+    mamba_name = "model.layers.1.linear_attn"
+    attn_spec = FullAttentionSpec(block_size=2, num_kv_heads=1, head_size=4, dtype=torch.float16)
+    mamba_spec = MambaSpec(block_size=2, shapes=((2, 4),), dtypes=(torch.float32,))
+    assert attn_spec.page_size_bytes == mamba_spec.page_size_bytes
+    backing_size = 3 * attn_spec.page_size_bytes
+    config = KVCacheConfig(
+        num_blocks=3,
+        kv_cache_tensors=[
+            KVCacheTensor(
+                size=backing_size,
+                layers=[name],
+                layer_stride=backing_size,
+                block_stride=spec.page_size_bytes,
+                offset=0,
+            )
+            for name, spec in ((attn_name, attn_spec), (mamba_name, mamba_spec))
+        ],
+        kv_cache_groups=[
+            KVCacheGroupSpec(layer_names=[name], kv_cache_spec=spec)
+            for name, spec in ((attn_name, attn_spec), (mamba_name, mamba_spec))
+        ],
+    )
+    impl = AscendAttentionBackendImpl.__new__(AscendAttentionBackendImpl)
+    impl.sliding_window = None
+    layer = SimpleNamespace(impl=impl)
+    vllm_config = SimpleNamespace(
+        additional_config={},
+        kv_transfer_config=None,
+        model_config=SimpleNamespace(hf_config=SimpleNamespace()),
+        cache_config=SimpleNamespace(cache_dtype="auto"),
+        quant_config=None,
+    )
+    _configure_pa_allocation_check(monkeypatch, vllm_config, pa_enabled)
+    assert attention_utils.requires_contiguous_pa_kv_cache(layer, vllm_config, attn_spec) == pa_enabled
+    monkeypatch.setattr(attn_utils, "get_current_vllm_config", lambda: vllm_config)
+    raw_caches = attn_utils._allocate_kv_cache(config, shared_layers={}, device=torch.device("cpu"))
+
+    assert all(isinstance(raw, torch.Tensor) for raw in raw_caches.values())
+    assert all(raw.numel() == backing_size for raw in raw_caches.values())
+    assert all(raw.untyped_storage().nbytes() == backing_size for raw in raw_caches.values())
+    assert raw_caches[attn_name].data_ptr() == raw_caches[mamba_name].data_ptr()
 
 
 def test_hybrid_attention_layout_preserves_padding(monkeypatch):
@@ -231,7 +322,8 @@ def test_hybrid_attention_layout_preserves_padding(monkeypatch):
     )
 
 
-def test_sparse_backend_rejects_padded_full_attention_allocation(monkeypatch):
+@pytest.mark.parametrize("sparse_backend", [False, True])
+def test_padded_full_attention_allocation_preserves_backend_behavior(monkeypatch, sparse_backend):
     name = "model.layers.0.self_attn.attn"
     spec = FullAttentionSpec(block_size=2, num_kv_heads=1, head_size=4, dtype=torch.float16, page_size_padded=64)
     config = KVCacheConfig(
@@ -254,13 +346,25 @@ def test_sparse_backend_rejects_padded_full_attention_allocation(monkeypatch):
         cache_config=SimpleNamespace(cache_dtype="auto"),
         quant_config=None,
     )
-    layer = SimpleNamespace(get_attn_backend=lambda: SparseAttentionBackend)
+    impl = AscendAttentionBackendImpl.__new__(AscendAttentionBackendImpl)
+    impl.sliding_window = None
+    layer = SimpleNamespace(
+        get_attn_backend=lambda: SparseAttentionBackend if sparse_backend else AscendAttentionBackend,
+        impl=impl,
+    )
+    _configure_pa_allocation_check(monkeypatch, vllm_config, pa_enabled=True)
+    assert attention_utils.using_paged_attention(None, vllm_config, spec.head_size)
     monkeypatch.setattr(attn_utils, "get_current_vllm_config", lambda: vllm_config)
     monkeypatch.setattr(attn_utils, "get_layers_from_vllm_config", lambda *_args: {name: layer})
     monkeypatch.setattr(attn_utils, "enable_sfa", lambda *_args: False)
     monkeypatch.setattr(attn_utils, "enable_fa_quant", lambda *_args: False)
-    with pytest.raises(ValueError, match="unpadded FullAttention pages"):
-        attn_utils._allocate_kv_cache(config, shared_layers={}, device=torch.device("cpu"))
+    if sparse_backend:
+        with pytest.raises(ValueError, match="unpadded FullAttention pages"):
+            attn_utils._allocate_kv_cache(config, shared_layers={}, device=torch.device("cpu"))
+    else:
+        raw_caches = attn_utils._allocate_kv_cache(config, shared_layers={}, device=torch.device("cpu"))
+        assert isinstance(raw_caches[name], torch.Tensor)
+        assert raw_caches[name].numel() == 3 * spec.page_size_bytes
 
 
 def test_mrv2_mamba_views_skip_physical_page_padding():
@@ -721,9 +825,11 @@ def test_mrv2_initializes_dsv4_cache_only_layer(
 
 
 class _RecordingDSAMetadataBuilder(AscendDSAMetadataBuilder):
-    def __init__(self, calls: list[dict[str, Any]]):
+    def __init__(self, calls: list[dict[str, Any]], compressor_ratio: int):
         self.calls = calls
         self.for_cudagraph_capture = False
+        self.tq_group_block_sizes = None
+        self.compressor_ratio = compressor_ratio
 
     def build_for_cudagraph_capture(
         self,
@@ -752,6 +858,7 @@ class _RecordingDSAMetadataBuilder(AscendDSAMetadataBuilder):
             "num_actual_reqs": kwargs["num_actual_reqs"],
             "pcp_context": kwargs.get("pcp_context"),
             "pcp_cache_group_idx": kwargs.get("pcp_cache_group_idx"),
+            "formatted_slot_mapping": kwargs.get("formatted_slot_mapping"),
         }
         assert "block_size" not in kwargs
         self.calls.append(call)
@@ -776,7 +883,7 @@ def _make_dsa_metadata_groups():
                 layer_names=[layer_name],
                 kv_cache_spec=spec,
                 kv_cache_group_id=group_id,
-                metadata_builders=[_RecordingDSAMetadataBuilder(calls)],
+                metadata_builders=[_RecordingDSAMetadataBuilder(calls, _spec_compress_ratio(spec))],
             )
         ]
         for group_id, (layer_name, spec) in enumerate(zip(layer_names, specs))
@@ -884,6 +991,51 @@ def test_combined_attention_rejects_invalid_kernel_page_geometry(splits, page_by
     raw = torch.zeros(4096, dtype=torch.int8)
     with pytest.raises(ValueError, match=message):
         attn_utils._reshape_combined_attention_kv_cache(raw, (2, 4, 128, 1, 1), torch.float16, page_bytes, splits)
+
+
+@pytest.mark.parametrize("for_capture", [False, True])
+@pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
+def test_tq_batched_slots_use_builder_config_without_global_context(monkeypatch, for_capture, dtype):
+    _, specs, calls, attn_groups, kv_cache_config = _make_dsa_metadata_groups()
+    config = SimpleNamespace(cache_config=SimpleNamespace(cache_dtype="turboquant_4bit_nc"))
+    for group, attn_group in zip(kv_cache_config.kv_cache_groups, attn_groups):
+        group.kv_cache_spec = replace(group.kv_cache_spec, cache_dtype_str="turboquant_4bit_nc")
+        attn_group[0].get_metadata_builder(0).vllm_config = config
+    plan = dsa_attn_kv_plan.get_dsa_attn_kv_plan(config, compress_ratio=4)
+    get_plan = MagicMock(return_value=plan)
+    get_current = MagicMock(side_effect=AssertionError("No global config during metadata preparation"))
+    monkeypatch.setattr(attn_utils, "get_dsa_attn_kv_plan", get_plan)
+    monkeypatch.setattr(attn_utils, "get_current_vllm_config", get_current)
+    slots = torch.tensor([[0, 65, -1, 111], [1, 130, -2, 222]], dtype=dtype)
+    metadata_args = dict(
+        attn_groups=attn_groups,
+        num_reqs=1,
+        num_tokens=3,
+        query_start_loc_gpu=torch.tensor([0, 3], dtype=torch.int32),
+        query_start_loc_cpu=torch.tensor([0, 3], dtype=torch.int32),
+        max_query_len=3,
+        seq_lens=torch.tensor([3], dtype=torch.int32),
+        max_seq_len=3,
+        block_tables=tuple(torch.zeros((1, 1), dtype=torch.int32) for _ in specs),
+        slot_mappings=slots,
+        kv_cache_config=kv_cache_config,
+        for_cudagraph_capture=for_capture,
+    )
+    attn_utils.build_attn_metadata(**metadata_args)
+    get_current.assert_not_called()
+    get_plan.assert_called_once_with(config, 4)
+    for call, spec, row in zip(calls, specs, slots):
+        expected = plan.format_dsa_slot_mapping(row[:3], get_storage_block_size(spec))
+        torch.testing.assert_close(call["formatted_slot_mapping"], expected, rtol=0, atol=0)
+        assert call["for_cudagraph_capture"] == for_capture
+    cached_sizes = attn_groups[0][0].get_metadata_builder(0).tq_group_block_sizes
+    slots.add_(17)
+    attn_utils.build_attn_metadata(**metadata_args)
+    assert attn_groups[0][0].get_metadata_builder(0).tq_group_block_sizes is cached_sizes
+    for call, spec, row in zip(calls[2:], specs, slots):
+        expected = plan.format_dsa_slot_mapping(row[:3], get_storage_block_size(spec))
+        torch.testing.assert_close(call["formatted_slot_mapping"], expected, rtol=0, atol=0)
+    get_current.assert_not_called()
 
 
 def test_prepare_kernel_block_sizes_uses_logical_size_for_dsv4():
@@ -1256,6 +1408,7 @@ def _make_mla_layer(*, fa_quant: bool = False, sparse_c8: bool = False):
     layer.impl = SimpleNamespace(
         fa_quant_layer=fa_quant,
         enable_sparse_sfa_c8=sparse_c8,
+        enable_sparse_sfa_turboquant=False,
         dtype=torch.bfloat16,
     )
     layer.get_kv_cache_spec = lambda _cfg: SimpleNamespace(
@@ -1513,3 +1666,49 @@ def test_mrv2_binding_wraps_only_v41_slots():
     kv_view, scale_view = v41_indexer.kv_cache[0]
     assert kv_view is kv_caches["model.layers.2.self_attn.indexer.k_cache"][0]
     assert scale_view is kv_caches["model.layers.2.self_attn.indexer.k_cache"][1]
+
+
+@pytest.mark.parametrize("for_capture", [False, True])
+@pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
+def test_tq_groups_without_a_dsa_builder_skip_the_formatted_mapping(for_capture, dtype):
+    # Regression: TurboQuant also backs the packed SFA main cache, which has no
+    # DSA metadata builder. The DSA-only slot formatting has to be skipped rather
+    # than raised on -- and only the is_dsa_builder branch reads a formatted
+    # mapping, so nothing on the SFA path loses one.
+    layer_names, specs, _, _, kv_cache_config = _make_dsa_metadata_groups()
+    for group in kv_cache_config.kv_cache_groups:
+        group.kv_cache_spec = replace(group.kv_cache_spec, cache_dtype_str="turboquant_4bit_nc")
+    builders = [MagicMock(tq_group_block_sizes=None) for _ in layer_names]
+    attn_groups = [
+        [
+            AttentionGroup(
+                backend=AscendDSAC4Backend if _spec_compress_ratio(spec) == 4 else AscendDSAC128Backend,
+                layer_names=[layer_name],
+                kv_cache_spec=spec,
+                kv_cache_group_id=group_id,
+                metadata_builders=[builder],
+            )
+        ]
+        for group_id, (layer_name, spec, builder) in enumerate(zip(layer_names, specs, builders))
+    ]
+
+    attn_utils.build_attn_metadata(
+        attn_groups=attn_groups,
+        num_reqs=1,
+        num_tokens=3,
+        query_start_loc_gpu=torch.tensor([0, 3], dtype=torch.int32),
+        query_start_loc_cpu=torch.tensor([0, 3], dtype=torch.int32),
+        max_query_len=3,
+        seq_lens=torch.tensor([3], dtype=torch.int32),
+        max_seq_len=3,
+        block_tables=tuple(torch.zeros((1, 1), dtype=torch.int32) for _ in specs),
+        slot_mappings=torch.tensor([[0, 65, -1, 111], [1, 130, -2, 222]], dtype=dtype),
+        kv_cache_config=kv_cache_config,
+        for_cudagraph_capture=for_capture,
+    )
+
+    for builder in builders:
+        build_call = builder.build_for_cudagraph_capture if for_capture else builder.build
+        assert "formatted_slot_mapping" not in build_call.call_args.kwargs
+        # A group without a DSA builder keeps its lazy geometry untouched.
+        assert builder.tq_group_block_sizes is None

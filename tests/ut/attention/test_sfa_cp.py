@@ -472,6 +472,7 @@ def test_sfa_pcp_dcp_empty_local_prefill_joins_dcp_kv_gather() -> None:
     impl = AscendSFAPCPDCPImpl.__new__(AscendSFAPCPDCPImpl)
     impl.dcp_group = object()
     impl.enable_sparse_sfa_c8 = True
+    impl.enable_sparse_sfa_turboquant = False
     impl._start_dcp_gather = Mock(return_value="gathered")
     metadata = AscendSFADCPMetadata.__new__(AscendSFADCPMetadata)
     metadata.num_prefills = 0
@@ -622,9 +623,24 @@ def test_sfa_pcp_decode_projects_local_weight_then_reduces_pcp_and_tp() -> None:
     torch.testing.assert_close(result, expected)
 
 
-def test_sfa_pcp_prefill_context_starts_weight_gather_but_decode_does_not() -> None:
+@pytest.mark.parametrize(
+    "attn_state,global_has_prefill,weight_switch_enabled,expected_gather",
+    [
+        (AscendAttentionState.ChunkedPrefill, True, True, True),
+        (AscendAttentionState.ChunkedPrefill, False, True, True),
+        (AscendAttentionState.DecodeOnly, False, True, False),
+        (AscendAttentionState.SpecDecoding, False, True, False),
+        (AscendAttentionState.DecodeOnly, True, True, True),
+        (AscendAttentionState.SpecDecoding, True, True, True),
+        (AscendAttentionState.ChunkedPrefill, True, False, False),
+        (AscendAttentionState.DecodeOnly, True, False, False),
+    ],
+)
+def test_sfa_pcp_context_gathers_weight_for_global_prefill(
+    attn_state, global_has_prefill, weight_switch_enabled, expected_gather
+) -> None:
     impl = AscendSFAPCPImpl.__new__(AscendSFAPCPImpl)
-    impl._o_proj_weight_switch_enabled = True
+    impl._o_proj_weight_switch_enabled = weight_switch_enabled
     impl._all_gather_o_proj_full_weight = MagicMock()
     base_context = SFAForwardContext(
         actual_seq_lengths_query=torch.empty(0),
@@ -634,23 +650,16 @@ def test_sfa_pcp_prefill_context_starts_weight_gather_but_decode_does_not() -> N
     )
 
     with patch.object(AscendSFAImpl, "_get_parallel_forward_context", return_value=base_context):
-        prefill = impl._get_parallel_forward_context(
-            SimpleNamespace(attn_state=AscendAttentionState.ChunkedPrefill),
+        context = impl._get_parallel_forward_context(
+            SimpleNamespace(attn_state=attn_state, pcp_has_global_prefill=global_has_prefill),
             1,
             torch.empty(1),
         )
-    assert prefill.gather_full_o_proj
-    impl._all_gather_o_proj_full_weight.assert_called_once_with()
-
-    base_context.gather_full_o_proj = False
-    with patch.object(AscendSFAImpl, "_get_parallel_forward_context", return_value=base_context):
-        decode = impl._get_parallel_forward_context(
-            SimpleNamespace(attn_state=AscendAttentionState.DecodeOnly),
-            1,
-            torch.empty(1),
-        )
-    assert not decode.gather_full_o_proj
-    impl._all_gather_o_proj_full_weight.assert_called_once()
+    assert context.gather_full_o_proj is expected_gather
+    if expected_gather:
+        impl._all_gather_o_proj_full_weight.assert_called_once_with()
+    else:
+        impl._all_gather_o_proj_full_weight.assert_not_called()
 
 
 @pytest.mark.parametrize("async_gather", [False, True])
@@ -695,6 +704,7 @@ def test_dsa_cp_indexer_cache_follows_runtime_ownership(
     impl.skip_topk = skip_topk
     impl.use_index_cache = True
     impl.enable_sparse_sfa_c8 = sfa_c8
+    impl.enable_sparse_sfa_turboquant = False
     impl.enable_sparse_li_c8 = li_c8
     impl.preprocess_type = preprocess_type
     impl.layer_name = "model.layers.80.self_attn.attn" if is_mtp else "model.layers.2.self_attn.attn"
@@ -1021,6 +1031,7 @@ def test_sfa_dcp_split_uses_builder_config_without_current_context(is_consumer, 
 
 def test_sfa_dcp_prefill_passes_contiguous_gathered_cache() -> None:
     impl = AscendSFADCPImpl.__new__(AscendSFADCPImpl)
+    impl.enable_sparse_sfa_turboquant = False
     impl.dcp_group = Mock()
     packed = torch.randn(2, 128, 1, 576)
     gathered = packed.split((512, 64), dim=-1)
@@ -1082,6 +1093,7 @@ def test_sfa_pcp_keeps_prolog_v3_enabled(is_kv_consumer, sfa_c8):
     impl.qk_rope_head_dim = 64
     impl.is_kv_consumer = is_kv_consumer
     impl.enable_sparse_sfa_c8 = sfa_c8
+    impl.enable_sparse_sfa_turboquant = False
     impl.enable_mlapo = False
     with patch.object(impl, "_try_enable_type", return_value=True) as prepare_weights:
         assert impl._resolve_preprocess_type(torch.bfloat16) == PreprocessType.PROLOG_V3
@@ -1299,6 +1311,7 @@ def test_sfa_pcp_builder_prepares_local_prolog_slots():
 def test_sfa_pcp_empty_local_prefill_joins_kv_gathers():
     impl = AscendSFAPCPImpl.__new__(AscendSFAPCPImpl)
     impl.enable_sparse_sfa_c8 = False
+    impl.enable_sparse_sfa_turboquant = False
     metadata = SimpleNamespace(
         num_decode_tokens=1,
         num_prefills=0,
@@ -1342,6 +1355,7 @@ def test_sfa_pcp_empty_local_prefill_joins_kv_gathers():
 def test_sfa_pcp_empty_global_slots_skips_kv_gather():
     impl = AscendSFAPCPImpl.__new__(AscendSFAPCPImpl)
     impl.enable_sparse_sfa_c8 = False
+    impl.enable_sparse_sfa_turboquant = False
     hidden = torch.empty((0, 1))
     slots = torch.empty(0, dtype=torch.int64)
     metadata = SimpleNamespace(
