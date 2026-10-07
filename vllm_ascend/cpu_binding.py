@@ -197,12 +197,7 @@ class DeviceInfo:
                     continue
                 last_part = parts[-1]
                 if self.is_cpu_list(last_part):
-                    # Topology rows use physical board IDs, while CPU pools use
-                    # logical chip IDs (which can be remapped inside containers).
-                    cpus = self.expand_cpu_list(last_part)
-                    for logic_id in self.npu_map_info.get(npu_match.group(1), {}).values():
-                        if logic_id.isdigit():
-                            affinity[int(logic_id)] = cpus.copy()
+                    affinity[int(npu_match.group(1))] = self.expand_cpu_list(last_part)
         return affinity
 
 
