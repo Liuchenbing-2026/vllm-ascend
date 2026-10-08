@@ -32,8 +32,8 @@ from vllm.logger import logger
 from vllm.model_executor.utils import set_weight_attrs
 
 # Upstream #56741 normalized the V4.1 model package name.
-from vllm.models.deepseek_v41.common.engram import ParallelEngramEmbedding
-from vllm.models.deepseek_v41.nvidia.engram import (
+from vllm.models.deepseek_v41.common.engram import (
+    ParallelEngramEmbedding,
     _gather_engram_rows,
     engram_head_shard_rank,
     gather_engram_hashes,
