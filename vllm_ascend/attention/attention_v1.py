@@ -62,6 +62,7 @@ from vllm_ascend.compilation.updatable_graph import (
 from vllm_ascend.device.device_op import DeviceOperator
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.attention_fence import attention_transfer_window
+from vllm_ascend.ops.draft_tnd import draft_tnd_attention
 from vllm_ascend.ops.triton.draft_kv_gather import gather_draft_kv
 
 # default max value of sliding window size
@@ -197,6 +198,8 @@ class AscendMetadata:
     draft_query_lens: list[int] = None  # type: ignore
     # One mask per step, shared by every layer in the attention group.
     draft_tail_mask_cache: dict = None  # type: ignore
+    # Experimental device-tiling path: shared only within this metadata step.
+    draft_tnd_cache: dict = field(default_factory=dict)
     actual_seq_lengths_q: list[int] = None  # type: ignore
 
     query_start_loc: torch.Tensor = None
@@ -1091,6 +1094,26 @@ class AscendAttentionBackendImpl(AttentionImpl):
         )
         num_tokens = attn_metadata.actual_seq_lengths_q[-1]
         query = query[:num_tokens]
+        if attn_metadata.draft_kv_upper_bound and self.sinks is None and block_table is not None:
+            draft_output = draft_tnd_attention(
+                query,
+                key,
+                value,
+                seq_lens=attn_metadata.seq_lens,
+                query_start_loc=attn_metadata.query_start_loc,
+                block_table=block_table,
+                block_size=block_size,
+                num_heads=self.num_heads,
+                num_kv_heads=self.num_kv_heads,
+                scale=self.scale,
+                causal=attn_metadata.causal,
+                sliding_window=self.sliding_window,
+                attn_mask=attn_metadata.attn_mask,
+                cache=attn_metadata.draft_tnd_cache,
+            )
+            if draft_output is not None:
+                output[:num_tokens] = draft_output
+                return output
         draft_output = self._forward_draft_tail_masked(
             query,
             key,

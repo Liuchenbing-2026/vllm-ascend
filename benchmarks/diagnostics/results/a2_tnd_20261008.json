@@ -1,0 +1,60 @@
+{
+  "scope": "A2 operator experiment; no Qwen serving validation",
+  "base_sha": "f06916fc3f9aa8cabe9b0edc5e74a40170a85b72",
+  "sink_source_sha": "bec19b8dea1e538e64838f3064f7e91a3fa9ee72",
+  "software": {
+    "cann": "9.1.0",
+    "torch": "2.10.0+cpu",
+    "torch_npu": "2.10.0.post4",
+    "driver": "25.5.1"
+  },
+  "cpu_tests_passed": 7,
+  "head_dim_128": {
+    "combinations_passed": 36,
+    "length_steps_per_case": 2,
+    "max_relative_l2": 0.0022633180487900972,
+    "relative_l2_limit": 0.02
+  },
+  "initial_probe": {
+    "scope": "A2 operator only; no model or graph validation",
+    "rows": [
+      {
+        "batch": 2,
+        "ragged": false,
+        "causal": false,
+        "window": null,
+        "invalid": "100.0",
+        "head_dim": 128,
+        "relative_l2": [
+          0.002162783872336149,
+          0.002140273340046406
+        ],
+        "status": "pass"
+      },
+      {
+        "batch": 2,
+        "ragged": false,
+        "causal": false,
+        "window": null,
+        "invalid": "100.0",
+        "head_dim": 256,
+        "status": "failed",
+        "error": "RuntimeError: call aclnnFusedInferAttentionScoreV2SinkV3 failed"
+      }
+    ]
+  },
+  "profile": {
+    "scope": "operator only, one layer plus metadata per call; not serving performance",
+    "synchronized_wall_ms": 0.5382595397531986,
+    "calls": 4041,
+    "requested_seconds": 3,
+    "kernel_columns": 47,
+    "markers": 4041,
+    "related_events": {
+      "AscendCL@aclrtSynchronizeDeviceWithTimeout": 2
+    }
+  },
+  "deployed_draft_head_dim": 256,
+  "final_guard": "D=256 falls back to original implementation; no new D=256 support",
+  "merge_status": "experimental; original PR not updated; no full CI or serving approval"
+}

@@ -1143,6 +1143,9 @@ class TestForwardDraftTailMasked(TestBase):
             draft_kv_upper_bound=True,
             draft_query_lens=[3, 3],
             draft_tail_mask_cache={},
+            draft_tnd_cache={},
+            query_start_loc=torch.tensor([0, 3, 6], dtype=torch.int32),
+            attn_mask=None,
             causal=True,
             seq_lens=torch.tensor([7, 9], dtype=torch.int32),
         )
