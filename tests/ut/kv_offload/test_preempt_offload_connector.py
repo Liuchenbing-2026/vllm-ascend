@@ -999,6 +999,7 @@ def test_recompute_scheduler_remote_kv_restore_frees_failed_empty_load():
     request = SimpleNamespace(
         request_id="req-1",
         num_computed_tokens=0,
+        num_tokens=9,
     )
 
     scheduler._update_waiting_for_remote_kv(request)
