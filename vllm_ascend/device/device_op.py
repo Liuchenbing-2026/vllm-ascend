@@ -21,12 +21,12 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 import torch_npu
-from vllm.third_party.flash_linear_attention.ops.l2norm import l2norm_fwd
 from vllm.triton_utils import HAS_TRITON
 
 from vllm_ascend.device import utils as device_utils
 from vllm_ascend.device.hardware_profile import DeviceAdaptorFamily, HardwareCapability, get_current_hardware_profile
 from vllm_ascend.ops.triton.fla.chunk_scaled_dot_kkt import chunk_scaled_dot_kkt_fwd_kernel
+from vllm_ascend.ops.triton.fla.l2norm import l2norm_packed_qk
 from vllm_ascend.ops.triton.fla.solve_tril import solve_tril_16x16_kernel
 from vllm_ascend.ops.triton.fused_gdn_gating import fused_gdn_gating_patch
 from vllm_ascend.quantization.quant_type import QuantType
@@ -805,8 +805,9 @@ class BaseDeviceAdaptor:
         fused_fwd,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Run the A2/A3 Phase6 FLA NPU GDN prefill kernel."""
-        q = l2norm_fwd(q).contiguous()
-        k = l2norm_fwd(k).contiguous()
+        q, k = l2norm_packed_qk(q, k)
+        q = q.contiguous()
+        k = k.contiguous()
         v = v.contiguous()
         g = g.to(torch.float32).contiguous()
         beta = beta.to(v.dtype).contiguous()

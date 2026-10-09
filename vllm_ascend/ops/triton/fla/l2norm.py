@@ -64,3 +64,23 @@ def l2norm_fwd(x: torch.Tensor, eps: float = 1e-6, output_dtype: torch.dtype | N
     )
 
     return y.view(x_shape_og)
+
+
+def l2norm_packed_qk(q: torch.Tensor, k: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Normalize adjacent packed Q/K rows in one launch, preserving strided fallbacks."""
+    if (
+        q.numel() > 0
+        and q.shape == k.shape
+        and q.dtype == k.dtype
+        and q.device == k.device
+        and q.is_contiguous()
+        and k.is_contiguous()
+        and q.untyped_storage().data_ptr() == k.untyped_storage().data_ptr()
+        and k.storage_offset() == q.storage_offset() + q.numel()
+    ):
+        width = q.shape[-1]
+        rows = q.numel() // width
+        packed = q.as_strided((2 * rows, width), (width, 1))
+        normalized = l2norm_fwd(packed)
+        return normalized[:rows].view_as(q), normalized[rows:].view_as(k)
+    return l2norm_fwd(q), l2norm_fwd(k)

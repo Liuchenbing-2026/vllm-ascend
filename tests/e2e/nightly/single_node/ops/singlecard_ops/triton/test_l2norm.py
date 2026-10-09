@@ -4,8 +4,20 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from vllm_ascend.ops.triton.fla.l2norm import l2norm_fwd
+from vllm_ascend.ops.triton.fla.l2norm import l2norm_fwd, l2norm_packed_qk
 from vllm_ascend.ops.triton.triton_utils import init_device_properties_triton
+
+
+@pytest.mark.parametrize("tokens", [1, 63, 256, 1025])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
+def test_packed_qk_matches_separate_npu_normalization(tokens, dtype):
+    init_device_properties_triton()
+    packed = torch.randn(2 * tokens * 4 + 1, 128, device="npu", dtype=dtype)
+    q = packed[1 : 1 + tokens * 4].view(1, tokens, 4, 128)
+    k = packed[1 + tokens * 4 :].view_as(q)
+    actual_q, actual_k = l2norm_packed_qk(q, k)
+    torch.testing.assert_close(actual_q, l2norm_fwd(q), rtol=0, atol=0)
+    torch.testing.assert_close(actual_k, l2norm_fwd(k), rtol=0, atol=0)
 
 
 @pytest.mark.parametrize(
