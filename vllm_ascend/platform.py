@@ -1579,3 +1579,9 @@ def _validate_draft_decode_context_parallel_config(vllm_config: VllmConfig) -> N
             f"parallel for GQA draft model "
             f"({decode_context_parallel_size})."
         )
+# The weight cache daemon spawned by `vllm preload` resolves the platform in
+# its child processes without going through EngineArgs, so
+# pre_register_and_update (which applies the global patches via adapt_patch)
+# never runs there. Import the platform patch package at module import time as
+# well; it is idempotent with adapt_patch().
+from vllm_ascend.patch import platform as _ascend_platform_patches  # noqa: E402,F401
