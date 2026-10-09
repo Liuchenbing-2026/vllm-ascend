@@ -695,6 +695,40 @@
 #       (model architecture, Triton, feature checks) without crashes or
 #       degraded functionality.
 #
+# ** 23. File: platform/patch_weight_cache.py**
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.model_executor.model_loader.weight_cache` (protocol, daemon,
+#      ipc_loader), `vllm.entrypoints.cli.preload`,
+#      `vllm.model_executor.model_loader.get_model`,
+#      `vllm.snapshot.controller`
+#    Why:
+#       vLLM 0.31's weight cache daemon (`vllm preload` /
+#       `--load-format ipc_cache`) only supports CUDA/ROCm: the platform
+#       gate hard-rejects NPU and the tensor export path only emits CUDA
+#       IPC handles. Ascend quant methods also transmute weights to
+#       FRACTAL_NZ, which torch_npu's `_share_npu_` refuses to export, and
+#       Ascend's speculative-decode proposer never routes draft loads to
+#       the daemon's draft group.
+#    How:
+#       Allow the NPU platform when torch_npu provides NPU IPC storage
+#       sharing; export/rebuild tensors through torch_npu's registered
+#       multiprocessing reducers; normalize the daemon's resident weights
+#       to ND once and carry the original format as entry metadata so the
+#       engine can cast back after mapping; route draft loads through
+#       upstream `get_draft_load_config`; reject `vllm snapshot` with a
+#       clear error (CRIU + cuda-checkpoint are NVIDIA-only).
+#       Quant methods audited for pre-processed loads:
+#       AscendUnquantizedLinearMethod, AscendUnquantizedFusedMoEMethod
+#       (except megamoe/EPLB list modes), AscendW8A8DynamicLinearMethod
+#       and AscendW8A8DynamicFusedMoEMethod (except weight-list mode).
+#    Related PR (if no, explain why):
+#       No upstream PR covers NPU weight cache support; upstream
+#       `check_ipc_platform_support` explicitly rejects non-CUDA-alike
+#       platforms (vllm 0.31.0).
+#    Future Plan:
+#       Propose upstream hooks (platform-pluggable IPC reduce/rebuild and
+#       format handling) and drop this patch once merged.
+#
 # * Worker Patch:
 # ===============
 # Entries are listed in alphabetical order by file name.

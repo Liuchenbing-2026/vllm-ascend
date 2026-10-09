@@ -22,6 +22,7 @@ import torch_npu
 from vllm.config import get_current_vllm_config
 from vllm.logger import logger
 from vllm.model_executor.layers.fused_moe.activation import MoEActivation
+from vllm.model_executor.utils import is_weights_pre_processed
 from vllm.triton_utils import HAS_TRITON
 
 from vllm_ascend.ascend_config import get_ascend_config
@@ -66,6 +67,9 @@ class AscendW8A8DynamicLinearMethod(AscendLinearScheme):
 
     act_quant_type: torch.dtype = torch.int8
     weight_switch_gather_specs = (WeightSwitchGatherSpec("weight"),)
+    # ipc_cache weight-cache loads map the post-processed weights from the
+    # daemon; process_weights_after_loading only rebuilds derived state.
+    supports_pre_processed_weights = True
     weight_switch_output_gather_specs = (
         WeightSwitchGatherSpec("weight", gather_dim=1),
         WeightSwitchGatherSpec("weight_scale"),
@@ -116,6 +120,11 @@ class AscendW8A8DynamicLinearMethod(AscendLinearScheme):
         return output
 
     def process_weights_after_loading(self, layer):
+        if is_weights_pre_processed():
+            # ipc_cache weight-cache load: transpose/NZ/flatten already ran in
+            # the weight cache daemon; rebuild only the derived fp32 scale.
+            layer.weight_scale_fp32 = layer.weight_scale.data.to(torch.float32)
+            return
         layer.weight.data = layer.weight.data.transpose(0, 1).contiguous()
         # cast quantized weight tensors in NZ format for higher inference speed
         if self.act_quant_type == torch.int8:
@@ -143,6 +152,10 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
             vllm_config.use_v2_model_runner is True and vllm_config.parallel_config.enable_eplb is True
         )
         self.in_dtype = vllm_config.model_config.dtype
+        # ipc_cache weight-cache loads map the post-processed tensors from the
+        # daemon; the per-expert weight-list mode deletes the registered
+        # weights and cannot be reconstructed that way.
+        self.supports_pre_processed_weights = not self.use_expert_weight_list
         try:
             device_group = get_mc2_group().device_group
             # TODO: Try local_rank = ep_group.rank_in_group
@@ -259,6 +272,27 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         return weights
 
     def process_weights_after_loading(self, layer):
+        if is_weights_pre_processed():
+            # ipc_cache weight-cache load: the tensor transforms below already
+            # ran in the weight cache daemon; rebuild only derived
+            # Python-side state. use_expert_weight_list is declared
+            # unsupported for pre-processed weights and never reaches here.
+            layer.w13_weight_scale_fp32 = layer.w13_weight_scale.data.to(torch.float32)
+            if get_ascend_config().enable_fused_mc2 == 1:
+                layer.fused_w1_scale = scale_from_float_to_int64(layer.w13_weight_scale.data)
+                layer.fused_w2_scale = scale_from_float_to_int64(layer.w2_weight_scale.data)
+                layer.fused_w1_scale_bias = [torch.tensor([], dtype=torch.float32)]
+                layer.fused_w2_scale_bias = [torch.tensor([], dtype=torch.float32)]
+                if use_cann_megamoe(get_current_vllm_config()):
+                    layer.cann_mega_moe_w13_weight_list = list(layer.w13_weight.data.unbind(dim=0))
+                    layer.cann_mega_moe_w2_weight_list = list(layer.w2_weight.data.unbind(dim=0))
+                    layer.cann_mega_moe_fused_w1_scale_list = list(
+                        layer.fused_w1_scale.view(layer.w13_weight.shape[0], -1).data.unbind(dim=0)
+                    )
+                    layer.cann_mega_moe_fused_w2_scale_list = list(
+                        layer.fused_w2_scale.view(layer.w2_weight.shape[0], -1).data.unbind(dim=0)
+                    )
+            return
         layer.w13_weight.data = layer.w13_weight.data.transpose(1, 2).contiguous()
         layer.w2_weight.data = layer.w2_weight.data.transpose(1, 2).contiguous()
         # TODO(zzzzwwjj): Currently, `torch_npu.npu_grouped_matmul_swiglu_quant`

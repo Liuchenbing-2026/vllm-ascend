@@ -27,7 +27,7 @@ from vllm.logger import logger
 from vllm.model_executor.layers.fused_moe import FusedMoERouter, RoutedExperts
 from vllm.model_executor.layers.fused_moe.config import FusedMoEConfig
 from vllm.model_executor.layers.fused_moe.unquantized_fused_moe_method import UnquantizedFusedMoEMethod
-from vllm.model_executor.utils import replace_parameter
+from vllm.model_executor.utils import is_weights_pre_processed, replace_parameter
 
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX, use_cann_megamoe
@@ -62,6 +62,12 @@ class AscendUnquantizedFusedMoEMethod(UnquantizedFusedMoEMethod):
         self.tid2eid = tid2eid
         self.lora_context = None
         self._lora_routing = None
+        # ipc_cache weight-cache loads map the post-processed tensors from the
+        # daemon; modes that replace the registered weights with per-expert
+        # lists (and delete the originals) cannot be reconstructed that way.
+        self.supports_pre_processed_weights = self.supports_pre_processed_weights and not (
+            get_ascend_config().enable_fused_mc2 and (use_cann_megamoe(vllm_config) or self.dynamic_eplb)
+        )
 
     def set_lora_context(self, lora_context) -> None:
         self.lora_context = lora_context
@@ -96,6 +102,11 @@ class AscendUnquantizedFusedMoEMethod(UnquantizedFusedMoEMethod):
         return False
 
     def process_weights_after_loading(self, layer):
+        if is_weights_pre_processed():
+            # ipc_cache weight-cache load: the transforms below already ran
+            # in the daemon; the engine maps the post-processed weights and
+            # needs no Python-side state rebuilt here.
+            return
         super(UnquantizedFusedMoEMethod, self).process_weights_after_loading(layer)
 
         # Keep expert-aware loaders attached for later online weight updates.

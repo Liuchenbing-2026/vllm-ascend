@@ -304,6 +304,17 @@ def maybe_trans_nz(weight: torch.Tensor) -> torch.Tensor:
     return torch_npu.npu_format_cast(weight, ACL_FORMAT_FRACTAL_NZ)
 
 
+def get_npu_format_int(tensor: torch.Tensor) -> int | None:
+    """Return the ACL format of an NPU tensor, or None for non-NPU tensors
+    or when the format cannot be queried."""
+    if tensor.device.type != "npu":
+        return None
+    try:
+        return int(torch_npu.get_npu_format(tensor))
+    except Exception:
+        return None
+
+
 def _round_up(x: int, align: int):
     # round up x to align, for example, if align is 16, x will be rounded up to 16, 32, 48, etc.
     # input: 15, 16 -> output: 16

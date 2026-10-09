@@ -22,6 +22,7 @@ AscendRowParallelLinear and AscendColumnParallelLinear.
 
 import torch
 import torch.nn as nn
+import torch_npu
 from torch.nn.parameter import Parameter
 from vllm.config import get_current_vllm_config
 from vllm.distributed import divide
@@ -37,12 +38,15 @@ from vllm.model_executor.layers.linear import (  # noqa
     UnquantizedLinearMethod,
 )
 from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
-from vllm.model_executor.utils import set_weight_attrs
+from vllm.model_executor.utils import is_weights_pre_processed, set_weight_attrs
 from vllm.utils.torch_utils import direct_register_custom_op
 
 from vllm_ascend.device.hardware_profile import HardwareCapability, WeightLayoutPolicy, get_current_hardware_profile
 from vllm_ascend.ops.linear_op import get_parallel_op, get_replicated_op
 from vllm_ascend.utils import (
+    ACL_FORMAT_FRACTAL_ND,
+    ACL_FORMAT_FRACTAL_NZ,
+    get_npu_format_int,
     maybe_trans_nz,
 )
 from vllm_ascend.weight_switch import WeightSwitchGatherSpec, WeightSwitchMixin
@@ -89,6 +93,18 @@ class AscendUnquantizedLinearMethod(WeightSwitchMixin, UnquantizedLinearMethod):
     supports_weight_switch = True
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        if is_weights_pre_processed():
+            # ipc_cache weight-cache load: the tensor transforms below already
+            # ran in the weight cache daemon and the engine maps the
+            # post-processed weights (casting NZ back where needed). Only
+            # rebuild derived Python-side state here.
+            if getattr(layer, "precast_fp32_weight", False):
+                weight = layer.weight.data
+                if get_npu_format_int(weight) == ACL_FORMAT_FRACTAL_NZ:
+                    weight = torch_npu.npu_format_cast(weight, ACL_FORMAT_FRACTAL_ND)
+                # maybe_trans_nz is a no-op for fp32, so weight_fp32 is ND.
+                layer.weight_fp32 = weight.to(torch.float32)
+            return
         super().process_weights_after_loading(layer)
         keep_nd_weight = _should_keep_nd_for_compatibility_weight(layer.weight.data)
         skip_weight_nz_conversion = getattr(layer, "skip_weight_nz_conversion", False)
