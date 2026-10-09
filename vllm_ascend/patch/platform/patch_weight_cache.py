@@ -199,31 +199,17 @@ if _wc_protocol is not None:
     # ------------------------------------------------------------------
     # 3. Daemon: normalize formats once after loading; annotate exports.
     # ------------------------------------------------------------------
-    # Wrap get_model rather than load_model: daemon children are spawned
-    # before the platform plugin is imported in them, so their `load_model`
-    # lookup happens too early; `self.get_model()` inside load_model is only
-    # looked up after init_distributed_environment resolves current_platform
-    # (which imports this patch) in the child.
-    _orig_get_model = _wc_daemon.WeightCacheDaemon.get_model
-
-    def _get_model_with_npu_format_normalize(self):
-        # The daemon skips the engine's platform.check_and_update_config,
-        # which is where AscendConfig is normally initialized; attention
-        # backend validation during model creation needs it.
-        from vllm_ascend.ascend_config import get_ascend_config, init_ascend_config
-        try:
-            get_ascend_config()
-        except RuntimeError:
-            init_ascend_config(self.vllm_config)
-        model = _orig_get_model(self)
-        _normalize_model_formats_for_ipc(model)
-        return model
-
-    _wc_daemon.WeightCacheDaemon.get_model = _get_model_with_npu_format_normalize
-
+    # export_entries is looked up at call time in the daemon child, after
+    # the platform plugin has been imported there (lazily via
+    # get_attn_backend_cls), so wrapping it covers spawned children. The
+    # NZ->ND normalization happens here rather than in a get_model wrapper
+    # for the same reason: get_model dispatch happens before this patch is
+    # imported in the child.
     _orig_export_entries = _wc_daemon.export_entries
 
     def _export_entries_with_npu_formats(model: torch.nn.Module):
+        if getattr(model, _IPC_FORMATS_ATTR, None) is None:
+            _normalize_model_formats_for_ipc(model)
         entries, aliases = _orig_export_entries(model)
         formats = getattr(model, _IPC_FORMATS_ATTR, None)
         if formats:

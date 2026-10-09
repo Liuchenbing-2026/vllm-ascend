@@ -1529,5 +1529,13 @@ def clear_ascend_config():
 def get_ascend_config():
     global _ASCEND_CONFIG
     if _ASCEND_CONFIG is None or not _is_ascend_config_initialized(_ASCEND_CONFIG):
-        raise RuntimeError("Ascend config is not initialized. Please call init_ascend_config first.")
+        # Entry points that skip platform.check_and_update_config (e.g. the
+        # `vllm preload` weight cache daemon, whose children are spawned
+        # without EngineArgs) can reach here with no initialized config.
+        # Fall back to the active vLLM config when one is set.
+        from vllm.config import get_current_vllm_config_or_none
+        vllm_config = get_current_vllm_config_or_none()
+        if vllm_config is None:
+            raise RuntimeError("Ascend config is not initialized. Please call init_ascend_config first.")
+        init_ascend_config(vllm_config)
     return _ASCEND_CONFIG

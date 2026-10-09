@@ -225,6 +225,12 @@ class NPUPlatform(Platform):
 
     @classmethod
     def get_attn_backend_cls(cls, selected_backend, attn_selector_config, num_heads: int | None = None):
+        # Spawned children of `vllm preload` never run EngineArgs, so the
+        # global patches were not applied there; apply them lazily on the
+        # first platform call during model creation. Idempotent with
+        # pre_register_and_update.
+        from vllm_ascend.utils import adapt_patch
+        adapt_patch(is_global_patch=True)
         use_compress = getattr(attn_selector_config, "use_compress", False)
         use_mla = attn_selector_config.use_mla
         use_sparse = attn_selector_config.use_sparse
