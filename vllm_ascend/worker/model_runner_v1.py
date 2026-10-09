@@ -330,9 +330,11 @@ class ExecuteModelState(NamedTuple):
 
 
 class NPUModelRunner(GPUModelRunner):
-    # vLLM main's GPUModelRunner sets this in __init__; default to disabled
-    # on release lanes (e.g. v0.31.0) without routed experts capture.
+    # vLLM main's GPUModelRunner sets these in __init__; default to disabled
+    # on release lanes (e.g. v0.31.0) without routed experts capture or
+    # XDRoPE support.
     routed_experts_initialized = False
+    uses_xdrope_dim = 0
 
     # vLLM #51718 describes compatible KV cache groups as views over one
     # standardized backing allocation. The default runner preserves that
