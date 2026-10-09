@@ -78,3 +78,21 @@ Useful options:
   CRIU plus the NVIDIA-only `cuda-checkpoint` plugin to freeze and restore
   device state, and CANN provides no equivalent. `vllm snapshot
   create/restore` raises a clear error on NPU.
+- **GPU memory utilization**: in zero-copy mode the daemon's cached weights
+  stay resident on the NPU, so the engine's default
+  `--gpu-memory-utilization 0.9x` startup check can fail even though the
+  weights themselves are shared. Lower it so that
+  `utilization * total <= free` (e.g. `--gpu-memory-utilization 0.65`),
+  matching upstream's own weight-cache test setups; KV cache sizing still
+  uses the actually free memory.
+- **vLLM v0.31.0 release lane**: the preload feature reached NPU on the
+  v0.31.0 lane, where a few vLLM-main APIs are absent (routed-experts
+  capture, `GPUInputBatch` alias, tuple-style `get_mamba_groups`,
+  `_seq_lens_cpu`, `randomize_inputs`, `prefill_end`). vllm-ascend detects
+  each at runtime and falls back, so the same tree runs on both lanes. On
+  CANN builds whose public ops package lacks Ascend910B binaries for newer
+  custom ops (e.g. `AddRmsNormBias`, `CausalConv1d`), the affected kernels
+  are probed once at worker init and fall back to the `torch_npu`
+  implementations; models whose layers have no fallback (e.g. GDN
+  causal-conv1d on such CANN builds) cannot serve yet and fail with a clear
+  aclnn error.
