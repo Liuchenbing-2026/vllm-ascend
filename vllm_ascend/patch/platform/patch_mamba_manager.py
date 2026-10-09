@@ -56,6 +56,9 @@ class AscendMambaManager(MambaManager):
         num_local_computed_tokens: int | None = None,
         num_tokens_main_model: int | None = None,
         apply_admission_cap: bool = False,
+        # vLLM v0.31.0's coordinator passes this through; the base
+        # MambaManager ignores it, so accept-and-ignore for lane compat.
+        prefill_end: int = 0,
     ) -> int:
         if num_tokens_main_model is None:
             assert num_local_computed_tokens is not None
