@@ -184,7 +184,7 @@ if _wc_protocol is not None:
 
     def _from_tensor(cls, tensor: torch.Tensor, kind: str):
         if tensor.device.type != "npu":
-            return _orig_from_tensor(tensor, kind)
+            return _orig_from_tensor(cls, tensor, kind)
         tensor = tensor.detach()
         # torch_npu replaces torch.multiprocessing.reductions.reduce_tensor
         # with an NPU-aware reducer on import; for NPU storages it returns

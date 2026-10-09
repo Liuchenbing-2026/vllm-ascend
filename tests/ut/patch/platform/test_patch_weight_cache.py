@@ -122,7 +122,9 @@ class TestDaemonFormatNormalization:
         cast_mock.assert_called_once()
         formats = getattr(model, pwc._IPC_FORMATS_ATTR)
         assert formats == {"weight": 29}
-        assert model.weight.data is casted
+        # .data assignment shares storage but returns a fresh alias object.
+        assert torch.equal(model.weight.data, casted)
+        assert model.weight.data.data_ptr() == casted.data_ptr()
 
     def test_normalize_all_nd_records_nothing(self):
         model = torch.nn.Linear(4, 4)
