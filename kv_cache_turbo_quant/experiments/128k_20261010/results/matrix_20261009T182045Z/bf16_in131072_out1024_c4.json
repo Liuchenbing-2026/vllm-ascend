@@ -1,0 +1,102 @@
+{
+  "captured_utc": "2026-10-09T18:38:46.944596+00:00",
+  "mode": "bf16",
+  "concurrency": 4,
+  "num_prompts": 4,
+  "input_len": 131072,
+  "output_len": 1024,
+  "seed": 20261010,
+  "timeout_s": 1800.0,
+  "payload_sha256": [
+    "c473d49fdb09721970b04a10e77c5865abae15006e750bd047fc2c44201cfcdb",
+    "e6509d62acf78e7297e592eb66aeeee4230c9cadb63aafbbcf9bc6c3d46d35b5",
+    "79b85ad524ca8a18c63c04200a890dce81f861c84d81778a0bf2519baf8caeb5",
+    "ae43515c9482c44c3a624a9453a94f2a4e86fdb1dcb83659212419b30ea13baf"
+  ],
+  "successful": 4,
+  "failed": 0,
+  "duration_s": 466.1103047216311,
+  "complete_cohort": true,
+  "output_throughput_tps": 8.787619493729494,
+  "total_throughput_tps": 1133.6029146911046,
+  "mean_ttft_s": 137.4760264547076,
+  "p99_ttft_s": 304.927910724869,
+  "mean_tpot_ms": 198.70582650113352,
+  "p99_tpot_ms": 225.81909054313093,
+  "mean_latency_s": 340.75213844305836,
+  "requests": [
+    {
+      "id": 0,
+      "status": "success",
+      "events": 1024,
+      "text": "\n\n\n\n1\n\n\n\n\n\nOkay\n\n .\n\nOkay\n\n \n\n \n\n \n\nOkay\n\n \n\n \n\n \n\n \n\n \n\n1\n\n \n\n \n\nI\n\nI\n\n\n\n ;\n\nI\n\n \n\nOkay\n\nI\n\n \n\n \n\n \n\n \n\n \n\nI\n\nI\n\nOkay\n\nI\n\nimported\n\n ;\n\nIa\n\n \n\nOkay\n\nimport\n\nOkay\n\nI\n\nI\n\nOkay\n\nOkay\n\nI\n\nOkay\n\nI\n\n   \n\nI\n\nI\n\n \n\nThe\n\nOkay\n\n \n\n \n\nI\n\nOkay\n\nI\n\nThe\n\nimported\n\n \n\n \n\nI\n\n \n\nThe\n\nOkay\n\nOkay\n\n \n\n \n\n \n\n \n\n \n\nOkay\n\n1\n\nOkay\n\nOkay\n\n \n\nI\n \n\n1\n\n \n\nI\n\n   \n\n ed\n\n ;\n\n   \n\nOkay\n\n   \n\n \n\n \n\n   \n\n \n\nI\n\n   \n\nOkay\n\nI\n\n\n\nOkay\n\nimport\n\nI\n\nOkay\n\nOkay\n\nIed\n\nI\n\n \n\nOkay\n\nI\n\nI\n\nOkay\n\n \n\nThe\n\n\n \n\n\n\n \n\nI\n\nimport\n\nThe\n\nimported\n\nOkay\n\nOkay\n\nOkay\n\nI\n\nOkay\n\n1\n\nOkay\n\nI\n\nI\n\nThe\n\nimport\n\nimport\n\n \n\n \n\n ere\n\n \n\n \n\nI\n\n \n\n \n\n \n\n\\\n\n \n\n \n\nI\n\n ed\n\n      \n\n   \n\nI\n\nOkay\n\n\n\nimport\n\nThe\n\n \n\n \n\n \n\n \n\n \n\n     \n\n   \n\n \n\n \n\n  \n\nI\n\n \n\nOkay\n\n   \n\n \n\nThe\n\nThe\n\n \n\nimport\n\nOkay\n\nOkay\n\nOkay\n\nOkay\n\n\t\n\nOkay\n\n \n\nimport\n\n   \n\n   \n\nOkay\n\nOkayll\n\n\n\n  \n\nOkay\n\nI\n\nThe\n\n1\n\n \n\n\t \n\nOkay\n\nI\n\nOkay\n\n \n\n \n\nOkay\n\nThe\n\nOkay\n\nI\n\nOkay\n\n \n\n \n\nI\n\n \n\nOkay\n\nThe\n\nOkay\n\nI\n\nOkay\n\nOkay\n\nOkay\n\n \n\nOkay\n\n \n\nOkay\n\nOkay\n\nI\n\nOkay\n\nOkay\n\nOkay\n\nI\n\n1\n\nimport\n\nI\n\n \n\n \n\nfunction\n\nThe\n\nI\n\nI\n\n \n\nThe\n\n \n\n \n\nOkay\n\nI\n\n \n\n\n\nI\n\n \n\n \n\n \n\nI\n\nThe\n\nI\n\nThe\n\nI\n\nI\n\nThe\n\nI\n\n \n\n \n\nOkay\n\nThe\n\n \n\nI\n\nThe\n\nThe\n\nThe\n\nimport\n\n \n\n \n\nOkay\n\n \n\nI\n\n \n\n \n\nOkayThe\n\n \n\n ed\n\nimported\n\nThe\n\n \n\nOkay\n\nOkay\n\n  \n\nThe\n\nI\n\nIrows\n\nThe\n\n \n\nOkay\n\nI\n\nThe\n\n \n\nThe\n\nOkay\n\nThe\n\nTheer\n\nThe\n\nThe\n\nThe\n\nOkay\n\n  \n\nThe\n\nOkay\n\nWait\n\nI\n\nOkay\n\nOkay\n\n   I\n\nI\n\nThe\n\n \n\n \n\n    \n\n1\n\n \n\nI\n\n      \n\nI\n\nThe\n\nOkay\n\nI\n\nI\n\na\n\nThe\n\nOkay\n\nI\n\nI\n\n \n\n1.\n\n12\n\nI\n\nI\n\n12\n\nI\n\nI\n\nI\n\nOkay;\n\nI\n\nOkay\n\nI\n\nThe\n\n \n\n \n\nThe\n\n   \n\n   \n\nI\n\nI\n\n \n\n \n\n \n\n \n\nOkay\n\n \n\n \n\nI\n\nOkay\n\nOkay\n\nI\n\n \n\n \n\nThe\n\n \n\nI\n\n1\n\nI\n\nI\n\nI\n\nOkay\n\nThe\n\nOkay\n\nI\n\nThe\n\nIle\n\nI\n\nI\n\nAssistantIIfrac,\n\n \n\nOkay\n\nThe\n\n    \n\nIed\n\n \n\nI\n\n \n\nOkay\n\nI\n\nI\n\nThe\n\nI\n\nThe\n\n \n\n \n\nI.\n\n \n\n \n\nOkay\n\n\n\n \n\nThe\n\n \n\n \n\n      \n\n    \n\nThe\n\n \n\n \n\n  \n\nI\n\nOkay\n\nI\n\n   \n\nI\n\nThe\n\nOkay\n\nOkay\n\n   \n\nThe\n\n   \n\n \n\n   \n\nI\n\nIr\n\n \n\n \n\nIll)\n\n \n\n   \n\nI\n\nI\n\n \n\n   \n\nI\n\nI\n\n \n\nI\n\n   \n\nThe,,.\n\nI\n\nI\n\n   \n\n   \n\n \n\nI\n\nI\n\n1\n\nimported.\n\n \n\n \n\n \n\n  \n\nI\n\n \n\nimport\n\nOkay\n\nThe\n\nThe\n\nOkay\n\nThe\n\n \n\nThe\n\nI\n\nI\n\nThe\n\nI\n\n1\n\nThesll,,,,.\n\nI\n\nThe\n\nOkay\n\nI\n\nI\n\n \n\n \n\nThe\n\nThe\n\nI\n\nThe\n\nOkay\n\n \n\nI\n\nThe\n\n \n\n \n\n \n\nI",
+      "started_s": 0.0006116200238466263,
+      "http_status": 200,
+      "last_token_s": 270.72857318166643,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 131072,
+        "total_tokens": 132096,
+        "completion_tokens": 1024
+      },
+      "ttft_s": 39.704044772312045,
+      "tpot_s": 0.2258304285526436,
+      "latency_s": 270.7286313008517
+    },
+    {
+      "id": 1,
+      "status": "success",
+      "events": 1024,
+      "text": "\n\n \n\n   \n\n \n\nI\n\n \n\nThe\n\n1\n\nThe\n\n    \n\n\n\n   \n\nI\n\n \n\n \n\n  \n\n1\n\nI\n\nimport\n\nThe\n\nI\n\n \n\nI\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nThe\n\n\n\nI\n\n\n\n\n\n\n\n\n\n\n\nI\n\n \n\nI\n\nThe,.l\n\n\n\n1\n\nI\n\n \n\nimport\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\nI\nI\n\nI\n\nThe\n\nI\n\nI\n\nimported\n\nI\n\nOkay\n\nI\n\nThe\n\nOkay\n\nOkay\n\nThe\n\n#\n\nI\n\nI\n\nI\n\nimport\n\nI\n\nI\n\nimport\n\nimport\n\nI\n\nimport\n\nimport\n\nI\n\n//\n\nI\n\nI\n\nimport\n\nimport\n\nI\n\nimport\n\nimport\n\nI\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nimport\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nThe\n\nI\n\nI\n\nI\n\n \n\nThe\n\nimport\n\nI\n\n \n\nThe\n\nI\n\nI\n\nI\n \n\nThe\n\n afterans\n\nI\n\n \n\nimport\n\n \n\n   \n\nIight\n\n,\n\nThe\n\nI\n\n \n\nThe\n\nThe\n\n \n\nThe\n\n \n\nThe\n\n \n\nI\n\n   \n\n   \n\nThe\n\nThe\n\nI\n\n   \n\nI\n\nI\n\nI\n\n   \n\nThe\n\nThe\n\nI\n\nI\n\n   \n\nThe\n\nThe,.\n\nI\n\nThe\n\nimport\n\nOkay\n\nThe\n\nI\n\nOkay,.r\n\nI\n\nThe\n\nThe\n\n   \n\nThe\n\nOkay\n\nI\n\n\n   I\n\nI\n\nI\n\nI\n\nimport\n\nI\n\nI\n\nI\n\nIa\n\nimport\n\nclass\n\nimport\n\nOkay\n\n   \r\n\r\nI\n\nI\n\nimport\n\n   \n\n            I\n\nI\n\nI\n\nOkay\n\n \n\nThe\n\nOkay\n\nThe\n\nI\n\n   :\n\nimport\n\nI\n\nI\n\nI\n\nI\n\nI\n\nimport\n\nI\n\nI\n\nimport\n\nI\n\nI\n\nI\n\nThe\n\nimport\n\nI\n\nThe\n\nThe\n\nimport\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\n \n\nOkay\n\nOkay\n\nI\n\n \n\nI\n\nThe\n\n \n\nimport\n\nI\n\nI\n\nI\n\nI\n\nOkay\n\nOkay\n\nI\n\nI\n\nOkay\n\nThe\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\n\n\nI\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\nI\n\nOkay\n\n\n\nI\n\nThe\n\nI\n\nOkay\n\nBut\n\nI\n\nI\n\nThe\n\nI\n\nThe\n\nI\n\nI\n\nOkay,\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nOkay\n\nIc\nimport\n\nOkay\n\nOkay\n\nOkay\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nOkay\n\nOkay\n\n\n\nI\n\nI\n\nimport\n\nI\n\nOkay\n\nOkay\n\nOkay\n\nI\n\nimport\n\nimport\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nOkay,\n\nThe\n\nThe\n\nOkay\n\nI\n\nOkay\n\nI\n\nThe\n\nI\n\nThe\n\nI\n\nThe\n\nI\n\nThe\n\nThe\n\nThe\n\nThe\n\nI\n\nI\n\n\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nimport\n\nI\n\nI\n\nThe\n\nThe\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nIeneral\n\nI\n\nI\n\nI\n\nThe\n\nThe\n\nThe\n\n\n\nThe\n\n\n\n\n\n\n\n\n\nThe\n\nThe\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nOkay\n\nThe\n\n\n\nI\n\nI\n\nThe\n\n \n\n\n\n\n\n,\n\nThe\n\n\n\n\n\n\n\nThe\n\nOkay\n\nThe\n\nThe\n\nI\n\nI\n\n   \n\n   \n\nThe\n\n\n\nThe\n\nI\n\n\n\n\n\n   \n\nThe\n\nI\n\nBut\n\nThe\n\nI\n\nThe\n\nThe\n\nI\n\nThe\n\nThe\n\nI\n\n \n\nThe\n\nThe\n\n\n\nThe\n\nI\n\nI\n\nThe\n\nI\n\n\n\n\n\nI\n\nThe\n\n\n\n\n\n\n\n   \r\n   \n\n \n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nTheere\n\nThe\n\nThe\n\nThe\n\nThe\n\nI\n\n\n\n\n\nThe\n\nI\n\nThe\n\n\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\n \n\nThe\n\nI\n\nI\n\nThe\n\nThe\n\nThe\n\nI\n\nThe\n\nThe\n\nI\n\nI\n\nI\n\nThe\n\nThe\n\nI\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nI\n\nThe\n\nimport\n\nI\n\nI\n\n",
+      "started_s": 0.0012938212603330612,
+      "http_status": 200,
+      "last_token_s": 315.50919099058956,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 131072,
+        "total_tokens": 132096,
+        "completion_tokens": 1024
+      },
+      "ttft_s": 119.51326152961701,
+      "tpot_s": 0.19158937386214325,
+      "latency_s": 315.5092344507575
+    },
+    {
+      "id": 2,
+      "status": "success",
+      "events": 1024,
+      "text": "\n\nI\n\n   \n\nimport\n\n \n\n \n\nimport\n\n   \n\n \n\nIo\n\n \n\n    \n\nOkay\n\nI\n\n \n\n ;\n\nI;\n\nimported\n\n \n\n   \n\n   \n\n   \n\n \n\n \n\nThe\n\n#\n\nOkay\n\n \n\nThe\n\nThe\n\nThe\n\nThe\n\n        \r\n    \n\n   \n\n \n\n#\n\nI\n\n \n\n \n\n \n\n   \n\n \n\nOkay\n\n \n\n   \n\nOkay\n\n \n\n \n\n \n\n        \n\n \n\n   \n\n   \n\nOkay\n\n \n\n \n\n \n\n \n\n      \n\n \n\n      \n\n   \n\n \n\n \n\n  \n\n  \n\nThe\n\n   \n\n   \n\nI\n\n \n\n  \n\n \n\n \n\n#\n\n#\n\nimport\n\n \n\n \n\n \n\n//\n\n             \t\n\nOkay\n\nimport\n\nimported\n\nOkay\n\n \n\nimported\n\nimported\n\n   \n\n   \n\n   \t\n\n   \n\nOkay\n\nI\n\n \n\n \n\n \n\n   \n\n   \n\n\t   \n\n   \n\n \n\n \n\nI\n\n       \n\n       \n\n   \n\nimportera\n\n       \n\n \n\n    \n\n          \n\n    \n\n   \n\n s\n\n \n\n#\n         \n\n   \n\n    \n\n \n\n    \n\n \n\n \n\n \n\n \n\n   \n\n    \n\n \n\n \n\n     \n\n   \n\n \n\n \n\n \n\n   \n\n \n\n         \n\nOkay\n\n   \n\n   \n\n \n\n \n\n    \n\n \n\nOkay\n\n \n\n \n\n   \n\nOkay\n\nI\n\nimport\n\nOkay\n\n\t\n\n \n\nOkay\n\n    \n\n   \n\n\n\nOkay\n\n \n\nOkay\n\n#\n\n   :\n\nThe\n\n \n\n    \n\n \n\n \n\nI\n\nOkay\n\nOkay\n\nOkay\n\n   \n\n  \n\nOkay\n\n\t\n\nThe\n\nOkay\n\n\t\n\nThe\n\nOkay\n\nOkay\n\n \n\n    \n\n \n\nOkay\n\n\t\n\nI\n\n   \n\nI\n\nI\n\n         \n\n   \n\n \n\n \n\nOkay\n\n   \n\nOkay\n\nI\n\nI\n\nOkay\n\nOkay\n\nI\n\nI\n\n \n\n \n\n   \n\n \n\n   \n\t\n \n\n   \n\nI\n\nOkay\n\nOkay\n\n   \n\nI\n\nBut\n\n \n\n \n\n \n\nI\n\n   \n\n  \n\n \n\n \n\nThe\n\n \n\n \n\n \n\n \n\n \n\n \n\nI\n\n   \n\n \n\n \n\n   \n\n   \n\n\t\n\n\t\n\n\t\n\n\t\n\n   \n\n \n\n \n\nWait\n\n \n\nOkay\n\n ed\n\nI\n\n \n\n   \n\n \n\n   \n\n \n\n \n\nI\n\nI\n\n \n\n \n\n   \n\n \n\n \n\n   \n\nThe\n\n \n\n \n\n \n\n   \n\nOkay\n\n \n\n   \n\nOkay\n\n   \n\nThe\n\nThe\n\n \n\n   \n\n   \n\n \n\n \n\n   \n\n \n\n   \n\n   \n\n \n\n  \n\nThe\n\n \n\n \n\n \n\n \n\n \n\n   \n\nimport\n\n\t\n\n   \n\n \n\n \n\n    \n\n   \n\n\t\t\n\n   \n\nimport\n\n    \n\n   \n\n   \n\n \n\n   \n\nThe\n\n \n\nThe\n\n   \n\n s\n\n    \n\n  \n\n \n\n \n\n       \n\nI\n\nThe\n\n \n\n   \n\nThe\n\n   \r\n \n\n   \n\n \n\n \n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\n \n\n \n\nThe\n\n \n\nimport\n\n \n\n \n\n      \n\n      \n\n   \n\nOkay\n\n   \n\n \n\n   \n\n  \n\n \n\nThe\n\nOkay\n\n  \n\nOkay\n\nThe\n\n   \n\n        \n\nThe\n\nThe\n\nThe\n\nThe\n\n   \n\nThe\n\nThe\n\nThe\n\n \n\n \n\nThe\n\nThe\n\n             \n\n\n\n \n\nimport\n\nThe\n\nThe\n\nThe\n\n   \n\nThe\n\nWait\n\nThe\n\nThe\n\nThe\n\nThe\n\n \n\n \n\nThe\n\n   \t    \n\nThe\n\n   \t\t\t\t          \t\n\nThe\n\nThe\n\nOkay\n\n \t \n\nThe\n\n\n\n   \n\n  \n\n \t\n\n \n\nThe\n\nThe\n\n     \n\nThe\n\n \n\nThe\n\nOkay\n\nThe\n\nThe\n\n    \n\n \n\nThe\n\nThe\n\nThe\n\nOkay\n\nThe\n\nThe\n\nOkay\n\nI\n\nThe\n\n       \n\nThe\n\nThe\n\nThe\n\nThe\n\n \t \n\nThe\n\n \n\n \n\n  \n\n  */\n\nimport\n\nI\n\nI\n\nI\n\n r\n\nOkay\n\nI\n\nThe\n\nThe\n\nThe\n\nI\n\n \n\n  \n\nI\n\n \n\nI\n\n \t",
+      "started_s": 0.0016518812626600266,
+      "http_status": 200,
+      "last_token_s": 466.10826629865915,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 131072,
+        "total_tokens": 132096,
+        "completion_tokens": 1024
+      },
+      "ttft_s": 310.6623844113201,
+      "tpot_s": 0.15195100868752595,
+      "latency_s": 466.1083160098642
+    },
+    {
+      "id": 3,
+      "status": "success",
+      "events": 1024,
+      "text": "\n\nOkay\n\n \n\n \n\nThe\n\n\n\nThe\n\n//\n\n//\n\nfunction;\n\n \n\nThe\n\nThe\n\nThe\n\nTheed\n\na\n\n   \n\n\n\n\n\n\n\n \n\nimport\n\n,\n\n\n\nThe\n\nThee\n\nOkay\n\nimport\n\nI\n\n \n\nThe\n\n \n\n\n\n \n\nimported\n\n \n\n ;\n\n \n\nOkay\n\nThee\n\n \n\nThe\n\n#\n\n//\n\n \n\n \n\n \n\nThe\n\nThe\n\nimport\n\n \n\nThe\n\nThe\n\n \n\n \n\n \n\n \n\n \n\nThe\n\n \n\n \n\nThe\n\n//\n\n \n\nThe\n\n//\n\n \n\nThe\n\n \n\n#\n\nThe\n\nThe to\n\n \n\n \n\n \n\nimported\n\n \n\n \n\nThe\n\nThe\n\nThe\n\n \n\nimport\n\nThe\n\n \n\n//\n\n \n\nOkay\n\n  \n\nI\n\n \n\n#\n\nOkay\n\n \n\n \n\n \n\n \n\n \n\nThe\n\n \n\nimport\n\nOkay\n\nimported\n\nimported\n\n \n\n  a\n\nThe\n\n \n\nOkay\n\nOkay\n\n \n\nThe\n\n \n\n \n\nThe\n\nimport\n\n   \n\n \n\nimport sys\n\nimported\n\n\n\n      le\n\n \n\n//\n\nimport\n\n \n\n \n\n \n\n \r\nimport\n\n \n\n \n\n \n\n \t \n\n \n\n \t  \n\nimport\n\n    \n\n \n\n \n\n\r\n  \n\nimported\n\n \n\n \n\nimport\n\n\n\n \n\nOkay\n\n \n\n \n\nimport\n\nimported\n\nThe\n\nimported\n\nThe\n\n \n\n \n\n \n\n \n\na\n\n\n\n\n\n \n\n\n\n\n\n \n\n \n\n \n\nimported\n\nOkay\n\n \n\nThe\n\nThe\n\n \n\n      \t\n\n \n\n e\n\n\n\nimport\n\nOkay\n\nThe\n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\nThe\n\n \n\n \n\n#\n\n \n\n \n\nOkay\n\n \n\n \n\n \n\nThe\n\nThe\n\n \n\n \n\nOkay\n\nThe\n\n e\n\nimported.\n\n\n\nOkay\n\n \n\nOkay\n\n \n\nOkay\n\n \n\nI\n\nThe\n\nThe\n\nI\n\nThe\n\nOkay\n \n\nOkay\n\nI\n\nThe\n\nI\n\nI\n\n ed\n\nI\n\nThe\n\n \n\n \n\n \n\n \n\nThe\n\nI\n\nThe\n\n\n\n \n\n   \n\nOkay\n\n \n\nThe\n\nOkay\n\nThe\n\nThe\n\nOkay\n\n \n\nThe\n\nThe\n\nOkay\n\nOkay\n\nThe\n\n \t\n\nI\n\nThe\n\n  \n\nThe\n\nThe\n\nThe\n\nThe\n\nOkay\n\nOkay\n\nThe\n\nOkay\n\nOkay\n\n\n\n \n\nThe\n\nOkay\n\nThe\n\nOkay\n\nThe\n\nI\n\nI\n\nOkay\n\nI\n\nOkay\n\nI\n\nI\n\n \n\nThe\n\nThe\n\nThe\n\nThe\n\n \n\nThe\n\nThe\n\nThe\n\nThe\n\nI\n\nThe\n\nI\n\nOkay\n\nThe\n\nOkay\n\nOkay\n\nThe\n\nThe\n\nThe\n\nTheer\n\nOkay,\n\nOkay\n\nI\n\nOkay\n\nI\n\nOkay,\n\nI\n\nOkay\n\nThe\n\nOkay\n\n \n\nI\n\nThe the\n\n \n\nThe\n\nI\n\nThe\n\n \n\nI\n\nOkay,\n\nThe\n\nIide\n\nOkay\n\nOkay,\n\nOkay\n\nThe\n\nI\n\nThe\n\nOkay\n\nI\n\n \n\nThe\n\nThe\n\n \n\n \n\n \n\nOkay\n\nThe\n\nThe\n\nimported\n\nOkay,\n\nThe\n\n \n\nOkay\n\n \n\n , and\n   \n\nimported\n\nOkay\n\n \n\nThe\n\n       s.\n\nThe\n\nThe\n\n    \n\nOkay\n\nThe;\n\nimported\n\n      \n\nThe\n\n a\n\nimport\n\n aa\n\n \n\n    \n\nimport\n\n \n\n   \n\n   \n   \n\n \n\nIr\n\nimported.n and\n\nOkay\n\nThe\n\n \n\nI\n\n//\n\nimport\n\nI\n\nI\n\nThe\n\nThe\n\nimported\n\nThe\n\n   \n\n   a\n\nimport\n\nThe\n\n \n\n \n\n1\n\n.\n\n\n\n\n\n\n\n\n\n  \n\n\n\n \n\n\n\nThe\n\n \n\n\t\n\n\n\n\n\nThe\n\nThe\n\nThe\n\nOkay\n\nimported\n\n \n\nimported\n\nThe\n\nimport\n\n \n\n    \n\n  \n\n#\n\n \n\nThe\n\n \n\n   \n\nimported\n\n \n\nThe\n\n \n\nimported\n\n \n\n \n\n \n\nI\n\n \n\n \n#\n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n   \n\n  \n\n \n\n \n\n \n\n \n\n \n\nThe\n\nThe\n\n \n\n \n\n \n\n \n\n \n\n \n\nThe\n\nThe\n\n \n\n \n\nThe\n\n \n\n \n\n   \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n//\n\n",
+      "started_s": 0.001918751746416092,
+      "http_status": 200,
+      "last_token_s": 310.66231739055365,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 131072,
+        "total_tokens": 132096,
+        "completion_tokens": 1024
+      },
+      "ttft_s": 80.02441510558128,
+      "tpot_s": 0.22545249490222127,
+      "latency_s": 310.66237201076
+    }
+  ],
+  "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+}

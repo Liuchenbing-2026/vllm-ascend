@@ -1,0 +1,71 @@
+[
+  {
+    "Id": "sha256:3d74258bb4aba4d7ba1d972f886b78d25b7459346bcce4933f27ce8e6bdd4e14",
+    "RepoTags": [
+      "vllm-ascend:dspark-a2-028"
+    ],
+    "RepoDigests": [],
+    "Architecture": "arm64",
+    "Created": "2026-09-22T17:24:59.03781527Z",
+    "RootFS": {
+      "Type": "layers",
+      "Layers": [
+        "sha256:2c042ab36ee22da5e09730c3dce27e9d84ff1cc8af8e5a8ed2275c05f0133445",
+        "sha256:dd8bdf33c83c6e9c6ed7b753f5c0cb0bdeadbe1c40691e54c250c3a4e6fb1201",
+        "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+        "sha256:1112fc51481a15946776554575684deea44372c755ec0d7d2e8484ff9bb68bdb",
+        "sha256:ba9828b90abfbd6cf62e74dcd4764605b1d9329839069c807e05167976ff804b",
+        "sha256:15c17f9ff0eedcb8e443cf72d16028181f3913d83554d871f7c1cc758e766e29",
+        "sha256:21c9b78d8139c1a4a927a9be1bc1c799809cc45674d4ef742c4b55ad475a4dfb",
+        "sha256:6b39575b191dde4348d3e129049be4fb8cc70bbd8f5e9922448ede6671648a8b",
+        "sha256:234ecda54fe3b9bd1d077816faf9fe957f76f985d5f4b6be47923e9e5f74c07b",
+        "sha256:50f62241eb74909d8fb1f8249ed18ae177c259cef378dc3b4afcda02d73ae542",
+        "sha256:3cc32d2a1c1d6cf54fcad0140a533599c10bbb36e89ec1f6a2e349342d1c5a1b",
+        "sha256:53fe9bc45d51d715f46dce046f72d693f10a9f6c7ef8a96f7ff9e3c71d800ba4",
+        "sha256:f4a68ab59cb6308256e36a4a324aeddf934e07197db0c87516b4c605f7c8a715",
+        "sha256:7475becbebc1026ddc6baddb92506c9612ad925d7c6aaa6d69814ef717b6e0d2",
+        "sha256:1c32236aa484e5f17b8b8feca18396a265ffa2ec5abdd9b5be8794313ceea47f",
+        "sha256:78f5c70be8ccf96e5fc01bcb82c1a86d509893aba7a4c99014567f40f8849479",
+        "sha256:17b069df68f2491bcd4dce6a7673bea0cdf083c9b61435d770b9ad293a66492d",
+        "sha256:2a672cc1cd01ad058ad12e91d321018f87f285b23331191365747535d46939aa",
+        "sha256:a159415893dc8baba334e2437564703c68693a78c028802d26a28bf253473aad"
+      ]
+    }
+  },
+  {
+    "Id": "sha256:c9c9432b69767cf1855efad44f20eaa8ab02520ae05b75c936e67ea4e7eb2702",
+    "RepoTags": [
+      "quay.io/ascend/vllm-ascend:v0.26.0rc1"
+    ],
+    "RepoDigests": [
+      "quay.io/ascend/vllm-ascend@sha256:243bf20fad2f4f6de56aa1b041bcdfdbe5bb9d485f3190f40f1c5d0f418fc469"
+    ],
+    "Architecture": "arm64",
+    "Created": "2026-09-03T16:56:04.335869838Z",
+    "RootFS": {
+      "Type": "layers",
+      "Layers": [
+        "sha256:349cd24b7d434a8beb71a40f461c42b9f58e19b2637af5065f91bb019759cb91",
+        "sha256:19d3518b0050019a143133bc7dbbc00d6e36f1454d62b7bbe4da30e4a984edb3",
+        "sha256:c700e30922ff9f2f924fcf1b66e76b75a9778774075e7dacc4349873ec7735d6",
+        "sha256:0eff60ecc08354ee967d7b608a4d909835ee6b7687df6d005fd32313c60e67eb",
+        "sha256:aeb25401b939813c6624ad7f8bfe2d66a0e827b04b3d6ea2d2028f90df50c2ce",
+        "sha256:797e8de7b0cd15a4355313f7428dc1d65c864bfad16a19b69c1099817c95e228",
+        "sha256:5a81581ea257187d5284ff5a4160d35534030ab3f8ac08519220e8283cf6ea60",
+        "sha256:3e35ad43948d8b4c6ba9e50996594bcc3c812ac7012041a81d6605f4b2017ff0",
+        "sha256:3c90092e7c47789f83ec952c37d3ebfc9c78a549ba53f8352f0c74a669533ccc",
+        "sha256:4f8d3aa664647559427f4af2dbf3ca9af0ec32d11bcaded4ed2dbe3c61521e7d",
+        "sha256:dcd0a943f70ca3fd47e1526a9b75029e02e4a102dc329fb3978e6bd5b3114f30",
+        "sha256:fe00fe6a0d17479eca9aa0b72f02407c17903dbf2ad2f53a33479ad72697d307",
+        "sha256:1e14a7e714c4a21c3c07fb351834fc193fa1ed0e9716c33a777b3d6df5e200f4",
+        "sha256:01ab7d2a22f143a817ed99a62999ed140be87bf62d2c531ef14cb436a6ef7f2a",
+        "sha256:3d406590c8643a12d3e2a0e5c0a30f809d70be53ae227bf849be4921af29a89a",
+        "sha256:0e8310995ccceb442b880ca67a9f724985ec5daf2af175381cd97a8caad1b175",
+        "sha256:e9ee9d0f373948346b28f067f1b2e8b54f91691e1bab2a46b0320479dcd76634"
+      ]
+    }
+  },
+  {
+    "official_layers_are_derived_prefix": false
+  }
+]

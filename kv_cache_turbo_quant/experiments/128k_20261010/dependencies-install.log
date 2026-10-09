@@ -1,0 +1,28 @@
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied
+Using Python 3.12.13 environment at: /ws/.venv
+Resolved 14 packages in 1.39s
+Downloading pydantic-core (2.0MiB)
+Downloading fastokens (3.1MiB)
+Downloading uv (16.4MiB)
+ Downloaded pydantic-core
+ Downloaded fastokens
+ Downloaded uv
+Prepared 12 packages in 3.66s
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 14 packages in 302ms
+ + annotated-doc==0.0.5
+ + annotated-types==0.8.0
+ + anyio==4.15.1
+ + fastapi==0.136.0
+ + fastokens==0.2.0
+ + idna==3.20
+ + ml-dtypes==0.5.3
+ + numpy==2.5.3
+ + pydantic==2.14.0
+ + pydantic-core==2.50.0
+ + starlette==1.0.1
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.4
+ + uv==0.12.24

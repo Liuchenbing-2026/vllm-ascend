@@ -1,0 +1,51 @@
+{
+  "captured_utc": "2026-10-09T18:46:54.746505+00:00",
+  "python": "3.12.13 (main, Aug  3 2026, 09:28:18) [GCC 13.3.0]",
+  "python_executable": "/ws/.venv/bin/python",
+  "packages": {
+    "vllm": "0.28.0+empty",
+    "vllm-ascend": "0.28.0rc1",
+    "torch": "2.10.0+cpu",
+    "torch-npu": "2.10.0.post4",
+    "transformers": "5.14.1",
+    "numpy": "1.26.4",
+    "ml-dtypes": "0.5.3",
+    "fastapi": "0.136.0",
+    "starlette": "1.0.1",
+    "fastokens": "0.2.0",
+    "pydantic": "2.14.0",
+    "pydantic-core": "2.50.0",
+    "aiohttp": "3.14.3",
+    "uv": "0.12.24",
+    "setuptools": "80.10.2",
+    "setuptools-scm": "10.3.4",
+    "cmake": "4.4.2",
+    "pybind11": "3.1.0",
+    "triton-ascend": "3.2.2"
+  },
+  "imports": {
+    "vllm": "/ws/source/vllm/vllm/__init__.py",
+    "vllm_version": "0.28.0",
+    "vllm_ascend": "/ws/source/vllm-ascend/vllm_ascend/__init__.py",
+    "numpy": "/ws/.venv/lib/python3.12/site-packages/numpy/__init__.py"
+  },
+  "native_artifacts": {
+    "/ws/source/vllm-ascend/vllm_ascend/vllm_ascend_C.cpython-312-aarch64-linux-gnu.so": {
+      "bytes": 1066864,
+      "sha256": "9b51a9c93769a242659ffd0ac8c0d3b6571f3b66e4677ab8f0fdee807fffb6de"
+    },
+    "/ws/source/vllm-ascend/vllm_ascend/libvllm_ascend_kernels.so": {
+      "bytes": 823920,
+      "sha256": "6ec9ae6eaf590e4aa95804bc8127f9c8f72cc7a1a483f121fcfd5aba69a21eec"
+    },
+    "/usr/local/Ascend/cann-9.1.0/opp/vendors/customize/op_api/lib/libcust_opapi.so": {
+      "bytes": 67680,
+      "sha256": "089bafab61cad104a6f5aaff2e08e5a2b01bbd350853c7682d0dc9acd3074071"
+    },
+    "/ws/torch-extensions/turboquant_torch/turboquant_torch.so": {
+      "bytes": 265704,
+      "sha256": "6d68970d91973cb75365eb586f21c954f06adfd8bff2938d9d845b2bda382982"
+    }
+  },
+  "catlass_commit": "41bf90da655bba3c66d0acd7e00abe33960ecfd6"
+}

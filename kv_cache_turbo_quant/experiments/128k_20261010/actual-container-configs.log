@@ -1,0 +1,112 @@
+{
+  "name": "/tq-128k-ab-20261010",
+  "id": "ea464bbe501687f7bacbd7f108d79e95bce273449d01b77db2311421763c5ac7",
+  "image": "sha256:3d74258bb4aba4d7ba1d972f886b78d25b7459346bcce4933f27ce8e6bdd4e14",
+  "host_config": {
+    "Privileged": false,
+    "Runtime": "ascend",
+    "CapAdd": [
+      "SYS_ADMIN"
+    ],
+    "SecurityOpt": [
+      "seccomp=unconfined"
+    ],
+    "NetworkMode": "host",
+    "ShmSize": 34359738368,
+    "Devices": [
+      {
+        "PathOnHost": "/dev/davinci0",
+        "PathInContainer": "/dev/davinci0",
+        "CgroupPermissions": "rwm"
+      },
+      {
+        "PathOnHost": "/dev/davinci1",
+        "PathInContainer": "/dev/davinci1",
+        "CgroupPermissions": "rwm"
+      },
+      {
+        "PathOnHost": "/dev/davinci_manager",
+        "PathInContainer": "/dev/davinci_manager",
+        "CgroupPermissions": "rwm"
+      },
+      {
+        "PathOnHost": "/dev/devmm_svm",
+        "PathInContainer": "/dev/devmm_svm",
+        "CgroupPermissions": "rwm"
+      },
+      {
+        "PathOnHost": "/dev/hisi_hdc",
+        "PathInContainer": "/dev/hisi_hdc",
+        "CgroupPermissions": "rwm"
+      }
+    ],
+    "Binds": [
+      "/etc/ascend_install.info:/etc/ascend_install.info:ro",
+      "/data1/tq-128k-ab-20261010:/ws",
+      "/data1/models/Qwen3-30B-A3B:/models/Qwen3-30B-A3B:ro",
+      "/usr/local/dcmi:/usr/local/dcmi:ro",
+      "/usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro",
+      "/usr/local/Ascend/driver:/usr/local/Ascend/driver:ro",
+      "/usr/local/Ascend/add-ons:/usr/local/Ascend/add-ons:ro"
+    ]
+  },
+  "visibility_env": [
+    "ASCEND_RT_VISIBLE_DEVICES=0,1"
+  ]
+}
+{
+  "name": "/tq-128k-ab-20261010-runtime",
+  "id": "0354eaafc53831afa0a11835e862a550873d9c1db0c8d54e178747c90b45663f",
+  "image": "sha256:3d74258bb4aba4d7ba1d972f886b78d25b7459346bcce4933f27ce8e6bdd4e14",
+  "host_config": {
+    "Privileged": true,
+    "Runtime": "ascend",
+    "CapAdd": null,
+    "SecurityOpt": [
+      "label=disable"
+    ],
+    "NetworkMode": "host",
+    "ShmSize": 34359738368,
+    "Devices": [
+      {
+        "PathOnHost": "/dev/davinci0",
+        "PathInContainer": "/dev/davinci0",
+        "CgroupPermissions": "rwm"
+      },
+      {
+        "PathOnHost": "/dev/davinci1",
+        "PathInContainer": "/dev/davinci1",
+        "CgroupPermissions": "rwm"
+      },
+      {
+        "PathOnHost": "/dev/davinci_manager",
+        "PathInContainer": "/dev/davinci_manager",
+        "CgroupPermissions": "rwm"
+      },
+      {
+        "PathOnHost": "/dev/devmm_svm",
+        "PathInContainer": "/dev/devmm_svm",
+        "CgroupPermissions": "rwm"
+      },
+      {
+        "PathOnHost": "/dev/hisi_hdc",
+        "PathInContainer": "/dev/hisi_hdc",
+        "CgroupPermissions": "rwm"
+      }
+    ],
+    "Binds": [
+      "/etc/ascend_install.info:/etc/ascend_install.info:ro",
+      "/data1/tq-128k-ab-20261010:/ws",
+      "/data1/models/Qwen3-30B-A3B:/models/Qwen3-30B-A3B:ro",
+      "/usr/local/dcmi:/usr/local/dcmi:ro",
+      "/usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro",
+      "/usr/local/Ascend/driver:/usr/local/Ascend/driver:ro",
+      "/usr/local/Ascend/add-ons:/usr/local/Ascend/add-ons:ro"
+    ]
+  },
+  "visibility_env": [
+    "ASCEND_RT_VISIBLE_DEVICES=0,1",
+    "ASCEND_VISIBLE_DEVICES=0,1"
+  ]
+}
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied
