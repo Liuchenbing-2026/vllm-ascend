@@ -1,0 +1,90 @@
+{
+  "state": {
+    "updated_utc": "2026-10-09T19:56:58.444299+00:00",
+    "stage": "benchmark_running",
+    "mode": "store4",
+    "concurrency": 2,
+    "input_len": 131072,
+    "output_len": 1024,
+    "result": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c2.json",
+    "started_utc": "2026-10-09T19:56:58.444269+00:00"
+  },
+  "completed": [
+    {
+      "path": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c1.json",
+      "mode": "bf16",
+      "concurrency": 1,
+      "successful": 1,
+      "failed": 0,
+      "duration_s": 194.03442117664963,
+      "output_throughput_tps": 5.277414150491096,
+      "mean_ttft_s": 39.508248968049884,
+      "mean_tpot_ms": 151.05085775988107
+    },
+    {
+      "path": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c2.json",
+      "mode": "bf16",
+      "concurrency": 2,
+      "successful": 2,
+      "failed": 0,
+      "duration_s": 248.71259068790823,
+      "output_throughput_tps": 8.234404194558408,
+      "mean_ttft_s": 61.22977150930092,
+      "mean_tpot_ms": 180.731922801391
+    },
+    {
+      "path": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c4.json",
+      "mode": "bf16",
+      "concurrency": 4,
+      "successful": 4,
+      "failed": 0,
+      "duration_s": 466.1103047216311,
+      "output_throughput_tps": 8.787619493729494,
+      "mean_ttft_s": 137.4760264547076,
+      "mean_tpot_ms": 198.70582650113352
+    },
+    {
+      "path": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c8.json",
+      "mode": "bf16",
+      "concurrency": 8,
+      "successful": 8,
+      "failed": 0,
+      "duration_s": 779.8894443418831,
+      "output_throughput_tps": 10.50405292626174,
+      "mean_ttft_s": 310.5793299579527,
+      "mean_tpot_ms": 211.8059815008208
+    },
+    {
+      "path": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c1.json",
+      "mode": "store4",
+      "concurrency": 1,
+      "successful": 1,
+      "failed": 0,
+      "duration_s": 3390.78225858137,
+      "output_throughput_tps": 0.3019952099278765,
+      "mean_ttft_s": 88.43759173154831,
+      "mean_tpot_ms": 3228.0975119743352
+    }
+  ],
+  "progress": {
+    "elapsed_s": 3162.2807542653754,
+    "requests": [
+      {
+        "id": 0,
+        "status": "running",
+        "events": 496,
+        "last_token_s": 3157.014320404269
+      },
+      {
+        "id": 1,
+        "status": "running",
+        "events": 463,
+        "last_token_s": 3157.013738724403
+      }
+    ]
+  }
+}
+mux_client_request_session: read from master failed: Broken pipe
+
+Authorized users only. All activities may be monitored and reported.
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

@@ -1,0 +1,80 @@
+{
+  "snapshot_utc": "2026-10-09T21:47:52.095591+00:00",
+  "files": [
+    {
+      "path": "results/matrix_20261009T185712Z/store4_in131072_out1024_c2.json",
+      "bytes": 8166,
+      "sha256": "5d7e7b4be330804e31e15b199a770b1d9a8bb90358c77dfd797c90add0ec3621"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/precision_reused.json",
+      "bytes": 696,
+      "sha256": "21f684558a684a8ad3f90453c1b7786d5ec658b727e38aa863ff35df1ea8ef2b"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/run_parameters.json",
+      "bytes": 518,
+      "sha256": "927c0008568c40863fa5d6cdb30d710cee3efbbba3c029648dfa927c98cb3eb1"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/serve_store4_0.command.json",
+      "bytes": 46,
+      "sha256": "af898a0f686e7dca7139792d129ebcc977c3897ebfaf351cd176960615b14eb9"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/serve_store4_0.log",
+      "bytes": 296154,
+      "sha256": "2d55d39a305cf57ae9b37d7bc8325889e03ed554dcc0df7b52b4aa6f1d3ab284"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/smoke_128k_store4.client.log",
+      "bytes": 603,
+      "sha256": "1225b1d0ec4dcdd19f297a4ad18758716fc56e102aa11d388f6b33fa1c9bdc5d"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/smoke_128k_store4.command.json",
+      "bytes": 271,
+      "sha256": "d2b26d79cd195d2c0467bdce3c2faf406f4b24d8aeca5919938e4c5e6bba35cc"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/smoke_short_store4.client.log",
+      "bytes": 627,
+      "sha256": "df46802d0ed339acf9a7069c2f5a25ffd97b30c2ea09a606beea5b25da13f27d"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/smoke_short_store4.command.json",
+      "bytes": 266,
+      "sha256": "51b39b86740bbc6cecc7b8a9b4ce6aeb6975ef6b4617b11c68d05f7bfb8211e4"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c1.client.log",
+      "bytes": 634,
+      "sha256": "6e84e6355bdddd838cf2c4e22572f9b0cff727643697520fa601a57971d924a9"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c1.command.json",
+      "bytes": 283,
+      "sha256": "d04bbe0766924169e3754f9b5226b00595ebd70e2c9ccdf7a7a4d55ae8b6d8b4"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c2.client.log",
+      "bytes": 632,
+      "sha256": "45f08fc1d12029ca51da5acca8cb29d53189343811e904e78ceb0c0f05dcdf41"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c2.command.json",
+      "bytes": 283,
+      "sha256": "10e66428010e8da74094446321bb38f2f60d393d9607d1c329af43b09d659fd3"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c4.client.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c4.command.json",
+      "bytes": 283,
+      "sha256": "b23dfe231fc7433bb3f2e48e0c0345a87cfeb504cf49e5febece396ae5b97a8c"
+    }
+  ]
+}

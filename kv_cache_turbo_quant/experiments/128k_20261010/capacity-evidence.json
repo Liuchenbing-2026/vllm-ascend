@@ -34,7 +34,7 @@
   },
   "store4": {
     "log_path": "artifacts/tq-128k-ab-20261010/pulled/logs/matrix_20261009T185712Z/serve_store4_0.log",
-    "log_snapshot_sha256": "786cdc7269610849419155938f739c436c4c1c9cddba0cceaaf14068ae9eb4bc",
+    "log_snapshot_sha256": "2d55d39a305cf57ae9b37d7bc8325889e03ed554dcc0df7b52b4aa6f1d3ab284",
     "workers": {
       "1": {
         "initial_free_gib": 60.58,

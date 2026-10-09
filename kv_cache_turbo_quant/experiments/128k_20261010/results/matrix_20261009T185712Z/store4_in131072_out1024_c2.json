@@ -1,0 +1,64 @@
+{
+  "captured_utc": "2026-10-09T21:46:39.022331+00:00",
+  "mode": "store4",
+  "concurrency": 2,
+  "num_prompts": 2,
+  "input_len": 131072,
+  "output_len": 1024,
+  "seed": 20261010,
+  "timeout_s": 7200.0,
+  "payload_sha256": [
+    "c473d49fdb09721970b04a10e77c5865abae15006e750bd047fc2c44201cfcdb",
+    "e6509d62acf78e7297e592eb66aeeee4230c9cadb63aafbbcf9bc6c3d46d35b5"
+  ],
+  "successful": 2,
+  "failed": 0,
+  "duration_s": 6580.128088727593,
+  "complete_cohort": true,
+  "output_throughput_tps": 0.3112401418915272,
+  "total_throughput_tps": 40.149978304007014,
+  "mean_ttft_s": 185.1699728113599,
+  "p99_ttft_s": 279.4783095452841,
+  "mean_tpot_ms": 6201.306996066379,
+  "p99_tpot_ms": 6244.620042873842,
+  "mean_latency_s": 6529.107104532421,
+  "requests": [
+    {
+      "id": 0,
+      "status": "success",
+      "events": 1024,
+      "text": "\n\n *\n\n\r\n  \n\nI.\n\nOkay\n\n//\n\n \n\n ;al\n\n   \n\nOkay\n\n\n\n   \n\n   \n\n\n\n\r\n *\n\n\n\n\n\n \n\n *\n\n\n\n\n\n \n\nOkay\n\n   \n\nOkayed\n\nI\n\nimport\n\n \n\n \n\nOkay\n\nOkay\n\n \n\n\n\n\n\n\n \n\nimport\n\n   \n\nimport\n\nOkay\n\nThe\n\n \n\nI\n\n   \n\nThe\n\n \n\n \n\n   \n\n \n\n  \n\nThe\n\nOkay\n\n \n\nThe\n\n \n\n   \n\n le\n\nOkay\n\n \n\nThe\n\nThe\n\nOkay\n\nimport\n\n \n\n \n\n \n\n \n\n \n\n   \n\nOkay\n\nOkay\n\nOkay\n\n \n\nI\n\nOkay\n\nOkay\n\n ;\n\nOkay\n\nOkay\n\n//\n\nThe\n\n//\n\nimported\n\n   \n\nOkay\n\n   \n\n   \n\n \n\nimport\n\n\n\nI\n\nI\n\nThe\n\nI\n\nOkay\n\nThe\n\n \n\n   \n\nOkay\n\nOkay;.\n\nI\n\n,\n\n   \n\n   import\n\nThe\n\nI\n\n   \n\n \n\nI\n\nimported.\n\n \n\nimported\n\n   \n\nThe\n\nThe\n\n   \n\nOkay\n\nimported.\n\n   \n\n   \n\n \n\nThe\n\nThe\n\nimport\n\n\r\n \n\nOkayed the\n\nThe\n\n   \n\nThe\n\nOkay\n\n   \n\nThe\n\nOkay\n\n1\n\nThe\n\nI\n\nThe\n\nThis\n\n   \n\n \n\nThe\n\nOkay\n\n\\\n\nOkay\n\nThe\n\nOkay\n\nOkay\n\nOkay\n\nOkay\n\nThe\n\nThe\n\nThe\n\nimport\n\nimport\n\nOkay\n\nimport\n\nimported\n\nimport\n\nThe\n\n   le\n\nimport\n\n \n\n \n\nOkayed\nimported\n\nimported\n \n\nimport\n\n  \n\n   \n\nimported\n\nimport\n\nThe\n\nI\n\nimporter\n\nOkay\n\nOkay\n\nI\n\nOkay\n\nimport\n\nThe\n\nOkay\n\nOkayThe\n\n \n\n le\n\nI\n\n \n\n   \n\n   \n\n\n\nimported\n\n \n\ned,,\n\n \n\nThe\n\nOkay\n\n\r\n   \n\nI\n\ned\n\nI\n\nThe\n\ned\n\n:\n\nOkay\n\nOkay\n\nOkay\n\n   \n\nI\n\nI\n\n \n\nI\n\n\r\n\r\nimported\n\n \n\n\n\nThe\n\n \n\nI\n\nI:\n\nThe\n\n\n\n\n\n   \n\nimported\n\nThis\n\n\n\ned.\n\n\n\n\n\n\n\nThis\n\nThe,.\n\n//\n\n \n\nThe\n\nOkay,\nimported and\n\nI\n\nimported and\n\nOkay\n\nimporter\n\nThe\n\n\n\n \n\nimport\n\n\n\nOkay\n\nThe\n\nThe\n\n \n\nI\n\nI\n\n \n\nI\n\nThe\n\nOkay\n\nI\n\nI\n\n\r\n\r\nI\n\n \n\n \n\nI\n\nI\n\n \n\nI\n\n \n\n \n\nI\n\n \n\nimport\n\n   \n\nThe\n\nI\n\nI\n\nThe,\n\nI\n\nimport(,\n\nThe,\n\nimport\n\nIownload\n\nI\n\nThe\n\nIr\n\nI\n\nimport\n\nI\n\n//\n\nI\n\nIaybe\n\nI\n\nThe,\r\n \n\nI\n\nIp,\n\nInd.\n\nThe\n\nI\n \n\nIr\n\nIr\n\n ,The\n\nOkay,\n\nOkay,\n\nI\n \n\nI\n\nOkayThe\n\nI\n\nOkay,\n\n \n\n1\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI1\n\nI\n\n\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nThele\n\nI\n\n \n\nI\n\nThe\n\nIcc\n\nI\n\nimported\n\nThe\n\nI\n\nI\n\nOkay\n\nI\n\nOkay\n\nOkayed\n\nOkay\n\nOkay\n\nI\n\nIp\n\nOkay\n\nOkay\n\nThe\n\nI\n\nOkay\n\nIr\n\nThe\n\nI\n\nIrr,\n\nI\n\nIes\n\nThe\n\nThe\n\nI\n\nI\n\nI\n\nI\n\nOkay\n \n\nI\n\nThe\n\nOkay\n\n \n\nThe\n\nThe\n\nThe\n\nI\n\nI\n\nThe\n\nI.\n\nIll\n\nI\n\nI\n\nI\n\r\n \n\nI.\n\nOkay\n\nI\n\nI\r\n \n\nThe\n\nThe\n\n  \n\nI\n\nI\n\nI\n\nThe\n\nI\n\nOkay\n\n s\n\nThe\n\nI\n\nI\n\nOkay\n\nI\n\nOkayThe\n\nThe\n\nThe\n\nThe\n\nWait\n\nThe\n\nIfter\n\nI\n\nI\n\nI\n\nThe\n\nThe\n\nOkay\n\nOkay\n\nOkay,\n\nOkay\n\nOkayr\n\nOkay\n\nI\n\nThe\n\n \n\nOkay\n\nOkay\n\n \n\nI\n\nThe\n\nThe\n\nOkay\n\nOkay\n\nOkay,.\n\nThis\n\n s\n\nThe\n\nI\n\nThe\n\n \r\n   \n\nThe,\n\n \n\n \n\n \n\nThe\n\n   \n\nThis\n\n r\n\nimport\n\n\n\nimportedll,\n\nThis the\n\nThe,ll,.1\n\nconst\n\nThe\n\nI\n\nI\n\nOkay.\n\nimported.\n\nI\n\n \n\nOkay\n\nI\n\nI\n\nimported\n\nI\n\nOkay\n\nI\n\n",
+      "started_s": 0.0004960708320140839,
+      "http_status": 200,
+      "last_token_s": 6478.087550348602,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 131072,
+        "total_tokens": 132096,
+        "completion_tokens": 1024
+      },
+      "ttft_s": 88.9369761440903,
+      "tpot_s": 6.245503982604606,
+      "latency_s": 6478.087640288286
+    },
+    {
+      "id": 1,
+      "status": "success",
+      "events": 1024,
+      "text": "\n\n \n\n \n\n   \n\n   \n\nI\n\n    \n\n             \n\nOkay\n\n1\n\nError\n\nI\n\n  \n\n   \n\n     \n\nI\n\n   \n\n      \n\nThe\n\n    \n\n    \n\nI\n\nThe\n\nOkay\n\n   \n\nI\n\n   ing\n\n         \n\n   \n\nOkay\n\n//\n\n   \n\nOkay\n\n   lab\n\nOkay\n\nimport\n\nI\n\nI\n\nI\n\nI\n\nBut\n\nI\n\nI,.r\n\nimported\n\nI\n\nI\n\nimport\n\nI\n\nOkay\n\nI\n\nI\n\nThe\n\n   \n1\n\nOkay\n\nThe\n\nThe\n\nThe\n\nThe\n\nimported\n\nThe\n\nI\n\nWaited\n\nThe\n\nOkay\n\n   ed\n\n   \n\nThis\n\nWaited\n\nI\n\nThe\n\nThe\n\nThisa\n\nI\n\nI\n\nThe\n\nThe\n\nI\n\nWait\n\nI\n\nOkay\n\nWait\n\nI\n \n\nWaited\n\n   \n\nWait\n\nThe\n\nWait\n      s\n\nThis\n\nI\n\n \n\nI\n\nThe\n\nI\n\nThe\n\nI\n\nWaited\n\nI\n\nBut\n\n   :\n\nThe\n\nI\n\n \n\n \n\n   \n\n   //\n\n \n\nI\n\n \n\nimport\n\nTheorted\n\n1\n\nThe\n\n \n\n//\n\nOkay\n\nOkay\n\n \n\nimport\n\nI\n\nThe\n\nBut\n\nBut\n\n   \n\nThe\n\nimport\n\n#b\n\nimport\n\nI\n\nThe\n\nThe\n\nI\n\nThe\n\nThe\n\nThe\n\nimport\n\nThe\n\nThe\n\nimported\n\nOkay\n\nThe\n\nThe\n\nOkay\n\nThe\n\nimport\n\n   \n\nThe\n\nThe\n\nThe\n\nimport\n\n   \n\nThe\n\nThe\n\n \n\nI\n\nThe\n\n   \n \n\nimport\n\nimport\n\nI\n\nimport\n\n \n\nI\n\nThe\n\nI\n\nThe\n\n//\n\n//\n\nThe\n\nThe\n\nimport\n\nimport\n\n//\n\nOkay\n\nI\n\nOkay\n\n   import\n\n \n\n\nThe\n\nI\n\nI\n\nI\n\nI\n\n \n\nOkay\n\nThe\n\nI\n\nThe\n\n \n\n \n\nI\n\nThe\n\nThe\n\nThe\n\nThe\n\nI\n\nfunction and\n\nThe\n\nimport\n\nIr\n\nimport\n\nThe\n\nI\n\nThe\n\n \n\nThe\n\nI\n\nI\n\nOkay\n\n\n   \n\nThe\n\n \n\nimported\n\nThe\n\nOkay\n\n  \n\nThe\n\nOkay\n\nI\n\nThe\n\n \n\nThe\n\nI\n\nI\n\nOkay\n\nThe\n\n\n\n\n\nI\n\n \n\n \n\nI\n\n \n\n\n\n s\n\nI\n\n\n\n\n\n\n\nI\n\nI\n\nI\n\n \n\nI\n\n\n\n\n\nThe\n\n \n\nThe\n\nThe\n\nI\n\nThe\n\nThe\n\nI\n\nI\n\nOkay\n\n\n\n\n\nI\n\nThe\n\nThe\n\n ;\n\nimport\n\nI\n\nThe\n\nI\n\nThe\n\n \n\nThe\n\nI\n\nThe\n\nThe with to\n\nI\n\nimport\n\nI\n\nI\n\nI\n\nTheed\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nThe\n\nI\n\n \n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\n\n\nI\n\nThe\n\nI\n\n \n\nI\n\nThe\n\nThe\n\nThe\n\nI\n\nI\n\nI\n\nI\n\n \n\nI\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nThe\n\nIed. \n\nI\n\nI\n\nThis\n\nI\n\nI\n\nI\n\n \n\n\n\n\n\nI\n\nI\n\nI\n\nBut\n\nI\n\nOkay\n\nI\n\nOkay\n\nI\n\nI\n\nThe\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\nI\n\nTheed\n\nI\n\nIener\n\nI\n\nI\n\nI\n\nThe\n\nThe\n\nThe\n\n ed\n\nThe\n\n\n\nThe\n\nThe\n\n\n\nThe\n\n \n\nOkay\n\nThe\n\nI\n\nI\n\nOkay\n\nOkay\n\nOkay\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nI\n\nIl\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nThis\n\nI\n\nI have\n\nI\n\nOkay\n\nI\n\nI\n\nOkay\n\n   \n\nI\n\nI\n\nThe\n\nThe,.\n\nThe\n\n   \n\nThe\n\nThe\n\nThe\n\nI\n\nThe\n\nimport\n\nI\n\nI\n\nimport\n\nimport\n\nThe\n\nThe\n\nThe\n\nI\n\nOkay\n\nThe\n\nimport\n\nOkay\n\nOkay,\n\nI\n\nThe\n\nOkay\n\nThe\n\n \n\n\n\nI\n\nThe\n\nOkay\n\nI\n\nThe\n\nIefault(\n\nThe\n\nThe;\n\nI\n\nThe\n\nI\n\nOkay\n\nIle\n\nI\n\nI\n\nOkay\n\nOkay,\n\nThe\n\nI\n\nI\n\nimport\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nThe\n\nI\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe",
+      "started_s": 0.001146460883319378,
+      "http_status": 200,
+      "last_token_s": 6580.126509225927,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 131072,
+        "total_tokens": 132096,
+        "completion_tokens": 1024
+      },
+      "ttft_s": 281.40296947862953,
+      "tpot_s": 6.15711000952815,
+      "latency_s": 6580.126568776555
+    }
+  ],
+  "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+}
