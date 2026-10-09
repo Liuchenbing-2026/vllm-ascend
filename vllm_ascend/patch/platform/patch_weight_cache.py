@@ -147,6 +147,23 @@ if _wc_protocol is not None:
             )
 
     _wc_protocol.check_ipc_platform_support = _check_ipc_platform_support_npu
+
+    # NPU device uuids are torch_npu._C._CUuuid objects, not str; the socket
+    # path derivation and the daemon/engine uuid handshake expect text.
+    _orig_get_current_device_uuid = _wc_protocol.get_current_device_uuid
+
+    def _get_current_device_uuid_str() -> str:
+        return str(_orig_get_current_device_uuid())
+
+    _wc_protocol.get_current_device_uuid = _get_current_device_uuid_str
+    for _uuid_consumer in (
+        "vllm.model_executor.model_loader.weight_cache.daemon",
+        "vllm.model_executor.model_loader.weight_cache.ipc_loader",
+    ):
+        _consumer = sys.modules.get(_uuid_consumer)
+        if _consumer is not None:
+            _consumer.get_current_device_uuid = _get_current_device_uuid_str
+
     # preload.py and ipc_loader.py bind the function by value at import time;
     # rebind the references in any consumer module that is already imported
     # (e.g. `vllm preload` imports its CLI module before the platform plugin).
