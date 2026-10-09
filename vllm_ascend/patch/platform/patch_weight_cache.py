@@ -207,6 +207,14 @@ if _wc_protocol is not None:
     _orig_get_model = _wc_daemon.WeightCacheDaemon.get_model
 
     def _get_model_with_npu_format_normalize(self):
+        # The daemon skips the engine's platform.check_and_update_config,
+        # which is where AscendConfig is normally initialized; attention
+        # backend validation during model creation needs it.
+        from vllm_ascend.ascend_config import get_ascend_config, init_ascend_config
+        try:
+            get_ascend_config()
+        except RuntimeError:
+            init_ascend_config(self.vllm_config)
         model = _orig_get_model(self)
         _normalize_model_formats_for_ipc(model)
         return model
