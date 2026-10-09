@@ -1,6 +1,6 @@
 {
   "bf16": {
-    "log_path": "artifacts/tq-128k-ab-20261010/pulled/logs/matrix_20261009T182045Z/serve_bf16_0.log",
+    "log_path": "server_evidence/matrix_20261009T182045Z/serve_bf16_0.log",
     "log_snapshot_sha256": "e5577b04e30fd8686d3112800630c9074695176474250c9f125fa68b2a99f1aa",
     "workers": {
       "1": {
@@ -33,8 +33,8 @@
     ]
   },
   "store4": {
-    "log_path": "artifacts/tq-128k-ab-20261010/pulled/logs/matrix_20261009T185712Z/serve_store4_0.log",
-    "log_snapshot_sha256": "2d55d39a305cf57ae9b37d7bc8325889e03ed554dcc0df7b52b4aa6f1d3ab284",
+    "log_path": "server_evidence/matrix_20261009T185712Z/serve_store4_0.log",
+    "log_snapshot_sha256": "c3c128bbf0d7e357a6a07c45d7ba0bd1673b5742992ed56ed388affab0808af1",
     "workers": {
       "1": {
         "initial_free_gib": 60.58,

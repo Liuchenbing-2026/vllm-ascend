@@ -4,5 +4,6 @@
   "matrix_20261009T182045Z/bf16_in131072_out1024_c4.json",
   "matrix_20261009T182045Z/bf16_in131072_out1024_c8.json",
   "matrix_20261009T185712Z/store4_in131072_out1024_c1.json",
-  "matrix_20261009T185712Z/store4_in131072_out1024_c2.json"
+  "matrix_20261009T185712Z/store4_in131072_out1024_c2.json",
+  "matrix_20261009T185712Z/store4_in131072_out1024_c4.json"
 ]

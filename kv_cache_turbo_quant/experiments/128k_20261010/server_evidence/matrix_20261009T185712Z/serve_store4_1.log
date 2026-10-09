@@ -1,0 +1,106 @@
+INFO 10-09 23:46:53 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-09 23:46:53 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-09 23:46:53 [__init__.py:66] Loading plugin ascend
+INFO 10-09 23:46:53 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-09 23:46:53 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-09 23:47:03 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 10-09 23:47:03 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+[KVTQ] plugin register() called pid=6579 shadow=0 store=1
+[KVTQ-STORE] installed (mse_bits=4, row_bytes=66, compression=3.88x)
+(APIServer pid=6579) INFO 10-09 23:47:04 [api_utils.py:333] 
+(APIServer pid=6579) INFO 10-09 23:47:04 [api_utils.py:333]        █     █     █▄   ▄█
+(APIServer pid=6579) INFO 10-09 23:47:04 [api_utils.py:333]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.28.0
+(APIServer pid=6579) INFO 10-09 23:47:04 [api_utils.py:333]   █▄█▀ █     █     █     █  model   /models/Qwen3-30B-A3B
+(APIServer pid=6579) INFO 10-09 23:47:04 [api_utils.py:333]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=6579) INFO 10-09 23:47:04 [api_utils.py:333] 
+(APIServer pid=6579) INFO 10-09 23:47:04 [api_utils.py:272] non-default args: {'host': '127.0.0.1', 'port': 18377, 'model': '/models/Qwen3-30B-A3B', 'dtype': 'bfloat16', 'max_model_len': 132096, 'enforce_eager': True, 'served_model_name': ['qwen3-30b-tq-ab'], 'hf_overrides': {'rope_scaling': {'rope_type': 'yarn', 'factor': 4.0, 'original_max_position_embeddings': 40960}}, 'tensor_parallel_size': 2, 'kv_cache_memory_bytes': 25769803776, 'enable_prefix_caching': False, 'max_num_batched_tokens': 4096, 'max_num_seqs': 32, 'async_scheduling': False}
+(APIServer pid=6579) WARNING 10-09 23:47:04 [envs.py:2213] Unknown vLLM environment variable detected: VLLM_ASCEND_KVTQ
+(APIServer pid=6579) WARNING 10-09 23:47:04 [envs.py:2213] Unknown vLLM environment variable detected: VLLM_ASCEND_KVTQ_STORE
+(APIServer pid=6579) WARNING 10-09 23:47:04 [envs.py:2213] Unknown vLLM environment variable detected: VLLM_ASCEND_KVTQ_BITS
+(APIServer pid=6579) INFO 10-09 23:47:04 [model.py:672] Resolved architecture: Qwen3MoeForCausalLM
+(APIServer pid=6579) INFO 10-09 23:47:04 [model.py:1965] Using max model len 132096
+(APIServer pid=6579) INFO 10-09 23:47:04 [scheduler.py:242] Chunked prefill is enabled with max_num_batched_tokens=4096.
+(APIServer pid=6579) WARNING 10-09 23:47:04 [vllm.py:1285] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(APIServer pid=6579) WARNING 10-09 23:47:04 [vllm.py:1354] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(APIServer pid=6579) INFO 10-09 23:47:04 [kernel.py:308] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+(APIServer pid=6579) INFO 10-09 23:47:04 [vllm.py:1533] Cudagraph is disabled under eager mode
+(APIServer pid=6579) INFO 10-09 23:47:04 [utils.py:224] No quantization signature detected from model files for "/models/Qwen3-30B-A3B". The model will be loaded as float. To force a quantization method, pass "--quantization <method>" explicitly.
+(APIServer pid=6579) WARNING 10-09 23:47:04 [platform.py:650] GPU-specific parameter is not supported on Ascend. parameter=disable_cascade_attn, value=True, action: resetting to False.
+(APIServer pid=6579) INFO 10-09 23:47:04 [platform.py:862] The timeout interval of the HCCL operator is 1836s. Timeout in seconds for execute_model RPC calls in multiprocessing must be greater than 1836s, Set VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=3000
+(APIServer pid=6579) INFO 10-09 23:47:04 [ascend_config.py:231] Dynamic EPLB is False
+(APIServer pid=6579) INFO 10-09 23:47:04 [ascend_config.py:232] The number of redundant experts is 0
+(APIServer pid=6579) INFO 10-09 23:47:04 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+(APIServer pid=6579) INFO 10-09 23:47:04 [platform.py:1089] Compilation disabled, using eager mode by default
+(APIServer pid=6579) INFO 10-09 23:47:04 [utils.py:1326] Block size is set to 128 if prefix cache or chunked prefill is enabled.
+(APIServer pid=6579) INFO 10-09 23:47:04 [platform.py:1344] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+(APIServer pid=6579) INFO 10-09 23:47:04 [compilation.py:329] Enabled custom fusions: norm_quant, act_quant
+INFO 10-09 23:47:17 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-09 23:47:17 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-09 23:47:17 [__init__.py:66] Loading plugin ascend
+INFO 10-09 23:47:17 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-09 23:47:18 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-09 23:47:28 [ascend_config.py:231] Dynamic EPLB is False
+INFO 10-09 23:47:28 [ascend_config.py:232] The number of redundant experts is 0
+INFO 10-09 23:47:28 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+(EngineCore pid=6681) INFO 10-09 23:47:28 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+(EngineCore pid=6681) INFO 10-09 23:47:28 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+(EngineCore pid=6681) [KVTQ] plugin register() called pid=6681 shadow=0 store=1
+(EngineCore pid=6681) [KVTQ-STORE] installed (mse_bits=4, row_bytes=66, compression=3.88x)
+(EngineCore pid=6681) INFO 10-09 23:47:28 [core.py:122] Initializing a V1 LLM engine (v0.28.0) with config: model='/models/Qwen3-30B-A3B', speculative_config=None, tokenizer='/models/Qwen3-30B-A3B', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=132096, download_dir=None, load_format=auto, tensor_parallel_size=2, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=True, quantization=None, quantization_config=None, enforce_eager=True, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=npu, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=qwen3-30b-tq-ab, enable_prefix_caching=False, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.NONE: 0>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'vllm_ascend.compilation.compiler_interface.AscendCompiler', 'custom_ops': ['all'], 'ir_enable_torch_wrap': False, 'splitting_ops': [], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [4096], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'size_asserts': False, 'alignment_asserts': False, 'scalar_asserts': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.NONE: 0>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 0, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': True, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native']), enable_flashinfer_autotune=True, enable_cutedsl_warmup=True, enable_jit_warmup=True, enable_bf16x3_router_gemm=False, moe_backend='auto', linear_backend='auto')
+(EngineCore pid=6681) INFO 10-09 23:47:28 [multiproc_executor.py:150] DP group leader: node_rank=0, node_rank_within_dp=0, master_addr=127.0.0.1, mq_connect_ip=183.236.60.19 (local), world_size=2, local_world_size=2
+INFO 10-09 23:47:36 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-09 23:47:36 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-09 23:47:36 [__init__.py:66] Loading plugin ascend
+INFO 10-09 23:47:36 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-09 23:47:36 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-09 23:47:36 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-09 23:47:36 [__init__.py:66] Loading plugin ascend
+INFO 10-09 23:47:36 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-09 23:47:36 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-09 23:47:37 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-09 23:47:46 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 10-09 23:47:46 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+[KVTQ] plugin register() called pid=6712 shadow=0 store=1
+INFO 10-09 23:47:47 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 10-09 23:47:47 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+[KVTQ] plugin register() called pid=6713 shadow=0 store=1
+[KVTQ-STORE] installed (mse_bits=4, row_bytes=66, compression=3.88x)
+[KVTQ-STORE] installed (mse_bits=4, row_bytes=66, compression=3.88x)
+WARNING 10-09 23:47:50 [patch_triton.py:332] NPU Triton causal_conv1d_update is unavailable (cannot import name 'causal_conv1d_update_npu' from 'vllm_ascend.ops.triton.mamba.causal_conv1d' (/ws/source/vllm-ascend/vllm_ascend/ops/triton/mamba/causal_conv1d.py)); falling back to the PyTorch implementation, which syncs per request and therefore stalls ACL graph capture at decode-FULL.
+WARNING 10-09 23:47:50 [patch_triton.py:332] NPU Triton causal_conv1d_update is unavailable (cannot import name 'causal_conv1d_update_npu' from 'vllm_ascend.ops.triton.mamba.causal_conv1d' (/ws/source/vllm-ascend/vllm_ascend/ops/triton/mamba/causal_conv1d.py)); falling back to the PyTorch implementation, which syncs per request and therefore stalls ACL graph capture at decode-FULL.
+INFO 10-09 23:47:50 [ascend_config.py:231] Dynamic EPLB is False
+INFO 10-09 23:47:50 [ascend_config.py:232] The number of redundant experts is 0
+INFO 10-09 23:47:50 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+INFO 10-09 23:47:50 [ascend_config.py:231] Dynamic EPLB is False
+INFO 10-09 23:47:50 [ascend_config.py:232] The number of redundant experts is 0
+INFO 10-09 23:47:50 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+(Worker pid=6712) INFO 10-09 23:47:52 [parallel_state.py:1638] world_size=2 rank=0 local_rank=0 distributed_init_method=file:///tmp/vllm_dist_d9381c145fd949099a6701394bc0e2c7 backend=hccl
+(Worker pid=6713) INFO 10-09 23:47:52 [parallel_state.py:1638] world_size=2 rank=1 local_rank=1 distributed_init_method=file:///tmp/vllm_dist_d9381c145fd949099a6701394bc0e2c7 backend=hccl
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+(Worker pid=6712) INFO 10-09 23:47:52 [parallel_state.py:1982] rank 0 in world size 2 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[rank1]:[W1009 23:47:52.837340268 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+[rank0]:[W1009 23:47:52.846904094 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+(Worker pid=6712) INFO 10-09 23:47:53 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP0 pid=6712) INFO 10-09 23:47:53 [model_runner_v1.py:4190] Starting to load model /models/Qwen3-30B-A3B...
+(Worker pid=6713) INFO 10-09 23:47:53 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP1 pid=6713) INFO 10-09 23:47:53 [model_runner_v1.py:4190] Starting to load model /models/Qwen3-30B-A3B...
+(Worker_TP0 pid=6712) INFO 10-09 23:47:53 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP1 pid=6713) INFO 10-09 23:47:53 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP0 pid=6712) INFO 10-09 23:47:55 [weight_utils.py:858] Filesystem type for checkpoints: EXT4. Checkpoint size: 56.87 GiB. Available RAM: 766.22 GiB.
+(Worker_TP0 pid=6712) INFO 10-09 23:47:55 [weight_utils.py:881] Auto-prefetch is disabled because the filesystem (EXT4) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+(Worker_TP0 pid=6712) Loading safetensors checkpoint shards:   0% Completed | 0/16 [00:00<?, ?it/s]

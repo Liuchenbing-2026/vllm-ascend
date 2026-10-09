@@ -339,7 +339,90 @@
       "source_path": "matrix_20261009T182045Z/bf16_in131072_out1024_c4.json",
       "source_sha256": "2419eb9251c6d5de8932249196071baea90a93207faf8d3efbcd1e05a2ce693f"
     },
-    "store4": null,
+    "store4": {
+      "captured_utc": "2026-10-09T23:46:40.141432+00:00",
+      "mode": "store4",
+      "concurrency": 4,
+      "num_prompts": 4,
+      "input_len": 131072,
+      "output_len": 1024,
+      "seed": 20261010,
+      "timeout_s": 7200.0,
+      "payload_sha256": [
+        "c473d49fdb09721970b04a10e77c5865abae15006e750bd047fc2c44201cfcdb",
+        "e6509d62acf78e7297e592eb66aeeee4230c9cadb63aafbbcf9bc6c3d46d35b5",
+        "79b85ad524ca8a18c63c04200a890dce81f861c84d81778a0bf2519baf8caeb5",
+        "ae43515c9482c44c3a624a9453a94f2a4e86fdb1dcb83659212419b30ea13baf"
+      ],
+      "successful": 0,
+      "failed": 4,
+      "duration_s": 7200.457920992747,
+      "complete_cohort": false,
+      "output_throughput_tps": null,
+      "total_throughput_tps": null,
+      "mean_ttft_s": null,
+      "p99_ttft_s": null,
+      "mean_tpot_ms": null,
+      "p99_tpot_ms": null,
+      "mean_latency_s": null,
+      "requests": [
+        {
+          "id": 0,
+          "status": "failed",
+          "events": 545,
+          "text": "\n\n \n\n \n\nOkay\n\n   \n\n   \n\nOkay\n\nimported,,,\n\nOkay\n\nfunction\n\nOkay\n\n\n\n   \n\n   \n\n\n\n1\n\n \n\n\n\n\n\nI\n\n   \n\n\n\n \n\nimport\n\n   \n\n \n\n \n\n \n\n \n\nThe\n\na\n\nOkay,\n\n \n\n \r\n \n\n \n\nimported\n\nimport\n\nimport\n\n \n\n \n\n1\n\n \n\n \n\n   \n\n \n\nI\n\n   \n\n   \n\n \n\n   \n\nI\n\nI\n\n   \n\n \n\n \n\nThe\n\nOkay\n\n \n\nThe\n\n \n\nThe\n\nBut\n\n \n\n \n\nI\n\nI\n\nI\n\nI\n\nOkay\n\nOkay\n\nOkay\n\nAssistant\n\nfunction\n\nOkay\n\nOkay\n\nThe\n\nThe\n\nThe\n\nThe\n\nimport\n\n \n\nOkay\n\nimported\n\nimported\n\nThe\n\nfunction\n\nimport\n\n//\n\nThe\n\n \n\nimported\n\nThe\n\nI\n\n \n\n   \n\nimported\n\nOkay\n\nOkay\n\nimport\n\nimport\n\n   \n\nThe\n\nOkay\n\nThe\n\nimport\n\n \n\nThe\n\nThe\n\n   \n\nThe\n\n   \n\nimport\n\nThe\n\n\n\nThe\n\nThe\n\nOkay\n\nimport\n\n  \n\n \n\nThe\n\nOkay\n\nThe\n\nYes\n\nOkay,\n\nThe\n\nThe\n\nOkay\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nOkay\n\nfunction\n\nimport\n\nimport\n\nThe\n\nThe\n\n  \n\nThe\n\nThee\n\nI\n\nThe\n\nOkay\n\nfunction\n\nThe\n\nI\n\nThe\n\n \n\nThe\n\nThe\n\nThe\n\nThe\n\nOkay\n\nThe\n\nThe\n\nThe\n\n1\n\nThe\n\nThe\n\nThe\n\n \n\nI\n\n   \n\nThe\n\nThis\n\n//\n\nThe\n\nimport\n\n:\n\n \n\n\n\n \n\nimport\n\nThe\n\nThe\n\n   \n\n \n\n \n\n//\n\nThe\n\nThe\n\n \n\n    \n\n\n\nOkayThe\n\nThe\n\nThe\n\nThe\n\nimport\n\n \n\nThe\n\n \n\n\n\n\n\nimport\n\nThe\n\nI\n\n \n\n   \n\nThe\n\nThe\n\nOkay\n\nThe\n\nOkay\n\n   \n\n#\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nThe\n\nI\n\nOkay\n\n\n\nThe\n\nThe\n\nOkay\n\nI\n\nThe\n\nI\n\nThe\n\n \n\nThe\n\n   \n\nThe\n\nOkay\n\nOkay\n\nThe\n\nOkay\n\nimport\n\nOkay\n\nOkay\n\nI\n\nOkay,\n\nI\n\nI\n\nThe\n\nThe\n\nOkay,\n\nOkay\n\nOkay\n\nOkay\n\n\n\n,;\n\nOkay\n\nOkay\n\nI\n\nOkay\n\nI\n\nI\n\nOkay\n\nThe\n\nOkay\n \n\nOkay\n\nOkay\n\nI\n\nOkay\n\nOkay",
+          "started_s": 0.0007726997137069702,
+          "http_status": 200,
+          "last_token_s": 7189.39115939755,
+          "error_type": "TimeoutError",
+          "error": "",
+          "partial_ttft_s": 557.9715542700142,
+          "latency_s": 7200.456535503268
+        },
+        {
+          "id": 1,
+          "status": "failed",
+          "events": 513,
+          "text": "\n\nOkay\n\nI\n\n \n\nThe\n\nI\n\nThe\n\nOkay\n\n \n\nimport\n\nI\n\n a\n\n \n\nI\n\n        \n   \n\nThe\n\n \n\nThe\n\nimport\n\nI\n\n    \n\nThele\n\n \n\n \n\nI\n\nOkay\n\nThe\n\n1\n\nI\n\nimport\n\nThe\n\nimport\n    \n\n#\n\n   \n\nimport\n\nI\n\nimport\n\nimport\n\nI\n   \n\nI\n\nI and\n\n   \r\n   \n\nimport\n\nI\n\nI\n\nimport\n\nimport\n   \n\nimport\n\nI\n \n\nimport\n\nI\n\n \n\nI\n\nI\n\n s\n\nI\n\nOkay\n\nimported\n\nOkay\n\nOkay\n\nI\n\n \n\nOkay\n\n \n\nOkay\n\nI\n\nI\n\nimported\n\nimport\n\nI\n\nimport\n\nimported\n\nimportedr\n\n   \n\nOkay\n\nimport\n\nimport\n\nI\nimport\n\nimport\n\nimport\n\nimport\n\nThe\n\nimport\n\nimport\n\nOkay\n\nimport\n\n``\n\nThe\n\nIg\n\nOkay\n\nOkay\n\nThe\n\nI\n\nimported\n\nimported\n\nThe\n\n \n\nThe\n\nimport\n\nThe\n\nOkay\n\nThe\n\nThe\n\n#\n\nThe\n\nThe\n\nimported\n\nThe\n\nimport\n\nThe\n\n \n\nThe\n\nimported\n\n   \n\nThe\n\nThe\n\nThe\n\nThe\n\nI\n\n \n\nOkay\n\nThe\n\nI\n\nThe\n\nI\n\n \n\nThe\n\nI\n\nimport\n\nThe\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nOkay\n\nOkay\n\nOkay\n\nOkay\n\nThe\n\nOkay\n\n#\n\nimport\n\nI\n\nI\n\nI\n\nIm\n\nimport\n\nimported\n \n\nOkay\n\n \n\nThe\n\nOkay\n\nimported\n\nThe\n\n \n\nI\n\nBut\n\nOkay\n\nThe\n\nOkay\n\nOkay\n\nOkay\n\nThe\n\nThe\n\nI\n\nOkay\n\nOkayr\n\nI\n\nI\n\nOkay\n\nOkay\n\nOkay\n\nOkay\n\nOkay\n\nOkay\n\nI\n\nI\n\nWait\n\nI\n\nOkay\n\nI\n\nimported\n\nI\n\nIr\n\nI\n\nI\n\n//\n\nWait\n\nWait\n\nOkay\n\nI\n\nOkay.\n\nI\n\nI\n\nIr\n\nI\n\nI\n\nThe\n\nThe to\n\nI\n\nIfter\n\n\n\nI\n\n\nimported\n\nI\n\nIr\n\nimport\n\nI\n\nI\n\nThe\n\nI\n\nOkay\n\nimporter\n\nI\n\nI\n\nI\n\nimport\n\nI\n\nI\n\nOkay\n\nThe\n\nOkay\n\nI\n\nWait\n\nI\n\nimport\n\n\n\nOkay",
+          "started_s": 0.0016175806522369385,
+          "http_status": 200,
+          "last_token_s": 7189.390147576109,
+          "error_type": "TimeoutError",
+          "error": "",
+          "partial_ttft_s": 931.7467534476891,
+          "latency_s": 7200.455499662086
+        },
+        {
+          "id": 2,
+          "status": "failed",
+          "events": 610,
+          "text": "\n\nimport\n\n \n\nimported\n\nimport\n\nI\n\nimportle\n\nThe\n\nOkay\n\nimport\n\nI\n\nI\n\n//\n\nThe\n\n    \n\n\n\n\n\n\r\n \n\nOkay\n\n  ed\n\n \n\nimport\n   \n\nimport\n\nThe\n\nThe\n\nI\n\nThe\n\nI\n\nI\n\nThe\n\nOkay\n\nimport\n\n \n\nThe\n\nI\n\nThe\n\nThe\n\nI\n\nI\n\nThe\n\nI\n\nI\n\nThe\n\nI\n\n \n\nI\n\nI\n\nThe\n\nThe\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nThe\n\nThe\n\nI\n\nOkay\n\nOkay\n\nI\n\nimport\n\nThe\n\nOkay\n\nI\n\nThe\n\nI\n\nOkay\n\nThe\n\nThe\n\nI\n\nI\n\nI\n\nOkay\n\nThe to\n\nI\n\nimported\n\nThe\n\nI\n\nI\n\nOkay\n\n \n\nOkay\n\nimported\n\nThe\n\n \n\nI\n\n \n\nOkay\n\n \n\nI\n\nOkay\n\nOkay\n\nOkay\n\nOkay\n\nOkay\n\nOkay\n\nOkay;  \n\nOkay\n\nThe\n\nI\n\nI\n\nI\n\nThe\n\nThe\n\nI\n\nThe\n\nI\n\nOkay\n\nOkay\n\n \n\n     \n\nOkay\n\nI\n\nOkay\n\n \n\nThe\n\nOkay\n\nThe\n\n   \n\nOkay\n\nOkay\n\nI\n\nOkay\n\nWait\n\nimported\n\nOkay\n\nimport\n\nOkay\n\nOkay\n\nI\n\n      \n\nOkay\n\nI\n\nOkay\n\nThe\n\nI\n\nimport\n\nI\n\n   \n\n    \n\nimport\n\nI\n\nI\n\n   \n\nimport\n\nimport\n\nimport\n   \n\nimported\n\n//\n\n \n\nI\n\nI7\n\n   a\n\nThe\n\n   \n\n      \n\nimport\n\nThe\n\nI\n\nOkay\n\nOkay\n\nThe\n\nThe\n\n   \r\n \n\n \n\nimport\n\nOkay\n\nI\n\n      \r\n   \n\n \n\n \n\nThe\n\nI\n\nThe\n\nimport\n\n \n\n      \n\nI\n\nimportll\n\nThe\n\nI\n\n \n\n \n\nimport\n\nimport\n\nI\n\nI\n\nimportThe\n\n \n\nThe\n\nI\n\n \n\nI\n\nimport\n\nI\n\nThe\n\nThe\n\nI\n\nI\n\nimport\n\nThe\n\n \n\nimport\n\nThe\n\nOkay\n\n \n\n   \n\nThe\n\nThe\n\nI\n\n \n\n \n\nI\n\n \n\n \n \n\nThe\n\nI\n\n \n\n \n\n \n\nThe\n\nThe\n\n \n\nI\n\n \n\nThe\n\nThe\n\nI\n\n \n\nI\n\n   \n\n \n\n \n\nIle\n\n   \n\n \n\n  \r\n \t\n\nI\n\n   \n\n   \r\n \n\nI\n\nI\n\nI\n\nI\n\nThe\n\n   \t\n\nI\n\nThe\n\n  ed\n\n   \n\nI\n\nOkay\n\n  \n\nThe\n\nThe\n\nOkay\n\nOkayed\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\n \n\nThe\n\nOkay\n\nOkay\n\nThe\n\nThe\n\nI\n\nThe\n\nYes\n\nThe\n\n    return\n\nI",
+          "started_s": 0.001962791197001934,
+          "http_status": 200,
+          "last_token_s": 7189.389929335564,
+          "error_type": "TimeoutError",
+          "error": "",
+          "partial_ttft_s": 89.0609381031245,
+          "latency_s": 7200.455409891903
+        },
+        {
+          "id": 3,
+          "status": "failed",
+          "events": 576,
+          "text": "\n\nThe\n\nimport\n\n\t\r\n \n\n \n\n\t\n\nOkay\n\nThe\n\n\n\nimporter\n\nimport\n\n \n\nTheed\n\nimport\n\nThe\n\nimport\n\nThe\n\n \n\nOkay\n\n\n\nimport\n\n\n\nimported\n\nimport\n\nimport\n\n \n\n \n\n   \n\nI\n\nThe,\n\nThe\n\n#\n\n   \n\nOkay,\n\nimport\n\nimport\n\nimported\n\nfunction\n\n   \t\n\n \n\n \n\n \n\n \n\n \n\n \n\nI\n\nThe\n\nimport\n\n#\n\n//\n\nimported\n\nimported\n\nimport\n\nimported\n\n#o\n\n   \n\nThe\n\n//\n\nimported,\n\nimport\n\n \n\nThe\n\nThe\n\n   \n\nThe\n\n \n\nOkay\n\n \n\nimport\n\n \n\n#\n\n \n\n \n\n#\n\n#\n\nOkay\n\nimport\n\nimport\n\nOkay\n\nimported\n\nimport\n\n#\n\n#\n\n#\n\nimport\n\n \n\nThe\n\nimport\n\nimport\n\nThe\n\n \n\nThe\n\n#\n\nOkay\n\nimport\n\nThe\n\nimport\n\n ecause\n\nThe\n\nimport\n\n   \n\n \n\n \n\n \n\n \n\n \n\n   \n\n \n\n \n\n edll\n\n \n\nOkay\n\nOkay\n\nOkay\n\n \n\nThe\n\nimport\n\nOkay\n\nOkay\n\nOkaych\n\nimported.\n\n \n\n \n\n#\n\n \n\n \n\n#\n\n\n\nimported\n\nOkay\n\nOkay\n\n \n\nThe\n\nOkay\n\n \n\nI\n\nOkay\n\n \n\nOkay\n\n#\n\n#\n\n \n\nPlease\n\nThe\n\nThe\n\nOkay\n\nThe\n\nOkay,.\n\n \n\nOkay\n\nThe\n\n   le and\n\nThe\n\nI\n\n  \n\nThe\n\nThe\n\n \n\nOkay\n\nThe\n\nI\n\nThis\n\nThe\n\n   \n\nIait\n\n \n\nThe\n\nOkay\n\nOkay\n\nThe\n\n \n\nThe\n\nThe\n\nThe\n\n \n\nThe\n\nThe\n\nThe\n\nThe\n\nIle\n\nThe\n\n\n\nimported.\n\nTheat\n\nimported.\n\nThe\n\n  \n\nThe\n\nimport\n\nThe\n\n \n\nI\n\nThe\n\nThe\n\nThe\n\n \n\nThe\n\nI\n\nThe\n\nThe\n\nI\n\n lose\n\nimport\n\nThe\n\nOkay\n\nI\n\nI\n\nOkay\n\nOkay\n\nThe\n\nOkay\n\nThe\n\nThe\n\nOkay\n\nThe you\n\nThe\n\nThe\n\nThe\n\nOkay\n\nThe\n\nOkay\n\nI\n\nOkay\n\nI\n\nThe\n\nThe\n\n \n\nimport\n\nI\n\nThe\n\nThe\n\nOkay\n\nI\n\nThe\n\n \n\nI\n\nI\n\nI\n\nThe\n\nI\n\n \n\nI\n\n   \n\n \n\nOkay\n\n#\n\nimported\n\nI\n\nI\n\n\r\n \n\n \n\nThe\n\n   \n\n   \n\nThe\n\nThe\n\nThe\n\nThe\n\n\\\n\nThe\n\nThe\n\nI\n\n \n\nThe\n\n \n\nThe\n\nOkay\n\n \n\nThe\n\n \n\nI\n\n",
+          "started_s": 0.002244161441922188,
+          "http_status": 200,
+          "last_token_s": 7189.389723885804,
+          "error_type": "TimeoutError",
+          "error": "",
+          "partial_ttft_s": 281.3722426947206,
+          "latency_s": 7200.454993441701
+        }
+      ],
+      "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded",
+      "source_path": "matrix_20261009T185712Z/store4_in131072_out1024_c4.json",
+      "source_sha256": "97d7ebcedb388cff0a0db8ce177b6e74022d1a4c3f936659a66645112f527719"
+    },
     "store_vs_bf16_output_throughput_ratio": null
   },
   {
