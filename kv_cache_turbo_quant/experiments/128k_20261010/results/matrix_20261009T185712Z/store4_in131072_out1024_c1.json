@@ -1,0 +1,45 @@
+{
+  "captured_utc": "2026-10-09T19:56:58.395056+00:00",
+  "mode": "store4",
+  "concurrency": 1,
+  "num_prompts": 1,
+  "input_len": 131072,
+  "output_len": 1024,
+  "seed": 20261010,
+  "timeout_s": 7200.0,
+  "payload_sha256": [
+    "c473d49fdb09721970b04a10e77c5865abae15006e750bd047fc2c44201cfcdb"
+  ],
+  "successful": 1,
+  "failed": 0,
+  "duration_s": 3390.78225858137,
+  "complete_cohort": true,
+  "output_throughput_tps": 0.3019952099278765,
+  "total_throughput_tps": 38.957382080696064,
+  "mean_ttft_s": 88.43759173154831,
+  "p99_ttft_s": 88.43759173154831,
+  "mean_tpot_ms": 3228.0975119743352,
+  "p99_tpot_ms": 3228.0975119743352,
+  "mean_latency_s": 3390.7814042018726,
+  "requests": [
+    {
+      "id": 0,
+      "status": "success",
+      "events": 1024,
+      "text": "\n\nimport\n\n   \n\nOkay\n\nI.\n\nOkay\n\n//\n\n \n\n \n\n\n\nOkayly\n\nI.\n\n   \n\n   \n\n:\n\n1\n\nOkay\n\n\n\n\t\n\n r\n\n1\n\nOkay,\n\n   \n\nThe\n\n   \n\nAssistant\n\nimported\n \n\nOkay\n\nOkay\n\n \n\n\n\n\n\n\n\nimport\n\nimport\n\n \n\nimport\n\nOkay\n\nThe\n\n \n\nI\n\n   \n\nThe\n\n \n\n \n\n   \n\n \n\n  \n\nThe\n\n \n\n \n\nOkay\n\nI.\n\n   \n\nOkayed\n\nI\n\nimported\n\nThe\n\nThe\n\nI\n\n \n\n \n\nOkay\n\n \n\n \n\n   \r\n  \n\nOkay\n\nOkay\n\n \n\nThe\n\nOkay\n\nThe\n\nOkay\n\n \n\nOkay\n\nimport\n\nThe\n\nThe\n\nimported\n\nThe\n\nOkay\n\n le\n\n ed\n\nimport\n\n\n\nI\n\nOkay\n\n   \n\nI\n\nOkay\n\nThe\n\nI\n\n \n\nThe\n\nOkay\n\nI\n\nThe\n\n,\n\n   \n\n   import\n\nThe,.\n\n   \n\n \n\nI\n\nimported.\n\n\t\n\nimported\n ed.\n\nThe\n\nThe\n\nOkay\n\n//\n\nOkay\n\n   \n\n \n\n1\n\nI\n\nI\n\nI\n\nI\n\nThe,,,.\n\nimport\n\nThe\n\nI\n\nThe\n\nThe\n\nThe\n\nimporter\n\nThe\n\nI\n\nThe\n\nOkay\n\n   \n\nThe\n\nThe\n\nOkay\n\nThe\n\nThe\n\nThe\n\nOkay\n\n10\n\nOkay\n\nI\n\n   \n\nThe\n\nI\n\nimported\n\nimport\n\nimport\n\nimported\n\nimporter\n  \n\nThe\n\nimported\n\n \n\nIl\n\nI\n\nI\n\n \n\n\n\nimported.\n\nimport\n\nTheed\n\nThe\n\nimport\n\nOkay\n\n   \n\n \n\nOkay\n\n   \n\nI\n\n      \n\nI\n\nThe\n\nOkay\n\nimport\n\nThe\n\n\r\n \n\nI\n\n   \n\nI\n\n  \n\nThe\n\n\n\n \n\nimported\n\n \n\nimport\n\n \n\nThe\n\nOkay\n\n \n\n   \n\nI\n\nOkay\n\nOkay\n\nThe\n\n:ue\n\nI\n\nOkay\n\nOkay\n\nI\n\nThe\n\nI\n\nThee\n\nThe\n\n,\n\n\n\n\n\n \n\n \n\n\n\n \n\nI\n\nOkay\n\nIent\n\n\n\nimport,,\n\nThe;\n\nr\n\ned.\n\n\n\n\n\n\n\n,\n\nThe,.\n\n \n\n \n\n//\n\nOkay,\n\nimported and\n\nI\n\nimported and\n\nOkay\n\nimporter\n\nI\n\n\n\n \n\nOkay\n\n\n\nThe\n\nThe\n\nI\n\nOkay\n\nI\n\n \n\nI\n\nI\n\nThe\n\nI\n\nI\n\nI\n\n\r\n   \n\nThe\n\nimport\n\n \n\nOkay\n\nThe\n\nIr\n\n \n\n \n\nI\n\nimport\n\n \n\n   \n\nThe\n\nI\n\nI\n\nThe\n\nThe\n\nimport,\n\n//\n\n   \n\nI\n\nIal\n\nI\n\nI\n\nI\n\nI\n\nThes.erll);\n\n//\n\nIe\n\nIrowll,The\n\nI\n\nI\n\nThe\n\nOkay\n\nIfter\n\nThe\n\nI\n \n\n \n\nI\n\nI\n\nThe,The,\n\n     onga,\n\nI and\n\nOkay\n \n\nI\n\nI\n\nThe\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\n\n\nI\n\nI\n\n  \n\nOkay\n\n   \n\n  \n\nI\n\nI\n\nThe\n\nThele\n\nI\n\n \n\nI\n\nI\n\nIcc\n\nI\n\nThe\n\nThe\n\n\r\n \n\nI\n\nOkay\n\nI\n\nOkay\n\nOkayed\n\nI\n\nOkay\n\nOkay\n\nOkay\n\nOkay,\n\nOkaying\n\nOkay\n\n//le\n\nI\n\nThe\n\nOkay\n\nI\n\nI\n\nThe\n\nOkay\n\nI\n\nThe\n\nOkay\n\nI\n\nI\n\nOkay\n\nOkay\n\nOkay\n \n\nOkay\n\nThe\n\nOkay\n\n \n\nThe\n\nThe\n\nThe\n\nI\n\nI\n\nThe\n\nI.\n\nIll\n\nI\n\nI\n\nI\n\nThe,\n\nOkay\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\n \n\nThe\n\nOkay\n\nOkayll)\n\nI\n\nOkay\n\nThe\n\nOkay\n\n \n\nOkay\n\nimported\n\nI\n\nOkay\n\nI\n\nOkay\n\nWait\n\nThe\n\n \n\nThe\n\nWait\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\nThe\n\nThe\n\nOkay,\n\nOkay\n\nI\n\nOkay\n\nOkay\n\nThe\n\nI\n\nThe\n\n \n\nOkay,....\n\nI\n\nI\n\nThe\n\nThe\n\nOkay\n\nOkay\n\nOkay,.\n\nI\n\n \n\nThe\n\nimport\n\nimported\n\n \r\n   \n\nThe\n\nimported\n\n \n\nThe\n\n\\\n\nOkay\n\nThe\n\nOkay\n\nimport\n\n\r\n \n\nThe\n\n#\n\n   \n\nI\n\nI\n\n \n\n//\n\nconst\n\n \n\nI\n\nI\n\nOkay.\n\n1\n\nOkay\n\nI\n\n \n\n \n\nI\n\nI\n\nimported\n\nThe\n\nOkay\n\nI\n\n",
+      "started_s": 0.0004932703450322151,
+      "http_status": 200,
+      "last_token_s": 3390.7813464812934,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 131072,
+        "total_tokens": 132096,
+        "completion_tokens": 1024
+      },
+      "ttft_s": 88.43759173154831,
+      "tpot_s": 3.2280975119743354,
+      "latency_s": 3390.7814042018726
+    }
+  ],
+  "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+}

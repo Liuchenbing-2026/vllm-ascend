@@ -6,7 +6,7 @@
 | 工作量 | 输入 131072 tokens、输出 1024 tokens；最终环境128K长冒烟已通过，正式usage持续核验 |
 | 设备 | .19：8×Ascend 910B4-1；物理卡0、1。2026-10-10 01:19:37+08:00空闲，正式启动前再次核验；运行中快照仅本任务两个worker占卡 |
 | 代码来源 | Liuchenbing-2026/vllm-ascend 的 liuchenbing-2026 分支，目录 kv_cache_turbo_quant；固定 SHA 8ad9ef6eaa0fdc7b4cc9acf6aaeac17fd33fa65b |
-| 实测结果 | BF16 C1/C2/C4/C8已完整完成；TQ C1正式运行中，其他档位继续排程。阶段汇总见下表；不以历史容量收益或影子模式吞吐代替本轮结果 |
+| 实测结果 | BF16 C1/C2/C4/C8已完整完成；TQ C1已完整完成、C2正在运行，其他档位继续排程。阶段汇总见下表；不以历史容量收益或影子模式吞吐代替本轮结果 |
 
 ## 固定测试条件
 
@@ -27,11 +27,11 @@
 
 ## 性能结果与计量
 
-当前阶段数据如下（TQ C1仍在运行，未测项尚未完成）：
+当前阶段数据如下（TQ C2正在运行；其余未测项尚未完成）：
 
 | 并发 | BF16 输出 tok/s | TQ store 4-bit 输出 tok/s | TQ/BF16 |
 | --- | --- | --- | --- |
-| 1 | 5.28 | 未测 | — |
+| 1 | 5.28 | 0.30 | 0.057x |
 | 2 | 8.23 | 未测 | — |
 | 4 | 8.79 | 未测 | — |
 | 8 | 10.50 | 未测 | — |
@@ -40,7 +40,7 @@
 
 | 并发 | BF16 TTFT均值(s) | TQ TTFT均值(s) | BF16 TPOT均值(ms) | TQ TPOT均值(ms) |
 | --- | --- | --- | --- | --- |
-| 1 | 39.51 | 未测 | 151.05 | 未测 |
+| 1 | 39.51 | 88.44 | 151.05 | 3228.10 |
 | 2 | 61.23 | 未测 | 180.73 | 未测 |
 | 4 | 137.48 | 未测 | 198.71 | 未测 |
 | 8 | 310.58 | 未测 | 211.81 | 未测 |
@@ -240,7 +240,7 @@ docker exec -d tq-128k-ab-20261010-runtime bash -c \
 python3 scripts/summarize_results.py --results results --selection selection.json --output /tmp/tq-result-summary.md
 ```
 
-汇总核验每个成功请求的实际长度、成功/失败数、吞吐分母，两侧payload SHA256逐一相同才计算比值。完整矩阵与最终结果尚在运行；目前有证据的完成范围是精度、最终起服、短/128K长冒烟、BF16已完成的正式cohort，不宣称TQ正式性能已通过。
+汇总核验每个成功请求的实际长度、成功/失败数、吞吐分母，两侧payload SHA256逐一相同才计算比值。完整矩阵与最终结果尚在运行；目前有证据的完成范围是精度、最终起服、短/128K长冒烟、BF16已完成的正式cohort，TQ C1已完成，不宣称完整12格矩阵全部完成。
 
 ## 请求时限调整与继续运行
 
@@ -287,3 +287,7 @@ docker exec -d tq-128k-ab-20261010-runtime bash -c \
 ```
 
 当前TQ低并发run为matrix_20261009T185712Z；每phase的完整参数与来源文件hash见server_evidence/<run_id>/run_parameters.json。`summary.json`还记录被选原始结果source_path与source_sha256；selection仅列正式cohort，不选冒烟或中断progress。
+
+运行库核验补充：TQ正式C1运行中，两个worker的/proc/maps均加载本次/ws/source/vllm-ascend下C++与kernels/custom_transformer库、CANN9.1 customize TQ OPP，以及/ws/torch-extensions/turboquant_torch/turboquant_torch.so。证据active-tq-native-paths.log；不凭metadata版本替代实际加载路径。
+
+E04本轮验证（2026-10-10 03:57+08:00）：TQ C1完整131072→1024成功，总耗时3390.7823s（56.51分钟），输出吞吐0.3019952tok/s、TTFT88.4376s、TPOT3228.0975ms；相同payload的BF16 C1为5.2774142tok/s。TQ/BF16=0.057224088，完整组耗时约17.48倍。源码全历史解压事实与实测慢一致，尚无kernel分解，不改原算法，不宣称根因性能优化已完成。证据results/matrix_20261009T185712Z/store4_in131072_out1024_c1.json及client/server日志。

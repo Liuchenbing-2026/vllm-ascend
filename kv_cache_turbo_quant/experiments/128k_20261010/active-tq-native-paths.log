@@ -1,0 +1,31 @@
+{
+  "5668": {
+    "command": "VLLM::Worker_TP0                                                                                                                       ",
+    "libraries": [
+      "/usr/local/Ascend/cann-9.1.0/opp/vendors/customize/op_api/lib/libcust_opapi.so",
+      "/usr/local/Ascend/cann-9.1.0/opp/vendors/customize/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/libcust_opmaster_rt2.0.so",
+      "/usr/local/Ascend/cann-9.1.0/opp/vendors/customize/op_proto/lib/linux/aarch64/libcust_opsproto_rt2.0.so",
+      "/ws/source/vllm-ascend/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_api/lib/libcust_opapi.so",
+      "/ws/source/vllm-ascend/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/libcust_opmaster_rt2.0.so",
+      "/ws/source/vllm-ascend/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_proto/lib/linux/aarch64/libcust_opsproto_rt2.0.so",
+      "/ws/source/vllm-ascend/vllm_ascend/libvllm_ascend_kernels.so",
+      "/ws/source/vllm-ascend/vllm_ascend/vllm_ascend_C.cpython-312-aarch64-linux-gnu.so",
+      "/ws/torch-extensions/turboquant_torch/turboquant_torch.so"
+    ]
+  },
+  "5669": {
+    "command": "VLLM::Worker_TP1                                                                                                                       ",
+    "libraries": [
+      "/usr/local/Ascend/cann-9.1.0/opp/vendors/customize/op_api/lib/libcust_opapi.so",
+      "/usr/local/Ascend/cann-9.1.0/opp/vendors/customize/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/libcust_opmaster_rt2.0.so",
+      "/usr/local/Ascend/cann-9.1.0/opp/vendors/customize/op_proto/lib/linux/aarch64/libcust_opsproto_rt2.0.so",
+      "/ws/source/vllm-ascend/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_api/lib/libcust_opapi.so",
+      "/ws/source/vllm-ascend/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/libcust_opmaster_rt2.0.so",
+      "/ws/source/vllm-ascend/vllm_ascend/_cann_ops_custom/vendors/custom_transformer/op_proto/lib/linux/aarch64/libcust_opsproto_rt2.0.so",
+      "/ws/source/vllm-ascend/vllm_ascend/libvllm_ascend_kernels.so",
+      "/ws/source/vllm-ascend/vllm_ascend/vllm_ascend_C.cpython-312-aarch64-linux-gnu.so",
+      "/ws/torch-extensions/turboquant_torch/turboquant_torch.so"
+    ]
+  }
+}
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied
