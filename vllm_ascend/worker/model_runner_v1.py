@@ -2807,7 +2807,7 @@ class NPUModelRunner(GPUModelRunner):
             invalid_req_indices=invalid_req_indices,
             async_output_copy_stream=self.async_output_copy_stream,
             vocab_size=self.input_batch.vocab_size,
-            routed_experts=routed_experts_snapshot,
+            **({"routed_experts": routed_experts_snapshot} if RoutedExpertsTensors is not None else {}),
             **({"num_nans": num_nans_device} if nans_to_dict is not None else {}),
         )
         self.input_batch.set_async_sampled_token_ids(
