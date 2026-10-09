@@ -92,11 +92,17 @@ from vllm.v1.outputs import (
     LogprobsLists,
     LogprobsTensors,
     ModelRunnerOutput,
-    RoutedExpertsLists,
-    RoutedExpertsTensors,
     SamplerOutput,
     make_empty_encoder_model_runner_output,
 )
+# vLLM main exports RoutedExpertsLists / RoutedExpertsTensors for routed
+# experts capture; v0.31.0 does not. Import optionally so the v1 runner
+# starts on the release lane.
+try:
+    from vllm.v1.outputs import RoutedExpertsLists, RoutedExpertsTensors
+except ImportError:  # pragma: no cover - exercised on v0.31.0
+    RoutedExpertsLists = None
+    RoutedExpertsTensors = None
 from vllm.v1.sample.logits_processor import build_logitsprocs
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.rejection_sampler import PLACEHOLDER_TOKEN_ID, RejectionSampler
@@ -324,6 +330,10 @@ class ExecuteModelState(NamedTuple):
 
 
 class NPUModelRunner(GPUModelRunner):
+    # vLLM main's GPUModelRunner sets this in __init__; default to disabled
+    # on release lanes (e.g. v0.31.0) without routed experts capture.
+    routed_experts_initialized = False
+
     # vLLM #51718 describes compatible KV cache groups as views over one
     # standardized backing allocation. The default runner preserves that
     # contract for its layer/block-compact Attention+Mamba path.
@@ -3315,7 +3325,7 @@ class NPUModelRunner(GPUModelRunner):
                 # graph mode. `blk_table_tensor` -1 to match mamba PAD_SLOT_ID
                 slot_mapping[num_tokens:num_tokens_padded].fill_(-1)
                 blk_table_tensor[num_reqs:num_reqs_padded].fill_(0)
-            if self.model_config.enable_return_routed_experts and kv_cache_gid == 0:
+            if getattr(self.model_config, "enable_return_routed_experts", False) and kv_cache_gid == 0:
                 if self.routed_experts_initialized:
                     # snapshot slot_mapping into a private device
                     # buffer so the next ``_prepare_inputs`` does not
@@ -4239,7 +4249,7 @@ class NPUModelRunner(GPUModelRunner):
         if has_kv_transfer_group():
             get_kv_transfer_group().register_kv_caches(kv_caches)
 
-        if self.model_config.enable_return_routed_experts:
+        if getattr(self.model_config, "enable_return_routed_experts", False):
             self.init_routed_experts_capturer()
 
     def _align_memory(self, tensor: torch.Tensor, alignment: int) -> torch.Tensor:
