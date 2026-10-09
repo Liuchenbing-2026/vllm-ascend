@@ -436,6 +436,7 @@ class AscendConfig:
             "draft_window_size": null,
             "mix_placement": false,
             "pa_shape_list": [],
+            "pa_max_heads": 32,
             "mega_moe_max_tokens": 65536,
             "ascend_log_path": "~/ascend/log/vllm_ascend",
             "enable_fused_mc2": 0,
@@ -581,6 +582,16 @@ class AscendConfig:
     # model's quant_type, 0 means disabled (use the model's own quant).
     combine_quant_mode: Literal[0, 2, 3, 4] = 0
     pa_shape_list: list[Any] = dataclasses.field(default_factory=list)
+    # Upper bound on the per-rank attention head count for which the paged
+    # attention path may be selected. Measured on 910B3 / CANN 9.1 with the
+    # operator probe (KVH=1 and KVH=8, B in {128, 256}, S in {512, 1024}):
+    # every shape with at most 32 per-rank heads was at least 1.1x faster
+    # with PA, while shapes with 40..120 heads were neutral to 2.5x slower.
+    # The crossover is a kernel head-tiling property and is non-monotonic
+    # above the tile, so this is a deliberately conservative guard rather
+    # than a tuned threshold. 0 disables the guard and lets pa_shape_list
+    # decide on its own.
+    pa_max_heads: int = 32
     # Per-rank token capacity after dispatch in the fused MC2/MegaMoe path.
     # The same value is passed as dispatch_ffn_combine's max_output_size
     # and CANN MegaMoe buffer's max_recv_token_num.

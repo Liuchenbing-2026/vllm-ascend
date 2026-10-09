@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import torch
+from vllm.config.compilation import CUDAGraphMode
 
 import vllm_ascend.attention.attention_v1 as attn_module
 from tests.ut.base import TestBase
@@ -32,6 +33,178 @@ LARGE_HEAD_PREFILL_PATH = "vllm_ascend.device.utils.npu_large_head_prefill_atten
 
 
 class TestAttentionGraphHelpers(TestBase):
+    def test_paged_attention_requires_separate_full_decode_graph(self):
+        config = SimpleNamespace(
+            speculative_config=None,
+            compilation_config=SimpleNamespace(cudagraph_mode=CUDAGraphMode.NONE),
+        )
+        cases = [
+            (CUDAGraphMode.NONE, False),
+            (CUDAGraphMode.PIECEWISE, False),
+            (CUDAGraphMode.FULL, False),
+            (CUDAGraphMode.FULL_DECODE_ONLY, True),
+            (CUDAGraphMode.FULL_AND_PIECEWISE, True),
+        ]
+        with (
+            patch(
+                "vllm_ascend.attention.utils.get_current_hardware_profile",
+                return_value=get_hardware_profile(AscendDeviceType.A2),
+            ),
+            patch(
+                "vllm_ascend.attention.utils.get_ascend_config",
+                return_value=SimpleNamespace(pa_shape_list=[256]),
+            ),
+        ):
+            for mode, expected in cases:
+                with self.subTest(mode=mode):
+                    config.compilation_config.cudagraph_mode = mode
+                    self.assertEqual(using_paged_attention(256, config, head_size=128), expected)
+
+    def test_piecewise_paged_attention_preserves_safety_guards(self):
+        config = SimpleNamespace(
+            speculative_config=None,
+            compilation_config=SimpleNamespace(cudagraph_mode=CUDAGraphMode.FULL_AND_PIECEWISE),
+        )
+        profile = MagicMock()
+        cases = [
+            (255, None, True),
+            (256, SimpleNamespace(), True),
+            (256, None, False),
+        ]
+        with (
+            patch("vllm_ascend.attention.utils.get_current_hardware_profile", return_value=profile),
+            patch(
+                "vllm_ascend.attention.utils.get_ascend_config",
+                return_value=SimpleNamespace(pa_shape_list=[256]),
+            ),
+        ):
+            for shape, speculative_config, supported in cases:
+                with self.subTest(shape=shape, speculation=speculative_config, supported=supported):
+                    config.speculative_config = speculative_config
+                    profile.supports.return_value = supported
+                    self.assertFalse(using_paged_attention(shape, config, head_size=128))
+
+    def test_paged_attention_falls_back_when_shape_list_is_empty(self):
+        config = SimpleNamespace(
+            speculative_config=None,
+            compilation_config=SimpleNamespace(
+                cudagraph_mode=CUDAGraphMode.FULL_AND_PIECEWISE,
+                cudagraph_capture_sizes=[256],
+            ),
+        )
+        with (
+            patch(
+                "vllm_ascend.attention.utils.get_current_hardware_profile",
+                return_value=get_hardware_profile(AscendDeviceType.A2),
+            ),
+            patch(
+                "vllm_ascend.attention.utils.get_ascend_config",
+                return_value=SimpleNamespace(pa_shape_list=[]),
+            ),
+        ):
+            self.assertFalse(using_paged_attention(256, config, head_size=128))
+
+    def test_paged_attention_warns_on_uncaptured_shapes(self):
+        config = SimpleNamespace(
+            speculative_config=None,
+            compilation_config=SimpleNamespace(
+                cudagraph_mode=CUDAGraphMode.FULL_AND_PIECEWISE,
+                cudagraph_capture_sizes=[1, 2, 4, 8],
+            ),
+        )
+        with (
+            patch(
+                "vllm_ascend.attention.utils.get_current_hardware_profile",
+                return_value=get_hardware_profile(AscendDeviceType.A2),
+            ),
+            patch(
+                "vllm_ascend.attention.utils.get_ascend_config",
+                return_value=SimpleNamespace(pa_shape_list=[1, 2, 4, 8, 300]),
+            ),
+            patch("vllm_ascend.attention.utils.logger") as mock_logger,
+        ):
+            # A captured shape uses PA and the dead entry is reported once.
+            self.assertTrue(using_paged_attention(4, config, head_size=128))
+            mock_logger.warning_once.assert_called_once()
+            self.assertEqual(mock_logger.warning_once.call_args.args[-1], "300")
+
+    def test_paged_attention_does_not_warn_when_all_shapes_are_captured(self):
+        config = SimpleNamespace(
+            speculative_config=None,
+            compilation_config=SimpleNamespace(
+                cudagraph_mode=CUDAGraphMode.FULL_AND_PIECEWISE,
+                cudagraph_capture_sizes=[1, 2, 4, 8],
+            ),
+        )
+        with (
+            patch(
+                "vllm_ascend.attention.utils.get_current_hardware_profile",
+                return_value=get_hardware_profile(AscendDeviceType.A2),
+            ),
+            patch(
+                "vllm_ascend.attention.utils.get_ascend_config",
+                return_value=SimpleNamespace(pa_shape_list=[1, 2, 4, 8]),
+            ),
+            patch("vllm_ascend.attention.utils.logger") as mock_logger,
+        ):
+            self.assertTrue(using_paged_attention(4, config, head_size=128))
+            mock_logger.warning_once.assert_not_called()
+
+    def _head_guard_config(self, num_heads):
+        return SimpleNamespace(
+            speculative_config=None,
+            compilation_config=SimpleNamespace(
+                cudagraph_mode=CUDAGraphMode.FULL_AND_PIECEWISE,
+                cudagraph_capture_sizes=[1, 2, 4, 8, 256],
+            ),
+            parallel_config=SimpleNamespace(),
+            model_config=SimpleNamespace(
+                get_num_attention_heads=lambda parallel_config: num_heads,
+            ),
+        )
+
+    def test_paged_attention_skips_large_per_rank_head_counts(self):
+        config = self._head_guard_config(40)
+        with (
+            patch(
+                "vllm_ascend.attention.utils.get_current_hardware_profile",
+                return_value=get_hardware_profile(AscendDeviceType.A2),
+            ),
+            patch(
+                "vllm_ascend.attention.utils.get_ascend_config",
+                return_value=SimpleNamespace(pa_shape_list=[256], pa_max_heads=32),
+            ),
+        ):
+            self.assertFalse(using_paged_attention(256, config, head_size=128))
+
+    def test_paged_attention_keeps_small_per_rank_head_counts(self):
+        config = self._head_guard_config(32)
+        with (
+            patch(
+                "vllm_ascend.attention.utils.get_current_hardware_profile",
+                return_value=get_hardware_profile(AscendDeviceType.A2),
+            ),
+            patch(
+                "vllm_ascend.attention.utils.get_ascend_config",
+                return_value=SimpleNamespace(pa_shape_list=[256], pa_max_heads=32),
+            ),
+        ):
+            self.assertTrue(using_paged_attention(256, config, head_size=128))
+
+    def test_paged_attention_head_guard_can_be_disabled(self):
+        config = self._head_guard_config(40)
+        with (
+            patch(
+                "vllm_ascend.attention.utils.get_current_hardware_profile",
+                return_value=get_hardware_profile(AscendDeviceType.A2),
+            ),
+            patch(
+                "vllm_ascend.attention.utils.get_ascend_config",
+                return_value=SimpleNamespace(pa_shape_list=[256], pa_max_heads=0),
+            ),
+        ):
+            self.assertTrue(using_paged_attention(256, config, head_size=128))
+
     def test_cache_graph_workspace_keeps_first_workspace_by_default(self):
         graph_params = SimpleNamespace(workspaces={1: torch.empty(4)})
         candidate_workspace = torch.empty(8)

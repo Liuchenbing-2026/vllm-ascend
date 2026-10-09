@@ -10,6 +10,7 @@ from vllm.config import VllmConfig, get_current_vllm_config
 from vllm.config.speculative import SpeculativeConfig
 from vllm.distributed.kv_transfer import get_kv_transfer_group, has_kv_transfer_group, is_v1_kv_transfer_group
 from vllm.forward_context import ForwardContext, get_forward_context
+from vllm.logger import logger
 from vllm.utils.torch_utils import get_dtype_size
 from vllm.v1.attention.backend import MLAAttentionImpl
 from vllm.v1.attention.backends.utils import CommonAttentionMetadata
@@ -177,6 +178,53 @@ def ascend_chunked_prefill_workspace_size(vllm_config: VllmConfig) -> int:
     return chunked_prefill_workspace_size
 
 
+def _warn_on_uncaptured_pa_shapes(vllm_config: VllmConfig, pa_shapes: list[int]) -> None:
+    """Report ``pa_shape_list`` entries that are not FULL-graph capture buckets.
+
+    PA is only *replayed* inside a FULL graph, so a batch size absent from
+    ``cudagraph_capture_sizes`` silently loses the graph path it was listed
+    for. This does not change which shapes select PA; it only makes a
+    misconfigured list visible instead of looking like an enabled win.
+    """
+    capture_sizes = getattr(vllm_config.compilation_config, "cudagraph_capture_sizes", None)
+    if not capture_sizes:
+        return
+    uncaptured = sorted(set(pa_shapes) - set(capture_sizes))
+    if uncaptured:
+        logger.warning_once(
+            "pa_shape_list lists shapes that are not in cudagraph_capture_sizes; "
+            "those buckets cannot be replayed as FULL graphs and will miss the "
+            "paged-attention graph path: %s",
+            ", ".join(str(shape) for shape in uncaptured),
+        )
+
+
+def _paged_attention_head_count_is_safe(vllm_config: VllmConfig) -> bool:
+    """Whether the per-rank attention head count is inside the region PA wins.
+
+    Selection happens before KV allocation, so the decision can only use
+    static information. ``pa_max_heads`` carries the measured crossover and
+    is configurable because it is a kernel-tiling property that moves with
+    the CANN version; ``0`` disables the guard.
+    """
+    max_heads = getattr(get_ascend_config(), "pa_max_heads", 0)
+    if max_heads <= 0:
+        return True
+    model_config = getattr(vllm_config, "model_config", None)
+    get_num_heads = getattr(model_config, "get_num_attention_heads", None)
+    if get_num_heads is None:
+        return True
+    num_heads = get_num_heads(vllm_config.parallel_config)
+    if num_heads <= max_heads:
+        return True
+    logger.info_once(
+        "Paged attention skipped: %d per-rank heads exceed pa_max_heads=%d",
+        num_heads,
+        max_heads,
+    )
+    return False
+
+
 def using_paged_attention(runtime_shape: int, vllm_config: VllmConfig, head_size: int | None = None) -> bool:
     if vllm_config.speculative_config is not None:
         return False
@@ -190,10 +238,26 @@ def using_paged_attention(runtime_shape: int, vllm_config: VllmConfig, head_size
     from vllm.config.compilation import CUDAGraphMode
 
     cudagraph_mode = vllm_config.compilation_config.cudagraph_mode
-    if cudagraph_mode != CUDAGraphMode.FULL_DECODE_ONLY:
+    # PA is a decode-only kernel, so it may only be selected from a replayed
+    # FULL graph that carries decode-only batches:
+    #   FULL_DECODE_ONLY   : the FULL graph is exactly the decode batch set.
+    #   FULL_AND_PIECEWISE : decode goes to FULL, prefill/mixed stay on the
+    #                        PIECEWISE path.
+    #   FULL               : mixed batches also enter the FULL graph, which PA
+    #                        cannot serve, so it stays excluded.
+    if cudagraph_mode not in (
+        CUDAGraphMode.FULL_DECODE_ONLY,
+        CUDAGraphMode.FULL_AND_PIECEWISE,
+    ):
         return False
 
-    return runtime_shape in get_ascend_config().pa_shape_list
+    pa_shapes = get_ascend_config().pa_shape_list
+    if not pa_shapes:
+        return False
+    if not _paged_attention_head_count_is_safe(vllm_config):
+        return False
+    _warn_on_uncaptured_pa_shapes(vllm_config, pa_shapes)
+    return runtime_shape in pa_shapes
 
 
 @lru_cache(maxsize=1)
