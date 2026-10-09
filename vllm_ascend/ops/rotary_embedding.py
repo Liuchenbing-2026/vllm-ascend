@@ -18,6 +18,8 @@
 import math
 import os
 
+import weakref
+
 import torch
 import torch_npu
 from vllm.config import get_current_vllm_config
@@ -99,6 +101,7 @@ def get_cos_and_sin_mla(positions, use_cache=False):
     # Do not copy indexer RoPE (last dim 32) into a 0-width MLA buffer.
     if _cos_mla is not None and _cos_mla.shape[-1] == 0:
         return _cos_mla[:num_tokens], _sin_mla[:num_tokens]
+    _refresh_interleaved_cos_sin_if_stale()
     cos = _cos_cache[positions].unsqueeze(1).unsqueeze(2)
     sin = _sin_cache[positions].unsqueeze(1).unsqueeze(2)
     if not use_cache:
@@ -122,11 +125,31 @@ def get_cos_and_sin_mla(positions, use_cache=False):
     return _cos_mla[:num_tokens, ...], _sin_mla[:num_tokens, ...]
 
 
-def _record_cos_sin_cache(cos_sin_cache):
+_cos_sin_cache_owner = None
+_cos_sin_interleaved_owner = None
+
+
+def _record_cos_sin_cache(cos_sin_cache, owner=None):
     global _cos_sin_cache
-    if _cos_sin_cache is not None:
+    global _cos_sin_cache_owner
+    if _cos_sin_cache is not None and _cos_sin_cache.device.type != "meta":
         return
     _cos_sin_cache = cos_sin_cache
+    _cos_sin_cache_owner = weakref.ref(owner) if owner is not None else None
+
+
+def _live_cos_sin_cache():
+    # The ipc_cache weight loader replaces module buffers after __init__, so
+    # a cache recorded at build time may still be a meta placeholder. Re-read
+    # it from the owning module in that case.
+    global _cos_sin_cache
+    cache = _cos_sin_cache
+    if cache is not None and cache.device.type == "meta" and _cos_sin_cache_owner is not None:
+        owner = _cos_sin_cache_owner()
+        live = getattr(owner, "cos_sin_cache", None) if owner is not None else None
+        if live is not None and live.device.type != "meta":
+            _cos_sin_cache = cache = live
+    return cache
 
 
 def _record_cos_and_sin_cache(cos_cache, sin_cache):
@@ -136,13 +159,34 @@ def _record_cos_and_sin_cache(cos_cache, sin_cache):
     _sin_cache = sin_cache
 
 
-def _record_cos_and_sin_cache_interleaved(cos_sin_cache):
+def _record_cos_and_sin_cache_interleaved(cos_sin_cache, owner=None):
     global _cos_cache
     global _sin_cache
+    global _cos_sin_interleaved_owner
     if _cos_cache is not None or _sin_cache is not None:
         return
     hidden_dim = cos_sin_cache.shape[-1] // 2
     cos_cache, sin_cache = cos_sin_cache.view(-1, 2, hidden_dim).repeat(1, 1, 2).chunk(2, dim=1)
+    _cos_cache = cos_cache.squeeze(1)
+    _sin_cache = sin_cache.squeeze(1)
+    _cos_sin_interleaved_owner = weakref.ref(owner) if owner is not None else None
+
+
+def _refresh_interleaved_cos_sin_if_stale():
+    # See _live_cos_sin_cache: rebuild the derived cos/sin views from the
+    # owning module once its real buffer replaces the meta placeholder.
+    global _cos_cache
+    global _sin_cache
+    if _cos_cache is not None and _cos_cache.device.type != "meta":
+        return
+    if _cos_sin_interleaved_owner is None:
+        return
+    owner = _cos_sin_interleaved_owner()
+    live = getattr(owner, "cos_sin_cache", None) if owner is not None else None
+    if live is None or live.device.type == "meta":
+        return
+    hidden_dim = live.shape[-1] // 2
+    cos_cache, sin_cache = live.view(-1, 2, hidden_dim).repeat(1, 1, 2).chunk(2, dim=1)
     _cos_cache = cos_cache.squeeze(1)
     _sin_cache = sin_cache.squeeze(1)
 
@@ -153,15 +197,16 @@ def update_cos_sin(positions):
     global _cos_slice
     global _sin_slice
 
-    if _cos_sin_cache is None or _cos is None or _sin is None:
+    cos_sin_cache = _live_cos_sin_cache()
+    if cos_sin_cache is None or _cos is None or _sin is None:
         return
 
     num_tokens = positions.size(0)
     _cos[:, :num_tokens] = (
-        _cos_sin_cache.index_select(0, positions).view(num_tokens, 2, -1).repeat(1, 1, 2).chunk(2, dim=-2)[0]
+        cos_sin_cache.index_select(0, positions).view(num_tokens, 2, -1).repeat(1, 1, 2).chunk(2, dim=-2)[0]
     )
     _sin[:, :num_tokens] = (
-        _cos_sin_cache.index_select(0, positions).view(num_tokens, 2, -1).repeat(1, 1, 2).chunk(2, dim=-2)[1]
+        cos_sin_cache.index_select(0, positions).view(num_tokens, 2, -1).repeat(1, 1, 2).chunk(2, dim=-2)[1]
     )
     _cos_slice = _cos[:, :num_tokens]
     _sin_slice = _sin[:, :num_tokens]
@@ -244,8 +289,8 @@ class AscendRotaryEmbedding(RotaryEmbedding):
         super().__init__(head_size, rotary_dim, max_position_embeddings, base, is_neox_style, dtype, init_cache)
         vllm_config = get_current_vllm_config()
         self.use_mtp = vllm_config.speculative_config and vllm_config.speculative_config.method == "mtp"
-        _record_cos_sin_cache(self.cos_sin_cache)
-        _record_cos_and_sin_cache_interleaved(self.cos_sin_cache)
+        _record_cos_sin_cache(self.cos_sin_cache, self)
+        _record_cos_and_sin_cache_interleaved(self.cos_sin_cache, self)
 
     def forward_oot(
         self,
@@ -310,7 +355,7 @@ class AscendYaRNRotaryEmbedding(YaRNScalingRotaryEmbedding):
         )
         vllm_config = get_current_vllm_config()
         self.use_mtp = vllm_config.speculative_config and vllm_config.speculative_config.method == "mtp"
-        _record_cos_sin_cache(self.cos_sin_cache)
+        _record_cos_sin_cache(self.cos_sin_cache, self)
 
     def forward_oot(
         self,
