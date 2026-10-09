@@ -204,3 +204,14 @@ docker exec -d tq-128k-ab-20261010-runtime bash -c \
 复用精度明确引用最终环境的已通过日志，并核验torch/torch-npu/numpy/ml-dtypes版本和所有已记录native artifact哈希。当前environment.json已更新为numpy1.26.4，含torch胶水.so哈希；两rank实际/proc maps证明加载的是本轮源码目录中的新Ascend C++/kernels/custom_transformer binary，见active-native-paths.log。早先awk转义命令未取得有效路径，错误记录保留，后改Python读取成功。
 
 静态检查还发现第一次增加runner参数时把mode循环缩进写错，未上传或执行；修正后py_compile和--help通过。继续运行尚在执行，自动cleanup修复没有单独做信号回归测试，不能写成已经完整验证。调整等待顺序只重启未占卡的watcher，benchmark controller/client/server未变；原watcher退出记录保留。
+
+| 编号 / 发现时间 | 现象、影响与证据 | 已确认原因 / 假设 | 处理、验证与状态 |
+| --- | --- | --- | --- |
+| E17 / 2026-10-10 02:52+08:00 | C8已8/8完成，但planned transition后socket.bind检查端口18377报98，continuation停止。原controller已按SIGTERM退出130；无本任务活API/client，只有已退出worker僵尸。ss工具缺失，后续现场检查两种bind都成功。证据transition-port-diagnosis.log、transition-port-bind-comparison.log。 | 最初端口状态未捕获，TIME_WAIT为与现象一致的推断，不能说现场根因已证明；preflight未设置SO_REUSEADDR已确认。 | 对另一个自选临时端口做真实TCP关闭对照：非reuse bind失败98、reuse bind成功，tcp-time-wait-preflight-regression.log。controller/watcher加SO_REUSEADDR；C8数据保留，手动从已记录的transition继续。恢复状态待实际起服核验。 |
+| E18 / 2026-10-10，恢复入口 | continue_after_c8 --after-transition报AttributeError: list has no after_transition，未启动TQ。证据deadline-continuation-recovered.log。 | /proc扫描中的args列表覆盖argparse Namespace变量，已确认。 | 扫描变量改process_args，保留原失败日志，以同一恢复入口重跑；尚未据py_compile宣称端到端通过。 |
+
+E17/E18 更新：修订恢复入口实际启动TQ服务，短64→16与长131072→1冒烟均成功，正式store4 C1开始。原controller按计划终止130，C8已经8/8完成；SIGTERM对子进程的清理及后续起服在此次真实切换中完成，不再把这项仅写成静态核验。现场原端口的TIME_WAIT原因仍为推断，真实TCP对照与修订恢复起服成功分别记录。
+
+源码证据：运行中的旧controller在磁盘文件更新后，其异常栈会显示新文件行文，不能凭该行文推断旧RAM代码。已从本任务Git中恢复旧实际controller blob `29f8ad67fd4168a96840f08d77c6c14c3fb1d27b`，归档为scripts/controller_attempt3_actual.py；新phase使用带显式modes/concurrencies/request-timeout参数的runner。
+
+本轮容量同预算配对核验：BF16=524288 tokens，TQ=2033536 tokens，TQ/BF16=3.878662109375；同为24.00 GiB/卡，初始free分别60.57/60.58 GiB。132096总长度最大驻留并发3.97x→15.39x。仅为容量，不当作性能加速比；TQ正式吞吐在运行。

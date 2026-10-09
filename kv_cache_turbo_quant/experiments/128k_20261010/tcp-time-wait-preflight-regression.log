@@ -1,0 +1,15 @@
+{
+  "ephemeral_port": 33061,
+  "results": [
+    {
+      "reuse": false,
+      "bind": "failed",
+      "errno": 98
+    },
+    {
+      "reuse": true,
+      "bind": "pass"
+    }
+  ]
+}
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

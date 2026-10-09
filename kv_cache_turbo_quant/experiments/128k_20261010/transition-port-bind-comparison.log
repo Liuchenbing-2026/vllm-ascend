@@ -1,0 +1,3 @@
+bind False PASS
+bind True PASS
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

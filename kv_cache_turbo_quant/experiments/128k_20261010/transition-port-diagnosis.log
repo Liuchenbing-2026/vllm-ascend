@@ -1,0 +1,30 @@
+   2084       1    1799 [VLLM::EngineCor] <defunct>
+   2132       1    1799 [VLLM::Worker_TP] <defunct>
+   2133       1    1799 [VLLM::Worker_TP] <defunct>
+   4460       1    4313 [VLLM::Worker_TP] <defunct>
+   4461       1    4313 [VLLM::Worker_TP] <defunct>
+   5487       0    5487 bash -c ss -ltnp "( sport = :18377 )"; ss -tan "( sport = :18377 )" | head -12; ps -eo pid,ppid,pgid,args | grep -E "api_server|bench_client|run_matrix|VLLM::"; tail -n 20 /ws/logs/matrix-attempt3.log
+   5497    5487    5487 grep -E api_server|bench_client|run_matrix|VLLM::
+^^^^^^^^^^^^
+  File "/ws/scripts/run_matrix.py", line 160, in run
+    environment = json.loads((self.root / 'artifacts/environment.json').read_text())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ws/scripts/run_matrix.py", line 104, in run_client
+    (self.logs / f'{name}.command.json').write_text(json.dumps(command, indent=2) + '\n')
+            ^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/subprocess.py", line 1264, in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/subprocess.py", line 2053, in _wait
+    (pid, sts) = self._try_wait(0)
+                 ^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/subprocess.py", line 2011, in _try_wait
+    (pid, sts) = os.waitpid(self.pid, wait_flags)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ws/scripts/run_matrix.py", line 172, in interrupted
+    ]
+    ^^
+KeyboardInterrupt: Interrupted by signal 15
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied
+bash: line 1: ss: command not found
+bash: line 1: ss: command not found
