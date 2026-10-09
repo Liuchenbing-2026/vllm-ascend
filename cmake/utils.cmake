@@ -14,6 +14,10 @@ function (run_python OUT EXPR ERR_MSG)
   if(NOT PYTHON_ERROR_CODE EQUAL 0)
     message(FATAL_ERROR "${ERR_MSG}: ${PYTHON_STDERR}")
   endif()
+  # Ascend driver may print "DrvMngGetConsoleLogLevel failed" to stdout when
+  # torch/torch_npu autoloads inside a device-mapped container; drop it.
+  string(REGEX REPLACE "(^|\n)DrvMngGetConsoleLogLevel[^\n]*" "\\1" PYTHON_OUT "${PYTHON_OUT}")
+  string(STRIP "${PYTHON_OUT}" PYTHON_OUT)
   set(${OUT} ${PYTHON_OUT} PARENT_SCOPE)
 endfunction()
 
