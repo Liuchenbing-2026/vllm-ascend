@@ -4,9 +4,66 @@
 | --- | --- |
 | 测试范围 | Qwen3-30B-A3B，TP=2，BF16 eager 与 TQ store 4-bit；并发 1/2/4/8/16/32 |
 | 工作量 | 输入 131072 tokens、输出 1024 tokens；最终环境128K长冒烟已通过，正式usage持续核验 |
-| 设备 | .19：8×Ascend 910B4-1；物理卡0、1。2026-10-10 01:19:37+08:00空闲，正式启动前再次核验；03:15运行中快照仅本任务两个worker占卡 |
+| 设备 | .19：8×Ascend 910B4-1；物理卡0、1。2026-10-10 01:19:37+08:00空闲，正式启动前再次核验；运行中快照仅本任务两个worker占卡 |
 | 代码来源 | Liuchenbing-2026/vllm-ascend 的 liuchenbing-2026 分支，目录 kv_cache_turbo_quant；固定 SHA 8ad9ef6eaa0fdc7b4cc9acf6aaeac17fd33fa65b |
-| 实测结果 | BF16 C1/C2/C4/C8已完整完成；TQ C1正式运行中，其他档位继续排程。阶段汇总见selected-summary.md；不以历史容量收益或影子模式吞吐代替本轮结果 |
+| 实测结果 | BF16 C1/C2/C4/C8已完整完成；TQ C1正式运行中，其他档位继续排程。阶段汇总见下表；不以历史容量收益或影子模式吞吐代替本轮结果 |
+
+## 固定测试条件
+
+新runtime容器 `tq-128k-ab-20261010-runtime`，.19物理卡0、1，2×Ascend910B4-1（64GiB/卡）；Qwen3-30B-A3B BF16权重、TP=2、eager。vLLM和vLLM-Ascend均从固定源码在新任务目录完成构建，实际模块与native库路径已核验。TQ为固定提交的真实store 4-bit，shadow关闭；原58文件和量化/读写算法未改。
+
+每格同时发起N个请求，N=1/2/4/8/16/32；每请求输入131072个固定种子的整数token IDs，输出1024 tokens，temperature=0、ignore_eos=true。两侧相同payload SHA256；成功记录必须实际usage为131072/1024。单格仅一组，不作为稳态吞吐或可信P99。输入为合成token IDs，未测长文本任务准确率。
+
+两侧统一KV预算25769803776 bytes（24.00GiB/卡）、chunked prefill=4096、max_num_seqs=32，关闭prefix cache与async scheduling。原模型上限40960；两侧统一YaRN factor4/original40960，服务总长度132096。这是性能实验配置，不据此认定128K语义质量通过。
+
+## 容量实测
+
+| 服务 | 初始free（两卡） | KV预算/卡 | 日志GPU KV cache size | 132096总长度最大驻留并发 |
+| --- | --- | --- | --- | --- |
+| BF16 | 60.57 / 60.58 GiB | 24.00 GiB | 524288 tokens | 3.97x |
+| TQ store 4-bit | 60.57 / 60.58 GiB | 24.00 GiB | 2033536 tokens | 15.39x |
+
+容量比为3.878662109375。两侧启动日志的manual KV预算和初始可用显存一致；不是按不同gpu_memory_utilization所得容量。容量比与输出吞吐比单独计算。
+
+## 性能结果与计量
+
+当前阶段数据如下（TQ C1仍在运行，未测项尚未完成）：
+
+| 并发 | BF16 输出 tok/s | TQ store 4-bit 输出 tok/s | TQ/BF16 |
+| --- | --- | --- | --- |
+| 1 | 5.28 | 未测 | — |
+| 2 | 8.23 | 未测 | — |
+| 4 | 8.79 | 未测 | — |
+| 8 | 10.50 | 未测 | — |
+| 16 | 未测 | 未测 | — |
+| 32 | 未测 | 未测 | — |
+
+| 并发 | BF16 TTFT均值(s) | TQ TTFT均值(s) | BF16 TPOT均值(ms) | TQ TPOT均值(ms) |
+| --- | --- | --- | --- | --- |
+| 1 | 39.51 | 未测 | 151.05 | 未测 |
+| 2 | 61.23 | 未测 | 180.73 | 未测 |
+| 4 | 137.48 | 未测 | 198.71 | 未测 |
+| 8 | 310.58 | 未测 | 211.81 | 未测 |
+| 16 | 未测 | 未测 | 未测 | 未测 |
+| 32 | 未测 | 未测 | 未测 | 未测 |
+
+每格一组同时到达的请求，请求数等于并发；未完成组不计算吞吐或收益比。计时从 HTTP 发送到最后响应结束，排除输入构造，包含排队、prefill、decode。
+
+原始JSON保留实际请求usage、完成状态、时延、payload哈希；[selection.json](selection.json)显式选择各格来源，snapshot-manifest JSON记录原路径与文件SHA256，不自动用较新重试覆盖旧失败。
+
+输出吞吐=N×1024/整组耗时，从HTTP发送到最后响应结束，包含排队、prefill、decode，排除输入构造和服务启动。TTFT为首次非空SSE文本到达；TPOT=(最后文本−首次文本)/(实际输出tokens−1)，不是逐token ITL。未完成组不计算完整工作吞吐或收益比；SSE文本事件数不当作已生成token数。
+
+已完成BF16 C1/C2/C4/C8的HTTP时限为1800s，均在时限前完整结束。后续TQ及BF16高并发时限7200s；实际命令与每格timeout保留。计划切换中断的旧BF16 C16不计入正式完成结果，原记录保留。
+
+## 已验证与限制
+
+原5组胶水bit-exact案例全部通过（idx/qjl/norm/gamma）；4-bit roundtrip脚本通过。其报告的重建相对L2误差为MSE-only均值0.0957、最大0.1805，带QJL参考均值0.0878；这些是诊断指标，不是MSE数值，也不是本脚本单独的误差验收门槛。实际store v1不保存或使用QJL残差，不能用带QJL参考代表实际store质量。Q侧旋转等价最大相对差0.00166<0.01。未做整模型任务准确率评估。
+
+源码确认每层每解码步解压完整历史KV，再调用BF16注意力，见固定源码[读取路径](https://github.com/Liuchenbing-2026/vllm-ascend/blob/8ad9ef6eaa0fdc7b4cc9acf6aaeac17fd33fa65b/kv_cache_turbo_quant/code/integration/kvtq_store.py#L148)。当前长上下文解码慢与该路径一致，但未采集正式运行的kernel耗时分解，不能量化各阶段开销占比。
+
+基础镜像 `vllm-ascend:dspark-a2-028` 为宿主既有本地镜像，完整image ID与实际版本见下文及[environment.json](environment.json)。RepoDigests为空，无可提供的registry digest或拉取地址；未导出镜像。模型配置/tokenizer/index已记录哈希，16个权重文件仅记录尺寸、未验全量weight哈希及来源revision。依赖元数据仍有已披露冲突，不能说pip check全绿。
+
+构建、实际启动、压测、独立精度命令及所有问题台账见下文。整合复现脚本经过静态核对；本轮实际编译、依赖修正、精度与服务均分步执行，不声明在干净镜像从零一次性复跑通过。
 
 ## 问题台账
 
@@ -180,7 +237,7 @@ docker exec -d tq-128k-ab-20261010-runtime bash -c \
   /ws/.venv/bin/python /ws/scripts/run_matrix.py >/ws/logs/matrix-attempt3.log 2>&1; \
   printf "%s\n" "$?" >/ws/matrix-attempt3.exit'
 # 每个cohort实际完整参数还保存为logs/<run_id>/*.command.json
-python3 scripts/summarize_results.py --results results/matrix_20261009T182045Z --output summary.md
+python3 scripts/summarize_results.py --results results --selection selection.json --output /tmp/tq-result-summary.md
 ```
 
 汇总核验每个成功请求的实际长度、成功/失败数、吞吐分母，两侧payload SHA256逐一相同才计算比值。完整矩阵与最终结果尚在运行；目前有证据的完成范围是精度、最终起服、短/128K长冒烟、BF16已完成的正式cohort，不宣称TQ正式性能已通过。
@@ -217,3 +274,16 @@ E17/E18 更新：修订恢复入口实际启动TQ服务，短64→16与长131072
 本轮容量同预算配对核验：BF16=524288 tokens，TQ=2033536 tokens，TQ/BF16=3.878662109375；同为24.00 GiB/卡，初始free分别60.57/60.58 GiB。132096总长度最大驻留并发3.97x→15.39x。仅为容量，不当作性能加速比；TQ正式吞吐在运行。
 
 03:18阶段核验：E03设备句柄在正式起服前已补查，未发现占用；E05插件路径部署已实际通过短/长冒烟；E06任务目录写入已验证。E08认证身份仍不符给定描述，本机实际Liuchenbing-2026身份向任务分支正常推送并回读成功，未声称找到wangzhao-11a的key。后续本地读取证据曾将pulled/artifacts/environment.json和尚未拉回的服务日志写成错误路径，命令只读失败、未影响测试；改用rg列举实际文件和SSH快照拉回33个证据文件，逐文件SHA256核验。E16的SFTP根因仍未处理。
+
+归档修订：初版额外新增REPORT.md，并重复保存canonical结果，与archive-organize的一份README约定不符。已将实测条件、计量、精度边界和阶段表合并至本README；由selection.json直接选取原run目录结果，保留Git中的旧版本，不再交付详版副本。原日志/ws/logs/<run_id>归档映射为server_evidence/<run_id>；快照manifest记录原相对路径与SHA256。
+
+当前恢复入口实际命令（E17/E18修订后）：
+
+```bash
+docker exec -d tq-128k-ab-20261010-runtime bash -c \
+ '/ws/.venv/bin/python /ws/scripts/continue_after_c8.py --after-transition \
+  >/ws/logs/deadline-continuation-recovered2.log 2>&1; \
+  printf "%s\n" "$?" >/ws/deadline-continuation-recovered2.exit'
+```
+
+当前TQ低并发run为matrix_20261009T185712Z；每phase的完整参数与来源文件hash见server_evidence/<run_id>/run_parameters.json。`summary.json`还记录被选原始结果source_path与source_sha256；selection仅列正式cohort，不选冒烟或中断progress。

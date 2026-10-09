@@ -44,7 +44,9 @@
           "latency_s": 194.03336889576167
         }
       ],
-      "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+      "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded",
+      "source_path": "matrix_20261009T182045Z/bf16_in131072_out1024_c1.json",
+      "source_sha256": "e76b60ffd625391761d50e8c17798f021af88860bf0f6c1f2a7078d6896e9694"
     },
     "store4": null,
     "store_vs_bf16_output_throughput_ratio": null
@@ -113,7 +115,9 @@
           "latency_s": 248.7110058767721
         }
       ],
-      "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+      "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded",
+      "source_path": "matrix_20261009T182045Z/bf16_in131072_out1024_c2.json",
+      "source_sha256": "2163fa9c8ee84837b58ecef4451662a1a248093d3ef5cb4e1bc2379f49061779"
     },
     "store4": null,
     "store_vs_bf16_output_throughput_ratio": null
@@ -220,7 +224,9 @@
           "latency_s": 310.66237201076
         }
       ],
-      "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+      "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded",
+      "source_path": "matrix_20261009T182045Z/bf16_in131072_out1024_c4.json",
+      "source_sha256": "2419eb9251c6d5de8932249196071baea90a93207faf8d3efbcd1e05a2ce693f"
     },
     "store4": null,
     "store_vs_bf16_output_throughput_ratio": null
@@ -403,7 +409,9 @@
           "latency_s": 617.9640575349331
         }
       ],
-      "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+      "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded",
+      "source_path": "matrix_20261009T182045Z/bf16_in131072_out1024_c8.json",
+      "source_sha256": "539e1e45ae129758daff18d6f8990a3db9f2f7923013f71fc2d57b7ae4e18e8d"
     },
     "store4": null,
     "store_vs_bf16_output_throughput_ratio": null
