@@ -1,0 +1,375 @@
+INFO 10-09 18:57:20 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-09 18:57:20 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-09 18:57:20 [__init__.py:66] Loading plugin ascend
+INFO 10-09 18:57:20 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-09 18:57:21 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-09 18:57:30 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 10-09 18:57:30 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+[KVTQ] plugin register() called pid=5535 shadow=0 store=1
+[KVTQ-STORE] installed (mse_bits=4, row_bytes=66, compression=3.88x)
+(APIServer pid=5535) INFO 10-09 18:57:32 [api_utils.py:333] 
+(APIServer pid=5535) INFO 10-09 18:57:32 [api_utils.py:333]        █     █     █▄   ▄█
+(APIServer pid=5535) INFO 10-09 18:57:32 [api_utils.py:333]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.28.0
+(APIServer pid=5535) INFO 10-09 18:57:32 [api_utils.py:333]   █▄█▀ █     █     █     █  model   /models/Qwen3-30B-A3B
+(APIServer pid=5535) INFO 10-09 18:57:32 [api_utils.py:333]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=5535) INFO 10-09 18:57:32 [api_utils.py:333] 
+(APIServer pid=5535) INFO 10-09 18:57:32 [api_utils.py:272] non-default args: {'host': '127.0.0.1', 'port': 18377, 'model': '/models/Qwen3-30B-A3B', 'dtype': 'bfloat16', 'max_model_len': 132096, 'enforce_eager': True, 'served_model_name': ['qwen3-30b-tq-ab'], 'hf_overrides': {'rope_scaling': {'rope_type': 'yarn', 'factor': 4.0, 'original_max_position_embeddings': 40960}}, 'tensor_parallel_size': 2, 'kv_cache_memory_bytes': 25769803776, 'enable_prefix_caching': False, 'max_num_batched_tokens': 4096, 'max_num_seqs': 32, 'async_scheduling': False}
+(APIServer pid=5535) WARNING 10-09 18:57:32 [envs.py:2213] Unknown vLLM environment variable detected: VLLM_ASCEND_KVTQ
+(APIServer pid=5535) WARNING 10-09 18:57:32 [envs.py:2213] Unknown vLLM environment variable detected: VLLM_ASCEND_KVTQ_STORE
+(APIServer pid=5535) WARNING 10-09 18:57:32 [envs.py:2213] Unknown vLLM environment variable detected: VLLM_ASCEND_KVTQ_BITS
+(APIServer pid=5535) INFO 10-09 18:57:32 [model.py:672] Resolved architecture: Qwen3MoeForCausalLM
+(APIServer pid=5535) INFO 10-09 18:57:32 [model.py:1965] Using max model len 132096
+(APIServer pid=5535) INFO 10-09 18:57:32 [scheduler.py:242] Chunked prefill is enabled with max_num_batched_tokens=4096.
+(APIServer pid=5535) WARNING 10-09 18:57:32 [vllm.py:1285] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(APIServer pid=5535) WARNING 10-09 18:57:32 [vllm.py:1354] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(APIServer pid=5535) INFO 10-09 18:57:32 [kernel.py:308] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+(APIServer pid=5535) INFO 10-09 18:57:32 [vllm.py:1533] Cudagraph is disabled under eager mode
+(APIServer pid=5535) INFO 10-09 18:57:32 [utils.py:224] No quantization signature detected from model files for "/models/Qwen3-30B-A3B". The model will be loaded as float. To force a quantization method, pass "--quantization <method>" explicitly.
+(APIServer pid=5535) WARNING 10-09 18:57:32 [platform.py:650] GPU-specific parameter is not supported on Ascend. parameter=disable_cascade_attn, value=True, action: resetting to False.
+(APIServer pid=5535) INFO 10-09 18:57:32 [platform.py:862] The timeout interval of the HCCL operator is 1836s. Timeout in seconds for execute_model RPC calls in multiprocessing must be greater than 1836s, Set VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=3000
+(APIServer pid=5535) INFO 10-09 18:57:32 [ascend_config.py:231] Dynamic EPLB is False
+(APIServer pid=5535) INFO 10-09 18:57:32 [ascend_config.py:232] The number of redundant experts is 0
+(APIServer pid=5535) INFO 10-09 18:57:32 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+(APIServer pid=5535) INFO 10-09 18:57:32 [platform.py:1089] Compilation disabled, using eager mode by default
+(APIServer pid=5535) INFO 10-09 18:57:32 [utils.py:1326] Block size is set to 128 if prefix cache or chunked prefill is enabled.
+(APIServer pid=5535) INFO 10-09 18:57:32 [platform.py:1344] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+(APIServer pid=5535) INFO 10-09 18:57:32 [compilation.py:329] Enabled custom fusions: norm_quant, act_quant
+INFO 10-09 18:57:45 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-09 18:57:45 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-09 18:57:45 [__init__.py:66] Loading plugin ascend
+INFO 10-09 18:57:45 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-09 18:57:45 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-09 18:57:55 [ascend_config.py:231] Dynamic EPLB is False
+INFO 10-09 18:57:55 [ascend_config.py:232] The number of redundant experts is 0
+INFO 10-09 18:57:55 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+(EngineCore pid=5637) INFO 10-09 18:57:55 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+(EngineCore pid=5637) INFO 10-09 18:57:55 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+(EngineCore pid=5637) [KVTQ] plugin register() called pid=5637 shadow=0 store=1
+(EngineCore pid=5637) [KVTQ-STORE] installed (mse_bits=4, row_bytes=66, compression=3.88x)
+(EngineCore pid=5637) INFO 10-09 18:57:56 [core.py:122] Initializing a V1 LLM engine (v0.28.0) with config: model='/models/Qwen3-30B-A3B', speculative_config=None, tokenizer='/models/Qwen3-30B-A3B', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=132096, download_dir=None, load_format=auto, tensor_parallel_size=2, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=True, quantization=None, quantization_config=None, enforce_eager=True, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=npu, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=qwen3-30b-tq-ab, enable_prefix_caching=False, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.NONE: 0>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'vllm_ascend.compilation.compiler_interface.AscendCompiler', 'custom_ops': ['all'], 'ir_enable_torch_wrap': False, 'splitting_ops': [], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [4096], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'size_asserts': False, 'alignment_asserts': False, 'scalar_asserts': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.NONE: 0>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 0, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': True, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native']), enable_flashinfer_autotune=True, enable_cutedsl_warmup=True, enable_jit_warmup=True, enable_bf16x3_router_gemm=False, moe_backend='auto', linear_backend='auto')
+(EngineCore pid=5637) INFO 10-09 18:57:56 [multiproc_executor.py:150] DP group leader: node_rank=0, node_rank_within_dp=0, master_addr=127.0.0.1, mq_connect_ip=183.236.60.19 (local), world_size=2, local_world_size=2
+INFO 10-09 18:58:03 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-09 18:58:03 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-09 18:58:03 [__init__.py:66] Loading plugin ascend
+INFO 10-09 18:58:03 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-09 18:58:04 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-09 18:58:04 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-09 18:58:04 [__init__.py:66] Loading plugin ascend
+INFO 10-09 18:58:04 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-09 18:58:04 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-09 18:58:04 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-09 18:58:14 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 10-09 18:58:14 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+[KVTQ] plugin register() called pid=5668 shadow=0 store=1
+INFO 10-09 18:58:14 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 10-09 18:58:14 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+[KVTQ] plugin register() called pid=5669 shadow=0 store=1
+[KVTQ-STORE] installed (mse_bits=4, row_bytes=66, compression=3.88x)
+[KVTQ-STORE] installed (mse_bits=4, row_bytes=66, compression=3.88x)
+WARNING 10-09 18:58:17 [patch_triton.py:332] NPU Triton causal_conv1d_update is unavailable (cannot import name 'causal_conv1d_update_npu' from 'vllm_ascend.ops.triton.mamba.causal_conv1d' (/ws/source/vllm-ascend/vllm_ascend/ops/triton/mamba/causal_conv1d.py)); falling back to the PyTorch implementation, which syncs per request and therefore stalls ACL graph capture at decode-FULL.
+WARNING 10-09 18:58:17 [patch_triton.py:332] NPU Triton causal_conv1d_update is unavailable (cannot import name 'causal_conv1d_update_npu' from 'vllm_ascend.ops.triton.mamba.causal_conv1d' (/ws/source/vllm-ascend/vllm_ascend/ops/triton/mamba/causal_conv1d.py)); falling back to the PyTorch implementation, which syncs per request and therefore stalls ACL graph capture at decode-FULL.
+INFO 10-09 18:58:17 [ascend_config.py:231] Dynamic EPLB is False
+INFO 10-09 18:58:17 [ascend_config.py:232] The number of redundant experts is 0
+INFO 10-09 18:58:17 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+INFO 10-09 18:58:18 [ascend_config.py:231] Dynamic EPLB is False
+INFO 10-09 18:58:18 [ascend_config.py:232] The number of redundant experts is 0
+INFO 10-09 18:58:18 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+(Worker pid=5668) INFO 10-09 18:58:19 [parallel_state.py:1638] world_size=2 rank=0 local_rank=0 distributed_init_method=file:///tmp/vllm_dist_9c829e866eab43d2ab6e4b7d2b00a07c backend=hccl
+(Worker pid=5669) INFO 10-09 18:58:19 [parallel_state.py:1638] world_size=2 rank=1 local_rank=1 distributed_init_method=file:///tmp/vllm_dist_9c829e866eab43d2ab6e4b7d2b00a07c backend=hccl
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+(Worker pid=5668) INFO 10-09 18:58:20 [parallel_state.py:1982] rank 0 in world size 2 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[rank0]:[W1009 18:58:20.127984774 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+[rank1]:[W1009 18:58:20.130146985 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+(Worker pid=5668) INFO 10-09 18:58:20 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker pid=5669) INFO 10-09 18:58:20 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP0 pid=5668) INFO 10-09 18:58:20 [model_runner_v1.py:4190] Starting to load model /models/Qwen3-30B-A3B...
+(Worker_TP1 pid=5669) INFO 10-09 18:58:20 [model_runner_v1.py:4190] Starting to load model /models/Qwen3-30B-A3B...
+(Worker_TP0 pid=5668) INFO 10-09 18:58:21 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP1 pid=5669) INFO 10-09 18:58:21 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP0 pid=5668) INFO 10-09 18:58:22 [weight_utils.py:858] Filesystem type for checkpoints: EXT4. Checkpoint size: 56.87 GiB. Available RAM: 764.09 GiB.
+(Worker_TP0 pid=5668) INFO 10-09 18:58:22 [weight_utils.py:881] Auto-prefetch is disabled because the filesystem (EXT4) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:   0% Completed | 0/16 [00:00<?, ?it/s]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:   6% Completed | 1/16 [00:01<00:15,  1.01s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  12% Completed | 2/16 [00:02<00:15,  1.08s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  19% Completed | 3/16 [00:03<00:14,  1.10s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  25% Completed | 4/16 [00:04<00:13,  1.11s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  31% Completed | 5/16 [00:05<00:12,  1.12s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  38% Completed | 6/16 [00:06<00:11,  1.12s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  44% Completed | 7/16 [00:07<00:10,  1.12s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  50% Completed | 8/16 [00:08<00:09,  1.13s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  56% Completed | 9/16 [00:10<00:08,  1.15s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  62% Completed | 10/16 [00:11<00:06,  1.14s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  69% Completed | 11/16 [00:12<00:05,  1.14s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  75% Completed | 12/16 [00:13<00:04,  1.14s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  81% Completed | 13/16 [00:14<00:03,  1.13s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  88% Completed | 14/16 [00:15<00:02,  1.13s/it]
+(Worker_TP1 pid=5669) INFO 10-09 18:58:38 [model_runner_v1.py:4277] Loading model weights took 28.5335 GB
+(Worker_TP1 pid=5669) INFO 10-09 18:58:38 [model_runner_v1.py:4330] Model runner load_model total time: 18.18 seconds
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards:  94% Completed | 15/16 [00:16<00:01,  1.12s/it]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards: 100% Completed | 16/16 [00:17<00:00,  1.18it/s]
+(Worker_TP0 pid=5668) Loading safetensors checkpoint shards: 100% Completed | 16/16 [00:17<00:00,  1.07s/it]
+(Worker_TP0 pid=5668) 
+(Worker_TP0 pid=5668) INFO 10-09 18:58:39 [default_loader.py:430] Loading weights took 17.07 seconds
+(Worker_TP0 pid=5668) INFO 10-09 18:58:40 [model_runner_v1.py:4277] Loading model weights took 28.5335 GB
+(Worker_TP0 pid=5668) INFO 10-09 18:58:40 [model_runner_v1.py:4330] Model runner load_model total time: 20.15 seconds
+(Worker_TP1 pid=5669) INFO 10-09 18:58:44 [worker.py:571] Initial free memory 60.58 GiB, reserved 24.00 GiB for KV Cache as specified by kv_cache_memory_bytes, skipping memory profiling. This does not respect the gpu_memory_utilization config. Only use kv_cache_memory_bytes when you want manual control of KV cache memory size. If OOM'ed, check the difference of initial free memory between the current run and the previous run where kv_cache_memory_bytes is suggested and update it correspondingly.
+(Worker_TP0 pid=5668) INFO 10-09 18:58:44 [worker.py:571] Initial free memory 60.57 GiB, reserved 24.00 GiB for KV Cache as specified by kv_cache_memory_bytes, skipping memory profiling. This does not respect the gpu_memory_utilization config. Only use kv_cache_memory_bytes when you want manual control of KV cache memory size. If OOM'ed, check the difference of initial free memory between the current run and the previous run where kv_cache_memory_bytes is suggested and update it correspondingly.
+(EngineCore pid=5637) INFO 10-09 18:58:44 [kv_cache_utils.py:1869] GPU KV cache size: 2,033,536 tokens, Maximum concurrency for 132,096 tokens per request: 15.39x
+(Worker_TP0 pid=5668) INFO 10-09 18:58:45 [kernel_warmup.py:41] Starting Triton kernel warmup.
+(Worker_TP1 pid=5669) INFO 10-09 18:58:45 [kernel_warmup.py:41] Starting Triton kernel warmup.
+(Worker_TP0 pid=5668) INFO 10-09 18:58:45 [kernel_warmup.py:33] rejection_sampler Triton warmup complete in 0.000s.
+(Worker_TP1 pid=5669) INFO 10-09 18:58:45 [kernel_warmup.py:33] rejection_sampler Triton warmup complete in 0.000s.
+(Worker_TP0 pid=5668) INFO 10-09 18:58:45 [kernel_warmup.py:33] penalties Triton warmup complete in 0.028s.
+(Worker_TP0 pid=5668) INFO 10-09 18:58:45 [kernel_warmup.py:33] rms Triton warmup complete in 0.000s.
+(Worker_TP1 pid=5669) INFO 10-09 18:58:45 [kernel_warmup.py:33] penalties Triton warmup complete in 0.028s.
+(Worker_TP0 pid=5668) INFO 10-09 18:58:45 [kernel_warmup.py:49] Triton kernel warmup finished in 0.028s.
+(Worker_TP1 pid=5669) INFO 10-09 18:58:45 [kernel_warmup.py:33] rms Triton warmup complete in 0.000s.
+(Worker_TP1 pid=5669) INFO 10-09 18:58:45 [kernel_warmup.py:49] Triton kernel warmup finished in 0.028s.
+(Worker_TP0 pid=5668) INFO 10-09 18:58:47 [cpu_binding.py:539] [cpu_bind_mode] mode=topo_affinity rank=0 visible_npus=[0, 1]
+(Worker_TP0 pid=5668) INFO 10-09 18:58:47 [cpu_binding.py:623] The CPU allocation plan is as follows:
+(Worker_TP0 pid=5668) INFO 10-09 18:58:47 [cpu_binding.py:637] NPU0: main=[146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161 162 163 164 165]  acl=[166]  release=[[167]]
+(Worker_TP0 pid=5668) INFO 10-09 18:58:47 [cpu_binding.py:663] [migrate] NPU:0 -> NUMA [6]
+(Worker_TP1 pid=5669) INFO 10-09 18:58:48 [cpu_binding.py:539] [cpu_bind_mode] mode=topo_affinity rank=1 visible_npus=[0, 1]
+(Worker_TP1 pid=5669) INFO 10-09 18:58:48 [cpu_binding.py:623] The CPU allocation plan is as follows:
+(Worker_TP1 pid=5669) INFO 10-09 18:58:48 [cpu_binding.py:637] NPU1: main=[170 171 172 173 174 175 176 177 178 179 180 181 182 183 184 185 186 187 188 189]  acl=[190]  release=[[191]]
+(Worker_TP1 pid=5669) INFO 10-09 18:58:48 [cpu_binding.py:663] [migrate] NPU:1 -> NUMA [7]
+(Worker_TP0 pid=5668) INFO 10-09 18:58:49 [cpu_binding.py:773] NPU0(PCI 0000:c1:00.0): sq_send_trigger_irq IRQ_ID=3098 -> CPU144, cq_update_irq IRQ_ID=3099 -> CPU145
+(Worker_TP1 pid=5669) INFO 10-09 18:58:49 [cpu_binding.py:773] NPU1(PCI 0000:c2:00.0): sq_send_trigger_irq IRQ_ID=3354 -> CPU168, cq_update_irq IRQ_ID=3355 -> CPU169
+(EngineCore pid=5637) INFO 10-09 18:58:49 [core.py:354] init engine (profile, create kv cache, warmup model) took 8.80 s
+(EngineCore pid=5637) WARNING 10-09 18:58:51 [vllm.py:1285] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(EngineCore pid=5637) WARNING 10-09 18:58:51 [vllm.py:1354] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(EngineCore pid=5637) INFO 10-09 18:58:51 [kernel.py:308] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+(EngineCore pid=5637) INFO 10-09 18:58:51 [vllm.py:1533] Cudagraph is disabled under eager mode
+(EngineCore pid=5637) INFO 10-09 18:58:51 [utils.py:224] No quantization signature detected from model files for "/models/Qwen3-30B-A3B". The model will be loaded as float. To force a quantization method, pass "--quantization <method>" explicitly.
+(EngineCore pid=5637) INFO 10-09 18:58:51 [platform.py:862] The timeout interval of the HCCL operator is 1836s. Timeout in seconds for execute_model RPC calls in multiprocessing must be greater than 1836s, Set VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=3000
+(EngineCore pid=5637) INFO 10-09 18:58:51 [platform.py:1089] Compilation disabled, using eager mode by default
+(EngineCore pid=5637) INFO 10-09 18:58:51 [platform.py:1344] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+(EngineCore pid=5637) INFO 10-09 18:58:51 [compilation.py:329] Enabled custom fusions: norm_quant, act_quant
+(APIServer pid=5535) INFO 10-09 18:58:51 [api_server.py:653] Supported tasks: ['generate']
+(APIServer pid=5535) INFO 10-09 18:58:52 [hf.py:551] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=5535) WARNING 10-09 18:58:52 [model.py:1713] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 0.6, 'top_k': 20, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+(APIServer pid=5535) INFO 10-09 18:58:52 [api_server.py:657] Starting vLLM server on http://127.0.0.1:18377
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:51] Available routes are:
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /openapi.json, Methods: HEAD, GET
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /docs, Methods: HEAD, GET
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /docs/oauth2-redirect, Methods: HEAD, GET
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /redoc, Methods: HEAD, GET
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /load, Methods: GET
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /version, Methods: GET
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /health, Methods: GET
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /metrics, Methods: GET
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /tokenize, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /detokenize, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/models, Methods: GET
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /ping, Methods: GET
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /ping, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /invocations, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/chat/completions/batch, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/responses, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/completions, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/messages, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /generative_scoring, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /is_scaling_elastic_ep, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/chat/completions/render, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/completions/render, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/chat/completions/derender, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /v1/completions/derender, Methods: POST
+(APIServer pid=5535) INFO 10-09 18:58:52 [launcher.py:60] Route: /inference/v1/generate, Methods: POST
+(APIServer pid=5535) INFO:     Started server process [5535]
+(APIServer pid=5535) INFO:     Waiting for application startup.
+(APIServer pid=5535) INFO:     Application startup complete.
+(APIServer pid=5535) INFO:     127.0.0.1:28470 - "GET /health HTTP/1.1" 200 OK
+(APIServer pid=5535) INFO:     127.0.0.1:28486 - "POST /v1/completions HTTP/1.1" 200 OK
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=1 tokens=64
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=1 tokens=64
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=1000 tokens=7048
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=1000 tokens=7048
+(APIServer pid=5535) INFO:     127.0.0.1:28498 - "POST /v1/completions HTTP/1.1" 200 OK
+(Worker_TP0 pid=5668) [KVTQ-STORE] WARNING prefill chunk with history: batched dequant-from-cache path engaged
+(Worker_TP1 pid=5669) [KVTQ-STORE] WARNING prefill chunk with history: batched dequant-from-cache path engaged
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=2000 tokens=1908128
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=2000 tokens=1908128
+(APIServer pid=5535) INFO 10-09 18:59:02 [loggers.py:310] Engine 000: Avg prompt throughput: 5.4 tokens/s, Avg generation throughput: 1.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 18:59:12 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 2.2%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=3000 tokens=6004128
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=3000 tokens=6004128
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=4000 tokens=10100128
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=4000 tokens=10100128
+(APIServer pid=5535) INFO:     127.0.0.1:42376 - "POST /v1/completions HTTP/1.1" 200 OK
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=5000 tokens=14196128
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=5000 tokens=14196128
+(APIServer pid=5535) INFO 10-09 19:00:32 [loggers.py:310] Engine 000: Avg prompt throughput: 13107.7 tokens/s, Avg generation throughput: 0.1 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:00:42 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 2.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=6000 tokens=18292128
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=6000 tokens=18292128
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=7000 tokens=22388128
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=7000 tokens=22388128
+(APIServer pid=5535) INFO 10-09 19:02:03 [loggers.py:310] Engine 000: Avg prompt throughput: 13107.2 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=8000 tokens=25173728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=8000 tokens=25173728
+(APIServer pid=5535) INFO 10-09 19:02:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:02:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:02:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=9000 tokens=25174728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=9000 tokens=25174728
+(APIServer pid=5535) INFO 10-09 19:02:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:02:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:03:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=10000 tokens=25175728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=10000 tokens=25175728
+(APIServer pid=5535) INFO 10-09 19:03:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:03:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:03:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=11000 tokens=25176728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=11000 tokens=25176728
+(APIServer pid=5535) INFO 10-09 19:03:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:03:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:04:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:04:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=12000 tokens=25177728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=12000 tokens=25177728
+(APIServer pid=5535) INFO 10-09 19:04:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:04:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:04:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=13000 tokens=25178728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=13000 tokens=25178728
+(APIServer pid=5535) INFO 10-09 19:04:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:05:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:05:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=14000 tokens=25179728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=14000 tokens=25179728
+(APIServer pid=5535) INFO 10-09 19:05:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:05:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:05:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=15000 tokens=25180728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=15000 tokens=25180728
+(APIServer pid=5535) INFO 10-09 19:05:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:06:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:06:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=16000 tokens=25181728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=16000 tokens=25181728
+(APIServer pid=5535) INFO 10-09 19:06:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:06:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:06:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:06:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=17000 tokens=25182728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=17000 tokens=25182728
+(APIServer pid=5535) INFO 10-09 19:07:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:07:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:07:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=18000 tokens=25183728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=18000 tokens=25183728
+(APIServer pid=5535) INFO 10-09 19:07:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:07:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:07:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=19000 tokens=25184728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=19000 tokens=25184728
+(APIServer pid=5535) INFO 10-09 19:08:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:08:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:08:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=20000 tokens=25185728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=20000 tokens=25185728
+(APIServer pid=5535) INFO 10-09 19:08:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:08:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:08:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:09:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=21000 tokens=25186728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=21000 tokens=25186728
+(APIServer pid=5535) INFO 10-09 19:09:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:09:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:09:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=22000 tokens=25187728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=22000 tokens=25187728
+(APIServer pid=5535) INFO 10-09 19:09:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:09:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:10:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=23000 tokens=25188728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=23000 tokens=25188728
+(APIServer pid=5535) INFO 10-09 19:10:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:10:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:10:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=24000 tokens=25189728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=24000 tokens=25189728
+(APIServer pid=5535) INFO 10-09 19:10:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:10:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:11:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:11:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=25000 tokens=25190728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=25000 tokens=25190728
+(APIServer pid=5535) INFO 10-09 19:11:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:11:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:11:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=26000 tokens=25191728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=26000 tokens=25191728
+(APIServer pid=5535) INFO 10-09 19:11:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:12:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:12:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:12:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.2 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=27000 tokens=25192728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=27000 tokens=25192728
+(APIServer pid=5535) INFO 10-09 19:12:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:12:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:12:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:13:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=28000 tokens=25193728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=28000 tokens=25193728
+(APIServer pid=5535) INFO 10-09 19:13:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:13:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:13:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.2 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=29000 tokens=25194728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=29000 tokens=25194728
+(APIServer pid=5535) INFO 10-09 19:13:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:13:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:14:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:14:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=30000 tokens=25195728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=30000 tokens=25195728
+(APIServer pid=5535) INFO 10-09 19:14:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:14:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.2 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:14:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:14:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=31000 tokens=25196728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=31000 tokens=25196728
+(APIServer pid=5535) INFO 10-09 19:15:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:15:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:15:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.2 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=32000 tokens=25197728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=32000 tokens=25197728
+(APIServer pid=5535) INFO 10-09 19:15:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:15:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:15:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:16:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=33000 tokens=25198728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=33000 tokens=25198728
+(APIServer pid=5535) INFO 10-09 19:16:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:16:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:16:33 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=34000 tokens=25199728
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=34000 tokens=25199728
+(APIServer pid=5535) INFO 10-09 19:16:43 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:16:53 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:17:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=5668) [KVTQ-STORE] pid=5668 quant_calls=35000 tokens=25200728
+(Worker_TP1 pid=5669) [KVTQ-STORE] pid=5669 quant_calls=35000 tokens=25200728
+(APIServer pid=5535) INFO 10-09 19:17:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.4 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=5535) INFO 10-09 19:17:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%

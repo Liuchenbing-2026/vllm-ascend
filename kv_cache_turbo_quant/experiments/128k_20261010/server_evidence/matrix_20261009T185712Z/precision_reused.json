@@ -1,0 +1,26 @@
+{
+  "log_dir": "/ws/logs/matrix_20261009T182045Z",
+  "native_hashes_verified": true,
+  "unchanged_tq_source": "8ad9ef6eaa0fdc7b4cc9acf6aaeac17fd33fa65b",
+  "environment": {
+    "vllm": "0.28.0+empty",
+    "vllm-ascend": "0.28.0rc1",
+    "torch": "2.10.0+cpu",
+    "torch-npu": "2.10.0.post4",
+    "transformers": "5.14.1",
+    "numpy": "1.26.4",
+    "ml-dtypes": "0.5.3",
+    "fastapi": "0.136.0",
+    "starlette": "1.0.1",
+    "fastokens": "0.2.0",
+    "pydantic": "2.14.0",
+    "pydantic-core": "2.50.0",
+    "aiohttp": "3.14.3",
+    "uv": "0.12.24",
+    "setuptools": "80.10.2",
+    "setuptools-scm": "10.3.4",
+    "cmake": "4.4.2",
+    "pybind11": "3.1.0",
+    "triton-ascend": "3.2.2"
+  }
+}

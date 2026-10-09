@@ -1,0 +1,64 @@
+{
+  "captured_utc": "2026-10-09T18:31:00.189911+00:00",
+  "mode": "bf16",
+  "concurrency": 2,
+  "num_prompts": 2,
+  "input_len": 131072,
+  "output_len": 1024,
+  "seed": 20261010,
+  "timeout_s": 1800.0,
+  "payload_sha256": [
+    "c473d49fdb09721970b04a10e77c5865abae15006e750bd047fc2c44201cfcdb",
+    "e6509d62acf78e7297e592eb66aeeee4230c9cadb63aafbbcf9bc6c3d46d35b5"
+  ],
+  "successful": 2,
+  "failed": 0,
+  "duration_s": 248.71259068790823,
+  "complete_cohort": true,
+  "output_throughput_tps": 8.234404194558408,
+  "total_throughput_tps": 1062.2381410980347,
+  "mean_ttft_s": 61.22977150930092,
+  "p99_ttft_s": 82.41605512551033,
+  "mean_tpot_ms": 180.731922801391,
+  "p99_tpot_ms": 198.95842608350273,
+  "mean_latency_s": 246.1185875502415,
+  "requests": [
+    {
+      "id": 0,
+      "status": "success",
+      "events": 1024,
+      "text": "\n\n\n\n1\n\n\n\n\n\nOkay\n\n .\n\nOkay\n\n \n\n \n\n \n\nOkay\n\n \n\n \n\n \n\n \n\n \n\n1\n\n \n\n \n\nI\n\nI\n\n \n\n \n\nOkay,\n\nThis\n\nI\n\nI\n\n \n\n \n\nI\n\nOkay\n\nOkay\n\nI\n\n \n\nI\n\nI\n\nOkay\n\n \n\nI\n\nThe\n\n \n\nOkay\n\nimport\n\n \n\nI\n\nI\n\nOkay\n\n \n\nI\n\nI\n\nimport\n\nimported\n\nOkay\n\nI\n \n\n le\n\n \n\n   \n\nI\n\nOkay\n\nI\n\nThe\n\nimported\n\n1\n\n \n\n10\n\nI\n\nI\n\nOkay\n\n   \n\n \n\n  \n\n \n\n \n\n   \n\n1\n\nThis\n\nThis\n\n \n\nI,\n\n \n\nThe\n\nI\n  \n\n ed\n\n ;\n\n   \n\nOkay\n\n   \n\n \n\n \n\n   \n\n \n\nI\n\n \n\nOkay\n\nI\n\n   \n\n\n\nimport\n\nI\n\nOkay\n\nOkay\n\nIed\n\nI\n\n \n\nOkay\n\nI\n\n \n\nOkay\n\nI\n\nThe\n\n\n \n\n\n\n \n\nI\n\n   \n\nThe\n\n \n\nI\n\nI\n\nI\n\nI\n\nOkay\n\nOkay\n\n\r\nI\n\nI\n\nI\n\n \n\nimport\n\nimport\n\n 1\n\n \n\n \n\n \n\n \n\nI\n\n   \n\n \n\n \n\n\\\n\n \n\n \n\nimported\n\nThe\n\nOkay\n\nimport\n\n \n\nIeneral\n\n\n\nimport\n\n \n\nimport\n\n \n\n \n\n \n\n \n\n     \n\n    \n\n  \n\n \n\n  \n\nI\n\n \n\nI\n\n   \n\n \n\n1\n\n \n\n \n\nimport\n\nOkay\n\nOkay\n\nOkay\n\nOkay\n\n \n\nOkay,\n\nOkay,\n\n  \t\n\n import\n\nOkay.\n\n \n\n1\n\nOkay\n\nOkay\n\nOkay\n\n \n\nI\n\n\n\n\t \n\nOkay\n\nI\n\nOkay\n\nThe\n\nI\n\nThe\n\nThe\n\nI\n\nI\n\nOkay\n\n \n\nOkay\n\nI\n\n1\n\n \n\n \n\nOkay\n\nI\n\nOkay\n\nOkay\n\nI\n\n \n\nOkay\n\n \n\nOkay\n\nThe\n\nOkay, the\n\nOkay\n\n    \n\nI\n\n1\n\nThe\n\nI\n\n  \r\n  \n\n \n\n \n\nThe\n\nThe\n\nI\n\n\n\nOkay\n\nI\n\n \n\n \n\n \n\n \n\nI\n\n \n\nOkay\n\nThe\n\nIedll)\n\nI\n\nThe\n\nI\n\n \n\n \n\n \n\nThe\n\n \n\nI\n\nI\n\nThe\n\n \n\nimport\n\n \n\n \n\nOkay\n\n \n\nI\n\nThe\n\n \n\nOkay\n\n \n\n \n\n \n\nimported\n\n \n\n \n\nOkay\n\nThe\n\n  \n\n \n\nI\n\nOkay\n\nI\n\nThe\n\nI\n\nI\n\nI\n\n \n\n \n\nThe\n\nIrtrr,\n\n    \n\nThe\n\nThe\n\nOkay\n\n \n\nThe\n\nI\n\n    ed\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\n \n\n \n\n   \r\n     \n\nI\n\nI\n\nThe\n\nOkay\n\nThe\n\nThe\n\nIr\n\nI\n\n \n\nI\n\n   \n\nI\n\nI\n\nOkay\n\nI\n\nimported\n\nI\n \n\nI\n\n1\n\nI\n\nI\n\n \n\nIrt\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\n \n\nI\n\n   \n\nOkay\n\n    \n\n \n\n \n\n \n\n \n\nOkay\n\n \n\n le\n\nI\n\nI\n\n   \n\nI\n\n1\n\n   \n\n \n\n \n\nOkay\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nOkayll)\n\nI\n\nI\n\nI\n\nOkay\n\nOkay\n\n    \n\nThe\n\nThe\n\n \n\nOkayThe\n\n \n\nI\n\nI.\n\nOkay\n\nI\n\nThe\n\n   \n\nI\n\n \n\n \n\n \n\nI.\n\n \n\n \n\nOkay\n\n \n\nThe\n\nThe\n\nThe\n\n \n\nThe\n\n \n\n      \r\n   \n\n   \n\n \n\nThe\n\nOkay\n\n \n\n \n\nThe\n\nOkay\n\nOkay\n\nI\n\n \n\n   \n\nI\n\nI\n\n   \n\n  \n\nI the\n\n \n\n \n\nOkay\n\n \n\nI\n\n   \n\nI\n\nI\n\n   \n\nThe\n\nOkay\n\nI\n\nThe\n\nI\n\n   \n\n   \n\nI\n\nI\n\nI\n\n   \n\n   \n\nOkay,ll\n\nI\n\nI\n\n \n\nI\n\n   s.\n\n \n\n \n\nThe\n\n \n\n\n\n   \n\nThe\n\nI\n\n   \n\nThe\n\nThe\n\nI\n\n \n\nI\n\nI\n\nThe\n\nThe\n\nThe\n\nI\n\nThe\n\n   \n\nThe\n\n ed\n\nOkay\n\n ipsis\n\nI\n\nI\n\n \n\n \n\nThe\n\nThe\n\nI\n\nOkay\n\nOkay\n\n \n\nIm\n\nTheed\n\nI\n\nI\n\nI",
+      "started_s": 0.0005490211769938469,
+      "http_status": 200,
+      "last_token_s": 243.52610939368606,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 131072,
+        "total_tokens": 132096,
+        "completion_tokens": 1024
+      },
+      "ttft_s": 39.61111475806683,
+      "tpot_s": 0.1993303955382397,
+      "latency_s": 243.5261692237109
+    },
+    {
+      "id": 1,
+      "status": "success",
+      "events": 1024,
+      "text": "\n\n \n\n   \n\nIr\n\nI\n\nOkay\n\n   \n\nOkay\n\nimport;\n\nI\n\n \n\nOkay,.\n\nOkayard\n\n#\n\nOkay\n\nOkay\n\nimport\n\nI\n\nThe\n\n \n\nI\n\nI\n\nThe\n\nThe\n\nI\n \n\nI\n\n\n\nI\n\n\n\n\n\n\n\n\n\n\n\nThe\n\n \n\nOkay\n\n \n\nThe\n\nimportll,\n\n  \n\n \n\nOkay\n\nThe\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\n   \n\nI\n\nI\n\nThe;\n\nI\n\nOkay\n\nI\n\n//\n\nI\n\nimported\n\nfunction\n\nI\n\nError\n\nThe\n\nI\n\n \n\nOkay\n\nI\n\nimport\n\nI\n\n \n\nimport\n\nfunction\n\nOkay\n\nimport\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\nimport\n\nI\n\n   \n \n\nI\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nOkay,\n\nI\n\nI\n\nimported\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nI\n\n \n\nI\n\nI\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nI\n\nI\n\n \n\nThe\n\nThe\n\nThe\n\nI\n\nI\n\nI\n\nI\n\nThe\n\n,\n\nI\n\nI\n\nclass\n\nI\n\nI\n\n \n\n   \n\n1\n\nI\n\n   \n\nI\n\nimport\n\n   \n\nI\n\nI\n\nI\n\nimport\n\nI\n\nI\n\nI\n\nThe error\n\nIr\n\nI\n\n   \n\nThe\n\nI\n\nThe\n\nOkay\n\nIm\n\n\n\nThe\n\nOkay\n\nIg\n\nOkay\n\nI\n\nI\n\nimport\n\nOkay\n\nOkay\n\nimport\n\nI\n\nOkay\n\nI\n\n   I\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nimport\n\nimport\n\nThe\n\nI\n\nimport\n\nimport\n\nI\n\nimport\n\nimport\n\nI\n\nThe\n\nThe\n\nThe\n\nI\n\nI\n\nI\n\n   \n\nI\n\n \n\n \n\nOkay\n\nI\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nOkayed\n\nI\n\nI\n\nI\n\nimport\n\nI\n\nI\n\nI\n\nI\n\n \n\nI\n\nI\n\nI\n\nI\n\nimport\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nI\n\n \n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nThe\n\nOkay\n\nI\n\nThe\n\n \n\nimport\n\nI\n\nOkay\n\nimport\n\nI\n\nI\n\nI\n\nThe\n\nThe\n\nI\n\nI\n\nimport\nThe\n\nimport\n\nI\n\nThe\n\nOkay\n\nI\n\nOkay\n\nI\n\nOkay\n\nOkay\n\nI\n\nI\n\n\n\nI\n\nOkay\n\nI\n\nThe\n\nOkay\n\nOkay\n\nOkay\n\nI\n\nOkay\n\nI\n\nOkay\n\nOkay\n\nI\n\n   \n\nOkay\n\nOkay\n\nOkay\n\nOkay\n\nThe\n\nOkay\n\nOkay\n\n \n\nOkay\n\nOkay\n\nI\n\nThe\n\nOkay\n\nOkay\n\nOkay\n\nThe\n\nOkay\n\nThe\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nThe\n\nOkay\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nimportll,\n\nI\n\nI\n\nThe\n\nI\n\nOkay\n\nI\n\nI\n\nI\n\nimport\n\nI\n\nThe\n\nimport\n\nI have\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nOkay\n\nI\n\nI\n\nOkay\n\nI\n\nOkay\n\nI\n\nI\n\n\n\nI\n\nOkay\n\nI\n\n\n\nI\n\nI\n\n\n\nThe\n\n \n\nThe\n\nThe\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nIith\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nThe\n\nI\n\nThe\n\n\n\nThe\n\n\n\n\n\n\n\n\n\nThe\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nI\n\nThe\n\n\n\n\n\n\n\nI\n\nI\n\nI\n\n \n\n\n\n\n\n\n\nThe\n\nI\n\n\n\nThe\n\nI\n\nI\n\n\n\nThe\n\nI\n\nI\n\nThe\n\nI\n\nThe\n\n\n\nThe\n\nI\n\n\n\n\n\nI\n\nI\n\nI\n\nI\n\nI have\n\n\n\nThe\n\nI\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nI\n\nThe\n\n\n\nThe\n\nI\n\nI\n\n \n\nI\n\n\n\n\n\nI\n\nThe\n\n\n\n\n\n\n\nThe\n\nThe\n\n,\nI\n\nThe\n\n \n\nI\n\nI\n\nThe\n\nI\n\nIptll)\n\nThe\n\nThe\n\nI\n\nOkay\n\n\n\n\n\nI\n\nI\n\nThe\n\n\n\nI\n\nI\n\nThe\n\nThe\n\nThe\n\n,\n\nThe\n\nThe\n\nI\n\nThe\n\nThe\n\nThe\n\nI\n\nThe\n\nI\n\nThe\n\nI\n\nI\n\nI\n\nThe\n\nThe\n\nI\n\nI\n\nThe\n\nThe\n\nThe\n\nOkay\n\nI\n\nI\n\nThe\n\nThe\n\nI\n\nimport\n\n",
+      "started_s": 0.0012174313887953758,
+      "http_status": 200,
+      "last_token_s": 248.71094767656177,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 131072,
+        "total_tokens": 132096,
+        "completion_tokens": 1024
+      },
+      "ttft_s": 82.848428260535,
+      "tpot_s": 0.1621334500645423,
+      "latency_s": 248.7110058767721
+    }
+  ],
+  "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+}

@@ -1,0 +1,45 @@
+{
+  "captured_utc": "2026-10-09T18:58:58.427736+00:00",
+  "mode": "store4",
+  "concurrency": 1,
+  "num_prompts": 1,
+  "input_len": 64,
+  "output_len": 16,
+  "seed": 20261010,
+  "timeout_s": 300.0,
+  "payload_sha256": [
+    "3c8cb5700792b152474d849c00620b9d939192cc288204d9a8a61ead996a5742"
+  ],
+  "successful": 1,
+  "failed": 0,
+  "duration_s": 5.03742063883692,
+  "complete_cohort": true,
+  "output_throughput_tps": 3.1762286986012365,
+  "total_throughput_tps": 15.881143493006181,
+  "mean_ttft_s": 0.35799616016447544,
+  "p99_ttft_s": 0.35799616016447544,
+  "mean_tpot_ms": 311.9042058785756,
+  "p99_tpot_ms": 311.9042058785756,
+  "mean_latency_s": 5.03661672770977,
+  "requests": [
+    {
+      "id": 0,
+      "status": "success",
+      "events": 16,
+      "text": "\n 10000000000000",
+      "started_s": 0.0004107309505343437,
+      "http_status": 200,
+      "last_token_s": 5.03655924834311,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 64,
+        "total_tokens": 80,
+        "completion_tokens": 16
+      },
+      "ttft_s": 0.35799616016447544,
+      "tpot_s": 0.31190420587857565,
+      "latency_s": 5.03661672770977
+    }
+  ],
+  "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+}

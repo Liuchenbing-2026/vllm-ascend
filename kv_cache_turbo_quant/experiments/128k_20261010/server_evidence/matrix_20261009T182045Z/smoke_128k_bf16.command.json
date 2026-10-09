@@ -1,0 +1,16 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/scripts/bench_client.py",
+  "--mode",
+  "bf16",
+  "--concurrency",
+  "1",
+  "--input-len",
+  "131072",
+  "--output-len",
+  "1",
+  "--timeout",
+  "1800",
+  "--output",
+  "/ws/results/matrix_20261009T182045Z/smoke_128k_bf16.json"
+]

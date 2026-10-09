@@ -4,9 +4,9 @@
 | --- | --- |
 | 测试范围 | Qwen3-30B-A3B，TP=2，BF16 eager 与 TQ store 4-bit；并发 1/2/4/8/16/32 |
 | 工作量 | 输入 131072 tokens、输出 1024 tokens；最终环境128K长冒烟已通过，正式usage持续核验 |
-| 设备 | .19：8×Ascend 910B4-1，2026-10-10 01:19:37+08:00 无 NPU 运行进程；拟选物理卡 0、1，启动前再次检查 |
+| 设备 | .19：8×Ascend 910B4-1；物理卡0、1。2026-10-10 01:19:37+08:00空闲，正式启动前再次核验；03:15运行中快照仅本任务两个worker占卡 |
 | 代码来源 | Liuchenbing-2026/vllm-ascend 的 liuchenbing-2026 分支，目录 kv_cache_turbo_quant；固定 SHA 8ad9ef6eaa0fdc7b4cc9acf6aaeac17fd33fa65b |
-| 实测结果 | BF16正式并发矩阵进行中；不以历史容量收益或影子模式吞吐代替本轮结果 |
+| 实测结果 | BF16 C1/C2/C4/C8已完整完成；TQ C1正式运行中，其他档位继续排程。阶段汇总见selected-summary.md；不以历史容量收益或影子模式吞吐代替本轮结果 |
 
 ## 问题台账
 
@@ -215,3 +215,5 @@ E17/E18 更新：修订恢复入口实际启动TQ服务，短64→16与长131072
 源码证据：运行中的旧controller在磁盘文件更新后，其异常栈会显示新文件行文，不能凭该行文推断旧RAM代码。已从本任务Git中恢复旧实际controller blob `29f8ad67fd4168a96840f08d77c6c14c3fb1d27b`，归档为scripts/controller_attempt3_actual.py；新phase使用带显式modes/concurrencies/request-timeout参数的runner。
 
 本轮容量同预算配对核验：BF16=524288 tokens，TQ=2033536 tokens，TQ/BF16=3.878662109375；同为24.00 GiB/卡，初始free分别60.57/60.58 GiB。132096总长度最大驻留并发3.97x→15.39x。仅为容量，不当作性能加速比；TQ正式吞吐在运行。
+
+03:18阶段核验：E03设备句柄在正式起服前已补查，未发现占用；E05插件路径部署已实际通过短/长冒烟；E06任务目录写入已验证。E08认证身份仍不符给定描述，本机实际Liuchenbing-2026身份向任务分支正常推送并回读成功，未声称找到wangzhao-11a的key。后续本地读取证据曾将pulled/artifacts/environment.json和尚未拉回的服务日志写成错误路径，命令只读失败、未影响测试；改用rg列举实际文件和SSH快照拉回33个证据文件，逐文件SHA256核验。E16的SFTP根因仍未处理。

@@ -1,0 +1,170 @@
+{
+  "snapshot_utc": "2026-10-09T19:17:25.240446+00:00",
+  "files": [
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c1.client.log",
+      "bytes": 634,
+      "sha256": "2c9a49439f437b33287f79fca82e0b40526960cead139e520b7b8ea4ec60a714"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c1.command.json",
+      "bytes": 277,
+      "sha256": "5acddaf2e51f89c256da2514c1cb20a9f1966df60e386522f0fb2c8489207618"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c16.client.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c16.command.json",
+      "bytes": 279,
+      "sha256": "55adf8b59298fb15761db3e9e8d2e6d325b256a9f4cd2fe97a98bb0fc29301b8"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c2.client.log",
+      "bytes": 630,
+      "sha256": "5e0d46e81262f065cfe4033c0a14096f3b7195ab85730a1e31b47e53824d4122"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c2.command.json",
+      "bytes": 277,
+      "sha256": "42a97948c7d25b350ac1e63600aeebb8663e9ef828f0285cd6e134021ceb4c92"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c4.client.log",
+      "bytes": 631,
+      "sha256": "d9f6177ed38537afd90adebb8b95b42c822be3e0563b76d54bc36673dbafcaf5"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c4.command.json",
+      "bytes": 277,
+      "sha256": "2461299187dcd85ea7fb2723cf1f1ed072a7172eb0f8f95935d24edc9fc9b8d7"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c8.client.log",
+      "bytes": 630,
+      "sha256": "ccf0c0b107654fcb50a127ae5f3050d5c97613fe767712e265000ea8764d9fd3"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c8.command.json",
+      "bytes": 277,
+      "sha256": "86ab27b97b49022bc96ead91b8508ef689501b61aacb4d8002f549cddd26a295"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/precision_glue.log",
+      "bytes": 917,
+      "sha256": "c6cab78ced5351e2d0a90d0d6cfcc70b7e68de251a07dfd1c8a58cc8164a1021"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/precision_roundtrip.log",
+      "bytes": 661,
+      "sha256": "7c389baab9c6a03f60c0804f54dd5bba39099ea61dbf68962d210cee34df8a06"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/serve_bf16_0.command.json",
+      "bytes": 46,
+      "sha256": "2f68f3b1586fead4bfa26df027c649e68bfea5507ab6543965ad1a5ce7be2ace"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/serve_bf16_0.log",
+      "bytes": 72805,
+      "sha256": "e5577b04e30fd8686d3112800630c9074695176474250c9f125fa68b2a99f1aa"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/smoke_128k_bf16.client.log",
+      "bytes": 605,
+      "sha256": "6126f0e0585ef269720c38135d8b8fc71e64ceae85791d2ec6995863404094d0"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/smoke_128k_bf16.command.json",
+      "bytes": 265,
+      "sha256": "ae0c5da1e32601e3a07bd404965b8a49b568d7388a3af56b08ec11df353957f9"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/smoke_short_bf16.client.log",
+      "bytes": 625,
+      "sha256": "f06cf546ddb1f3bf4c066b3b6bb3778c34b054cf25007b5eba786d83e4c7c546"
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/smoke_short_bf16.command.json",
+      "bytes": 262,
+      "sha256": "07f35bb97518994a899d6a31e2aacdb9f8a6a394352a0b52d9b32f040fc39a34"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/precision_reused.json",
+      "bytes": 696,
+      "sha256": "21f684558a684a8ad3f90453c1b7786d5ec658b727e38aa863ff35df1ea8ef2b"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/run_parameters.json",
+      "bytes": 518,
+      "sha256": "927c0008568c40863fa5d6cdb30d710cee3efbbba3c029648dfa927c98cb3eb1"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/serve_store4_0.command.json",
+      "bytes": 46,
+      "sha256": "af898a0f686e7dca7139792d129ebcc977c3897ebfaf351cd176960615b14eb9"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/serve_store4_0.log",
+      "bytes": 56955,
+      "sha256": "3307e31e908486f57dfa3278721bf682ed746fccf0a46ec304b350ee2d779ecf"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/smoke_128k_store4.client.log",
+      "bytes": 603,
+      "sha256": "1225b1d0ec4dcdd19f297a4ad18758716fc56e102aa11d388f6b33fa1c9bdc5d"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/smoke_128k_store4.command.json",
+      "bytes": 271,
+      "sha256": "d2b26d79cd195d2c0467bdce3c2faf406f4b24d8aeca5919938e4c5e6bba35cc"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/smoke_short_store4.client.log",
+      "bytes": 627,
+      "sha256": "df46802d0ed339acf9a7069c2f5a25ffd97b30c2ea09a606beea5b25da13f27d"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/smoke_short_store4.command.json",
+      "bytes": 266,
+      "sha256": "51b39b86740bbc6cecc7b8a9b4ce6aeb6975ef6b4617b11c68d05f7bfb8211e4"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c1.client.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c1.command.json",
+      "bytes": 283,
+      "sha256": "d04bbe0766924169e3754f9b5226b00595ebd70e2c9ccdf7a7a4d55ae8b6d8b4"
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/smoke_128k_store4.json",
+      "bytes": 1216,
+      "sha256": "5e95de96b095a9b62b1f09dabc8c79532cb0e2aaae4d41f6ebc76eeab5bc959e"
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/smoke_128k_store4.progress.json",
+      "bytes": 198,
+      "sha256": "f4aa04aea76d187d7561d6a763f80eb92f59061dd7d1402bd649cf88d1f5e6cc"
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/smoke_short_store4.json",
+      "bytes": 1263,
+      "sha256": "c671ee4470ebd58f57c53c5b375dbadb872b903d522ad8ea9360e663b210364a"
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/smoke_short_store4.progress.json",
+      "bytes": 240,
+      "sha256": "0ce2fed0045391698c5097b7737bfea263f87564fd1c25811bb6b1e660855d96"
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/store4_in131072_out1024_c1.progress.json",
+      "bytes": 243,
+      "sha256": "9ace51e2a29619d9bf25ff1236e1a31e31dd5d5141251e8884023c092557f214"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/scripts/bench_client.py",
+  "--mode",
+  "bf16",
+  "--concurrency",
+  "16",
+  "--input-len",
+  "131072",
+  "--output-len",
+  "1024",
+  "--timeout",
+  "1800",
+  "--output",
+  "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c16.json"
+]
