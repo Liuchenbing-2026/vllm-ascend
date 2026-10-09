@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import torch
+from vllm.config.compilation import CUDAGraphMode
 
 import vllm_ascend.attention.attention_v1 as attn_module
 from tests.ut.base import TestBase
@@ -32,6 +33,57 @@ LARGE_HEAD_PREFILL_PATH = "vllm_ascend.device.utils.npu_large_head_prefill_atten
 
 
 class TestAttentionGraphHelpers(TestBase):
+    def test_paged_attention_requires_separate_full_decode_graph(self):
+        config = SimpleNamespace(
+            speculative_config=None,
+            compilation_config=SimpleNamespace(cudagraph_mode=CUDAGraphMode.NONE),
+        )
+        cases = [
+            (CUDAGraphMode.NONE, False),
+            (CUDAGraphMode.PIECEWISE, False),
+            (CUDAGraphMode.FULL, False),
+            (CUDAGraphMode.FULL_DECODE_ONLY, True),
+            (CUDAGraphMode.FULL_AND_PIECEWISE, True),
+        ]
+        with (
+            patch(
+                "vllm_ascend.attention.utils.get_current_hardware_profile",
+                return_value=get_hardware_profile(AscendDeviceType.A2),
+            ),
+            patch(
+                "vllm_ascend.attention.utils.get_ascend_config",
+                return_value=SimpleNamespace(pa_shape_list=[256]),
+            ),
+        ):
+            for mode, expected in cases:
+                with self.subTest(mode=mode):
+                    config.compilation_config.cudagraph_mode = mode
+                    self.assertEqual(using_paged_attention(256, config, head_size=128), expected)
+
+    def test_piecewise_paged_attention_preserves_safety_guards(self):
+        config = SimpleNamespace(
+            speculative_config=None,
+            compilation_config=SimpleNamespace(cudagraph_mode=CUDAGraphMode.FULL_AND_PIECEWISE),
+        )
+        profile = MagicMock()
+        cases = [
+            (255, None, True),
+            (256, SimpleNamespace(), True),
+            (256, None, False),
+        ]
+        with (
+            patch("vllm_ascend.attention.utils.get_current_hardware_profile", return_value=profile),
+            patch(
+                "vllm_ascend.attention.utils.get_ascend_config",
+                return_value=SimpleNamespace(pa_shape_list=[256]),
+            ),
+        ):
+            for shape, speculative_config, supported in cases:
+                with self.subTest(shape=shape, speculation=speculative_config, supported=supported):
+                    config.speculative_config = speculative_config
+                    profile.supports.return_value = supported
+                    self.assertFalse(using_paged_attention(shape, config, head_size=128))
+
     def test_cache_graph_workspace_keeps_first_workspace_by_default(self):
         graph_params = SimpleNamespace(workspaces={1: torch.empty(4)})
         candidate_workspace = torch.empty(8)
