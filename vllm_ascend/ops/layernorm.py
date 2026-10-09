@@ -26,6 +26,45 @@ from vllm_ascend.ops.triton.kda.kda import rms_norm_gated
 from vllm_ascend.ops.triton.layernorm_gated import layer_norm_fwd_npu
 from vllm_ascend.utils import enable_custom_op
 
+_ADD_RMS_NORM_BIAS_AVAILABLE: bool | None = None
+
+
+def probe_add_rms_norm_bias() -> bool:
+    # Eagerly probe whether the AddRmsNormBias custom op runs on this SoC.
+    # The op registers successfully even when the CANN ops package lacks the
+    # binary config for the current chip (e.g. ascend910b), so registration
+    # alone is not proof of runtime availability. Call this once before
+    # graph capture; forward paths only read the cached result.
+    global _ADD_RMS_NORM_BIAS_AVAILABLE
+    if _ADD_RMS_NORM_BIAS_AVAILABLE is not None:
+        return _ADD_RMS_NORM_BIAS_AVAILABLE
+    if not enable_custom_op():
+        _ADD_RMS_NORM_BIAS_AVAILABLE = False
+        return False
+    try:
+        import torch_npu  # noqa: F401
+
+        probe_x = torch.zeros(1, 8, device="npu")
+        probe_residual = torch.zeros(1, 8, device="npu")
+        probe_weight = torch.ones(8, device="npu")
+        torch.ops._C_ascend.npu_add_rms_norm_bias(
+            probe_x, probe_residual, probe_weight, None, 1e-6
+        )
+        torch.npu.synchronize()
+        _ADD_RMS_NORM_BIAS_AVAILABLE = True
+    except Exception:
+        _ADD_RMS_NORM_BIAS_AVAILABLE = False
+    return _ADD_RMS_NORM_BIAS_AVAILABLE
+
+
+def _use_add_rms_norm_bias() -> bool:
+    if _ADD_RMS_NORM_BIAS_AVAILABLE is not None:
+        return _ADD_RMS_NORM_BIAS_AVAILABLE
+    if torch.compiler.is_compiling():
+        # Never probe inside a traced region; use the safe fallback.
+        return False
+    return probe_add_rms_norm_bias()
+
 
 class AscendRMSNorm(RMSNorm):
     def __init__(
@@ -69,7 +108,7 @@ class AscendRMSNorm(RMSNorm):
         import torch_npu
 
         if residual is not None:
-            if enable_custom_op():
+            if _use_add_rms_norm_bias():
                 x, _, residual = torch.ops._C_ascend.npu_add_rms_norm_bias(
                     x, residual, self.weight, self.bias, self.variance_epsilon
                 )
@@ -95,7 +134,7 @@ class AscendGemmaRMSNorm(GemmaRMSNorm):
         import torch_npu
 
         if residual is not None:
-            if enable_custom_op():
+            if _use_add_rms_norm_bias():
                 x, _, residual = torch.ops._C_ascend.npu_add_rms_norm_bias(
                     x, residual, 1.0 + self.weight, None, self.variance_epsilon
                 )

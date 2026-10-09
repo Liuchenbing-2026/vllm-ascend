@@ -450,6 +450,13 @@ class NPUWorker(WorkerBase):
         if get_current_hardware_profile().supports(HardwareCapability.LOCAL_KV_COMM_RESOURCE):
             setup_ascend_local_comm_res(self.local_rank, self.vllm_config.kv_transfer_config)
 
+        # Probe SoC support for custom ops whose aclnn binaries may be
+        # missing for this chip (e.g. AddRmsNormBias on ascend910b); must
+        # run eagerly before any graph capture.
+        from vllm_ascend.ops.layernorm import probe_add_rms_norm_bias
+
+        probe_add_rms_norm_bias()
+
         # take current memory snapshot
         self.init_snapshot = MemorySnapshot(device=device)
         self.requested_memory = self.init_snapshot.total_memory * self.cache_config.gpu_memory_utilization
