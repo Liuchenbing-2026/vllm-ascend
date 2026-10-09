@@ -1,5 +1,6 @@
 # mypy: ignore-errors
 
+import inspect
 import itertools
 from typing import Any
 
@@ -402,7 +403,12 @@ else:
 # Worker KV configs retain UniformTypeKVCacheSpecs so per-layer physical page
 # layouts are available while the scheduler receives unwrapped representative
 # specs. Teach all upstream Mamba buffer/context helpers to see those groups.
-mamba_utils.get_mamba_groups = _get_mamba_groups
+# Only needed on vLLM main, whose get_mamba_groups returns
+# (group_ids, spec); the v0.31.0 release lane already unwraps
+# UniformTypeKVCacheSpecs and returns a spec -> group_ids dict, so keep the
+# upstream implementation there.
+if "tuple" in str(inspect.signature(mamba_utils.get_mamba_groups).return_annotation):
+    mamba_utils.get_mamba_groups = _get_mamba_groups
 
 # Ascend NPU does not support DT_UINT64 in aclnnInplaceZero.
 # MambaCopyBuffers.create() uses torch.uint64 for src_ptrs/dst_ptrs,
