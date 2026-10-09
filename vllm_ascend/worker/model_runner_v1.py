@@ -2742,7 +2742,7 @@ class NPUModelRunner(GPUModelRunner):
             ec_connector_output=ec_connector_output if self.supports_mm_inputs else None,
             **({"num_nans_in_logits": num_nans_in_logits} if nans_to_dict is not None else {}),
             cudagraph_stats=cudagraph_stats,
-            routed_experts=None,
+            **({"routed_experts": None} if RoutedExpertsLists is not None else {}),
         )
         if (
             profiling_chunk_config.enabled
