@@ -294,6 +294,10 @@ class AscendCommonAttentionMetadata(CommonAttentionMetadata):
     req_ids_tensor: torch.Tensor | None = None
     token_to_req: torch.Tensor | None = None
 
+    # Present on vLLM main's CommonAttentionMetadata; declare it here so the
+    # release lane (v0.31.0) also accepts it from _build_attention_metadata.
+    _seq_lens_cpu: torch.Tensor | None = None
+
     # TODO: Remove it when vLLM no longer uses this function.
     def unpadded(self, num_actual_tokens: int, num_actual_reqs: int) -> "AscendCommonAttentionMetadata":
         # This only use to eagle now. It will be use to enforce_eager in future.
