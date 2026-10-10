@@ -1,0 +1,9 @@
+{"stage": "controller_failed", "error_type": "OSError", "error": "[Errno 98] Address already in use"}
+Traceback (most recent call last):
+  File "/ws/scripts/run_matrix.py", line 171, in <module>
+    main()
+  File "/ws/scripts/run_matrix.py", line 162, in main
+    runner.run()
+  File "/ws/scripts/run_matrix.py", line 117, in run
+    probe.bind(('127.0.0.1', 18377))
+OSError: [Errno 98] Address already in use

@@ -1,0 +1,16 @@
+/usr/local/python3.12.13/bin/python3
+/usr/local/python3.12.13/bin/cmake
+/usr/local/python3.12.13/bin/ninja
+/usr/local/Ascend/ascend-toolkit/latest/bin/msopgen
+/usr/bin/gcc
+/usr/local/Ascend/add-ons
+/usr/local/Ascend/ascend-toolkit
+/usr/local/Ascend/cann
+/usr/local/Ascend/cann-9.1.0
+/usr/local/Ascend/driver
+/usr/local/Ascend/nnal
+2.10.0+cpu 2.10.0.post4
+{'vllm': '0.28.1.dev0', 'vllm-ascend': '0.1.dev1+g90a3db711', 'transformers': '5.14.1'}
+/usr/local/python3.12.13
+/vllm-workspace/vllm
+/vllm-workspace/vllm-ascend

@@ -1,0 +1,616 @@
+{
+  "captured_utc": "2026-10-10T07:13:43.773861+00:00",
+  "state": {
+    "updated_utc": "2026-10-10T07:13:21.530830+00:00",
+    "stage": "matrix_finished",
+    "result_dir": "/ws/results/matrix_20261010T030754Z",
+    "note": "Each JSON retains actual success/failure counts; failed cohorts have null throughput"
+  },
+  "files": [
+    {
+      "path": "results/matrix_20261009T181235Z/smoke_128k_bf16.progress.json",
+      "bytes": 200
+    },
+    {
+      "path": "results/matrix_20261009T181235Z/smoke_short_bf16.json",
+      "bytes": 1261
+    },
+    {
+      "path": "results/matrix_20261009T181235Z/smoke_short_bf16.progress.json",
+      "bytes": 240
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/bf16_in131072_out1024_c1.json",
+      "bytes": 4294
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/bf16_in131072_out1024_c1.progress.json",
+      "bytes": 242
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/bf16_in131072_out1024_c16.progress.json",
+      "bytes": 1236
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/bf16_in131072_out1024_c2.json",
+      "bytes": 7896
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/bf16_in131072_out1024_c2.progress.json",
+      "bytes": 697
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/bf16_in131072_out1024_c4.json",
+      "bytes": 15167
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/bf16_in131072_out1024_c4.progress.json",
+      "bytes": 1599
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/bf16_in131072_out1024_c8.json",
+      "bytes": 30490
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/bf16_in131072_out1024_c8.progress.json",
+      "bytes": 3407
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/smoke_128k_bf16.json",
+      "bytes": 1221
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/smoke_128k_bf16.progress.json",
+      "bytes": 199
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/smoke_short_bf16.json",
+      "bytes": 1262
+    },
+    {
+      "path": "results/matrix_20261009T182045Z/smoke_short_bf16.progress.json",
+      "bytes": 135
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/smoke_128k_store4.json",
+      "bytes": 1216
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/smoke_128k_store4.progress.json",
+      "bytes": 198
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/smoke_short_store4.json",
+      "bytes": 1263
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/smoke_short_store4.progress.json",
+      "bytes": 240
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/store4_in131072_out1024_c1.json",
+      "bytes": 4460
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/store4_in131072_out1024_c1.progress.json",
+      "bytes": 243
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/store4_in131072_out1024_c2.json",
+      "bytes": 8166
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/store4_in131072_out1024_c2.progress.json",
+      "bytes": 691
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/store4_in131072_out1024_c4.json",
+      "bytes": 9656
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/store4_in131072_out1024_c4.progress.json",
+      "bytes": 790
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/store4_in131072_out1024_c8.json",
+      "bytes": 10821
+    },
+    {
+      "path": "results/matrix_20261009T185712Z/store4_in131072_out1024_c8.progress.json",
+      "bytes": 1525
+    },
+    {
+      "path": "results/matrix_20261010T014843Z/bf16_in131072_out1024_c16.json",
+      "bytes": 60710
+    },
+    {
+      "path": "results/matrix_20261010T014843Z/bf16_in131072_out1024_c16.progress.json",
+      "bytes": 7039
+    },
+    {
+      "path": "results/matrix_20261010T014843Z/bf16_in131072_out1024_c32.json",
+      "bytes": 120362
+    },
+    {
+      "path": "results/matrix_20261010T014843Z/bf16_in131072_out1024_c32.progress.json",
+      "bytes": 14292
+    },
+    {
+      "path": "results/matrix_20261010T014843Z/smoke_128k_bf16.json",
+      "bytes": 1216
+    },
+    {
+      "path": "results/matrix_20261010T014843Z/smoke_128k_bf16.progress.json",
+      "bytes": 198
+    },
+    {
+      "path": "results/matrix_20261010T014843Z/smoke_short_bf16.json",
+      "bytes": 1268
+    },
+    {
+      "path": "results/matrix_20261010T014843Z/smoke_short_bf16.progress.json",
+      "bytes": 135
+    },
+    {
+      "path": "results/matrix_20261010T030754Z/smoke_128k_store4.json",
+      "bytes": 1213
+    },
+    {
+      "path": "results/matrix_20261010T030754Z/smoke_128k_store4.progress.json",
+      "bytes": 198
+    },
+    {
+      "path": "results/matrix_20261010T030754Z/smoke_short_store4.json",
+      "bytes": 1267
+    },
+    {
+      "path": "results/matrix_20261010T030754Z/smoke_short_store4.progress.json",
+      "bytes": 135
+    },
+    {
+      "path": "results/matrix_20261010T030754Z/store4_in131072_out1024_c16.json",
+      "bytes": 13070
+    },
+    {
+      "path": "results/matrix_20261010T030754Z/store4_in131072_out1024_c16.progress.json",
+      "bytes": 2773
+    },
+    {
+      "path": "results/matrix_20261010T030754Z/store4_in131072_out1024_c32.json",
+      "bytes": 18443
+    },
+    {
+      "path": "results/matrix_20261010T030754Z/store4_in131072_out1024_c32.progress.json",
+      "bytes": 5031
+    },
+    {
+      "path": "logs/bf16_high_concurrency.command.json",
+      "bytes": 216
+    },
+    {
+      "path": "logs/bf16_high_concurrency.controller.log",
+      "bytes": 1232
+    },
+    {
+      "path": "logs/bootstrap.log",
+      "bytes": 3677698
+    },
+    {
+      "path": "logs/deadline-continuation-controller.log",
+      "bytes": 0
+    },
+    {
+      "path": "logs/deadline-continuation-recovered.log",
+      "bytes": 325
+    },
+    {
+      "path": "logs/deadline-continuation-recovered2.log",
+      "bytes": 0
+    },
+    {
+      "path": "logs/deadline-continuation-reordered.log",
+      "bytes": 250
+    },
+    {
+      "path": "logs/deadline-continuation.json",
+      "bytes": 286
+    },
+    {
+      "path": "logs/framework-resume-autoload-failed.log",
+      "bytes": 1394298
+    },
+    {
+      "path": "logs/framework-resume.log",
+      "bytes": 874050
+    },
+    {
+      "path": "logs/image-probe.log",
+      "bytes": 517
+    },
+    {
+      "path": "logs/matrix-attempt1.log",
+      "bytes": 663
+    },
+    {
+      "path": "logs/matrix-attempt2.log",
+      "bytes": 410
+    },
+    {
+      "path": "logs/matrix-attempt3.log",
+      "bytes": 3201
+    },
+    {
+      "path": "logs/matrix_20261009T181235Z/precision_glue.log",
+      "bytes": 917
+    },
+    {
+      "path": "logs/matrix_20261009T181235Z/precision_roundtrip.log",
+      "bytes": 661
+    },
+    {
+      "path": "logs/matrix_20261009T181235Z/serve_bf16_0.command.json",
+      "bytes": 46
+    },
+    {
+      "path": "logs/matrix_20261009T181235Z/serve_bf16_0.log",
+      "bytes": 33139
+    },
+    {
+      "path": "logs/matrix_20261009T181235Z/smoke_128k_bf16.client.log",
+      "bytes": 0
+    },
+    {
+      "path": "logs/matrix_20261009T181235Z/smoke_128k_bf16.command.json",
+      "bytes": 265
+    },
+    {
+      "path": "logs/matrix_20261009T181235Z/smoke_short_bf16.client.log",
+      "bytes": 624
+    },
+    {
+      "path": "logs/matrix_20261009T181235Z/smoke_short_bf16.command.json",
+      "bytes": 262
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c1.client.log",
+      "bytes": 634
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c1.command.json",
+      "bytes": 277
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c16.client.log",
+      "bytes": 0
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c16.command.json",
+      "bytes": 279
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c2.client.log",
+      "bytes": 630
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c2.command.json",
+      "bytes": 277
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c4.client.log",
+      "bytes": 631
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c4.command.json",
+      "bytes": 277
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c8.client.log",
+      "bytes": 630
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/bf16_in131072_out1024_c8.command.json",
+      "bytes": 277
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/precision_glue.log",
+      "bytes": 917
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/precision_roundtrip.log",
+      "bytes": 661
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/serve_bf16_0.command.json",
+      "bytes": 46
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/serve_bf16_0.log",
+      "bytes": 72805
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/smoke_128k_bf16.client.log",
+      "bytes": 605
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/smoke_128k_bf16.command.json",
+      "bytes": 265
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/smoke_short_bf16.client.log",
+      "bytes": 625
+    },
+    {
+      "path": "logs/matrix_20261009T182045Z/smoke_short_bf16.command.json",
+      "bytes": 262
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/precision_reused.json",
+      "bytes": 696
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/run_parameters.json",
+      "bytes": 518
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/serve_store4_0.command.json",
+      "bytes": 46
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/serve_store4_0.log",
+      "bytes": 476283
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/serve_store4_1.command.json",
+      "bytes": 46
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/serve_store4_1.log",
+      "bytes": 188800
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/smoke_128k_store4.client.log",
+      "bytes": 603
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/smoke_128k_store4.command.json",
+      "bytes": 271
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/smoke_short_store4.client.log",
+      "bytes": 627
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/smoke_short_store4.command.json",
+      "bytes": 266
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c1.client.log",
+      "bytes": 634
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c1.command.json",
+      "bytes": 283
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c2.client.log",
+      "bytes": 632
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c2.command.json",
+      "bytes": 283
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c4.client.log",
+      "bytes": 540
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c4.command.json",
+      "bytes": 283
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c8.client.log",
+      "bytes": 540
+    },
+    {
+      "path": "logs/matrix_20261009T185712Z/store4_in131072_out1024_c8.command.json",
+      "bytes": 283
+    },
+    {
+      "path": "logs/matrix_20261010T014843Z/bf16_in131072_out1024_c16.client.log",
+      "bytes": 637
+    },
+    {
+      "path": "logs/matrix_20261010T014843Z/bf16_in131072_out1024_c16.command.json",
+      "bytes": 281
+    },
+    {
+      "path": "logs/matrix_20261010T014843Z/bf16_in131072_out1024_c32.client.log",
+      "bytes": 635
+    },
+    {
+      "path": "logs/matrix_20261010T014843Z/bf16_in131072_out1024_c32.command.json",
+      "bytes": 281
+    },
+    {
+      "path": "logs/matrix_20261010T014843Z/precision_reused.json",
+      "bytes": 696
+    },
+    {
+      "path": "logs/matrix_20261010T014843Z/run_parameters.json",
+      "bytes": 504
+    },
+    {
+      "path": "logs/matrix_20261010T014843Z/serve_bf16_0.command.json",
+      "bytes": 46
+    },
+    {
+      "path": "logs/matrix_20261010T014843Z/serve_bf16_0.log",
+      "bytes": 144796
+    },
+    {
+      "path": "logs/matrix_20261010T014843Z/smoke_128k_bf16.client.log",
+      "bytes": 602
+    },
+    {
+      "path": "logs/matrix_20261010T014843Z/smoke_128k_bf16.command.json",
+      "bytes": 267
+    },
+    {
+      "path": "logs/matrix_20261010T014843Z/smoke_short_bf16.client.log",
+      "bytes": 628
+    },
+    {
+      "path": "logs/matrix_20261010T014843Z/smoke_short_bf16.command.json",
+      "bytes": 262
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/precision_reused.json",
+      "bytes": 696
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/run_parameters.json",
+      "bytes": 506
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/serve_store4_0.command.json",
+      "bytes": 46
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/serve_store4_0.log",
+      "bytes": 173541
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/serve_store4_1.command.json",
+      "bytes": 46
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/serve_store4_1.log",
+      "bytes": 175040
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/smoke_128k_store4.client.log",
+      "bytes": 601
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/smoke_128k_store4.command.json",
+      "bytes": 271
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/smoke_short_store4.client.log",
+      "bytes": 628
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/smoke_short_store4.command.json",
+      "bytes": 266
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/store4_in131072_out1024_c16.client.log",
+      "bytes": 544
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/store4_in131072_out1024_c16.command.json",
+      "bytes": 285
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/store4_in131072_out1024_c32.client.log",
+      "bytes": 543
+    },
+    {
+      "path": "logs/matrix_20261010T030754Z/store4_in131072_out1024_c32.command.json",
+      "bytes": 285
+    },
+    {
+      "path": "logs/npu-before-container.log",
+      "bytes": 4851
+    },
+    {
+      "path": "logs/pip-check-final.log",
+      "bytes": 966
+    },
+    {
+      "path": "logs/pip-check-serving-final.log",
+      "bytes": 999
+    },
+    {
+      "path": "logs/pip-check.log",
+      "bytes": 1277
+    },
+    {
+      "path": "logs/precision_glue_deps_retry.log",
+      "bytes": 473
+    },
+    {
+      "path": "logs/precision_glue_installed_deps.log",
+      "bytes": 917
+    },
+    {
+      "path": "logs/precision_glue_precheck.log",
+      "bytes": 473
+    },
+    {
+      "path": "logs/precision_roundtrip_precheck.log",
+      "bytes": 661
+    },
+    {
+      "path": "logs/setup-orphans-interrupted.json",
+      "bytes": 175
+    },
+    {
+      "path": "logs/store4_high_concurrency.command.json",
+      "bytes": 218
+    },
+    {
+      "path": "logs/store4_high_concurrency.controller.log",
+      "bytes": 1389
+    },
+    {
+      "path": "logs/store4_lower_concurrency.command.json",
+      "bytes": 230
+    },
+    {
+      "path": "logs/store4_lower_concurrency.controller.log",
+      "bytes": 1864
+    },
+    {
+      "path": "logs/tq-op-build.log",
+      "bytes": 13967
+    },
+    {
+      "path": "artifacts/active-native-maps.json",
+      "bytes": 933
+    },
+    {
+      "path": "artifacts/environment.json",
+      "bytes": 1807
+    },
+    {
+      "path": "artifacts/model-manifest.json",
+      "bytes": 2297
+    },
+    {
+      "path": "artifacts/packages.json",
+      "bytes": 289
+    }
+  ],
+  "exit_markers": {
+    "bf16_high_concurrency.exit": "0",
+    "bootstrap-failed.exit": "1",
+    "bootstrap.exit": "0",
+    "deadline-continuation-controller.exit": "143",
+    "deadline-continuation-recovered.exit": "1",
+    "deadline-continuation-recovered2.exit": "0",
+    "deadline-continuation-reordered.exit": "1",
+    "matrix-attempt1.exit": "143",
+    "matrix-attempt2.exit": "1",
+    "matrix-attempt3.exit": "130",
+    "precision-glue-deps-retry.exit": "1",
+    "precision-glue-installed-deps.exit": "0",
+    "precision-glue-precheck.exit": "1",
+    "precision-roundtrip-precheck.exit": "0",
+    "store4_high_concurrency.exit": "0",
+    "store4_lower_concurrency.exit": "0",
+    "tq-op-build.exit": "0"
+  },
+  "issues_bytes": 2956
+}
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

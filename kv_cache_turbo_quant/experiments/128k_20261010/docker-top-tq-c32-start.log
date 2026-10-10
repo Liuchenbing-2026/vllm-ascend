@@ -1,0 +1,14 @@
+PID                 PPID                COMMAND             COMMAND
+172036              1618940             python              /ws/.venv/bin/python /ws/scripts/run_matrix.py --modes store4 --concurrencies 16 32 --request-timeout 7200 --precision-log-dir /ws/logs/matrix_20261009T182045Z
+1332890             1332688             sleep               sleep infinity
+1618934             1332688             bash                bash -c /ws/.venv/bin/python /ws/scripts/continue_after_c8.py --after-transition > /ws/logs/deadline-continuation-recovered2.log 2>&1; printf "%s\n" "$?" > /ws/deadline-continuation-recovered2.exit
+1618940             1618934             python              /ws/.venv/bin/python /ws/scripts/continue_after_c8.py --after-transition
+1670297             1332688             python3             /usr/local/python3.12.13/bin/python3 -
+1906516             172036              python              /ws/.venv/bin/python -m vllm.entrypoints.openai.api_server --model /models/Qwen3-30B-A3B --served-model-name qwen3-30b-tq-ab --tensor-parallel-size 2 --dtype bfloat16 --enforce-eager --no-enable-prefix-caching --no-async-scheduling --max-model-len 132096 --max-num-batched-tokens 4096 --max-num-seqs 32 --kv-cache-memory-bytes 25769803776 --gpu-memory-utilization 0.92 --hf-overrides {"rope_scaling":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":40960}} --host 127.0.0.1 --port 18377
+1911717             1906516             python              /ws/.venv/bin/python -c from multiprocessing.resource_tracker import main;main(35)
+1911718             1906516             VLLM::EngineCor     VLLM::EngineCore
+1915579             1911718             VLLM::Worker_TP     VLLM::Worker_TP0
+1915580             1911718             VLLM::Worker_TP     VLLM::Worker_TP1
+1928668             172036              python              /ws/.venv/bin/python /ws/scripts/bench_client.py --mode store4 --concurrency 32 --input-len 131072 --output-len 1024 --timeout 7200.0 --output /ws/results/matrix_20261010T030754Z/store4_in131072_out1024_c32.json
+1962054             1332688             python3             /usr/local/python3.12.13/bin/python3 -
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

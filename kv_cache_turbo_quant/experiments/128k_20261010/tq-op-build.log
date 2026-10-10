@@ -1,0 +1,229 @@
+2026-10-09 17:42:51 (185) - [WARNING] The path /ws/source/kv_cache_turbo_quant/code/op/KvCacheTurboQuant.json should not be written by user group or others, which will cause security risks 
+2026-10-09 17:42:51 (185) - [WARNING] The path /ws/source/kv_cache_turbo_quant/code/op should not be written by user group or others, which will cause security risks 
+=================================================================
+                   >>>>>   MindStudio   <<<<<
+    THE END-TO-END TOOLCHAIN TO UNLEASH HUAWEI ASCEND COMPUTE
+=================================================================
+
+2026-10-09 17:42:51 (185) - [INFO] Start to generate AI Core operator files. 
+2026-10-09 17:42:51 (185) - [INFO] Start to parse the ir template:/ws/source/kv_cache_turbo_quant/code/op/KvCacheTurboQuant.json 
+2026-10-09 17:42:51 (185) - [INFO] Start to parse the op: KvCacheTurboQuant 
+2026-10-09 17:42:51 (185) - [INFO] Start to parse the input_desc: kv_vectors 
+2026-10-09 17:42:51 (185) - [INFO] Start to parse the input_desc: rotation_matrix 
+2026-10-09 17:42:51 (185) - [INFO] Start to parse the input_desc: qjl_matrix 
+2026-10-09 17:42:51 (185) - [INFO] Start to parse the output_desc: quant_idx 
+2026-10-09 17:42:51 (185) - [INFO] Start to parse the output_desc: quant_qjl 
+2026-10-09 17:42:51 (185) - [INFO] Start to parse the output_desc: quant_norm 
+2026-10-09 17:42:51 (185) - [INFO] Start to parse the output_desc: quant_gamma 
+2026-10-09 17:42:51 (185) - [INFO] Start to parse the attribute: mse_bits 
+2026-10-09 17:42:51 (185) - [INFO] Start to check the type and format between the inputs/outputs in IR template. 
+2026-10-09 17:42:51 (185) - [INFO] Start to generate a new project. 
+2026-10-09 17:42:51 (185) - [INFO] File /ws/op-build/gen/op_kernel/kv_cache_turbo_quant_tiling.h generated successfully. 
+2026-10-09 17:42:51 (185) - [INFO] File /ws/op-build/gen/op_host/kv_cache_turbo_quant.cpp generated successfully. 
+2026-10-09 17:42:51 (185) - [INFO] File /ws/op-build/gen/op_kernel/kv_cache_turbo_quant.cpp generated successfully. 
+2026-10-09 17:42:51 (185) - [INFO] File /ws/op-build/gen/framework/tf_plugin/tensorflow_kv_cache_turbo_quant_plugin.cc generated successfully. 
+2026-10-09 17:42:51 (185) - [INFO] Generation completed. 
+using ASCEND_HOME_PATH: /usr/local/Ascend/cann-9.1.0
+-- The C compiler identification is GNU 13.3.0
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- set package config: INSTALL_PATH;/ws/op-build/gen/build_out/
+INFO target name: cust_tf_parsers
+-- Opbuild generating sources
+-- Opbuild generating sources - done
+INFO target name: cust_optiling
+INFO target name: cust_opapi
+INFO target name: cust_op_proto
+CMake Warning (policy) at /usr/local/Ascend/cann-9.1.0/compiler/tikcpp/ascendc_kernel_cmake/fwk_modules/func.cmake:1252 (install):
+  Policy CMP0177 is not set: install() DESTINATION paths are normalized.  Run
+  "cmake --help-policy CMP0177" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+Call Stack (most recent call first):
+  op_host/CMakeLists.txt:53 (npu_op_package_add)
+This warning is for project developers.  Use -Wno-author or -Wno-policy to
+suppress it.
+
+CMake Warning (policy) at /usr/local/Ascend/cann-9.1.0/compiler/tikcpp/ascendc_kernel_cmake/fwk_modules/func.cmake:1305 (install):
+  Policy CMP0177 is not set: install() DESTINATION paths are normalized.  Run
+  "cmake --help-policy CMP0177" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+Call Stack (most recent call first):
+  op_host/CMakeLists.txt:53 (npu_op_package_add)
+This warning is for project developers.  Use -Wno-author or -Wno-policy to
+suppress it.
+
+CMake Warning (policy) at /usr/local/Ascend/cann-9.1.0/compiler/tikcpp/ascendc_kernel_cmake/fwk_modules/func.cmake:1314 (install):
+  Policy CMP0177 is not set: install() DESTINATION paths are normalized.  Run
+  "cmake --help-policy CMP0177" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+Call Stack (most recent call first):
+  op_host/CMakeLists.txt:53 (npu_op_package_add)
+This warning is for project developers.  Use -Wno-author or -Wno-policy to
+suppress it.
+
+CMake Warning (policy) at /usr/local/Ascend/cann-9.1.0/compiler/tikcpp/ascendc_kernel_cmake/fwk_modules/func.cmake:1374 (install):
+  Policy CMP0177 is not set: install() DESTINATION paths are normalized.  Run
+  "cmake --help-policy CMP0177" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+Call Stack (most recent call first):
+  op_host/CMakeLists.txt:53 (npu_op_package_add)
+This warning is for project developers.  Use -Wno-author or -Wno-policy to
+suppress it.
+
+CMake Warning (policy) at /usr/local/Ascend/cann-9.1.0/compiler/tikcpp/ascendc_kernel_cmake/fwk_modules/func.cmake:1383 (install):
+  Policy CMP0177 is not set: install() DESTINATION paths are normalized.  Run
+  "cmake --help-policy CMP0177" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+Call Stack (most recent call first):
+  op_host/CMakeLists.txt:53 (npu_op_package_add)
+This warning is for project developers.  Use -Wno-author or -Wno-policy to
+suppress it.
+
+INFO target name: ascendc_kernels
+CMake Warning (policy) at /usr/local/Ascend/cann-9.1.0/compiler/tikcpp/ascendc_kernel_cmake/fwk_modules/func.cmake:1643 (install):
+  Policy CMP0177 is not set: install() DESTINATION paths are normalized.  Run
+  "cmake --help-policy CMP0177" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+Call Stack (most recent call first):
+  op_kernel/CMakeLists.txt:24 (npu_op_package_add)
+This warning is for project developers.  Use -Wno-author or -Wno-policy to
+suppress it.
+
+CMake Warning (policy) at /usr/local/Ascend/cann-9.1.0/compiler/tikcpp/ascendc_kernel_cmake/fwk_modules/func.cmake:1652 (install):
+  Policy CMP0177 is not set: install() DESTINATION paths are normalized.  Run
+  "cmake --help-policy CMP0177" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+Call Stack (most recent call first):
+  op_kernel/CMakeLists.txt:24 (npu_op_package_add)
+This warning is for project developers.  Use -Wno-author or -Wno-policy to
+suppress it.
+
+-- Configuring done (2.2s)
+-- Generating done (0.0s)
+CMake Warning (unused-cli):
+  Manually-specified variables were not used by the project:
+
+    ASCEND_PACK_SHARED_LIBRARY
+    CMAKE_CROSS_PLATFORM_COMPILER
+    ENABLE_TEST
+
+
+-- Build files have been written to: /ws/op-build/gen/build_out
+[ 25%] Generating ../autogen/copy_kernel_src.timestamp
+[ 25%] Built target ascendc_kernels_copy_kernel_srcs
+[ 50%] Generating ascendc_kernels/tbe/op_info_cfg/ai_core/ascend910b/aic-ascend910b-ops-info.json
+
+
+==============check valid for ops info start==============
+==============check valid for ops info end================
+
+
+Compile op info cfg successfully.
+[ 50%] Built target ascendc_kernels_ops_info_gen_ascend910b
+[ 75%] Building CXX object op_host/CMakeFiles/cust_optiling.dir/kv_cache_turbo_quant.cpp.o
+[ 75%] Built target cust_optiling
+[100%] Linking CXX shared library libcust_opmaster_rt2.0.so
+[100%] Built target customize_ascendc_cust_optiling
+[ascend910b] Generating KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f ...
+Opc tool start working now, please wait for a moment.
+[ascend910b] Generating KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f Done
+[100%] Built target KvCacheTurboQuant_ascend910b
+[100%] Built target ascendc_kernels_ascendc_bin_ascend910b_gen_ops_config
+[100%] Built target binary
+[  7%] Generating scripts/install.sh, scripts/upgrade.sh, scripts/uninstall.sh
+[  7%] Built target modify_vendor
+[  7%] Built target gen_version_info
+[ 15%] Building CXX object framework/tf_plugin/CMakeFiles/cust_tf_parsers.dir/tensorflow_kv_cache_turbo_quant_plugin.cc.o
+[ 23%] Linking CXX shared library libcust_tf_parsers.so
+[ 23%] Built target cust_tf_parsers
+[ 30%] Building CXX object op_host/CMakeFiles/cust_opapi.dir/__/autogen/aclnn_kv_cache_turbo_quant.cpp.o
+[ 30%] Built target cust_opapi
+[ 38%] Building CXX object op_host/CMakeFiles/cust_op_proto.dir/kv_cache_turbo_quant.cpp.o
+[ 46%] Building CXX object op_host/CMakeFiles/cust_op_proto.dir/__/autogen/op_proto.cc.o
+[ 46%] Built target cust_op_proto
+[ 53%] Built target cust_optiling
+[ 61%] Built target customize_ascendc_cust_optiling
+[ 61%] Built target optiling_compat
+[ 69%] Linking CXX shared library libcust_opsproto_rt2.0.so
+[ 69%] Built target customize_ascendc_cust_op_proto
+[ 76%] Linking CXX shared library libcust_opapi.so
+[ 76%] Built target customize_ascendc_cust_opapi
+[ 76%] Built target customize_update_so_names
+[ 84%] Built target ascendc_kernels_copy_kernel_srcs
+[ 92%] Built target ascendc_kernels_ops_info_gen_ascend910b
+[100%] Generating ascendc_kernels/tbe/op_info_cfg/ai_core/npu_supported_ops.json
+/ws/op-build/gen/build_out/autogen /ws/op-build/gen/build_out/op_kernel/ascendc_kernels/tbe/op_info_cfg/ai_core
+[INFO] Succeeded generated /ws/op-build/gen/build_out/op_kernel/ascendc_kernels/tbe/op_info_cfg/ai_core/npu_supported_ops.json
+[100%] Built target customize_npu_supported_ops
+Run CPack packaging tool...
+CPack: Create package using External
+CPack: Install projects
+CPack: - Run preinstall target for: opp
+CPack: - Install project: opp []
+CPack: Create package
+
+About to compress 1204 KB of data...
+Adding files to archive named "custom_opp_ubuntu_aarch64.run"...
+./help.info
+./install.sh
+./packages/vendors/customize/framework/tensorflow/libcust_tf_parsers.so
+./packages/vendors/customize/framework/tensorflow/npu_supported_ops.json
+./packages/vendors/customize/op_api/include/aclnn_kv_cache_turbo_quant.h
+./packages/vendors/customize/op_api/lib/libcust_opapi.so
+./packages/vendors/customize/op_impl/ai_core/tbe/config/ascend910b/aic-ascend910b-ops-info.json
+./packages/vendors/customize/op_impl/ai_core/tbe/customize_impl/dynamic/kv_cache_turbo_quant.cpp
+./packages/vendors/customize/op_impl/ai_core/tbe/customize_impl/dynamic/kv_cache_turbo_quant.py
+./packages/vendors/customize/op_impl/ai_core/tbe/customize_impl/dynamic/kv_cache_turbo_quant_tiling.h
+./packages/vendors/customize/op_impl/ai_core/tbe/kernel/ascend910b/kv_cache_turbo_quant/KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f.json
+./packages/vendors/customize/op_impl/ai_core/tbe/kernel/ascend910b/kv_cache_turbo_quant/KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f.o
+./packages/vendors/customize/op_impl/ai_core/tbe/kernel/config/ascend910b/binary_info_config.json
+./packages/vendors/customize/op_impl/ai_core/tbe/kernel/config/ascend910b/kv_cache_turbo_quant.json
+./packages/vendors/customize/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/libcust_opmaster_rt2.0.so
+./packages/vendors/customize/op_impl/ai_core/tbe/op_tiling/liboptiling.so
+./packages/vendors/customize/op_proto/inc/op_proto.h
+./packages/vendors/customize/op_proto/lib/linux/aarch64/libcust_opsproto_rt2.0.so
+./packages/vendors/customize/version.info
+./uninstall.sh
+./upgrade.sh
+CRC: 2809613569
+SHA256: 8114af45038aafd7dc2d4011e0ae9b29c06eeff24e97adecd04f19d23b4f98c9
+Skipping md5sum at user request
+
+Self-extractable archive "custom_opp_ubuntu_aarch64.run" successfully created.
+Copy /ws/op-build/gen/build_out//_CPack_Packages/Linux/External/custom_opp_ubuntu_aarch64.run/custom_opp_ubuntu_aarch64.run to /ws/op-build/gen/build_out/
+Copy /ws/op-build/gen/build_out//_CPack_Packages/Linux/External/custom_opp_ubuntu_aarch64.run/custom_opp_ubuntu_aarch64.run to /ws/op-build/gen/build_out//
+CPack: - package: /ws/op-build/gen/build_out/custom_opp_ubuntu_aarch64.run.json generated.
+CPack: - package: /ws/op-build/gen/build_out/custom_opp_ubuntu_aarch64.run generated.
+[ops_custom] [2026-10-09 17:43:21] [INFO] create /usr/local/Ascend/cann-9.1.0/opp/vendors/customize.
+[ops_custom] [2026-10-09 17:43:21] [INFO] validate shared libraries before installation
+[ops_custom] [2026-10-09 17:43:22] [INFO] upgrade framework
+[ops_custom] [2026-10-09 17:43:22] [INFO] create /usr/local/Ascend/cann-9.1.0/opp/vendors/customize/framework.
+[ops_custom] [2026-10-09 17:43:22] [INFO] copy new ops framework files ......
+[ops_custom] [2026-10-09 17:43:22] [INFO] upgrade op proto
+[ops_custom] [2026-10-09 17:43:22] [INFO] create /usr/local/Ascend/cann-9.1.0/opp/vendors/customize/op_proto.
+[ops_custom] [2026-10-09 17:43:22] [INFO] copy new ops op_proto files ......
+[ops_custom] [2026-10-09 17:43:22] [INFO] upgrade op impl
+[ops_custom] [2026-10-09 17:43:22] [INFO] create /usr/local/Ascend/cann-9.1.0/opp/vendors/customize/op_impl.
+[ops_custom] [2026-10-09 17:43:22] [INFO] copy new ops op_impl files ......
+[ops_custom] [2026-10-09 17:43:22] [INFO] upgrade op api
+[ops_custom] [2026-10-09 17:43:22] [INFO] create /usr/local/Ascend/cann-9.1.0/opp/vendors/customize/op_api.
+[ops_custom] [2026-10-09 17:43:22] [INFO] copy new ops op_api files ......
+[ops_custom] [2026-10-09 17:43:22] [INFO] upgrade uninstall
+[ops_custom] [2026-10-09 17:43:22] [INFO] copy new uninstall.sh files ......
+[ops_custom] [2026-10-09 17:43:22] [INFO] upgrade version.info
+[ops_custom] [2026-10-09 17:43:22] [INFO] copy new version.info files ......
+[ops_custom] [2026-10-09 17:43:22] [INFO] no need to upgrade custom.proto files
+[ops_custom] [2026-10-09 17:43:22] [INFO] using requirements: when custom module install finished or before you run the custom module, execute the command [ source /usr/local/Ascend/cann-9.1.0/opp/vendors/customize/bin/set_env.bash ] to set the environment path
+SUCCESS
+load_priority=batch_invariant,customize
+
+TQ_OP_BUILD_DONE

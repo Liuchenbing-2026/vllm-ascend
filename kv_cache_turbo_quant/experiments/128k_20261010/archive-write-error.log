@@ -1,0 +1,1 @@
+Report update attempt: SyntaxError: Non-UTF-8 code starting with '\\xe6' in file <stdin> on line 27, but no encoding declared. Python did not execute the script body. Recovered using an explicit UTF-8 file; root encoding cause unverified.

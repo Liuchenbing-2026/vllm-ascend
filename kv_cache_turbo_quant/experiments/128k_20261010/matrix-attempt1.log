@@ -1,0 +1,5 @@
+{"stage": "precision", "check": "glue"}
+{"stage": "precision", "check": "roundtrip"}
+{"stage": "server_starting", "mode": "bf16", "attempt": 0, "pid": 1799, "log": "/ws/logs/matrix_20261009T181235Z/serve_bf16_0.log"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 1, "input_len": 64, "output_len": 16, "result": "/ws/results/matrix_20261009T181235Z/smoke_short_bf16.json", "started_utc": "2026-10-09T18:15:40.230265+00:00"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 1, "input_len": 131072, "output_len": 1, "result": "/ws/results/matrix_20261009T181235Z/smoke_128k_bf16.json", "started_utc": "2026-10-09T18:15:53.241385+00:00"}

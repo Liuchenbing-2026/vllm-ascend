@@ -1,0 +1,14 @@
+ms-service-profiler 26.0.0 requires matplotlib, which is not installed.
+ms-service-profiler 26.0.0 requires msguard, which is not installed.
+ms-service-profiler 26.0.0 requires openpyxl, which is not installed.
+ms-service-profiler 26.0.0 requires tzdata, which is not installed.
+mindstudio-kpp 26.1.0 requires plotly, which is not installed.
+affinity-sched 26.2.0.dev20260716 requires argparse, which is not installed.
+vllm-ascend 0.28.0rc1 requires fastokens, which is not installed.
+ms-service-profiler 26.0.0 has requirement opentelemetry-exporter-otlp-proto-grpc==1.33.1, but you have opentelemetry-exporter-otlp-proto-grpc 1.44.0.
+ms-service-profiler 26.0.0 has requirement opentelemetry-exporter-otlp-proto-http==1.33.1, but you have opentelemetry-exporter-otlp-proto-http 1.44.0.
+ms-service-profiler 26.0.0 has requirement pandas~=2.2, but you have pandas 3.0.5.
+vllm 0.28.0+empty has requirement fastapi[standard]<0.137.0,>=0.133.0, but you have fastapi 0.123.10.
+vllm 0.28.0+empty has requirement starlette>=1.0.1, but you have starlette 0.50.0.
+opencv-python-headless 5.0.0.93 has requirement numpy>=2; python_version >= "3.9", but you have numpy 1.26.4.
+prometheus-fastapi-instrumentator 8.1.0 has requirement starlette<2.0.0,>=1.0.0, but you have starlette 0.50.0.

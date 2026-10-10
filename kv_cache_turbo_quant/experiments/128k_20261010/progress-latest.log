@@ -1,13 +1,9 @@
 {
   "state": {
-    "updated_utc": "2026-10-09T19:56:58.444299+00:00",
-    "stage": "benchmark_running",
-    "mode": "store4",
-    "concurrency": 2,
-    "input_len": 131072,
-    "output_len": 1024,
-    "result": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c2.json",
-    "started_utc": "2026-10-09T19:56:58.444269+00:00"
+    "updated_utc": "2026-10-10T07:13:21.530830+00:00",
+    "stage": "matrix_finished",
+    "result_dir": "/ws/results/matrix_20261010T030754Z",
+    "note": "Each JSON retains actual success/failure counts; failed cohorts have null throughput"
   },
   "completed": [
     {
@@ -64,27 +60,84 @@
       "output_throughput_tps": 0.3019952099278765,
       "mean_ttft_s": 88.43759173154831,
       "mean_tpot_ms": 3228.0975119743352
+    },
+    {
+      "path": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c2.json",
+      "mode": "store4",
+      "concurrency": 2,
+      "successful": 2,
+      "failed": 0,
+      "duration_s": 6580.128088727593,
+      "output_throughput_tps": 0.3112401418915272,
+      "mean_ttft_s": 185.1699728113599,
+      "mean_tpot_ms": 6201.306996066379
+    },
+    {
+      "path": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c4.json",
+      "mode": "store4",
+      "concurrency": 4,
+      "successful": 0,
+      "failed": 4,
+      "duration_s": 7200.457920992747,
+      "output_throughput_tps": null,
+      "mean_ttft_s": null,
+      "mean_tpot_ms": null
+    },
+    {
+      "path": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c8.json",
+      "mode": "store4",
+      "concurrency": 8,
+      "successful": 0,
+      "failed": 8,
+      "duration_s": 7200.138247416355,
+      "output_throughput_tps": null,
+      "mean_ttft_s": null,
+      "mean_tpot_ms": null
+    },
+    {
+      "path": "/ws/results/matrix_20261010T014843Z/bf16_in131072_out1024_c16.json",
+      "mode": "bf16",
+      "concurrency": 16,
+      "successful": 16,
+      "failed": 0,
+      "duration_s": 1557.4976293863729,
+      "output_throughput_tps": 10.519438162133842,
+      "mean_ttft_s": 667.5029906327836,
+      "mean_tpot_ms": 219.86184789047405
+    },
+    {
+      "path": "/ws/results/matrix_20261010T014843Z/bf16_in131072_out1024_c32.json",
+      "mode": "bf16",
+      "concurrency": 32,
+      "successful": 32,
+      "failed": 0,
+      "duration_s": 3025.806730323471,
+      "output_throughput_tps": 10.829508597364038,
+      "mean_ttft_s": 1422.7520560858247,
+      "mean_tpot_ms": 229.3224934477326
+    },
+    {
+      "path": "/ws/results/matrix_20261010T030754Z/store4_in131072_out1024_c16.json",
+      "mode": "store4",
+      "concurrency": 16,
+      "successful": 0,
+      "failed": 16,
+      "duration_s": 7200.3395621441305,
+      "output_throughput_tps": null,
+      "mean_ttft_s": null,
+      "mean_tpot_ms": null
+    },
+    {
+      "path": "/ws/results/matrix_20261010T030754Z/store4_in131072_out1024_c32.json",
+      "mode": "store4",
+      "concurrency": 32,
+      "successful": 0,
+      "failed": 32,
+      "duration_s": 7200.266098763794,
+      "output_throughput_tps": null,
+      "mean_ttft_s": null,
+      "mean_tpot_ms": null
     }
-  ],
-  "progress": {
-    "elapsed_s": 3162.2807542653754,
-    "requests": [
-      {
-        "id": 0,
-        "status": "running",
-        "events": 496,
-        "last_token_s": 3157.014320404269
-      },
-      {
-        "id": 1,
-        "status": "running",
-        "events": 463,
-        "last_token_s": 3157.013738724403
-      }
-    ]
-  }
+  ]
 }
-mux_client_request_session: read from master failed: Broken pipe
-
-Authorized users only. All activities may be monitored and reported.
 /etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

@@ -1,0 +1,37 @@
+{"stage": "precision", "check": "glue"}
+{"stage": "precision", "check": "roundtrip"}
+{"stage": "server_starting", "mode": "bf16", "attempt": 0, "pid": 4313, "log": "/ws/logs/matrix_20261009T182045Z/serve_bf16_0.log"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 1, "input_len": 64, "output_len": 16, "result": "/ws/results/matrix_20261009T182045Z/smoke_short_bf16.json", "started_utc": "2026-10-09T18:22:53.558670+00:00"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 1, "input_len": 131072, "output_len": 1, "result": "/ws/results/matrix_20261009T182045Z/smoke_128k_bf16.json", "started_utc": "2026-10-09T18:22:56.589010+00:00"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 1, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c1.json", "started_utc": "2026-10-09T18:23:36.518013+00:00"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 2, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c2.json", "started_utc": "2026-10-09T18:26:51.017690+00:00"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 4, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c4.json", "started_utc": "2026-10-09T18:31:00.239520+00:00"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 8, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c8.json", "started_utc": "2026-10-09T18:38:46.993295+00:00"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 16, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c16.json", "started_utc": "2026-10-09T18:51:47.794206+00:00"}
+{"stage": "controller_failed", "error_type": "KeyboardInterrupt", "error": "Interrupted by signal 15"}
+Traceback (most recent call last):
+  File "/ws/scripts/run_matrix.py", line 188, in <module>
+    for concurrency in self.concurrencies:
+^^
+  File "/ws/scripts/run_matrix.py", line 177, in main
+    if result.returncode:
+^^^^^^^^^^^^
+  File "/ws/scripts/run_matrix.py", line 160, in run
+    environment = json.loads((self.root / 'artifacts/environment.json').read_text())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ws/scripts/run_matrix.py", line 104, in run_client
+    (self.logs / f'{name}.command.json').write_text(json.dumps(command, indent=2) + '\n')
+            ^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/subprocess.py", line 1264, in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/subprocess.py", line 2053, in _wait
+    (pid, sts) = self._try_wait(0)
+                 ^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/subprocess.py", line 2011, in _try_wait
+    (pid, sts) = os.waitpid(self.pid, wait_flags)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ws/scripts/run_matrix.py", line 172, in interrupted
+    ]
+    ^^
+KeyboardInterrupt: Interrupted by signal 15

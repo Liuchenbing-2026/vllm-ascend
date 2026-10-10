@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/ws/scripts/continue_after_c8.py", line 76, in <module>
+    main()
+  File "/ws/scripts/continue_after_c8.py", line 39, in main
+    if not args.after_transition and len(targets) != 1:
+           ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'list' object has no attribute 'after_transition'

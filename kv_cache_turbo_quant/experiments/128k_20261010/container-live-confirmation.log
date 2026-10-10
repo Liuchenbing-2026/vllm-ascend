@@ -1,0 +1,3 @@
+/tq-128k-ab-20261010 created=2026-10-09T17:34:25.708627933Z image=sha256:3d74258bb4aba4d7ba1d972f886b78d25b7459346bcce4933f27ce8e6bdd4e14 status=running
+/tq-128k-ab-20261010-runtime created=2026-10-09T17:40:06.186050328Z image=sha256:3d74258bb4aba4d7ba1d972f886b78d25b7459346bcce4933f27ce8e6bdd4e14 status=running
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

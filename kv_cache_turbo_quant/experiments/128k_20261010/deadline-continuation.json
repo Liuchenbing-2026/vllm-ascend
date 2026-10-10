@@ -1,0 +1,13 @@
+{
+  "preserved_full_cohorts": [
+    1,
+    2,
+    4,
+    8
+  ],
+  "original_timeout_s": 1800,
+  "continuation_timeout_s": 7200,
+  "controller_pid": 4246,
+  "reason": "Measured C4 cohort took 466s; high concurrency may exceed 1800s",
+  "model_and_serving_configuration_changed": false
+}

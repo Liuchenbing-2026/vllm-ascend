@@ -1,0 +1,6 @@
+{
+  "updated_utc": "2026-10-10T07:13:21.530830+00:00",
+  "stage": "matrix_finished",
+  "result_dir": "/ws/results/matrix_20261010T030754Z",
+  "note": "Each JSON retains actual success/failure counts; failed cohorts have null throughput"
+}

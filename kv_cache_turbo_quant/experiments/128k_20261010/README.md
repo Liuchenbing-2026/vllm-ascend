@@ -3,10 +3,10 @@
 | 项目 | 当前状态 |
 | --- | --- |
 | 测试范围 | Qwen3-30B-A3B，TP=2，BF16 eager 与 TQ store 4-bit；并发 1/2/4/8/16/32 |
-| 工作量 | 输入 131072 tokens、输出 1024 tokens；最终环境128K长冒烟已通过，正式usage持续核验 |
-| 设备 | .19：8×Ascend 910B4-1；物理卡0、1。2026-10-10 01:19:37+08:00空闲，正式启动前再次核验；运行中0/1仅本任务worker占用，4–7后续有其他作业，详见资源条件 |
+| 工作量 | 输入131072、要求输出1024 tokens；8格完整成功且usage核验，4格超时无最终usage |
+| 设备 | .19：8×Ascend 910B4-1；物理卡0、1。2026-10-10 01:19:37+08:00空闲，正式启动前再次核验；已核验快照中0/1仅本任务worker占用，其他卡后续有作业，详见资源条件 |
 | 代码来源 | Liuchenbing-2026/vllm-ascend 的 liuchenbing-2026 分支，目录 kv_cache_turbo_quant；固定 SHA 8ad9ef6eaa0fdc7b4cc9acf6aaeac17fd33fa65b |
-| 实测结果 | BF16 C1/C2/C4/C8/C16/C32已完整完成；TQ C1/C2已完整完成，C4/C8/C16均7200s超时（0/4、0/8、0/16完成），BF16六档均完成，最后一档TQ C32正在运行。阶段汇总见下表；不以历史容量收益或影子模式吞吐代替本轮结果 |
+| 实测结果 | 12格均有正式记录：BF16六格及TQ C1/C2完整成功，TQ C4/C8/C16/C32均7200s超时（0/N完整完成）。容量3.87866倍，TQ C1/C2吞吐为BF16的5.72%/3.78%；两张卡已释放，性能问题未修复 |
 
 ## 固定测试条件
 
@@ -27,7 +27,7 @@
 
 ## 性能结果与计量
 
-当前阶段数据如下（BF16六档均完整完成；TQ C4/C8/C16均7200s超时，最后一档C32正在运行）：
+截至2026-10-10 15:13:21+08:00，全部12格已运行并生成最终JSON；8格完整成功、4格超时：
 
 | 并发 | BF16 输出 tok/s | TQ store 4-bit 输出 tok/s | TQ/BF16 |
 | --- | --- | --- | --- |
@@ -36,7 +36,7 @@
 | 4 | 8.79 | 未完成（0/4 成功） | — |
 | 8 | 10.50 | 未完成（0/8 成功） | — |
 | 16 | 10.52 | 未完成（0/16 成功） | — |
-| 32 | 10.83 | 未测 | — |
+| 32 | 10.83 | 未完成（0/32 成功） | — |
 
 | 并发 | BF16 TTFT均值(s) | TQ TTFT均值(s) | BF16 TPOT均值(ms) | TQ TPOT均值(ms) |
 | --- | --- | --- | --- | --- |
@@ -45,9 +45,10 @@
 | 4 | 137.48 | 未完成（0/4 成功） | 198.71 | 未完成（0/4 成功） |
 | 8 | 310.58 | 未完成（0/8 成功） | 211.81 | 未完成（0/8 成功） |
 | 16 | 667.50 | 未完成（0/16 成功） | 219.86 | 未完成（0/16 成功） |
-| 32 | 1422.75 | 未测 | 229.32 | 未测 |
+| 32 | 1422.75 | 未完成（0/32 成功） | 229.32 | 未完成（0/32 成功） |
 
 每格一组同时到达的请求，请求数等于并发；未完成组不计算吞吐或收益比。计时从 HTTP 发送到最后响应结束，排除输入构造，包含排队、prefill、decode。
+
 
 原始JSON保留实际请求usage、完成状态、时延、payload哈希；[selection.json](selection.json)显式选择各格来源，snapshot-manifest JSON记录原路径与文件SHA256，不自动用较新重试覆盖旧失败。
 
@@ -61,13 +62,13 @@
 
 源码确认每层每解码步解压完整历史KV，再调用BF16注意力，见固定源码[读取路径](https://github.com/Liuchenbing-2026/vllm-ascend/blob/8ad9ef6eaa0fdc7b4cc9acf6aaeac17fd33fa65b/kv_cache_turbo_quant/code/integration/kvtq_store.py#L148)。当前长上下文解码慢与该路径一致，但未采集正式运行的kernel耗时分解，不能量化各阶段开销占比。
 
-基础镜像 `vllm-ascend:dspark-a2-028` 为宿主既有本地镜像，完整image ID与实际版本见下文及[environment.json](environment.json)。RepoDigests为空，无可提供的registry digest或拉取地址；未导出镜像。模型配置/tokenizer/index已记录哈希，16个权重文件仅记录尺寸、未验全量weight哈希及来源revision。依赖元数据仍有已披露冲突，不能说pip check全绿。
+基础镜像 `vllm-ascend:dspark-a2-028` 为宿主既有本地镜像，完整image ID与实际版本见下文及[environment.json](environment.json)。RepoDigests为空，无可提供的registry digest或拉取地址；未导出镜像。模型配置/tokenizer/index已记录哈希，测试后补齐16个权重分片SHA256；没有测试前后权重哈希对比，来源revision未核验。依赖元数据仍有已披露冲突，不能说pip check全绿。
 
 构建、实际启动、压测、独立精度命令及所有问题台账见下文。整合复现脚本经过静态核对；本轮实际编译、依赖修正、精度与服务均分步执行，不声明在干净镜像从零一次性复跑通过。
 
 ## 问题台账
 
-失败记录保留；恢复不等于根因修复。
+失败记录保留；恢复不等于根因修复。各编号分阶段现象与更正按时间保留，当前状态以该编号最后更新和开头结果表为准。
 
 | 编号 / 发现时间 | 现象、影响与证据 | 已确认原因 / 假设 | 处理、验证与状态 |
 | --- | --- | --- | --- |
@@ -90,7 +91,7 @@ E08 更新：.19 默认 SSH key 实测身份为 CCH-gif，本机为 Liuchenbing-
 
 ## 复现与验收
 
-基础镜像完整 tag、registry digest / 本地 image ID、额外依赖、框架 SHA、模型配置哈希、实际构建和启动命令、压测与精度命令将在执行时更新。静态检查、编译完成、冒烟、正式性能与精度分别记录。
+基础镜像tag、可获取的digest/本地image ID、固定框架SHA、依赖、模型指纹、实际构建/启动/压测/精度命令见下文和清单。静态核对、实际编译、冒烟、正式性能与独立精度分别记录。
 
 E09 更新：安装 ml-dtypes==0.5.3 至 /ws/precision-deps 后，原始五组 bit-exact 测试全部通过，idx/qjl/norm/gamma 均一致；4-bit roundtrip 通过。证据 precision_glue_installed_deps.log、precision_roundtrip_precheck.log。早于依赖安装完成的重试也失败，失败日志保留；该依赖问题已处理，不代表整模型质量评测通过。
 
@@ -120,7 +121,7 @@ E12 更新：显式源码路径后 import vllm=/ws/source/vllm/vllm/__init__.py�
 
 E13 更新：runtime 容器中首次调用 uv 未找到，证据 serving-dependencies-install.log；uv 此前只安装在 build 容器系统路径。改由 build 容器向共享任务 venv 安装 uv==0.12.24 及服务依赖，后续 runtime 从 /ws/.venv/bin 访问；不误称两容器的系统层同步。
 
-E13 实装版本更正：uv 为共享 venv 实际解析/安装 numpy==2.5.3、pydantic==2.14.0、pydantic-core==2.50.0（完整列表见 serving-dependencies-install-build.log），最终服务/精度使用这些实际版本，不能继续沿用拟保持numpy1.26.4的描述。原镜像numpy1.26.4仍在系统层，但venv包优先；最终精度将重新核验。
+E13 当时实装版本更正：uv 为共享 venv 曾解析/安装 numpy==2.5.3、pydantic==2.14.0、pydantic-core==2.50.0（完整列表见 serving-dependencies-install-build.log），不能把当时的venv说成numpy1.26.4。随后E14将正式环境的numpy固定回1.26.4并重新核验精度；pydantic两项版本保留。
 
 | 编号 / 发现时间 | 现象、影响与证据 | 已确认原因 / 假设 | 处理、验证与状态 |
 | --- | --- | --- | --- |
@@ -145,14 +146,14 @@ E15 更新：核验PID身份后停止本任务遗留API/client，日志 setup-or
 - vLLM固定源码 `v0.28.0` / `2cf0a6915ce544dc493a0990f2ea38d81601128a`，empty目标完整执行editable源构建；实际module版本0.28.0，package metadata0.28.0+empty。Ascend固定源码 `v0.28.0.rc1` / `96df623103f921df1a4488170d106f36689acb59`，完整原生算子及C++扩展新编译。Catlass固定 `41bf90da655bba3c66d0acd7e00abe33960ecfd6`（基础镜像中的源码，不复用旧.so）。两框架本地git克隆未修改，detached HEAD；未为这些未改仓库新建分支。
 - TQ固定原始58文件未修改。根据code/op新编译OPP/customize和torch胶水；根据code/integration配置插件扁平路径，未改shadow/store算法。
 - TP=2，BF16模型权重，eager，chunked prefill=4096，max_num_seqs=32，prefix cache=false，async scheduling=false，OMP=1；模型只读挂载 `/models/Qwen3-30B-A3B`。
-- 两侧显式KV预算 `25769803776` bytes =24.00 GiB/卡。日志确认该设置跳过自动KV内存profiling，gpu_memory_utilization=0.92不替代这个手动预算。BF16日志容量524288 tokens，132096总长度最大驻留并发3.97x；TQ容量待自身日志核验。
+- 两侧显式KV预算 `25769803776` bytes =24.00 GiB/卡。日志确认该设置跳过自动KV内存profiling，gpu_memory_utilization=0.92不替代这个手动预算。BF16日志容量524288 tokens，TQ为2033536；132096总长度最大驻留并发3.97x→15.39x，容量比3.878662109375。
 - 两侧长上下文覆盖 `rope_type=yarn,factor=4.0,original_max_position_embeddings=40960`，max_model_len=132096。原模型config上限40960；这是本轮性能配置，不代表已评长上下文语义质量。
 - 固定种子20261010生成整数token IDs（1000..9999），每并发一组同时到达的N个请求，N=并发1/2/4/8/16/32；ignore_eos=true、temperature=0、max_tokens=1024。payload在计时前构造；两侧逐请求SHA256须相同，按实际usage核验131072/1024。
-- 正式请求timeout=1800s，起服timeout=1200s；两侧先64→16短冒烟、131072→1长冒烟。未完成组吞吐/比值为空，失败与超时单列；不将部分tokens作为完整1024输出。TTFT从首次非空SSE文本到达计量；TPOT=(最后文本−首次文本)/(output_tokens−1)，不是逐token ITL。
+- BF16 C1/C2/C4/C8实际请求timeout=1800s，后续BF16高并发及全部TQ为7200s；起服timeout=1200s。每个mode/phase初次起服先64→16短冒烟、131072→1长冒烟；失败后重启到下一cohort仅检查health，不额外重复冒烟。未完成组吞吐/比值为空，不将部分文本当作完整1024输出。TTFT为首次非空SSE文本到达时延；TPOT=(最后文本−首次文本)/(output_tokens−1)，不是逐token ITL。
 - 吞吐与时延包含排队、prefill、decode，只排除payload构造和服务启动。当前每格单组测量，不宣称稳态吞吐、可信P99或重复性已评。
 - 原5组bit-exact判据全部通过（最终numpy1.26.4环境再次通过），4-bit roundtrip及Q侧旋转等价检查通过；未做整模型准确率/128K语义质量测评。
 
-源档案hash见source-archives.sha256；模型配置/tokenizer/权重索引hash见model-manifest.json。16个权重文件仅记录尺寸，未计算全量weight hash，本地已有模型revision来源未核验。实际依赖与native binary hashes见environment.json（最终numpy版本清单待刷新）及相关安装日志。
+源档案hash见source-archives.sha256；模型配置/tokenizer/权重索引hash见model-manifest.json。测试后已补16个权重文件SHA256（model-weights-sha256.json）；没有测试前后权重哈希对比，模型来源revision未核验。实际依赖与native binary hashes见environment.json（已刷新为正式numpy1.26.4）及相关安装日志。
 
 E16 / 2026-10-10，结果拉回：scp读取首个完整结果时报Connection closed，结果未拉回；客户端随后空目录生成了“未测”临时汇总，不能当远端实测状态。未覆盖远端数据。具体SFTP失败原因未确定；改用经过现有SSH连接读取精确结果文件，检查JSON和本地/远端文件hash后再汇总。监控命令还曾漏写docker exec -i，导致stdin脚本未执行、仅返回profile警告；已使用-i传入固定monitor脚本，未影响压测。
 
@@ -240,7 +241,7 @@ docker exec -d tq-128k-ab-20261010-runtime bash -c \
 python3 scripts/summarize_results.py --results results --selection selection.json --output /tmp/tq-result-summary.md
 ```
 
-汇总核验每个成功请求的实际长度、成功/失败数、吞吐分母，两侧payload SHA256逐一相同才计算比值。完整矩阵与最终结果尚在运行；目前有证据的完成范围是精度、最终起服、短/128K长冒烟、BF16已完成的正式cohort，TQ C1已完成，不宣称完整12格矩阵全部完成。
+汇总核验每个成功请求的实际长度、成功/失败数、吞吐分母，两侧payload SHA256逐一相同才计算比值。已有全部12格最终记录：BF16六格与TQ C1/C2完整成功，TQ C4/C8/C16/C32超时；六档payload SHA256配对一致，超时组未取得完整工作吞吐。
 
 ## 请求时限调整与继续运行
 
@@ -260,7 +261,7 @@ docker exec -d tq-128k-ab-20261010-runtime bash -c \
 
 复用精度明确引用最终环境的已通过日志，并核验torch/torch-npu/numpy/ml-dtypes版本和所有已记录native artifact哈希。当前environment.json已更新为numpy1.26.4，含torch胶水.so哈希；两rank实际/proc maps证明加载的是本轮源码目录中的新Ascend C++/kernels/custom_transformer binary，见active-native-paths.log。早先awk转义命令未取得有效路径，错误记录保留，后改Python读取成功。
 
-静态检查还发现第一次增加runner参数时把mode循环缩进写错，未上传或执行；修正后py_compile和--help通过。继续运行尚在执行，自动cleanup修复没有单独做信号回归测试，不能写成已经完整验证。调整等待顺序只重启未占卡的watcher，benchmark controller/client/server未变；原watcher退出记录保留。
+静态检查还发现第一次增加runner参数时把mode循环缩进写错，未上传或执行；修正后py_compile和--help通过。继续运行现已遍历结束并清理自己的服务，自动cleanup修复没有单独做信号回归测试，不将实测收尾扩大成所有信号路径已验证。调整等待顺序只重启未占卡的watcher，benchmark controller/client/server未变；原watcher退出记录保留。
 
 | 编号 / 发现时间 | 现象、影响与证据 | 已确认原因 / 假设 | 处理、验证与状态 |
 | --- | --- | --- | --- |
@@ -271,7 +272,7 @@ E17/E18 更新：修订恢复入口实际启动TQ服务，短64→16与长131072
 
 源码证据：运行中的旧controller在磁盘文件更新后，其异常栈会显示新文件行文，不能凭该行文推断旧RAM代码。已从本任务Git中恢复旧实际controller blob `29f8ad67fd4168a96840f08d77c6c14c3fb1d27b`，归档为scripts/controller_attempt3_actual.py；新phase使用带显式modes/concurrencies/request-timeout参数的runner。
 
-本轮容量同预算配对核验：BF16=524288 tokens，TQ=2033536 tokens，TQ/BF16=3.878662109375；同为24.00 GiB/卡，初始free分别60.57/60.58 GiB。132096总长度最大驻留并发3.97x→15.39x。仅为容量，不当作性能加速比；TQ正式吞吐在运行。
+本轮容量同预算配对核验：BF16=524288 tokens，TQ=2033536 tokens，TQ/BF16=3.878662109375；同为24.00 GiB/卡，初始free分别60.57/60.58 GiB。132096总长度最大驻留并发3.97x→15.39x。仅为容量，不当作性能加速比；最终吞吐与超时见开头表。
 
 03:18阶段核验：E03设备句柄在正式起服前已补查，未发现占用；E05插件路径部署已实际通过短/长冒烟；E06任务目录写入已验证。E08认证身份仍不符给定描述，本机实际Liuchenbing-2026身份向任务分支正常推送并回读成功，未声称找到wangzhao-11a的key。后续本地读取证据曾将pulled/artifacts/environment.json和尚未拉回的服务日志写成错误路径，命令只读失败、未影响测试；改用rg列举实际文件和SSH快照拉回33个证据文件，逐文件SHA256核验。E16的SFTP根因仍未处理。
 
@@ -347,3 +348,35 @@ E22 TQ高并发阶段快照（2026-10-10 11:12+08:00）：物理0/1仅见本任�
 | 编号 / 发现时间 | 现象、影响与证据 | 已确认原因 / 假设 | 处理、验证与状态 |
 | --- | --- | --- | --- |
 | E24 / 2026-10-10 13:11:16+08:00 | TQ C16全部16个HTTP 200流式请求TimeoutError，整组7200.3396s，0/16取得完整131072→1024 usage；输出吞吐/完整组TTFT/TPOT均为空。证据results/matrix_20261010T030754Z/store4_in131072_out1024_c16.json及同run client/serve_store4_0.log。 | 客户端7200s总时限触发已确认；11个请求有部分流式文本（首次89.59–6310.07s），另外5个没有文本；最后流式响应到7200.17s，事件数不是tokens。服务日志未见OOM；关闭时EngineDeadError/tracker警告在本任务SIGTERM之后。全历史解压与排队各自耗时比例未量化。 | 保留JSON/progress/issues和关闭日志，不能由部分输出推算正式吞吐。只停止并重启本任务自己的服务；C32正式请求在05:13:07.392554Z开始，算法和服务配置未改。C16完整输出性能未取得，超时/性能根因没有通过优化闭环。 |
+
+E22 TQ C32阶段快照（2026-10-10 13:24:45+08:00）：物理0/1为本任务worker1915579/1915580，与docker top PID对应；物理3另有VLLMEngineCor进程477587，4–7仍为其他VLLM作业，卡2快照中无进程。192CPU单次忙碌率7.92%，MemAvailable754385728KiB；证据npu-tq-c32-start.log、docker-top-tq-c32-start.log及host-resource-tq-c32-start.log。只证明该时刻设备归属，不证明宿主整个测试期间无干扰。
+
+容器创建事实再次核验（2026-10-10 14:02+08:00）：build容器创建于2026-10-09T17:34:25.708627933Z（北京时间01:34），runtime创建于17:40:06.186050328Z（北京时间01:40）；两者均为本轮新建容器，使用同一已记录image ID，共享/ws新源码构建目录。框架在build容器源构建、TQ算子及实际服务在runtime容器执行；不是在宿主Python中运行服务。证据container-live-confirmation.log与actual-container-configs.log；模块/native路径证明另见active-native-paths.log、active-tq-native-paths.log。
+
+E25 / 2026-10-10 14:54+08:00：网页工具读取任务列表返回restricted URL；Git认证fetch成功，已从最新main完成授权归档。工具限制不代表仓库无权限，根因未处理，压测未受影响。
+
+E26 / 2026-10-10归档静态核对：任务列表新增行前多插了空行，未连续接入原Markdown表格；静态核对发现后去除空行，并核验任务22/23行相邻、字段数一致。不影响压测，文档结构修正另行推送；未宣称浏览器渲染验收。
+
+E26补充：记录该问题时，问题台账新增行也曾多插同类空行，已一并纠正并核验相邻行；结构修正均已推送和回读，未改写已发布历史。
+
+## 最后一格与收尾验收
+
+| 编号 / 发现时间 | 现象与证据 | 已确认原因 / 限制 | 处理与当前状态 |
+| --- | --- | --- | --- |
+| E27 / 2026-10-10 15:13:10+08:00 | TQ C32全部32个HTTP200请求TimeoutError，整组7200.2661s，0/32完整输出；results/matrix_20261010T030754Z/store4_in131072_out1024_c32.json及同run日志 | 客户端7200s时限触发；11个请求有部分文本、21个没有文本，最后文本7194.74s。无最终usage，事件数不是tokens；未见OOM，关闭错误在主动SIGTERM之后 | 保留所有失败与关闭日志，不计算部分输出吞吐；固定TQ算法未改，性能问题未修复 |
+| E28 / 2026-10-10归档更新 | 大段stdin报告更新入口报Non-UTF-8 SyntaxError，未执行写入 | 该次stdin编码失败，具体工具/转义原因未确定；不影响远端压测或原数据 | 改为显式UTF-8本地脚本执行、核验生成文件；原报错保留于archive-write-error.log，不宣称根因修复 |
+
+三个phase和continuation最终退出均为0，仅表示遍历与收尾结束；逐格结果为8完整/4超时。初次失败与计划中断保留。progress.json是最后一次中间快照，可能仍显示running，正式结果以同名最终JSON为准。
+
+最终SSH快照166文件逐一SHA256验证；[snapshot-manifest-final.json](snapshot-manifest-final.json)记录原path和archive_path。logs/<run_id>映射为server_evidence/<run_id>，顶层日志和artifacts清单映射为本目录同名文件；历史manifest只对应原时点，闭合日志以最终manifest为准。C32新起服独立核验同24GiB预算、同60.57/60.58GiB初始free和3.87866倍容量，见capacity-evidence-tq-c32.json。
+
+压测结束后才执行16分片SHA256，config/tokenizer/index及权重文件名/尺寸与初始manifest一致，见model-weights-sha256.json和model-weight-hash.log。这是测试后指纹，不是测试前后权重哈希一致性验收，来源revision仍未知。实际宿主命令：
+
+```bash
+docker exec -i tq-128k-ab-20261010-runtime /usr/local/python3.12.13/bin/python3 - < scripts/hash_model_weights.py
+python3 - < scripts/stop_task_containers.py
+```
+
+停止前已拉回完整证据；停止脚本核对两个精确任务container ID、image ID与/ws挂载，2026-10-10 15:16:29+08:00验证两个容器exited、18377端口可绑定，NPU0/1均无运行进程（task-resource-release.log）。容器和挂载制品保留；其他卡2/3/4–7作业仍存在，本轮未操作它们，也未重置驱动。释放资源不等于关闭警告根因闭环。
+
+用户指定任务入口为[Model_test/main任务23](https://github.com/Liuchenbing-2026/Model_test/blob/main/项目交付/任务列表/任务23%20Qwen3-30B-A3B-TurboQuant-128K双卡性能对比/README.md)，同一条记录由进行中快照更新为本轮12格最终记录。

@@ -1,0 +1,9 @@
+[W1009 18:12:45.639576420 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/usr/local/python3.12.13/lib/python3.12/site-packages/torch/utils/backend_registration.py:167: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  return self.to(
+case N=1 H=8 bits=2: idx=True qjl=True norm=True gamma=True idx_mismatch=0
+case N=16 H=8 bits=3: idx=True qjl=True norm=True gamma=True idx_mismatch=0
+case N=256 H=8 bits=4: idx=True qjl=True norm=True gamma=True idx_mismatch=0
+case N=7 H=4 bits=3: idx=True qjl=True norm=True gamma=True idx_mismatch=0
+case N=1024 H=2 bits=2: idx=True qjl=True norm=True gamma=True idx_mismatch=0
+ALL GLUE TESTS PASS
