@@ -1,13 +1,13 @@
 {
-  "elapsed_s": 1015.5731800319627,
+  "elapsed_s": 3386.821908841841,
   "requests": [
     {
       "id": 0,
       "status": "running",
-      "events": 290,
+      "events": 1022,
       "started_s": 0.0004932703450322151,
       "http_status": 200,
-      "last_token_s": 1014.4555039331317
+      "last_token_s": 3384.1186223095283
     }
   ]
 }

@@ -1,0 +1,10 @@
+{
+  "last_watcher_utc": "2026-10-10T00:39:07.015905+00:00",
+  "observer_detected_utc": "2026-10-10T00:41:59+00:00",
+  "watch_session_id": 22532,
+  "watch_exit_code": 255,
+  "benchmark_restarted": false,
+  "reconnected_state": "same store4 C8 started 2026-10-09T23:48:26.143867+00:00",
+  "verified_elapsed_s": 3212.8916016705334,
+  "handling": "replace long SSH stream watcher with independent read-only one-shot polling; transport cause remains unknown"
+}

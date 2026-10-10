@@ -1,0 +1,13 @@
+{
+  "observed_utc": "2026-10-10T00:55:46+00:00",
+  "ssh_session": 67790,
+  "exit_code": 255,
+  "stderr": [
+    "mux_client_request_session: read from master failed: Broken pipe",
+    "ssh: connect to host 183.236.60.19 port 22: Network is unreachable"
+  ],
+  "benchmark_state_during_disconnect": "not verified",
+  "last_verified": "store4 C8, seven formal records, same started_utc23:48:26.143867Z",
+  "handling": "read-only reconnect; do not restart benchmark based on transport failure",
+  "root_cause": "not established"
+}

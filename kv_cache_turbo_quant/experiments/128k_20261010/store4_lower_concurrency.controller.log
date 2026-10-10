@@ -1,0 +1,9 @@
+{"stage": "server_starting", "mode": "store4", "attempt": 0, "pid": 5535, "log": "/ws/logs/matrix_20261009T185712Z/serve_store4_0.log"}
+{"stage": "benchmark_running", "mode": "store4", "concurrency": 1, "input_len": 64, "output_len": 16, "result": "/ws/results/matrix_20261009T185712Z/smoke_short_store4.json", "started_utc": "2026-10-09T18:58:53.068986+00:00"}
+{"stage": "benchmark_running", "mode": "store4", "concurrency": 1, "input_len": 131072, "output_len": 1, "result": "/ws/results/matrix_20261009T185712Z/smoke_128k_store4.json", "started_utc": "2026-10-09T18:58:58.473685+00:00"}
+{"stage": "benchmark_running", "mode": "store4", "concurrency": 1, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c1.json", "started_utc": "2026-10-09T19:00:27.203164+00:00"}
+{"stage": "benchmark_running", "mode": "store4", "concurrency": 2, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c2.json", "started_utc": "2026-10-09T19:56:58.444269+00:00"}
+{"stage": "benchmark_running", "mode": "store4", "concurrency": 4, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c4.json", "started_utc": "2026-10-09T21:46:39.077873+00:00"}
+{"stage": "server_starting", "mode": "store4", "attempt": 1, "pid": 6579, "log": "/ws/logs/matrix_20261009T185712Z/serve_store4_1.log"}
+{"stage": "benchmark_running", "mode": "store4", "concurrency": 8, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c8.json", "started_utc": "2026-10-09T23:48:26.143867+00:00"}
+{"stage": "matrix_finished", "result_dir": "/ws/results/matrix_20261009T185712Z", "note": "Each JSON retains actual success/failure counts; failed cohorts have null throughput"}

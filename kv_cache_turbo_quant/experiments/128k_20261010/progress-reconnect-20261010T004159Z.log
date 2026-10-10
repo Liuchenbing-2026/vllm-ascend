@@ -1,0 +1,146 @@
+{
+  "state": {
+    "updated_utc": "2026-10-09T23:48:26.143896+00:00",
+    "stage": "benchmark_running",
+    "mode": "store4",
+    "concurrency": 8,
+    "input_len": 131072,
+    "output_len": 1024,
+    "result": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c8.json",
+    "started_utc": "2026-10-09T23:48:26.143867+00:00"
+  },
+  "completed": [
+    {
+      "path": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c1.json",
+      "mode": "bf16",
+      "concurrency": 1,
+      "successful": 1,
+      "failed": 0,
+      "duration_s": 194.03442117664963,
+      "output_throughput_tps": 5.277414150491096,
+      "mean_ttft_s": 39.508248968049884,
+      "mean_tpot_ms": 151.05085775988107
+    },
+    {
+      "path": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c2.json",
+      "mode": "bf16",
+      "concurrency": 2,
+      "successful": 2,
+      "failed": 0,
+      "duration_s": 248.71259068790823,
+      "output_throughput_tps": 8.234404194558408,
+      "mean_ttft_s": 61.22977150930092,
+      "mean_tpot_ms": 180.731922801391
+    },
+    {
+      "path": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c4.json",
+      "mode": "bf16",
+      "concurrency": 4,
+      "successful": 4,
+      "failed": 0,
+      "duration_s": 466.1103047216311,
+      "output_throughput_tps": 8.787619493729494,
+      "mean_ttft_s": 137.4760264547076,
+      "mean_tpot_ms": 198.70582650113352
+    },
+    {
+      "path": "/ws/results/matrix_20261009T182045Z/bf16_in131072_out1024_c8.json",
+      "mode": "bf16",
+      "concurrency": 8,
+      "successful": 8,
+      "failed": 0,
+      "duration_s": 779.8894443418831,
+      "output_throughput_tps": 10.50405292626174,
+      "mean_ttft_s": 310.5793299579527,
+      "mean_tpot_ms": 211.8059815008208
+    },
+    {
+      "path": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c1.json",
+      "mode": "store4",
+      "concurrency": 1,
+      "successful": 1,
+      "failed": 0,
+      "duration_s": 3390.78225858137,
+      "output_throughput_tps": 0.3019952099278765,
+      "mean_ttft_s": 88.43759173154831,
+      "mean_tpot_ms": 3228.0975119743352
+    },
+    {
+      "path": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c2.json",
+      "mode": "store4",
+      "concurrency": 2,
+      "successful": 2,
+      "failed": 0,
+      "duration_s": 6580.128088727593,
+      "output_throughput_tps": 0.3112401418915272,
+      "mean_ttft_s": 185.1699728113599,
+      "mean_tpot_ms": 6201.306996066379
+    },
+    {
+      "path": "/ws/results/matrix_20261009T185712Z/store4_in131072_out1024_c4.json",
+      "mode": "store4",
+      "concurrency": 4,
+      "successful": 0,
+      "failed": 4,
+      "duration_s": 7200.457920992747,
+      "output_throughput_tps": null,
+      "mean_ttft_s": null,
+      "mean_tpot_ms": null
+    }
+  ],
+  "progress": {
+    "elapsed_s": 3212.8916016705334,
+    "requests": [
+      {
+        "id": 0,
+        "status": "running",
+        "events": 218,
+        "last_token_s": 3195.2720667235553
+      },
+      {
+        "id": 1,
+        "status": "running",
+        "events": 121,
+        "last_token_s": 3195.271339762956
+      },
+      {
+        "id": 2,
+        "status": "running",
+        "events": 89,
+        "last_token_s": 3195.2708186134696
+      },
+      {
+        "id": 3,
+        "status": "running",
+        "events": 57,
+        "last_token_s": 3195.2706586038694
+      },
+      {
+        "id": 4,
+        "status": "running",
+        "events": 153,
+        "last_token_s": 3195.270337773487
+      },
+      {
+        "id": 5,
+        "status": "running",
+        "events": 25,
+        "last_token_s": 3195.269743092358
+      },
+      {
+        "id": 6,
+        "status": "running",
+        "events": 0
+      },
+      {
+        "id": 7,
+        "status": "running",
+        "events": 185,
+        "last_token_s": 3195.2670407108963
+      }
+    ]
+  }
+}
+
+Authorized users only. All activities may be monitored and reported.
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

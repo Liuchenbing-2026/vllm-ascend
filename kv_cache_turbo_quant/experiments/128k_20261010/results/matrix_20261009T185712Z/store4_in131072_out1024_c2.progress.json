@@ -1,0 +1,30 @@
+{
+  "elapsed_s": 6579.701246726327,
+  "requests": [
+    {
+      "id": 0,
+      "status": "success",
+      "events": 1024,
+      "started_s": 0.0004960708320140839,
+      "http_status": 200,
+      "last_token_s": 6478.087550348602,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 131072,
+        "total_tokens": 132096,
+        "completion_tokens": 1024
+      },
+      "ttft_s": 88.9369761440903,
+      "tpot_s": 6.245503982604606,
+      "latency_s": 6478.087640288286
+    },
+    {
+      "id": 1,
+      "status": "running",
+      "events": 1023,
+      "started_s": 0.001146460883319378,
+      "http_status": 200,
+      "last_token_s": 6577.037319156341
+    }
+  ]
+}
