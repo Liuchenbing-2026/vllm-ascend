@@ -355,3 +355,645 @@ INFO 10-10 15:07:44 [ascend_config.py:621] FlashComm1 is disabled. Using flashin
 (Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=11000 tokens=4207520
 (Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=11000 tokens=4207520
 (APIServer pid=1082) INFO 10-10 15:09:10 [loggers.py:310] Engine 000: Avg prompt throughput: 3999.6 tokens/s, Avg generation throughput: 12.0 tokens/s, Running: 22 reqs, Waiting: 38 reqs, GPU KV cache usage: 2.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:09:20 [loggers.py:310] Engine 000: Avg prompt throughput: 1999.8 tokens/s, Avg generation throughput: 13.5 tokens/s, Running: 32 reqs, Waiting: 28 reqs, GPU KV cache usage: 3.2%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=12000 tokens=8303520
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=12000 tokens=8303520
+(APIServer pid=1082) INFO 10-10 15:09:30 [loggers.py:310] Engine 000: Avg prompt throughput: 1599.8 tokens/s, Avg generation throughput: 14.4 tokens/s, Running: 40 reqs, Waiting: 20 reqs, GPU KV cache usage: 4.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:09:40 [loggers.py:310] Engine 000: Avg prompt throughput: 1599.9 tokens/s, Avg generation throughput: 17.6 tokens/s, Running: 48 reqs, Waiting: 12 reqs, GPU KV cache usage: 4.8%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:09:50 [loggers.py:310] Engine 000: Avg prompt throughput: 1600.0 tokens/s, Avg generation throughput: 20.8 tokens/s, Running: 56 reqs, Waiting: 4 reqs, GPU KV cache usage: 5.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:10:00 [loggers.py:310] Engine 000: Avg prompt throughput: 1000.0 tokens/s, Avg generation throughput: 17.6 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=13000 tokens=11856000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=13000 tokens=11856000
+(APIServer pid=1082) INFO 10-10 15:10:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:10:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:10:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=14000 tokens=11916000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=14000 tokens=11916000
+(APIServer pid=1082) INFO 10-10 15:10:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:10:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:11:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=15000 tokens=11976000
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=15000 tokens=11976000
+(APIServer pid=1082) INFO 10-10 15:11:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.1%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:11:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.1%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:11:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.2%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=16000 tokens=12036000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=16000 tokens=12036000
+(APIServer pid=1082) INFO 10-10 15:11:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:11:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.3%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:12:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.3%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:12:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.3%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=17000 tokens=12096000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=17000 tokens=12096000
+(APIServer pid=1082) INFO 10-10 15:12:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:12:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:12:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=18000 tokens=12156000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=18000 tokens=12156000
+(APIServer pid=1082) INFO 10-10 15:12:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:13:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:13:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=19000 tokens=12216000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=19000 tokens=12216000
+(APIServer pid=1082) INFO 10-10 15:13:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:13:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:13:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=20000 tokens=12276000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=20000 tokens=12276000
+(APIServer pid=1082) INFO 10-10 15:13:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:14:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:14:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:14:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=21000 tokens=12336000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=21000 tokens=12336000
+(APIServer pid=1082) INFO 10-10 15:14:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:14:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:14:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=22000 tokens=12396000
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=22000 tokens=12396000
+(APIServer pid=1082) INFO 10-10 15:15:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:15:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:15:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=23000 tokens=12456000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=23000 tokens=12456000
+(APIServer pid=1082) INFO 10-10 15:15:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:15:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:15:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:16:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=24000 tokens=12516000
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=24000 tokens=12516000
+(APIServer pid=1082) INFO 10-10 15:16:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:16:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:16:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=25000 tokens=12576000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=25000 tokens=12576000
+(APIServer pid=1082) INFO 10-10 15:16:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:16:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:17:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:17:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=26000 tokens=12636000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=26000 tokens=12636000
+(APIServer pid=1082) INFO 10-10 15:17:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:17:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:17:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=27000 tokens=12696000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=27000 tokens=12696000
+(APIServer pid=1082) INFO 10-10 15:17:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:18:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:18:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=28000 tokens=12756000
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=28000 tokens=12756000
+(APIServer pid=1082) INFO 10-10 15:18:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:18:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:18:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:18:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.7%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=29000 tokens=12816000
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=29000 tokens=12816000
+(APIServer pid=1082) INFO 10-10 15:19:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 59 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:19:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 17.1 tokens/s, Running: 53 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.9%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:19:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 20.0 tokens/s, Running: 45 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.1%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=30000 tokens=12869040
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=30000 tokens=12869040
+(APIServer pid=1082) INFO 10-10 15:19:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 16.8 tokens/s, Running: 37 reqs, Waiting: 0 reqs, GPU KV cache usage: 4.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:19:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 19.2 tokens/s, Running: 25 reqs, Waiting: 0 reqs, GPU KV cache usage: 2.8%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=31000 tokens=12901640
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=31000 tokens=12901640
+(APIServer pid=1082) INFO 10-10 15:19:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 15.3 tokens/s, Running: 7 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.8%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=32000 tokens=12913376
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=32000 tokens=12913376
+(APIServer pid=1082) INFO:     127.0.0.1:25784 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25786 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25790 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25792 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25794 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25802 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25806 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25820 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25830 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25842 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25852 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25858 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25870 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25874 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25886 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25900 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25912 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25918 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25922 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25926 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25930 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25942 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25944 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25948 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25964 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25972 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:25988 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26002 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26012 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26022 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26034 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26040 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26044 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26060 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26068 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26080 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26092 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26100 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26114 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26116 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26128 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26136 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26140 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26142 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26150 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26156 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26162 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26164 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26174 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26180 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26184 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26198 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26214 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26224 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26236 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26244 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26260 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26266 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26268 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26284 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO 10-10 15:20:00 [loggers.py:310] Engine 000: Avg prompt throughput: 3399.9 tokens/s, Avg generation throughput: 9.7 tokens/s, Running: 18 reqs, Waiting: 42 reqs, GPU KV cache usage: 1.7%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=33000 tokens=16546080
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=33000 tokens=16546080
+(APIServer pid=1082) INFO 10-10 15:20:10 [loggers.py:310] Engine 000: Avg prompt throughput: 2399.8 tokens/s, Avg generation throughput: 14.4 tokens/s, Running: 30 reqs, Waiting: 30 reqs, GPU KV cache usage: 3.0%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=34000 tokens=20642080
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=34000 tokens=20642080
+(APIServer pid=1082) INFO 10-10 15:20:20 [loggers.py:310] Engine 000: Avg prompt throughput: 2000.0 tokens/s, Avg generation throughput: 17.5 tokens/s, Running: 40 reqs, Waiting: 20 reqs, GPU KV cache usage: 4.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:20:30 [loggers.py:310] Engine 000: Avg prompt throughput: 1600.0 tokens/s, Avg generation throughput: 17.6 tokens/s, Running: 48 reqs, Waiting: 12 reqs, GPU KV cache usage: 4.8%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:20:40 [loggers.py:310] Engine 000: Avg prompt throughput: 1200.0 tokens/s, Avg generation throughput: 15.3 tokens/s, Running: 54 reqs, Waiting: 6 reqs, GPU KV cache usage: 5.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=35000 tokens=24515200
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=35000 tokens=24515200
+(APIServer pid=1082) INFO 10-10 15:20:50 [loggers.py:310] Engine 000: Avg prompt throughput: 1200.0 tokens/s, Avg generation throughput: 17.1 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:21:00 [loggers.py:310] Engine 000: Avg prompt throughput: 200.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:21:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:21:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=36000 tokens=24577440
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=36000 tokens=24577440
+(APIServer pid=1082) INFO 10-10 15:21:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:21:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:21:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=37000 tokens=24637440
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=37000 tokens=24637440
+(APIServer pid=1082) INFO 10-10 15:22:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.1%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:22:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.1%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:22:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.2%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=38000 tokens=24697440
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=38000 tokens=24697440
+(APIServer pid=1082) INFO 10-10 15:22:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:22:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.3%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:22:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.3%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=39000 tokens=24757440
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=39000 tokens=24757440
+(APIServer pid=1082) INFO 10-10 15:23:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.3%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:23:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:23:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=40000 tokens=24817440
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=40000 tokens=24817440
+(APIServer pid=1082) INFO 10-10 15:23:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:23:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:23:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=41000 tokens=24877440
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=41000 tokens=24877440
+(APIServer pid=1082) INFO 10-10 15:24:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:24:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:24:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:24:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=42000 tokens=24937440
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=42000 tokens=24937440
+(APIServer pid=1082) INFO 10-10 15:24:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:24:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:25:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=43000 tokens=24997440
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=43000 tokens=24997440
+(APIServer pid=1082) INFO 10-10 15:25:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:25:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:25:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=44000 tokens=25057440
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=44000 tokens=25057440
+(APIServer pid=1082) INFO 10-10 15:25:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:25:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:26:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=45000 tokens=25117440
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=45000 tokens=25117440
+(APIServer pid=1082) INFO 10-10 15:26:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:26:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:26:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:26:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=46000 tokens=25177440
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=46000 tokens=25177440
+(APIServer pid=1082) INFO 10-10 15:26:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:27:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:27:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=47000 tokens=25237440
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=47000 tokens=25237440
+(APIServer pid=1082) INFO 10-10 15:27:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:27:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:27:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=48000 tokens=25297440
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=48000 tokens=25297440
+(APIServer pid=1082) INFO 10-10 15:27:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:28:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:28:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=49000 tokens=25357440
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=49000 tokens=25357440
+(APIServer pid=1082) INFO 10-10 15:28:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:28:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:28:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:28:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=50000 tokens=25417440
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=50000 tokens=25417440
+(APIServer pid=1082) INFO 10-10 15:29:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:29:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:29:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.6%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=51000 tokens=25477440
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=51000 tokens=25477440
+(APIServer pid=1082) INFO 10-10 15:29:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.7%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:29:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 17.9 tokens/s, Running: 57 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:29:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 16.5 tokens/s, Running: 51 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.7%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=52000 tokens=25531776
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=52000 tokens=25531776
+(APIServer pid=1082) INFO 10-10 15:30:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 19.2 tokens/s, Running: 43 reqs, Waiting: 0 reqs, GPU KV cache usage: 4.9%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:30:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 19.5 tokens/s, Running: 33 reqs, Waiting: 0 reqs, GPU KV cache usage: 3.7%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=53000 tokens=25566040
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=53000 tokens=25566040
+(APIServer pid=1082) INFO 10-10 15:30:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 16.8 tokens/s, Running: 21 reqs, Waiting: 0 reqs, GPU KV cache usage: 2.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=54000 tokens=25579440
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=54000 tokens=25579440
+(APIServer pid=1082) INFO:     127.0.0.1:26408 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26412 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26422 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26428 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26438 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26454 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26466 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26478 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26480 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26486 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26500 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26512 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26524 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26530 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26546 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26558 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26564 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26566 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26568 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26584 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26588 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26596 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26602 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26614 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26626 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26642 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26652 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26654 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26664 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26666 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26672 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26686 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26696 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26706 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26718 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26730 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26740 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26756 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26770 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26780 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26782 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26788 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26796 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26804 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26816 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26828 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26834 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26836 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26846 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26862 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26868 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26880 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26882 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26898 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26904 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26918 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26920 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26932 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26934 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:26938 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO 10-10 15:30:30 [loggers.py:310] Engine 000: Avg prompt throughput: 599.9 tokens/s, Avg generation throughput: 12.5 tokens/s, Running: 4 reqs, Waiting: 56 reqs, GPU KV cache usage: 0.3%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=55000 tokens=28884640
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=55000 tokens=28884640
+(APIServer pid=1082) INFO 10-10 15:30:40 [loggers.py:310] Engine 000: Avg prompt throughput: 3599.7 tokens/s, Avg generation throughput: 11.7 tokens/s, Running: 22 reqs, Waiting: 38 reqs, GPU KV cache usage: 2.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:30:50 [loggers.py:310] Engine 000: Avg prompt throughput: 1999.9 tokens/s, Avg generation throughput: 13.5 tokens/s, Running: 32 reqs, Waiting: 28 reqs, GPU KV cache usage: 3.2%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=56000 tokens=32980640
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=56000 tokens=32980640
+(APIServer pid=1082) INFO 10-10 15:31:00 [loggers.py:310] Engine 000: Avg prompt throughput: 2000.0 tokens/s, Avg generation throughput: 18.5 tokens/s, Running: 42 reqs, Waiting: 18 reqs, GPU KV cache usage: 4.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:31:10 [loggers.py:310] Engine 000: Avg prompt throughput: 1600.0 tokens/s, Avg generation throughput: 18.4 tokens/s, Running: 50 reqs, Waiting: 10 reqs, GPU KV cache usage: 5.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:31:20 [loggers.py:310] Engine 000: Avg prompt throughput: 1199.9 tokens/s, Avg generation throughput: 15.9 tokens/s, Running: 56 reqs, Waiting: 4 reqs, GPU KV cache usage: 5.6%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=57000 tokens=37076640
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=57000 tokens=37076640
+(APIServer pid=1082) INFO 10-10 15:31:30 [loggers.py:310] Engine 000: Avg prompt throughput: 1000.0 tokens/s, Avg generation throughput: 17.6 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:31:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:31:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=58000 tokens=37238880
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=58000 tokens=37238880
+(APIServer pid=1082) INFO 10-10 15:32:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:32:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:32:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=59000 tokens=37298880
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=59000 tokens=37298880
+(APIServer pid=1082) INFO 10-10 15:32:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.1%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:32:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.1%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:32:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.2%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=60000 tokens=37358880
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=60000 tokens=37358880
+(APIServer pid=1082) INFO 10-10 15:33:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:33:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:33:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.3%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:33:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.3%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=61000 tokens=37418880
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=61000 tokens=37418880
+(APIServer pid=1082) INFO 10-10 15:33:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:33:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:34:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=62000 tokens=37478880
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=62000 tokens=37478880
+(APIServer pid=1082) INFO 10-10 15:34:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:34:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:34:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=63000 tokens=37538880
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=63000 tokens=37538880
+(APIServer pid=1082) INFO 10-10 15:34:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:34:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:35:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=64000 tokens=37598880
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=64000 tokens=37598880
+(APIServer pid=1082) INFO 10-10 15:35:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:35:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:35:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=65000 tokens=37658880
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=65000 tokens=37658880
+(APIServer pid=1082) INFO 10-10 15:35:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:35:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:36:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:36:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=66000 tokens=37718880
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=66000 tokens=37718880
+(APIServer pid=1082) INFO 10-10 15:36:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:36:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:36:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=67000 tokens=37778880
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=67000 tokens=37778880
+(APIServer pid=1082) INFO 10-10 15:36:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:37:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:37:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=68000 tokens=37838880
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=68000 tokens=37838880
+(APIServer pid=1082) INFO 10-10 15:37:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:37:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:37:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=69000 tokens=37898880
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=69000 tokens=37898880
+(APIServer pid=1082) INFO 10-10 15:37:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:38:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:38:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:38:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=70000 tokens=37958880
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=70000 tokens=37958880
+(APIServer pid=1082) INFO 10-10 15:38:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:38:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:38:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=71000 tokens=38018880
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=71000 tokens=38018880
+(APIServer pid=1082) INFO 10-10 15:39:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:39:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:39:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=72000 tokens=38078880
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=72000 tokens=38078880
+(APIServer pid=1082) INFO 10-10 15:39:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:39:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:39:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:40:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.7%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=73000 tokens=38138880
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=73000 tokens=38138880
+(APIServer pid=1082) INFO 10-10 15:40:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.7%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:40:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 17.6 tokens/s, Running: 55 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:40:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 15.9 tokens/s, Running: 49 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=74000 tokens=38194384
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=74000 tokens=38194384
+(APIServer pid=1082) INFO 10-10 15:40:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.4 tokens/s, Running: 41 reqs, Waiting: 0 reqs, GPU KV cache usage: 4.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:40:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.5 tokens/s, Running: 31 reqs, Waiting: 0 reqs, GPU KV cache usage: 3.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=75000 tokens=38230296
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=75000 tokens=38230296
+(APIServer pid=1082) INFO 10-10 15:41:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 17.5 tokens/s, Running: 17 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.9%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=76000 tokens=38245376
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=76000 tokens=38245376
+(APIServer pid=1082) INFO:     127.0.0.1:4140 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4154 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4158 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4164 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4178 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4190 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4196 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4210 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4212 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4220 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4228 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4240 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4254 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4270 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4276 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4280 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4290 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4294 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4302 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4308 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4312 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4314 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4318 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4328 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4332 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4342 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4344 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4360 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4370 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4374 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4388 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4390 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4406 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4414 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4422 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4436 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4452 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4468 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4478 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4482 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4488 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4500 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4514 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4526 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4542 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4556 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4558 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4560 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4566 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4582 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4594 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4610 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4616 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4624 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4628 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4640 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4652 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4664 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4676 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO:     127.0.0.1:4692 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1082) INFO 10-10 15:41:10 [loggers.py:310] Engine 000: Avg prompt throughput: 1799.9 tokens/s, Avg generation throughput: 10.6 tokens/s, Running: 10 reqs, Waiting: 50 reqs, GPU KV cache usage: 0.9%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=77000 tokens=41223200
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=77000 tokens=41223200
+(APIServer pid=1082) INFO 10-10 15:41:20 [loggers.py:310] Engine 000: Avg prompt throughput: 3199.7 tokens/s, Avg generation throughput: 14.4 tokens/s, Running: 26 reqs, Waiting: 34 reqs, GPU KV cache usage: 2.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:41:30 [loggers.py:310] Engine 000: Avg prompt throughput: 1999.9 tokens/s, Avg generation throughput: 15.5 tokens/s, Running: 36 reqs, Waiting: 24 reqs, GPU KV cache usage: 3.6%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=78000 tokens=45319200
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=78000 tokens=45319200
+(APIServer pid=1082) INFO 10-10 15:41:40 [loggers.py:310] Engine 000: Avg prompt throughput: 1599.9 tokens/s, Avg generation throughput: 16.0 tokens/s, Running: 44 reqs, Waiting: 16 reqs, GPU KV cache usage: 4.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:41:50 [loggers.py:310] Engine 000: Avg prompt throughput: 1599.9 tokens/s, Avg generation throughput: 19.2 tokens/s, Running: 52 reqs, Waiting: 8 reqs, GPU KV cache usage: 5.2%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=79000 tokens=49415200
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=79000 tokens=49415200
+(APIServer pid=1082) INFO 10-10 15:42:00 [loggers.py:310] Engine 000: Avg prompt throughput: 1199.9 tokens/s, Avg generation throughput: 16.5 tokens/s, Running: 58 reqs, Waiting: 2 reqs, GPU KV cache usage: 5.8%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:42:10 [loggers.py:310] Engine 000: Avg prompt throughput: 600.0 tokens/s, Avg generation throughput: 17.9 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:42:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=80000 tokens=49900320
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=80000 tokens=49900320
+(APIServer pid=1082) INFO 10-10 15:42:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:42:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:42:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:43:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=81000 tokens=49960320
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=81000 tokens=49960320
+(APIServer pid=1082) INFO 10-10 15:43:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.1%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:43:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.1%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:43:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.2%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=82000 tokens=50020320
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=82000 tokens=50020320
+(APIServer pid=1082) INFO 10-10 15:43:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:43:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:44:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.3%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=83000 tokens=50080320
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=83000 tokens=50080320
+(APIServer pid=1082) INFO 10-10 15:44:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.3%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:44:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:44:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=84000 tokens=50140320
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=84000 tokens=50140320
+(APIServer pid=1082) INFO 10-10 15:44:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:44:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:45:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=85000 tokens=50200320
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=85000 tokens=50200320
+(APIServer pid=1082) INFO 10-10 15:45:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:45:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:45:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=86000 tokens=50260320
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=86000 tokens=50260320
+(APIServer pid=1082) INFO 10-10 15:45:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:45:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:46:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:46:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=87000 tokens=50320320
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=87000 tokens=50320320
+(APIServer pid=1082) INFO 10-10 15:46:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:46:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:46:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=88000 tokens=50380320
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=88000 tokens=50380320
+(APIServer pid=1082) INFO 10-10 15:46:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:47:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:47:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=89000 tokens=50440320
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=89000 tokens=50440320
+(APIServer pid=1082) INFO 10-10 15:47:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:47:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:47:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=90000 tokens=50500320
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=90000 tokens=50500320
+(APIServer pid=1082) INFO 10-10 15:47:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:48:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:48:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:48:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=91000 tokens=50560320
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=91000 tokens=50560320
+(APIServer pid=1082) INFO 10-10 15:48:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:48:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:48:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=92000 tokens=50620320
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=92000 tokens=50620320
+(APIServer pid=1082) INFO 10-10 15:49:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:49:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:49:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=93000 tokens=50680320
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=93000 tokens=50680320
+(APIServer pid=1082) INFO 10-10 15:49:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:49:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:49:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:50:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=94000 tokens=50740320
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=94000 tokens=50740320
+(APIServer pid=1082) INFO 10-10 15:50:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:50:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:50:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 24.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.6%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=95000 tokens=50800320
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=95000 tokens=50800320
+(APIServer pid=1082) INFO 10-10 15:50:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.7%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:50:50 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 18.0 tokens/s, Running: 59 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:51:00 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 17.1 tokens/s, Running: 53 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.9%, Prefix cache hit rate: 0.0%
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=96000 tokens=50856864
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=96000 tokens=50856864
+(APIServer pid=1082) INFO 10-10 15:51:10 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 20.0 tokens/s, Running: 45 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.1%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:51:20 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 16.8 tokens/s, Running: 37 reqs, Waiting: 0 reqs, GPU KV cache usage: 4.2%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=97000 tokens=50894424
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=97000 tokens=50894424
+(APIServer pid=1082) INFO 10-10 15:51:30 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 19.2 tokens/s, Running: 25 reqs, Waiting: 0 reqs, GPU KV cache usage: 2.8%, Prefix cache hit rate: 0.0%
+(APIServer pid=1082) INFO 10-10 15:51:40 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 15.3 tokens/s, Running: 7 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.8%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=1232) [KVTQ-STORE] pid=1232 quant_calls=98000 tokens=50911184
+(Worker_TP1 pid=1233) [KVTQ-STORE] pid=1233 quant_calls=98000 tokens=50911184
+(EngineCore pid=1201) INFO 10-10 15:51:42 [core.py:1329] [shutdown] EngineCore: trigger received signal=SIGTERM
+(APIServer pid=1082) INFO 10-10 15:51:42 [launcher.py:114] [shutdown] API server: shutdown triggered
+(APIServer pid=1082) INFO 10-10 15:51:42 [launcher.py:130] [shutdown] API server: stopping engine client mode=abort timeout=0s
+(EngineCore pid=1201) INFO 10-10 15:51:42 [core.py:1465] [shutdown] EngineCore: start mode=abort timeout=0s
+(EngineCore pid=1201) INFO 10-10 15:51:42 [core.py:1496] [shutdown] EngineCore: request processing complete; starting resource teardown
+(EngineCore pid=1201) INFO 10-10 15:51:42 [core.py:1342] [shutdown] EngineCore: exiting busy loop
+(APIServer pid=1082) INFO 10-10 15:51:42 [core_client.py:689] [shutdown] MPClient: start timeout=0s
+(EngineCore pid=1201) INFO 10-10 15:51:42 [multiproc_executor.py:469] [shutdown] Executor: waiting for worker exit count=2
+(APIServer pid=1082) INFO 10-10 15:51:42 [core_client.py:691] [shutdown] MPClient: stopping engine manager
+(APIServer pid=1082) INFO 10-10 15:51:42 [utils.py:615] [shutdown] Process manager: send sigterm to process EngineCore
+(APIServer pid=1082) WARNING 10-10 15:51:42 [utils.py:635] [shutdown] Process manager: force killing remaining processes count=1
+(APIServer pid=1082) WARNING 10-10 15:51:42 [utils.py:640] [shutdown] Process manager: force killing remaining process EngineCore pid 1201
+(APIServer pid=1082) INFO 10-10 15:51:42 [core_client.py:693] [shutdown] MPClient: engine manager stopped
+(APIServer pid=1082) INFO 10-10 15:51:42 [core_client.py:694] [shutdown] MPClient: cleaning up background resources
+(APIServer pid=1082) INFO 10-10 15:51:42 [core_client.py:696] [shutdown] MPClient: complete
+(APIServer pid=1082) ERROR 10-10 15:51:42 [async_llm.py:744] AsyncLLM output_handler failed.
+(APIServer pid=1082) ERROR 10-10 15:51:42 [async_llm.py:744] Traceback (most recent call last):
+(APIServer pid=1082) ERROR 10-10 15:51:42 [async_llm.py:744]   File "/ws/source/vllm/vllm/v1/engine/async_llm.py", line 690, in output_handler
+(APIServer pid=1082) ERROR 10-10 15:51:42 [async_llm.py:744]     outputs = await engine_core.get_output_async()
+(APIServer pid=1082) ERROR 10-10 15:51:42 [async_llm.py:744]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=1082) ERROR 10-10 15:51:42 [async_llm.py:744]   File "/ws/source/vllm/vllm/v1/engine/core_client.py", line 1104, in get_output_async
+(APIServer pid=1082) ERROR 10-10 15:51:42 [async_llm.py:744]     raise self._format_exception(outputs) from None
+(APIServer pid=1082) ERROR 10-10 15:51:42 [async_llm.py:744] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.
+(APIServer pid=1082) INFO 10-10 15:51:42 [launcher.py:139] [shutdown] API server: engine client stopped
+(APIServer pid=1082) INFO 10-10 15:51:42 [launcher.py:142] [shutdown] API server: signalling HTTP server shutdown
+(APIServer pid=1082) INFO 10-10 15:51:42 [launcher.py:163] [shutdown] API server: shutting down FastAPI HTTP server
+(APIServer pid=1082) INFO:     Shutting down
+(APIServer pid=1082) INFO:     Waiting for application shutdown.
+(APIServer pid=1082) INFO:     Application shutdown complete.
+/usr/local/python3.12.13/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 2 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+/usr/local/python3.12.13/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 4 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

@@ -1,0 +1,13 @@
+{
+  "captured_utc": "2026-10-10T15:19:53.620544+00:00",
+  "issue": "Concurrent Model_test shared-index rebase conflict",
+  "remote_changed_records": [
+    "task3-qwen36-pa-cross-model-validation"
+  ],
+  "local_changed_records": [
+    "tq-128k-benchmark-20261010"
+  ],
+  "handling": "Keep full remote index and all other records; replace only unchanged-on-remote TQ record with local update",
+  "preserved_other_records": 21,
+  "state": "resolved; validation and push pending"
+}

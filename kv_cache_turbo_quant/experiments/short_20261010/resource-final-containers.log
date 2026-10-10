@@ -1,0 +1,3 @@
+/tq-128k-ab-20261010 exited ea464bbe501687f7bacbd7f108d79e95bce273449d01b77db2311421763c5ac7
+/tq-128k-ab-20261010-runtime exited 0354eaafc53831afa0a11835e862a550873d9c1db0c8d54e178747c90b45663f
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

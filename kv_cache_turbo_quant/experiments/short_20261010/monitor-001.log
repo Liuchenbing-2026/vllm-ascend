@@ -1,0 +1,9 @@
+status.json {
+  "updated_utc": "2026-10-10T15:01:12.815533+00:00",
+  "stage": "precision",
+  "check": "glue"
+}
+
+controller_tail
+{"stage": "precision", "check": "glue"}
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

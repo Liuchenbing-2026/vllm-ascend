@@ -1,0 +1,10 @@
+{
+  "checked_utc": "2026-10-10T15:55:38.294479+00:00",
+  "strict_json_files": 66,
+  "python_ast_files": 9,
+  "shell_syntax_files": 1,
+  "original_tq_files_unchanged": 58,
+  "remote_snapshot_files_verified": 88,
+  "issue_rows_contiguous": 12,
+  "scope": "static syntax, format, credential-pattern and source/byte checks; no CI or browser rendering claim"
+}

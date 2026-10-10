@@ -1,0 +1,20 @@
+status.json {
+  "updated_utc": "2026-10-10T15:01:39.697294+00:00",
+  "stage": "server_starting",
+  "mode": "bf16",
+  "pid": 244,
+  "attempt": 0,
+  "log": "/ws/short_ab_20261010/logs/short_20261010T150112Z/serve_bf16_0.log"
+}
+
+controller_tail
+{"stage": "precision", "check": "glue"}
+{"stage": "precision", "check": "roundtrip"}
+{"stage": "server_starting", "mode": "bf16", "pid": 244, "attempt": 0, "log": "/ws/short_ab_20261010/logs/short_20261010T150112Z/serve_bf16_0.log"}
+serve_tail /ws/short_ab_20261010/logs/short_20261010T150112Z/serve_bf16_0.log
+(APIServer pid=244) INFO 10-10 15:01:58 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+(APIServer pid=244) INFO 10-10 15:01:58 [platform.py:1089] Compilation disabled, using eager mode by default
+(APIServer pid=244) INFO 10-10 15:01:58 [utils.py:1326] Block size is set to 128 if prefix cache or chunked prefill is enabled.
+(APIServer pid=244) INFO 10-10 15:01:58 [platform.py:1344] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+(APIServer pid=244) INFO 10-10 15:01:58 [compilation.py:329] Enabled custom fusions: norm_quant, act_quant
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied
