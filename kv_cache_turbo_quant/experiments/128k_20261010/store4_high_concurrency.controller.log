@@ -1,1 +1,5 @@
 {"stage": "server_starting", "mode": "store4", "attempt": 0, "pid": 9035, "log": "/ws/logs/matrix_20261010T030754Z/serve_store4_0.log"}
+{"stage": "benchmark_running", "mode": "store4", "concurrency": 1, "input_len": 64, "output_len": 16, "result": "/ws/results/matrix_20261010T030754Z/smoke_short_store4.json", "started_utc": "2026-10-10T03:09:39.528954+00:00"}
+{"stage": "benchmark_running", "mode": "store4", "concurrency": 1, "input_len": 131072, "output_len": 1, "result": "/ws/results/matrix_20261010T030754Z/smoke_128k_store4.json", "started_utc": "2026-10-10T03:09:44.842917+00:00"}
+{"stage": "benchmark_running", "mode": "store4", "concurrency": 16, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261010T030754Z/store4_in131072_out1024_c16.json", "started_utc": "2026-10-10T03:11:14.395767+00:00"}
+{"stage": "server_starting", "mode": "store4", "attempt": 1, "pid": 10617, "log": "/ws/logs/matrix_20261010T030754Z/serve_store4_1.log"}

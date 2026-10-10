@@ -1,0 +1,70 @@
+{
+  "bf16": {
+    "log_path": "server_evidence/matrix_20261010T014843Z/serve_bf16_0.log",
+    "log_snapshot_sha256": "e39b73edc8b9bd300ae577bc56a1ab3169fb31fb8c329c9adde819f847114dbc",
+    "workers": {
+      "0": {
+        "initial_free_gib": 60.57,
+        "kv_budget_gib": 24.0
+      },
+      "1": {
+        "initial_free_gib": 60.58,
+        "kv_budget_gib": 24.0
+      }
+    },
+    "capacity": {
+      "tokens": 524288,
+      "max_request_tokens": 132096,
+      "max_resident_concurrency": 3.97
+    },
+    "evidence": [
+      {
+        "line": 144,
+        "text": "(Worker_TP0 pid=7918) INFO 10-10 01:50:23 [worker.py:571] Initial free memory 60.57 GiB, reserved 24.00 GiB for KV Cache as specified by kv_cache_memory_bytes, skipping memory profiling. This does not respect the gpu_memory_utilization config. Only use kv_cache_memory_bytes when you want manual control of KV cache memory size. If OOM'ed, check the difference of initial free memory between the current run and the previous run where kv_cache_memory_bytes is suggested and update it correspondingly."
+      },
+      {
+        "line": 145,
+        "text": "(Worker_TP1 pid=7919) INFO 10-10 01:50:23 [worker.py:571] Initial free memory 60.58 GiB, reserved 24.00 GiB for KV Cache as specified by kv_cache_memory_bytes, skipping memory profiling. This does not respect the gpu_memory_utilization config. Only use kv_cache_memory_bytes when you want manual control of KV cache memory size. If OOM'ed, check the difference of initial free memory between the current run and the previous run where kv_cache_memory_bytes is suggested and update it correspondingly."
+      },
+      {
+        "line": 146,
+        "text": "(EngineCore pid=7885) INFO 10-10 01:50:23 [kv_cache_utils.py:1869] GPU KV cache size: 524,288 tokens, Maximum concurrency for 132,096 tokens per request: 3.97x"
+      }
+    ]
+  },
+  "store4": {
+    "log_path": "server_evidence/matrix_20261010T030754Z/serve_store4_0.log",
+    "log_snapshot_sha256": "e58de4f4f396476eb45fa53a4054febb093edb0f8e3d3e0ae4f60bb91583100f",
+    "workers": {
+      "0": {
+        "initial_free_gib": 60.57,
+        "kv_budget_gib": 24.0
+      },
+      "1": {
+        "initial_free_gib": 60.58,
+        "kv_budget_gib": 24.0
+      }
+    },
+    "capacity": {
+      "tokens": 2033536,
+      "max_request_tokens": 132096,
+      "max_resident_concurrency": 15.39
+    },
+    "evidence": [
+      {
+        "line": 148,
+        "text": "(Worker_TP0 pid=9174) INFO 10-10 03:09:29 [worker.py:571] Initial free memory 60.57 GiB, reserved 24.00 GiB for KV Cache as specified by kv_cache_memory_bytes, skipping memory profiling. This does not respect the gpu_memory_utilization config. Only use kv_cache_memory_bytes when you want manual control of KV cache memory size. If OOM'ed, check the difference of initial free memory between the current run and the previous run where kv_cache_memory_bytes is suggested and update it correspondingly."
+      },
+      {
+        "line": 149,
+        "text": "(Worker_TP1 pid=9175) INFO 10-10 03:09:29 [worker.py:571] Initial free memory 60.58 GiB, reserved 24.00 GiB for KV Cache as specified by kv_cache_memory_bytes, skipping memory profiling. This does not respect the gpu_memory_utilization config. Only use kv_cache_memory_bytes when you want manual control of KV cache memory size. If OOM'ed, check the difference of initial free memory between the current run and the previous run where kv_cache_memory_bytes is suggested and update it correspondingly."
+      },
+      {
+        "line": 150,
+        "text": "(EngineCore pid=9143) INFO 10-10 03:09:29 [kv_cache_utils.py:1869] GPU KV cache size: 2,033,536 tokens, Maximum concurrency for 132,096 tokens per request: 15.39x"
+      }
+    ]
+  },
+  "store_vs_bf16_capacity_ratio": 3.878662109375,
+  "capacity_is_not_throughput": true
+}

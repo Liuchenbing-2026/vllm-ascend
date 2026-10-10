@@ -1,0 +1,14 @@
+PID                 PPID                COMMAND
+172036              1618940             python
+172097              172036              python
+178178              172097              python
+178179              172097              VLLM::EngineCor
+183981              178179              VLLM::Worker_TP
+183983              178179              VLLM::Worker_TP
+223468              172036              python
+1332890             1332688             sleep
+1618934             1332688             bash
+1618940             1618934             python
+1670297             1332688             python3
+1962054             1332688             python3
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

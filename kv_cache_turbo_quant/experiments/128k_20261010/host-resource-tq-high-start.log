@@ -1,0 +1,18 @@
+{
+  "captured_utc": "2026-10-10T03:12:36.226994+00:00",
+  "logical_cpu_count": 192,
+  "load_average": [
+    26.62,
+    31.13,
+    30.22
+  ],
+  "cpu_busy_fraction_one_second": 0.11196423875887462,
+  "memory": {
+    "MemTotal_kib": 1070876544,
+    "MemAvailable_kib": 749163520,
+    "SwapTotal_kib": 0,
+    "SwapFree_kib": 0
+  },
+  "scope": "one shared-host snapshot; no proof of absence of interference"
+}
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

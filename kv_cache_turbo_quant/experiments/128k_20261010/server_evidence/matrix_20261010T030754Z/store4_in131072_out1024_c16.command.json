@@ -1,0 +1,16 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/scripts/bench_client.py",
+  "--mode",
+  "store4",
+  "--concurrency",
+  "16",
+  "--input-len",
+  "131072",
+  "--output-len",
+  "1024",
+  "--timeout",
+  "7200.0",
+  "--output",
+  "/ws/results/matrix_20261010T030754Z/store4_in131072_out1024_c16.json"
+]
