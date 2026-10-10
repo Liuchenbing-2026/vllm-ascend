@@ -3,3 +3,4 @@
 {"stage": "benchmark_running", "mode": "bf16", "concurrency": 1, "input_len": 131072, "output_len": 1, "result": "/ws/results/matrix_20261010T014843Z/smoke_128k_bf16.json", "started_utc": "2026-10-10T01:50:36.489412+00:00"}
 {"stage": "benchmark_running", "mode": "bf16", "concurrency": 16, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261010T014843Z/bf16_in131072_out1024_c16.json", "started_utc": "2026-10-10T01:51:16.111375+00:00"}
 {"stage": "benchmark_running", "mode": "bf16", "concurrency": 32, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261010T014843Z/bf16_in131072_out1024_c32.json", "started_utc": "2026-10-10T02:17:15.054295+00:00"}
+{"stage": "matrix_finished", "result_dir": "/ws/results/matrix_20261010T014843Z", "note": "Each JSON retains actual success/failure counts; failed cohorts have null throughput"}

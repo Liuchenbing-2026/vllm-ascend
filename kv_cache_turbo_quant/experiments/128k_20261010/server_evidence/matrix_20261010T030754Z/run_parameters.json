@@ -1,0 +1,18 @@
+{
+  "run_id": "matrix_20261010T030754Z",
+  "modes": [
+    "store4"
+  ],
+  "concurrencies": [
+    16,
+    32
+  ],
+  "request_timeout_s": 7200.0,
+  "input_len": 131072,
+  "output_len": 1024,
+  "file_sha256": {
+    "scripts/serve.sh": "7ce8adc78f5c1fabc401f877402f2c0452bffbffa6994f6530e5b2b3ec19402c",
+    "scripts/bench_client.py": "c88ba2133df6b66bf1f0c160465149bfec44a81862dde17f6c529c2c477e1f77",
+    "artifacts/environment.json": "4ac8e73523be1d49caa20ab56c57a328eef0328b420b704b55e28aab91c01ace"
+  }
+}

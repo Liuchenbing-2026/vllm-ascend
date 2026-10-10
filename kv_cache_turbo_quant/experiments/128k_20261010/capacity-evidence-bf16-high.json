@@ -1,7 +1,7 @@
 {
   "bf16": {
     "log_path": "server_evidence/matrix_20261010T014843Z/serve_bf16_0.log",
-    "log_snapshot_sha256": "bd37bbc2913b68476d7b9cda74f3123bae74fd06437354ff4c1b2464c0070de4",
+    "log_snapshot_sha256": "e39b73edc8b9bd300ae577bc56a1ab3169fb31fb8c329c9adde819f847114dbc",
     "workers": {
       "0": {
         "initial_free_gib": 60.57,
