@@ -63,6 +63,7 @@ from vllm_ascend.compilation.acl_graph import (
 from vllm_ascend.device.device_op import DeviceOperator
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.attention_fence import record_attention_compute_start
+from vllm_ascend.ops.triton.draft_kv_gather import gather_draft_kv
 from vllm_ascend.utils import vllm_version_is, weak_ref_tensors
 
 if vllm_version_is("0.28.0"):
@@ -1511,9 +1512,23 @@ class AscendAttentionBackendImpl(AttentionImpl):
         if num_tokens != num_reqs * query_len or attn_metadata.seq_lens.shape[0] < num_reqs:
             return None
 
-        # Under paged attention the mask's last dimension must cover the whole
-        # addressable KV span, not just the longest actual sequence.
-        kv_span = int(block_table.shape[1]) * int(block_size)
+        # FIA requires dense paged NHD tensors. Gather only the valid prefix
+        # into private pages: a score mask alone cannot isolate NaN/Inf tails.
+        if key.ndim != 3 or value.shape != key.shape or key.shape[1] != block_size:
+            return None
+        if key.stride(-1) != 1 or value.stride(-1) != 1:
+            return None
+        blocks_per_req = (max(actual_seq_lengths_kv) + block_size - 1) // block_size
+        if blocks_per_req <= 0 or blocks_per_req > block_table.shape[1]:
+            return None
+        # Bound temporary storage by the existing cache; long shared prefixes
+        # that exceed this budget use the caller's exact-length fallback.
+        if num_reqs * blocks_per_req > key.shape[0]:
+            return None
+        kv_span = blocks_per_req * block_size
+        key, value, block_table = gather_draft_kv(
+            key, value, block_table, attn_metadata.seq_lens, num_reqs, blocks_per_req
+        )
         cache_key = (kv_span, query_len, self.sliding_window, attn_metadata.causal)
         mask = attn_metadata.draft_tail_mask_cache.get(cache_key)
         if mask is None:

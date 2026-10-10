@@ -1246,12 +1246,14 @@ class TestForwardDraftTailMasked(TestBase):
         return meta
 
     def _call(self, impl, meta, num_tokens=6, block_table=None):
-        block_table = torch.zeros((2, 2), dtype=torch.int32) if block_table is None else block_table
+        block_table = torch.zeros((2, 3), dtype=torch.int32) if block_table is None else block_table
         query = torch.zeros(num_tokens, impl.num_heads, impl.head_size)
         output = torch.zeros(num_tokens, impl.num_heads, impl.head_size)
-        return AscendAttentionBackendImpl._forward_draft_tail_masked(
-            impl, query, torch.zeros(1), torch.zeros(1), meta, block_table, 4, [10, 12], num_tokens, output
-        )
+        key = torch.zeros(6, 4, impl.num_kv_heads * impl.head_size)
+        with patch.object(attn_module, "gather_draft_kv", return_value=(key, key, block_table)):
+            return AscendAttentionBackendImpl._forward_draft_tail_masked(
+                impl, query, key, key, meta, block_table, 4, [10, 12], num_tokens, output
+            )
 
     def test_falls_through_when_the_build_is_not_a_bounded_draft(self):
         self.assertIsNone(self._call(self._impl(), self._metadata(draft_kv_upper_bound=False)))
@@ -1347,7 +1349,7 @@ class TestForwardDraftTailMasked(TestBase):
         # The KV lengths handed to the operator stay the host-side bound.
         self.assertEqual(kwargs["actual_seq_lengths_kv"], [10, 12])
         self.assertEqual(tuple(kwargs["query"].shape), (2, 3, 2, 4))
-        self.assertEqual(tuple(kwargs["atten_mask"].shape), (2, 3, 2 * 4))
+        self.assertEqual(tuple(kwargs["atten_mask"].shape), (2, 3, 3 * 4))
 
     def test_mask_is_built_once_and_reused_across_layers(self):
         """One mask per step, shared by every layer in the attention group."""
