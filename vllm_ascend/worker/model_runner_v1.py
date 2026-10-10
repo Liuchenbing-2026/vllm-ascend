@@ -1928,6 +1928,26 @@ class NPUModelRunner(GPUModelRunner):
             common_attn_metadata = spec_decode_common_attn_metadata
             target_hidden_states = [h[:num_scheduled_tokens] for h in aux_hidden_states]
 
+            # Pass the slot mapping that belongs to the drafter's OWN KV cache
+            # group. ``common_attn_metadata`` is selected from the group whose
+            # block size matches the cache-only layers, but the proposer writes
+            # the hidden states through ``set_forward_context`` and must not be
+            # left to guess: when the block sizes differ, a wrong slot mapping
+            # scatters the cache writes into unallocated blocks and the read
+            # back yields zeros plus bf16-overflow NaN/Inf hidden states.
+            slot_mappings = None
+            draft_kv_cache_gid = getattr(self.drafter, "kv_cache_gid", -1)
+            if isinstance(draft_kv_cache_gid, int) and draft_kv_cache_gid >= 0:
+                try:
+                    block_table = self.input_batch.block_table[draft_kv_cache_gid]
+                    slot_mapping = block_table.slot_mapping.gpu[:num_scheduled_tokens]
+                    slot_mappings = {
+                        layer_name: slot_mapping
+                        for layer_name in self.drafter.attn_layer_names
+                    }
+                except (AttributeError, IndexError, TypeError):
+                    slot_mappings = None
+
             draft_token_ids = self.drafter.propose(
                 # Dynamic SD: honor the per-step K chosen by the scheduler
                 # (equals the configured maximum when the feature is disabled).
@@ -1935,6 +1955,7 @@ class NPUModelRunner(GPUModelRunner):
                 sampled_token_ids=valid_sampled_token_ids,
                 target_hidden_states=target_hidden_states,
                 common_attn_metadata=common_attn_metadata,
+                slot_mappings=slot_mappings,
             )
             next_token_ids, valid_sampled_tokens_count = (
                 self.drafter.prepare_next_token_ids_padded(
