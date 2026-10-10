@@ -968,6 +968,7 @@ def test_preempt_offload_connector_worker_wait_for_layer_load_once():
 
 def test_recompute_scheduler_remote_kv_restore_keeps_exact_token_position():
     scheduler = RecomputeScheduler.__new__(RecomputeScheduler)
+    scheduler.prefix_replay_tokens = 0
     scheduler.connector = MagicMock()
     scheduler.failed_recving_kv_req_ids = set()
     scheduler.finished_recving_kv_req_ids = {"req-1"}
@@ -991,6 +992,7 @@ def test_recompute_scheduler_remote_kv_restore_keeps_exact_token_position():
 
 def test_recompute_scheduler_remote_kv_restore_frees_failed_empty_load():
     scheduler = RecomputeScheduler.__new__(RecomputeScheduler)
+    scheduler.prefix_replay_tokens = 0
     scheduler.connector = MagicMock()
     scheduler.failed_recving_kv_req_ids = {"req-1"}
     scheduler.finished_recving_kv_req_ids = {"req-1"}
@@ -999,6 +1001,7 @@ def test_recompute_scheduler_remote_kv_restore_frees_failed_empty_load():
     request = SimpleNamespace(
         request_id="req-1",
         num_computed_tokens=0,
+        num_tokens=9,
     )
 
     scheduler._update_waiting_for_remote_kv(request)
