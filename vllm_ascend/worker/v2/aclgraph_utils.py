@@ -19,6 +19,7 @@
 from collections.abc import Callable
 from contextlib import contextmanager
 from functools import partial
+from itertools import groupby
 from typing import Any
 
 import torch
@@ -113,6 +114,26 @@ def _get_graph_update_backend(
 
 class ModelAclGraphManager(ModelCudaGraphManager):
     """ACL Model Cuda Graph Manager for Ascend NPUs."""
+
+    def _init_candidates(self) -> None:
+        super()._init_candidates()
+        if not vllm_version_is("0.28.0"):
+            return
+        # v0.28 builds one token ladder for both modes. A rounded FULL size
+        # can hide the next PIECEWISE size, forcing mixed batches into eager.
+        # Reuse the captured descriptors, expanding each mode independently
+        # as in newer vLLM, while keeping FULL candidates first.
+        self._candidates.clear()
+        for mode in (CUDAGraphMode.FULL, CUDAGraphMode.PIECEWISE):
+            descs = sorted(self._capture_descs.get(mode, []), key=lambda desc: desc.num_tokens)
+            for num_active_loras in self.lora_capture_cases:
+                lora_descs = [desc for desc in descs if desc.num_active_loras == num_active_loras]
+                start = 0
+                for num_tokens, group in groupby(lora_descs, key=lambda desc: desc.num_tokens):
+                    matching = list(group)
+                    for tokens in range(start, num_tokens + 1):
+                        self._candidates.setdefault((tokens, num_active_loras), []).extend(matching)
+                    start = num_tokens + 1
 
     def __init__(  # type: ignore[misc]
         self,
