@@ -1,0 +1,5 @@
+{"stage": "server_starting", "mode": "bf16", "attempt": 0, "pid": 7786, "log": "/ws/logs/matrix_20261010T014843Z/serve_bf16_0.log"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 1, "input_len": 64, "output_len": 16, "result": "/ws/results/matrix_20261010T014843Z/smoke_short_bf16.json", "started_utc": "2026-10-10T01:50:33.580830+00:00"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 1, "input_len": 131072, "output_len": 1, "result": "/ws/results/matrix_20261010T014843Z/smoke_128k_bf16.json", "started_utc": "2026-10-10T01:50:36.489412+00:00"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 16, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261010T014843Z/bf16_in131072_out1024_c16.json", "started_utc": "2026-10-10T01:51:16.111375+00:00"}
+{"stage": "benchmark_running", "mode": "bf16", "concurrency": 32, "input_len": 131072, "output_len": 1024, "result": "/ws/results/matrix_20261010T014843Z/bf16_in131072_out1024_c32.json", "started_utc": "2026-10-10T02:17:15.054295+00:00"}

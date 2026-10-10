@@ -1,0 +1,13 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/scripts/run_matrix.py",
+  "--modes",
+  "bf16",
+  "--concurrencies",
+  "16",
+  "32",
+  "--request-timeout",
+  "7200",
+  "--precision-log-dir",
+  "/ws/logs/matrix_20261009T182045Z"
+]
