@@ -4,12 +4,12 @@
 #include "tiling/matmul/matmul_tiling.h"
 
 namespace {
-constexpr uint32_t HEAD_DIM_FIXED = 128;
 constexpr uint32_t BYTE_BITS = 8;
-constexpr uint32_t TILE_ROWS_FIXED = 128;
-constexpr uint32_t HALF_ROWS_FIXED = 64;  // each AIV drives its own M=64 matmul (kfc client)
+// supported head_dim values: 128 (64 rows/AIV/tile) and 256 (32 rows/AIV/tile);
+// the per-tile fp32 element count 16384 (64KB per workspace buf) is dimension-invariant.
+constexpr uint32_t HALF_ELEMS_FIXED = 8192;
 constexpr uint64_t WS_MM_SLACK = 1024 * 1024;  // reserved front region for matmul internal scratch
-constexpr uint64_t WS_BUF_BYTES = static_cast<uint64_t>(TILE_ROWS_FIXED) * HEAD_DIM_FIXED * sizeof(float);
+constexpr uint64_t WS_BUF_BYTES = 2 * HALF_ELEMS_FIXED * sizeof(float);
 constexpr uint64_t WS_PAIR_STRIDE = 8 * WS_BUF_BYTES;  // U0 U1 Y0 Y1 R0 R1 P0 P1
 
 // two Matmul objects statically share one AIC's L1/L0A/L0B/L0C at registration time:
@@ -64,14 +64,14 @@ static ge::graphStatus TilingFunc(gert::TilingContext *context)
     if (context->GetAttrs() != nullptr && context->GetAttrs()->GetInt(0) != nullptr) {
         mseBits = *context->GetAttrs()->GetInt(0);
     }
-    if (headDim != HEAD_DIM_FIXED || rotR != headDim || rotC != headDim || qjlC != headDim) {
+    if ((headDim != 128 && headDim != 256) || rotR != headDim || rotC != headDim || qjlC != headDim) {
         return ge::GRAPH_FAILED;
     }
     if (mseBits != 2 && mseBits != 3 && mseBits != 4) {
         return ge::GRAPH_FAILED;
     }
-    // first version supports qjl_dim == head_dim only (all acceptance shapes use 128)
-    if (qjlDim != HEAD_DIM_FIXED) {
+    // supports qjl_dim == head_dim only
+    if (qjlDim != headDim) {
         return ge::GRAPH_FAILED;
     }
 
@@ -82,14 +82,16 @@ static ge::graphStatus TilingFunc(gert::TilingContext *context)
 
     auto platform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     const uint32_t aicNum = platform.GetCoreNumAic();
-    const uint32_t numTiles = (static_cast<uint32_t>(totalRows) + TILE_ROWS_FIXED - 1) / TILE_ROWS_FIXED;
+    const uint32_t halfRows = HALF_ELEMS_FIXED / static_cast<uint32_t>(headDim);
+    const uint32_t tileRows = 2 * halfRows;
+    const uint32_t numTiles = (static_cast<uint32_t>(totalRows) + tileRows - 1) / tileRows;
     const uint32_t usedPairs = numTiles < aicNum ? numTiles : aicNum;
 
-    if (BuildMmTiling(platform, HALF_ROWS_FIXED, static_cast<int32_t>(headDim), static_cast<int32_t>(headDim),
+    if (BuildMmTiling(platform, static_cast<int32_t>(halfRows), static_cast<int32_t>(headDim), static_cast<int32_t>(headDim),
             tiling->mm1Tiling) != ge::GRAPH_SUCCESS) {
         return ge::GRAPH_FAILED;
     }
-    if (BuildMmTiling(platform, HALF_ROWS_FIXED, static_cast<int32_t>(qjlDim), static_cast<int32_t>(headDim),
+    if (BuildMmTiling(platform, static_cast<int32_t>(halfRows), static_cast<int32_t>(qjlDim), static_cast<int32_t>(headDim),
             tiling->mm2Tiling) != ge::GRAPH_SUCCESS) {
         return ge::GRAPH_FAILED;
     }

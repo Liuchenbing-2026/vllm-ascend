@@ -6,17 +6,17 @@
 #pragma pack(push, 8)
 struct alignas(8) KvCacheTurboQuantTilingData {
     uint32_t totalRows;       // num_tokens * num_kv_heads
-    uint32_t headDim;         // 128
-    uint32_t qjlDim;          // rows of qjl_matrix (128 supported)
+    uint32_t headDim;         // 128 or 256
+    uint32_t qjlDim;          // rows of qjl_matrix (must equal headDim)
     uint32_t mseBits;         // 2 / 3 / 4
     uint32_t idxBytesPerRow;  // headDim * mseBits / 8
     uint32_t qjlBytesPerRow;  // qjlDim / 8
     uint32_t usedPairs;       // launched AIC count (AIV count = 2x)
-    uint32_t numTiles;        // ceil(totalRows / 128)
+    uint32_t numTiles;        // ceil(totalRows / tileRows), tileRows = 16384/headDim
     uint32_t wsPairOffset;    // byte offset of per-pair region in workspace
     uint32_t wsPairStride;    // bytes per pair in workspace
-    AscendC::tiling::TCubeTiling mm1Tiling;  // U[128,128] @ rot^T[128,128]
-    AscendC::tiling::TCubeTiling mm2Tiling;  // Rn[128,128] @ qjl^T[128,qjlDim]
+    AscendC::tiling::TCubeTiling mm1Tiling;  // U[M,headDim] @ rot^T[headDim,headDim]
+    AscendC::tiling::TCubeTiling mm2Tiling;  // Rn[M,headDim] @ qjl^T[headDim,qjlDim]
 };
 #pragma pack(pop)
 

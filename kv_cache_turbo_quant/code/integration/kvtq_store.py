@@ -3,7 +3,8 @@
 Unlike shadow mode (quantize + discard, cache stays BF16), store mode:
   - shrinks the paged KV cache allocation to the packed TurboQuant format
     (per token per head: mse_bits-packed indices + bf16 norm), giving ~3.9x
-    more tokens for the same memory (bits=4, head_dim=128: 66 B vs 256 B);
+    more tokens for the same memory (bits=4: 66/130 B vs 256/512 B for
+    head_dim 128/256);
   - writes real quantized data in reshape_and_cache via the custom
     aclnn KvCacheTurboQuant op;
   - reads by staged dequant: gather packed blocks -> unpack -> centroid
@@ -26,9 +27,37 @@ import torch
 
 _ENABLED = os.environ.get("VLLM_ASCEND_KVTQ_STORE", "0") == "1"
 _MSE_BITS = int(os.environ.get("VLLM_ASCEND_KVTQ_BITS", "4"))
-_HEAD_DIM = 128
-_IDX_BYTES = {2: 32, 3: 48, 4: 64}[_MSE_BITS]
-_ROW_BYTES = _IDX_BYTES + 2  # + bf16 norm; qjl/gamma not stored in v1
+
+
+def _idx_bytes(head_dim):
+    return head_dim * _MSE_BITS // 8
+
+
+def _row_bytes(head_dim, hybrid=False):
+    raw = _idx_bytes(head_dim) + 2  # + bf16 norm; qjl/gamma not stored in v1
+    if not hybrid:
+        return raw
+    # Hybrid (GDN/mamba) models on Ascend: vllm-ascend forces
+    # attention page == mamba page via patch_mamba_config, requiring the packed
+    # bf16 "head size" h to satisfy h * kv_heads * 2 | ssm_page (h | 3*2**10 for
+    # the Qwen3.5/3.6/3.8 family). Pad the row to h=96 bf16 (192 B): keeps 2.67x
+    # compression for bits<=4 at head_dim=256 instead of losing everything to
+    # page padding.
+    hs = (raw + 1) // 2
+    if hs < 96:
+        return 192
+    return raw
+
+
+def _is_hybrid_config(vllm_config):
+    try:
+        tc = vllm_config.model_config.hf_text_config
+        lt = getattr(tc, "layer_types", None)
+        if lt and any(t != "full_attention" for t in lt):
+            return True
+        return getattr(tc, "full_attention_interval", None) is not None
+    except Exception:
+        return False
 
 CENTROIDS = {
     2: [-0.1335033178, -0.04002048075, 0.04002048075, 0.1335033178],
@@ -44,12 +73,12 @@ _cache = {}
 stats = {"quant_calls": 0, "quant_tokens": 0, "decode_calls": 0, "warned": set()}
 
 
-def _get_consts(device):
-    key = str(device)
+def _get_consts(device, head_dim):
+    key = (str(device), head_dim)
     if key not in _cache:
         gen = torch.Generator().manual_seed(20260929)
         q, _ = torch.linalg.qr(
-            torch.randn(_HEAD_DIM, _HEAD_DIM, generator=gen, dtype=torch.float64))
+            torch.randn(head_dim, head_dim, generator=gen, dtype=torch.float64))
         rot = q.to(torch.float32).to(device).contiguous()
         cent = torch.tensor(CENTROIDS[_MSE_BITS], dtype=torch.bfloat16, device=device)
         _cache[key] = (rot, rot.T.contiguous(), cent)
@@ -62,9 +91,12 @@ def _warn_once(tag, msg):
         print(f"[KVTQ-STORE] WARNING {msg}", flush=True)
 
 
-def _pack_rows(idx, norm):
+def _pack_rows(idx, norm, row_bytes=None):
     norm_b = norm.unsqueeze(-1).view(torch.uint8)  # [N,H,2]
-    return torch.cat([idx, norm_b], dim=-1)  # [N,H,ROW_BYTES] uint8
+    packed = torch.cat([idx, norm_b], dim=-1)  # [N,H,idx_bytes+2] uint8
+    if row_bytes is not None and packed.shape[-1] < row_bytes:
+        packed = torch.nn.functional.pad(packed, (0, row_bytes - packed.shape[-1]))
+    return packed
 
 
 def _get_byte_lut(device):
@@ -99,14 +131,15 @@ def _bf16_from_bytes(lo, hi):
 
 
 def _write_cache(self, tensor, cache_bf16, slots):
-    rot, _, _ = _get_consts(tensor.device)
     x = tensor.contiguous()
-    rot32, qjl32 = _get_quant_matrices(x.device)
+    head_dim = x.shape[-1]
+    rot32, qjl32 = _get_quant_matrices(x.device, head_dim)
     idx, _qjlb, norm, _gamma = torch.ops.turboquant.kv_cache_turbo_quant(
         x, rot32, qjl32, _MSE_BITS)
-    packed = _pack_rows(idx, norm)
+    row_bytes = cache_bf16.shape[-1] * 2  # self-describing layout (padded for hybrid)
+    packed = _pack_rows(idx, norm, row_bytes)
     num_kv_heads = cache_bf16.shape[2]
-    flat = cache_bf16.view(torch.uint8).view(-1, num_kv_heads, _ROW_BYTES)
+    flat = cache_bf16.view(torch.uint8).view(-1, num_kv_heads, row_bytes)
     flat.index_copy_(0, slots, packed)
     stats["quant_calls"] += 1
     stats["quant_tokens"] += x.shape[0]
@@ -115,14 +148,14 @@ def _write_cache(self, tensor, cache_bf16, slots):
               f"tokens={stats['quant_tokens']}", flush=True)
 
 
-def _get_quant_matrices(device):
-    rot, _, _ = _get_consts(device)
-    key = ("quant", str(device))
+def _get_quant_matrices(device, head_dim):
+    rot, _, _ = _get_consts(device, head_dim)
+    key = ("quant", str(device), head_dim)
     if key not in _cache:
         gen = torch.Generator().manual_seed(20260929)
-        _ = torch.linalg.qr(torch.randn(_HEAD_DIM, _HEAD_DIM, generator=gen, dtype=torch.float64))
-        qjl = (torch.randn(_HEAD_DIM, _HEAD_DIM, generator=gen, dtype=torch.float64)
-               .to(torch.float32) / math.sqrt(_HEAD_DIM)).to(device).contiguous()
+        _ = torch.linalg.qr(torch.randn(head_dim, head_dim, generator=gen, dtype=torch.float64))
+        qjl = (torch.randn(head_dim, head_dim, generator=gen, dtype=torch.float64)
+               .to(torch.float32) / math.sqrt(head_dim)).to(device).contiguous()
         _cache[key] = qjl
     return rot, _cache[key]
 
@@ -145,28 +178,30 @@ def _tq_reshape_and_cache(self, query, key, value, kv_cache, attn_metadata, outp
     return query, key, value, output
 
 
-def _dequant_dense(self, cache_bf16, block_table, seq_lens_list):
+def _dequant_dense(self, cache_bf16, block_table, seq_lens_list, head_dim):
     batch, max_blocks = block_table.shape
     block_size = cache_bf16.shape[1]
     num_kv_heads = cache_bf16.shape[2]
+    idx_bytes = _idx_bytes(head_dim)
+    row_bytes = cache_bf16.shape[-1] * 2  # self-describing (padded for hybrid)
     cache_u8 = cache_bf16.view(torch.uint8)  # [nb, blk, H, ROW]
     gathered = torch.index_select(
         cache_u8, 0, block_table.reshape(-1).long())  # [B*MB, blk, H, ROW]
-    gathered = gathered.view(batch, max_blocks * block_size, num_kv_heads, _ROW_BYTES)
+    gathered = gathered.view(batch, max_blocks * block_size, num_kv_heads, row_bytes)
     seq_lens = torch.tensor(seq_lens_list, dtype=torch.long, device=cache_bf16.device)
     positions = torch.arange(max_blocks * block_size, dtype=torch.long, device=cache_bf16.device)
     mask = positions.unsqueeze(0) < seq_lens.unsqueeze(1)
     rows = gathered[mask]  # [total, H, ROW]
-    norm = _bf16_from_bytes(rows[..., _IDX_BYTES], rows[..., _IDX_BYTES + 1])
+    norm = _bf16_from_bytes(rows[..., idx_bytes], rows[..., idx_bytes + 1])
     if _MSE_BITS == 4:
         lut = _get_byte_lut(cache_bf16.device)  # [256, 2] bf16
-        codes = rows[..., :_IDX_BYTES].reshape(-1).to(torch.int32)
+        codes = rows[..., :idx_bytes].reshape(-1).to(torch.int32)
         dense = torch.index_select(lut, 0, codes).view(
-            rows.shape[0], num_kv_heads, _HEAD_DIM)
+            rows.shape[0], num_kv_heads, head_dim)
     else:
-        _, _, centroids = _get_consts(cache_bf16.device)
-        idx = _unpack_indices(rows[..., :_IDX_BYTES], _MSE_BITS)
-        dense = centroids[idx].view(rows.shape[0], num_kv_heads, _HEAD_DIM)
+        _, _, centroids = _get_consts(cache_bf16.device, head_dim)
+        idx = _unpack_indices(rows[..., :idx_bytes], _MSE_BITS)
+        dense = centroids[idx].view(rows.shape[0], num_kv_heads, head_dim)
     dense = dense * norm.unsqueeze(-1).to(torch.bfloat16)
     return dense.contiguous()
 
@@ -179,10 +214,11 @@ def _tq_decode(self, query, attn_metadata, output, num_decodes=None):
     batch = num_decodes or len(attn_metadata.seq_lens_list)
     seq_lens_list = list(attn_metadata.seq_lens_list[:batch])
     block_table = attn_metadata.block_tables[:batch]
-    rot, rot_t, _ = _get_consts(query.device)
+    head_dim = query.shape[-1] if query.dim() == 3 else query.shape[-1] // self.num_heads  # real head dim (head_size may be packed)
+    rot, rot_t, _ = _get_consts(query.device, head_dim)
     q_rot = torch.matmul(query[:batch].float(), rot_t).to(torch.bfloat16)
-    k_dense = _dequant_dense(self, self.key_cache, block_table, seq_lens_list)
-    v_dense = _dequant_dense(self, self.value_cache, block_table, seq_lens_list)
+    k_dense = _dequant_dense(self, self.key_cache, block_table, seq_lens_list, head_dim)
+    v_dense = _dequant_dense(self, self.value_cache, block_table, seq_lens_list, head_dim)
     kv_cum = torch.tensor(seq_lens_list, dtype=torch.int32, device=query.device).cumsum(dim=0)
     q_cum = torch.arange(1, batch + 1, dtype=torch.int32, device=query.device)
     attn_out, _ = torch_npu.npu_fused_infer_attention_score(
@@ -199,7 +235,7 @@ def _tq_decode(self, query, attn_metadata, output, num_decodes=None):
         scale=self.scale,
         sparse_mode=0,
     )
-    out = torch.matmul(attn_out.view(batch, self.num_heads, _HEAD_DIM).float(), rot)
+    out = torch.matmul(attn_out.view(batch, self.num_heads, head_dim).float(), rot)
     output[:batch] = out.to(output.dtype)
     stats["decode_calls"] += 1
     return output
@@ -214,6 +250,7 @@ def _tq_forward_paged_attention(self, query, attn_metadata, output=None):
 
 def _prefill_fia(self, query, key, value, q_cumsum, kv_cumsum, attn_metadata, output, out_offset, num):
     import torch_npu
+    head_dim = query.shape[-1] if query.dim() == 3 else query.shape[-1] // self.num_heads
     attn_out, _ = torch_npu.npu_fused_infer_attention_score(
         query=query,
         key=key,
@@ -229,7 +266,7 @@ def _prefill_fia(self, query, key, value, q_cumsum, kv_cumsum, attn_metadata, ou
         scale=self.scale,
         sparse_mode=3,
     )
-    output[out_offset:out_offset + num] = attn_out.view(num, self.num_heads, _HEAD_DIM)
+    output[out_offset:out_offset + num] = attn_out.view(num, self.num_heads, head_dim)
     return output
 
 
@@ -286,13 +323,14 @@ def _prefill_from_cache(self, query, attn_metadata, output,
     already written to cache by reshape_and_cache) and run one FIA TND call,
     mirroring the production C8 chunked-prefill path."""
     import torch_npu
-    rot, rot_t, _ = _get_consts(query.device)
+    head_dim = query.shape[-1] if query.dim() == 3 else query.shape[-1] // self.num_heads
+    rot, rot_t, _ = _get_consts(query.device, head_dim)
     prefill_q = query[num_decode_tokens:num_tokens]
     q_rot = torch.matmul(prefill_q.float(), rot_t).to(torch.bfloat16)
     prefill_bt = attn_metadata.block_tables[num_decodes:]
     prefill_sl = list(attn_metadata.seq_lens_list[num_decodes:])
-    k_dense = _dequant_dense(self, self.key_cache, prefill_bt, prefill_sl)
-    v_dense = _dequant_dense(self, self.value_cache, prefill_bt, prefill_sl)
+    k_dense = _dequant_dense(self, self.key_cache, prefill_bt, prefill_sl, head_dim)
+    v_dense = _dequant_dense(self, self.value_cache, prefill_bt, prefill_sl, head_dim)
     kv_cum = torch.tensor(prefill_sl, dtype=torch.int32, device=query.device).cumsum(dim=0)
     q_cum = list(attn_metadata.actual_seq_lengths_q)
     prefill_q_cum = [q_cum[i] - num_decode_tokens for i in range(num_decodes, len(q_cum))]
@@ -305,11 +343,49 @@ def _prefill_from_cache(self, query, attn_metadata, output,
         scale=self.scale, sparse_mode=3,
     )
     n_prefill = num_tokens - num_decode_tokens
-    out = torch.matmul(attn_out.view(n_prefill, self.num_heads, _HEAD_DIM).float(), rot)
+    out = torch.matmul(attn_out.view(n_prefill, self.num_heads, head_dim).float(), rot)
     output[num_decode_tokens:num_tokens] = out.to(output.dtype)
     return output
 
 _installed = False
+
+
+def _patch_hybrid_page_alignment():
+    """vllm-ascend patch_mamba_config computes attention/mamba page sizes from
+    ModelConfig.get_head_size(), bypassing the Attention.get_kv_cache_spec hook.
+    Wrap verify_and_update_config so the page math sees the packed row size;
+    without this the whole capacity gain is eaten by hybrid page padding."""
+    try:
+        from vllm.config import ModelConfig
+    except Exception:
+        try:
+            from vllm.config.model import ModelConfig
+        except Exception as exc:
+            print(f"[KVTQ-STORE] page-alignment patch skipped: {exc}",
+                  flush=True)
+            return
+    try:
+        # Importing the vllm-ascend patch module executes its bottom-level
+        # assignment to HybridAttentionMambaModelConfig; wrap AFTER that so
+        # our wrapper is not clobbered.
+        import vllm_ascend.patch.platform.patch_mamba_config  # noqa: F401
+        from vllm.model_executor.models.config import (
+            HybridAttentionMambaModelConfig)
+    except Exception as exc:
+        print(f"[KVTQ-STORE] page-alignment patch skipped: {exc}", flush=True)
+        return
+    orig_verify = HybridAttentionMambaModelConfig.verify_and_update_config.__func__
+    orig_ghs = ModelConfig.get_head_size
+
+    def _verify(cls, vllm_config, *args, **kwargs):
+        ModelConfig.get_head_size = lambda mc: _row_bytes(orig_ghs(mc), True) // 2
+        try:
+            return orig_verify(cls, vllm_config, *args, **kwargs)
+        finally:
+            ModelConfig.get_head_size = orig_ghs
+
+    HybridAttentionMambaModelConfig.verify_and_update_config = classmethod(_verify)
+    print("[KVTQ-STORE] hybrid page-alignment patch installed", flush=True)
 
 
 def install():
@@ -324,10 +400,10 @@ def install():
     from vllm_ascend.attention.attention_v1 import (AscendAttentionBackend,
                                                     AscendAttentionBackendImpl)
 
-    # Shrink the KV cache at the spec level: report each 128-dim BF16 vector
-    # (256 B) as _ROW_BYTES packed bytes (66 B at bits=4), expressed as
-    # head_size=_ROW_BYTES//2 BF16 "elements" so that page accounting,
-    # num_blocks derivation and tensor allocation all stay consistent.
+    # Shrink the KV cache at the spec level: report each BF16 vector
+    # (2*head_dim B) as row_bytes packed bytes (head_dim*bits/8 + 2),
+    # expressed as head_size=row_bytes//2 BF16 "elements" so that page
+    # accounting, num_blocks derivation and tensor allocation stay consistent.
     import dataclasses
 
     from vllm.model_executor.layers.attention.attention import Attention
@@ -337,15 +413,19 @@ def install():
     def _get_spec(self_attn, vllm_config):
         spec = orig_get_spec(self_attn, vllm_config)
         if spec is not None and type(spec) is FullAttentionSpec:
-            spec = dataclasses.replace(spec, head_size=_ROW_BYTES // 2,
-                                       head_size_v=_ROW_BYTES // 2)
+            row = _row_bytes(spec.head_size, _is_hybrid_config(vllm_config))
+            spec = dataclasses.replace(spec, head_size=row // 2,
+                                       head_size_v=row // 2)
         return spec
 
     Attention.get_kv_cache_spec = _get_spec
+
+    _patch_hybrid_page_alignment()
 
     AscendAttentionBackendImpl.reshape_and_cache = _tq_reshape_and_cache
     AscendAttentionBackendImpl.forward_paged_attention = _tq_forward_paged_attention
     AscendAttentionBackendImpl.forward_fused_infer_attention = _tq_forward_fia
 
-    print(f"[KVTQ-STORE] installed (mse_bits={_MSE_BITS}, row_bytes={_ROW_BYTES}, "
-          f"compression={2 * _HEAD_DIM * 2 / (2 * _ROW_BYTES):.2f}x)", flush=True)
+    print(f"[KVTQ-STORE] installed (mse_bits={_MSE_BITS}, "
+          f"row_bytes=head_dim*{_MSE_BITS}/8+2, head_dim 128/256 -> "
+          f"{_row_bytes(128)}/{_row_bytes(256)} B)", flush=True)

@@ -5,15 +5,17 @@
 using namespace AscendC;
 
 namespace {
-constexpr uint32_t HEAD_DIM = 128;
-constexpr uint32_t TILE_ROWS = 128;              // matmul M, rows per tile
-constexpr uint32_t HALF_ROWS = 64;               // rows per AIV per tile
-constexpr uint32_t TILE_ELEMS = TILE_ROWS * HEAD_DIM;
-constexpr uint32_t HALF_ELEMS = HALF_ROWS * HEAD_DIM;      // 8192
-constexpr uint32_t MAX_LEVELS = 16;
+// head_dim is runtime-parameterized (128 or 256, from tiling). Each AIV always
+// processes HALF_ELEMS fp32 values per tile-half, so rows-per-tile shrink as the
+// dim grows (128 -> 64 rows/AIV, 256 -> 32 rows/AIV) and every UB/GM footprint
+// below is dimension-invariant.
+constexpr uint32_t HALF_ELEMS = 8192;            // fp32 elems per AIV per tile
+constexpr uint32_t TILE_ELEMS = 2 * HALF_ELEMS;  // fp32 elems per tile
+constexpr uint32_t MAX_HALF_ROWS = 64;           // rows per AIV at head_dim=128
+constexpr uint32_t MAX_LEVELS = 16;  // 2/3/4-bit -> 4/8/16 levels
 constexpr float MIN_NORM = 1e-30f;
 
-constexpr uint32_t WS_BUF_BYTES = TILE_ROWS * HEAD_DIM * sizeof(float);   // 64KB per buf
+constexpr uint32_t WS_BUF_BYTES = TILE_ELEMS * sizeof(float);             // 64KB per buf
 constexpr uint32_t WS_PAIR_STRIDE = 8 * WS_BUF_BYTES;                     // U0 U1 Y0 Y1 R0 R1 P0 P1
 
 // Lloyd-Max centroids for standard normal, identical to the golden reference.
@@ -50,6 +52,9 @@ public:
         mm2_ = mm2;
         td_ = td;
         totalRows_ = td->totalRows;
+        headDim_ = td->headDim;
+        halfRows_ = HALF_ELEMS / headDim_;
+        tileRows_ = 2 * halfRows_;
         qjlDim_ = td->qjlDim;
         mseBits_ = td->mseBits;
         levels_ = 1U << mseBits_;
@@ -63,7 +68,7 @@ public:
         subId_ = aivIdx & 1U;
 
         xGm_.SetGlobalBuffer(reinterpret_cast<__gm__ bfloat16_t *>(kvVectors),
-            static_cast<uint64_t>(totalRows_) * HEAD_DIM);
+            static_cast<uint64_t>(totalRows_) * headDim_);
         idxGm_.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t *>(quantIdx),
             static_cast<uint64_t>(totalRows_) * idxBytesPerRow_);
         qjlOutGm_.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t *>(quantQjl),
@@ -71,9 +76,9 @@ public:
         normGm_.SetGlobalBuffer(reinterpret_cast<__gm__ bfloat16_t *>(quantNorm), totalRows_);
         gammaGm_.SetGlobalBuffer(reinterpret_cast<__gm__ bfloat16_t *>(quantGamma), totalRows_);
         rotGm_.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(rot),
-            static_cast<uint64_t>(HEAD_DIM) * HEAD_DIM);
+            static_cast<uint64_t>(headDim_) * headDim_);
         qjlGm_.SetGlobalBuffer(reinterpret_cast<__gm__ float *>(qjl),
-            static_cast<uint64_t>(td->qjlDim) * HEAD_DIM);
+            static_cast<uint64_t>(td->qjlDim) * headDim_);
 
         // All user regions must be based on GetUserWorkspace(): the first
         // RESERVED_WORKSPACE (16MB on dav_c220) of the op workspace belongs to the
@@ -85,7 +90,7 @@ public:
             yGm_[db].SetGlobalBuffer(reinterpret_cast<__gm__ float *>(base + (2 + db) * WS_BUF_BYTES), TILE_ELEMS);
             rGm_[db].SetGlobalBuffer(reinterpret_cast<__gm__ float *>(base + (4 + db) * WS_BUF_BYTES), TILE_ELEMS);
             pGm_[db].SetGlobalBuffer(reinterpret_cast<__gm__ float *>(base + (6 + db) * WS_BUF_BYTES),
-                TILE_ROWS * td->qjlDim);
+                static_cast<uint64_t>(tileRows_) * td->qjlDim);
         }
 
         pipe_->InitBuffer(bufA_, HALF_ELEMS * sizeof(float));
@@ -97,14 +102,14 @@ public:
         pipe_->InitBuffer(bufOffG_, 1024 * sizeof(uint32_t));
         pipe_->InitBuffer(bufOffM2_, 512 * sizeof(uint32_t));
         pipe_->InitBuffer(bufOffQ2_, 256 * sizeof(uint32_t));
-        pipe_->InitBuffer(bufOffEO_, 128 * sizeof(uint32_t));
+        pipe_->InitBuffer(bufOffEO_, 256 * sizeof(uint32_t));
         pipe_->InitBuffer(bufPart_, 256 * sizeof(float));
-        pipe_->InitBuffer(bufNorm_, HALF_ROWS * sizeof(float));
-        pipe_->InitBuffer(bufRes_, HALF_ROWS * sizeof(float));
-        pipe_->InitBuffer(bufNC_, HALF_ROWS * sizeof(float));
-        pipe_->InitBuffer(bufGamma_, HALF_ROWS * sizeof(float));
-        pipe_->InitBuffer(bufNormBf_, HALF_ROWS * sizeof(bfloat16_t));
-        pipe_->InitBuffer(bufGammaBf_, HALF_ROWS * sizeof(bfloat16_t));
+        pipe_->InitBuffer(bufNorm_, MAX_HALF_ROWS * sizeof(float));
+        pipe_->InitBuffer(bufRes_, MAX_HALF_ROWS * sizeof(float));
+        pipe_->InitBuffer(bufNC_, MAX_HALF_ROWS * sizeof(float));
+        pipe_->InitBuffer(bufGamma_, MAX_HALF_ROWS * sizeof(float));
+        pipe_->InitBuffer(bufNormBf_, MAX_HALF_ROWS * sizeof(bfloat16_t));
+        pipe_->InitBuffer(bufGammaBf_, MAX_HALF_ROWS * sizeof(bfloat16_t));
         pipe_->InitBuffer(bufCent_, MAX_LEVELS * sizeof(float));
         pipe_->InitBuffer(bufBound_, MAX_LEVELS * sizeof(float));
         pipe_->InitBuffer(bufMask_, HALF_ELEMS / 8);
@@ -159,12 +164,12 @@ private:
 
     __aicore__ inline uint32_t ValidRows(uint32_t tileIdx) const
     {
-        const uint32_t rowBase = tileIdx * TILE_ROWS + subId_ * HALF_ROWS;
+        const uint32_t rowBase = tileIdx * tileRows_ + subId_ * halfRows_;
         if (rowBase >= totalRows_) {
             return 0;
         }
         const uint32_t left = totalRows_ - rowBase;
-        return left < HALF_ROWS ? left : HALF_ROWS;
+        return left < halfRows_ ? left : halfRows_;
     }
 
     __aicore__ inline void InitTables()
@@ -180,55 +185,82 @@ private:
         }
         // NOTE (verified on CANN 9.1 dav_c220): vgather offsets and srcBaseOffset are BYTE-granular,
         // so every offset table below stores byte offsets (element offset * sizeof(uint32_t)).
-        // level-1 deinterleave offsets: g_j[k, m] = src[k * 128 + 8 * m + j] (j via srcBaseOffset)
+        // level-1 deinterleave offsets: g_j[k, m] = src[k * headDim + 8 * m + j] (j via srcBaseOffset)
+        // 1024 entries for both dims: halfRows * (headDim/8) = 64*16 = 32*32.
         auto offG = bufOffG_.Get<uint32_t>();
+        const uint32_t mPerRow = headDim_ / 8;
         for (uint32_t i = 0; i < 1024; ++i) {
-            offG.SetValue(i, ((i / 16) * HEAD_DIM + (i % 16) * 8) * sizeof(uint32_t));
+            offG.SetValue(i, ((i / mPerRow) * headDim_ + (i % mPerRow) * 8) * sizeof(uint32_t));
         }
-        // mse2 level-2 offsets: z[k, m] from w[k * 16 + 2 * m + t]
+        // mse2 level-2 offsets: z[k, m] from w[k * (headDim/8) + 2 * m + t]
+        // 512 entries for both dims: halfRows * (headDim/16) = 64*8 = 32*16.
         auto offM2 = bufOffM2_.Get<uint32_t>();
+        const uint32_t wPerRow = headDim_ / 8;
+        const uint32_t m2 = headDim_ / 16;
         for (uint32_t i = 0; i < 512; ++i) {
-            offM2.SetValue(i, ((i / 8) * 16 + (i % 8) * 2) * sizeof(uint32_t));
+            offM2.SetValue(i, ((i / m2) * wPerRow + (i % m2) * 2) * sizeof(uint32_t));
         }
         // qjl level-2 offsets: z[k, m] from b[k * (qjlDim/8) + 4 * m + t]
         const uint32_t w1 = qjlDim_ / 8;
         auto offQ2 = bufOffQ2_.Get<uint32_t>();
         const uint32_t q2 = qjlDim_ / 32;
-        for (uint32_t i = 0; i < 64 * q2; ++i) {
+        for (uint32_t i = 0; i < halfRows_ * q2; ++i) {
             offQ2.SetValue(i, ((i / q2) * w1 + (i % q2) * 4) * sizeof(uint32_t));
         }
         // even / odd offsets for partial-sum pairwise combine
         auto offEO = bufOffEO_.Get<uint32_t>();
-        for (uint32_t i = 0; i < HALF_ROWS; ++i) {
+        for (uint32_t i = 0; i < halfRows_; ++i) {
             offEO.SetValue(i, 2 * i * sizeof(uint32_t));
-            offEO.SetValue(HALF_ROWS + i, (2 * i + 1) * sizeof(uint32_t));
+            offEO.SetValue(halfRows_ + i, (2 * i + 1) * sizeof(uint32_t));
+        }
+        // stride-4 offsets at [128, 128+4*halfRows) for the head_dim=256 row-sum tree
+        // (4 partials per row: gather lanes 4i+p, p = 0..3)
+        for (uint32_t p = 0; p < 4; ++p) {
+            for (uint32_t i = 0; i < halfRows_; ++i) {
+                offEO.SetValue(128 + p * halfRows_ + i, (4 * i + p) * sizeof(uint32_t));
+            }
         }
         SetFlag<HardEvent::S_V>(0);
         WaitFlag<HardEvent::S_V>(0);
     }
 
-    // per-row sum of src[64,128] fp32 with the same reduction structure as
-    // ReduceSum(count=128) per row: tree within each 64-elem repeat, then pair add.
+    // per-row sum of src[halfRows,headDim] fp32 with the same reduction structure as
+    // ReduceSum per row: tree within each 64-elem repeat, then pairwise over the
+    // headDim/64 partials ((p0+p1) for 128 dims, (p0+p1)+(p2+p3) for 256 dims).
     __aicore__ inline void RowSumsF32(const LocalTensor<float> &dst64, const LocalTensor<float> &src)
     {
         auto part = bufPart_.Get<float>();
-        ReduceRepeat<ReduceType::SUM, float, float>(part, src, 64, 2 * HALF_ROWS, 1, 1, 8);
+        const uint32_t nPartial = headDim_ / 64;  // 64-elem repeats per row: 2 or 4
+        ReduceRepeat<ReduceType::SUM, float, float>(part, src, 64, nPartial * halfRows_, 1, 1, 8);
         auto offEO = bufOffEO_.Get<uint32_t>();
-        auto ev = part[HALF_ROWS * 2];
-        auto od = part[HALF_ROWS * 3];
-        Gather(ev, part, offEO, 0, static_cast<uint64_t>(HALF_ROWS), 1, 8);
-        Gather(od, part, offEO[HALF_ROWS], 0, static_cast<uint64_t>(HALF_ROWS), 1, 8);
-        Add(dst64, ev, od, HALF_ROWS);
+        if (nPartial == 2) {
+            auto ev = part[halfRows_ * 2];
+            auto od = part[halfRows_ * 3];
+            Gather(ev, part, offEO, 0, static_cast<uint64_t>(halfRows_), 1, 8);
+            Gather(od, part, offEO[halfRows_], 0, static_cast<uint64_t>(halfRows_), 1, 8);
+            Add(dst64, ev, od, halfRows_);
+        } else {
+            auto a = part[halfRows_ * 4];
+            auto b = part[halfRows_ * 5];
+            auto t = part[halfRows_ * 6];
+            Gather(a, part, offEO[128], 0, static_cast<uint64_t>(halfRows_), 1, 8);
+            Gather(t, part, offEO[128 + halfRows_], 0, static_cast<uint64_t>(halfRows_), 1, 8);
+            Add(a, a, t, halfRows_);
+            Gather(b, part, offEO[128 + 2 * halfRows_], 0, static_cast<uint64_t>(halfRows_), 1, 8);
+            Gather(t, part, offEO[128 + 3 * halfRows_], 0, static_cast<uint64_t>(halfRows_), 1, 8);
+            Add(b, b, t, halfRows_);
+            Add(dst64, a, b, halfRows_);
+        }
     }
 
-    // broadcast vals[64] into D[64,128] fp32 (each row filled with vals[r])
+    // broadcast vals[halfRows] into D[halfRows,headDim] fp32 (each row filled with vals[r])
     __aicore__ inline void BroadcastRows(const LocalTensor<float> &dst, const LocalTensor<float> &vals,
         const LocalTensor<float> &bcTmp)
     {
-        Brcb(bcTmp, vals, HALF_ROWS / 8, BrcbRepeatParams{1, 8});
-        for (uint32_t j = 0; j < HEAD_DIM / 8; ++j) {
-            Copy(dst[j * 8], bcTmp, static_cast<uint64_t>(8), HALF_ROWS,
-                CopyRepeatParams{0, 0, HEAD_DIM / 8, 1});
+        Brcb(bcTmp, vals, halfRows_ / 8, BrcbRepeatParams{1, 8});
+        for (uint32_t j = 0; j < headDim_ / 8; ++j) {
+            Copy(dst[j * 8], bcTmp, static_cast<uint64_t>(8), halfRows_,
+                CopyRepeatParams{0, 0, static_cast<uint16_t>(headDim_ / 8), 1});
         }
     }
 
@@ -236,7 +268,7 @@ private:
     __aicore__ inline void Stage1(uint32_t tileIdx, uint32_t db)
     {
         const uint32_t valid = ValidRows(tileIdx);
-        const uint32_t rowBase = tileIdx * TILE_ROWS + subId_ * HALF_ROWS;
+        const uint32_t rowBase = tileIdx * tileRows_ + subId_ * halfRows_;
         auto xBf = bufX_.Get<bfloat16_t>();
         auto xf = bufA_.Get<float>();
         auto x2 = bufB_.Get<float>();
@@ -244,11 +276,11 @@ private:
         auto norms = bufNorm_.Get<float>();
 
         if (valid > 0) {
-            DataCopy(xBf, xGm_[static_cast<uint64_t>(rowBase) * HEAD_DIM], valid * HEAD_DIM);
+            DataCopy(xBf, xGm_[static_cast<uint64_t>(rowBase) * headDim_], valid * headDim_);
         }
-        if (valid < HALF_ROWS) {
-            Duplicate(xBf[static_cast<uint64_t>(valid) * HEAD_DIM], static_cast<bfloat16_t>(0.0f),
-                (HALF_ROWS - valid) * HEAD_DIM);
+        if (valid < halfRows_) {
+            Duplicate(xBf[static_cast<uint64_t>(valid) * headDim_], static_cast<bfloat16_t>(0.0f),
+                (halfRows_ - valid) * headDim_);
         }
         SetFlag<HardEvent::MTE2_V>(0);
         WaitFlag<HardEvent::MTE2_V>(0);
@@ -259,11 +291,11 @@ private:
 
         // TEMPORARY debug dump: stage1 intermediates for tile 0 / sub 0
 
-        Sqrt(norms, norms, HALF_ROWS);
+        Sqrt(norms, norms, halfRows_);
 
         // quant_norm output (bf16 of unclamped norm)
         auto normBf = bufNormBf_.Get<bfloat16_t>();
-        Cast(normBf, norms, RoundMode::CAST_RINT, HALF_ROWS);
+        Cast(normBf, norms, RoundMode::CAST_RINT, halfRows_);
         SetFlag<HardEvent::V_MTE3>(2);
         WaitFlag<HardEvent::V_MTE3>(2);
         if (valid > 0) {
@@ -274,7 +306,7 @@ private:
         WaitFlag<HardEvent::MTE3_V>(2);
 
         auto nc = bufNC_.Get<float>();
-        Maxs(nc, norms, MIN_NORM, HALF_ROWS);
+        Maxs(nc, norms, MIN_NORM, halfRows_);
         BroadcastRows(bufD_.Get<float>(), nc, bufB_.Get<float>());
         Div(u, xf, bufD_.Get<float>(), HALF_ELEMS);
 
@@ -287,7 +319,7 @@ private:
     __aicore__ inline void Stage3(uint32_t tileIdx, uint32_t db)
     {
         const uint32_t valid = ValidRows(tileIdx);
-        const uint32_t rowBase = tileIdx * TILE_ROWS + subId_ * HALF_ROWS;
+        const uint32_t rowBase = tileIdx * tileRows_ + subId_ * halfRows_;
 
         auto y = bufA_.Get<float>();
         DataCopy(y, yGm_[db][subId_ * HALF_ELEMS], HALF_ELEMS);
@@ -321,13 +353,13 @@ private:
         Mul(r2, r, r, HALF_ELEMS);
         auto resNorms = bufRes_.Get<float>();
         RowSumsF32(resNorms, r2);
-        Sqrt(resNorms, resNorms, HALF_ROWS);
+        Sqrt(resNorms, resNorms, halfRows_);
 
         // gamma = norm * residual_norm (bf16)
         auto gammaF = bufGamma_.Get<float>();
-        Mul(gammaF, bufNorm_.Get<float>(), resNorms, HALF_ROWS);
+        Mul(gammaF, bufNorm_.Get<float>(), resNorms, halfRows_);
         auto gammaBf = bufGammaBf_.Get<bfloat16_t>();
-        Cast(gammaBf, gammaF, RoundMode::CAST_RINT, HALF_ROWS);
+        Cast(gammaBf, gammaF, RoundMode::CAST_RINT, halfRows_);
         SetFlag<HardEvent::V_MTE3>(3);
         WaitFlag<HardEvent::V_MTE3>(3);
         if (valid > 0) {
@@ -339,7 +371,7 @@ private:
 
         // residual unit vector -> R ws
         auto nc = bufNC_.Get<float>();
-        Maxs(nc, resNorms, MIN_NORM, HALF_ROWS);
+        Maxs(nc, resNorms, MIN_NORM, halfRows_);
         BroadcastRows(bufD_.Get<float>(), nc, bufA_.Get<float>());
         Div(r2, r, bufD_.Get<float>(), HALF_ELEMS);
         SetFlag<HardEvent::V_MTE3>(1);
@@ -349,7 +381,7 @@ private:
         PackIdx(rowBase, valid);
     }
 
-    // bit-pack idxI[64,128] (int32 levels) into idxBytesPerRow bytes per row
+    // bit-pack idxI[halfRows,headDim] (int32 levels) into idxBytesPerRow bytes per row
     __aicore__ inline void PackIdx(uint32_t rowBase, uint32_t valid)
     {
         auto idxU = bufC_.Get<uint32_t>();
@@ -403,12 +435,14 @@ private:
             WaitFlag<HardEvent::V_S>(4);
             auto stage = bufX_.Get<uint32_t>();
             auto wi = bufC_.Get<uint32_t>();
-            for (uint32_t rr = 0; rr < HALF_ROWS; ++rr) {
-                for (uint32_t j = 0; j < 12; ++j) {
+            const uint32_t wRow = headDim_ / 8;          // packed 24-bit words per row (16 / 32)
+            const uint32_t outWords = idxBytesPerRow_ / 4;  // 12 / 24
+            for (uint32_t rr = 0; rr < halfRows_; ++rr) {
+                for (uint32_t j = 0; j < outWords; ++j) {
                     const uint32_t grp = (4 * j) / 3;
                     const uint32_t rem = (4 * j) % 3;
-                    const uint32_t w0 = wi.GetValue(rr * 16 + grp);
-                    const uint32_t w1v = wi.GetValue(rr * 16 + grp + 1);
+                    const uint32_t w0 = wi.GetValue(rr * wRow + grp);
+                    const uint32_t w1v = wi.GetValue(rr * wRow + grp + 1);
                     uint32_t z;
                     if (rem == 0) {
                         z = w0 | ((w1v & 0xffU) << 24);
@@ -417,7 +451,7 @@ private:
                     } else {
                         z = (w0 >> 16) | (w1v << 8);
                     }
-                    stage.SetValue(rr * 12 + j, z);
+                    stage.SetValue(rr * outWords + j, z);
                 }
             }
             SetFlag<HardEvent::S_MTE3>(5);
@@ -433,9 +467,9 @@ private:
     __aicore__ inline void Stage5(uint32_t tileIdx, uint32_t db)
     {
         const uint32_t valid = ValidRows(tileIdx);
-        const uint32_t rowBase = tileIdx * TILE_ROWS + subId_ * HALF_ROWS;
+        const uint32_t rowBase = tileIdx * tileRows_ + subId_ * halfRows_;
 
-        const uint32_t elems = HALF_ROWS * qjlDim_;
+        const uint32_t elems = halfRows_ * qjlDim_;
         auto p = bufA_.Get<float>();
         DataCopy(p, pGm_[db][subId_ * elems], elems);
         SetFlag<HardEvent::MTE2_V>(2);
@@ -453,14 +487,14 @@ private:
         auto sI = bufC_.Get<uint32_t>();
         Cast(sI.ReinterpretCast<int32_t>(), sF, RoundMode::CAST_RINT, elems);
 
-        // level-1: g_j[k, m] = s[k * 128 + 8 * m + j], byte words b = sum_j g_j << j
+        // level-1: g_j[k, m] = s[k * qjlDim + 8 * m + j], byte words b = sum_j g_j << j
         auto offG = bufOffG_.Get<uint32_t>();
         auto g = bufA_.Get<uint32_t>();
         const uint32_t w1 = qjlDim_ / 8;
-        const uint32_t gCount = 64 * w1;
+        const uint32_t gCount = halfRows_ * w1;
         for (uint32_t j = 0; j < 8; ++j) {
             Gather(g[j * gCount], sI, offG, j * sizeof(uint32_t), static_cast<uint64_t>(64),
-                static_cast<uint8_t>(w1), 8);
+                static_cast<uint8_t>(16), 8);
         }
         auto b = bufC_.Get<uint32_t>();
         auto t = bufC_.Get<uint32_t>()[gCount];
@@ -473,10 +507,10 @@ private:
         // level-2: z[k, m] = b[4m] | b[4m+1]<<8 | b[4m+2]<<16 | b[4m+3]<<24 -> [64, qjlDim/32]
         auto offQ2 = bufOffQ2_.Get<uint32_t>();
         const uint32_t q2 = qjlDim_ / 32;
-        const uint32_t zCount = 64 * q2;
+        const uint32_t zCount = halfRows_ * q2;
         for (uint32_t tt = 0; tt < 4; ++tt) {
             Gather(g[tt * zCount], b, offQ2, tt * sizeof(uint32_t), static_cast<uint64_t>(64),
-                static_cast<uint8_t>(q2), 8);
+                static_cast<uint8_t>(4), 8);
         }
         auto z = bufB_.Get<uint32_t>();
         ShiftLeft(t, g[zCount], static_cast<uint32_t>(8), zCount);
@@ -534,6 +568,9 @@ private:
     TBuf<TPosition::VECCALC> bufMask_;
 
     uint32_t totalRows_ = 0;
+    uint32_t headDim_ = 0;
+    uint32_t halfRows_ = 0;
+    uint32_t tileRows_ = 0;
     uint32_t qjlDim_ = 0;
     uint32_t mseBits_ = 0;
     uint32_t levels_ = 0;

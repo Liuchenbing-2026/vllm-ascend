@@ -24,7 +24,7 @@ import torch
 _ENABLED = os.environ.get("VLLM_ASCEND_KVTQ", "0") == "1"
 _DEBUG = os.environ.get("VLLM_ASCEND_KVTQ_DEBUG", "0") == "1"
 _MSE_BITS = int(os.environ.get("VLLM_ASCEND_KVTQ_BITS", "3"))
-_HEAD_DIM = 128
+_HEAD_DIMS = (128, 256)  # dims supported by the aclnn op
 
 CENTROIDS = {
     2: [-0.1335033178, -0.04002048075, 0.04002048075, 0.1335033178],
@@ -40,15 +40,15 @@ _matrices = {}
 stats = {"calls": 0, "tokens": 0, "max_rel_err": 0.0}
 
 
-def _get_matrices(device):
-    key = str(device)
+def _get_matrices(device, head_dim):
+    key = (str(device), head_dim)
     if key not in _matrices:
         gen = torch.Generator().manual_seed(20260929)
         q, _ = torch.linalg.qr(
-            torch.randn(_HEAD_DIM, _HEAD_DIM, generator=gen, dtype=torch.float64))
+            torch.randn(head_dim, head_dim, generator=gen, dtype=torch.float64))
         rot = q.to(torch.float32).to(device).contiguous()
-        qjl = (torch.randn(_HEAD_DIM, _HEAD_DIM, generator=gen, dtype=torch.float64)
-               .to(torch.float32) / math.sqrt(_HEAD_DIM)).to(device).contiguous()
+        qjl = (torch.randn(head_dim, head_dim, generator=gen, dtype=torch.float64)
+               .to(torch.float32) / math.sqrt(head_dim)).to(device).contiguous()
         _matrices[key] = (rot, qjl)
     return _matrices[key]
 
@@ -64,12 +64,12 @@ def _unpack_bits(packed, bit_width, length):
     return torch.stack(lanes, dim=-1).reshape(*values.shape[:-1], groups * 8)[..., :length]
 
 
-def _dequant(idx, qjlb, norm, gamma, rot, qjl, mse_bits):
+def _dequant(idx, qjlb, norm, gamma, rot, qjl, mse_bits, head_dim):
     centroids = torch.tensor(CENTROIDS[mse_bits], dtype=torch.float32, device=idx.device)
-    indices = _unpack_bits(idx, mse_bits, _HEAD_DIM).long()
+    indices = _unpack_bits(idx, mse_bits, head_dim).long()
     primary = centroids[indices]
-    signs = _unpack_bits(qjlb, 1, _HEAD_DIM).to(torch.float32) * 2.0 - 1.0
-    r_est = signs @ qjl * (math.sqrt(math.pi / 2.0) / _HEAD_DIM)
+    signs = _unpack_bits(qjlb, 1, head_dim).to(torch.float32) * 2.0 - 1.0
+    r_est = signs @ qjl * (math.sqrt(math.pi / 2.0) / head_dim)
     norm_f = norm.to(torch.float32).unsqueeze(-1)
     gamma_f = gamma.to(torch.float32).unsqueeze(-1)
     rotated_hat = primary + (gamma_f / norm_f.clamp_min(1e-30)) * r_est
@@ -77,7 +77,8 @@ def _dequant(idx, qjlb, norm, gamma, rot, qjl, mse_bits):
 
 
 def _shadow_quantize(name, tensor):
-    rot, qjl = _get_matrices(tensor.device)
+    head_dim = tensor.shape[-1]
+    rot, qjl = _get_matrices(tensor.device, head_dim)
     idx, qjlb, norm, gamma = torch.ops.turboquant.kv_cache_turbo_quant(
         tensor.contiguous(), rot, qjl, _MSE_BITS)
     stats["calls"] += 1
@@ -85,7 +86,7 @@ def _shadow_quantize(name, tensor):
     if stats["calls"] == 1 or stats["calls"] % 500 == 0:
         print(f"[KVTQ] pid={os.getpid()} calls={stats['calls']} {name} total_tokens={stats['tokens']}", flush=True)
     if _DEBUG:
-        recon = _dequant(idx, qjlb, norm, gamma, rot, qjl, _MSE_BITS)
+        recon = _dequant(idx, qjlb, norm, gamma, rot, qjl, _MSE_BITS, head_dim)
         ref = tensor.to(torch.float32)
         denom = ref.norm(dim=-1).clamp_min(1e-6)
         rel = ((recon - ref).norm(dim=-1) / denom).max().item()
@@ -118,7 +119,7 @@ def install():
                   f"key={None if key is None else tuple(key.shape)} len_kv_cache={len(kv_cache)}", flush=True)
         try:
             if (key is not None and value is not None and len(kv_cache) > 1
-                    and key.dim() == 3 and key.size(-1) == _HEAD_DIM):
+                    and key.dim() == 3 and key.size(-1) in _HEAD_DIMS):
                 num = getattr(attn_metadata, "num_actual_tokens", key.shape[0])
                 num = min(num, key.shape[0])
                 if num > 0:
