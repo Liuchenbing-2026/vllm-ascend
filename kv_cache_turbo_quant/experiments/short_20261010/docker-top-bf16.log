@@ -1,0 +1,8 @@
+PID                 COMMAND
+4084114             sleep infinity
+4092614             bash -c source /usr/local/Ascend/cann-9.1.0/set_env.sh /ws/.venv/bin/python /ws/short_ab_20261010/scripts/run_short.py > /ws/short_ab_20261010/controller.log 2>&1 task_rc=$? printf "%s\n" "$task_rc" > /ws/short_ab_20261010/controller.exit exit "$task_rc"
+4092701             /ws/.venv/bin/python /ws/short_ab_20261010/scripts/run_short.py
+4129475             /ws/.venv/bin/python -m vllm.entrypoints.openai.api_server --model /models/Qwen3-30B-A3B --served-model-name qwen3-30b-tq-ab --tensor-parallel-size 2 --dtype bfloat16 --enforce-eager --no-enable-prefix-caching --no-async-scheduling --max-model-len 4096 --max-num-batched-tokens 4096 --max-num-seqs 64 --kv-cache-memory-bytes 25769803776 --gpu-memory-utilization 0.92 --hf-overrides {"rope_scaling":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":40960}} --host 127.0.0.1 --port 18377
+4132382             /ws/.venv/bin/python -c from multiprocessing.resource_tracker import main;main(35)
+4132383             /ws/.venv/bin/python -c from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=36, pipe_handle=38) --multiprocessing-fork
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

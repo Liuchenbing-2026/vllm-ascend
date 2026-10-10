@@ -1,0 +1,16 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/scripts/bench_client.py",
+  "--mode",
+  "store4",
+  "--concurrency",
+  "1",
+  "--input-len",
+  "64",
+  "--output-len",
+  "16",
+  "--timeout",
+  "300",
+  "--output",
+  "/ws/short_ab_20261010/results/short_20261010T150112Z/smoke_store4.json"
+]

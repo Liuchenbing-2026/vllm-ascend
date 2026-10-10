@@ -1,0 +1,17 @@
+{
+  "captured_utc": "2026-10-10T15:01:59.665595+00:00",
+  "logical_cpu_count": 192,
+  "load_average": [
+    13.48,
+    14.32,
+    14.8
+  ],
+  "cpu_busy_fraction_one_second": 0.02622660201261795,
+  "memory": {
+    "MemTotal_kib": 1070876544,
+    "MemAvailable_kib": 767165504,
+    "SwapTotal_kib": 0,
+    "SwapFree_kib": 0
+  },
+  "scope": "one shared-host snapshot; no proof of absence of interference"
+}

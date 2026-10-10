@@ -1,0 +1,16 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/scripts/bench_client.py",
+  "--mode",
+  "store4",
+  "--concurrency",
+  "16",
+  "--input-len",
+  "20",
+  "--output-len",
+  "20",
+  "--timeout",
+  "3600",
+  "--output",
+  "/ws/short_ab_20261010/results/short_20261010T150112Z/s1_store4_in20_out20_c16_warmup.json"
+]

@@ -1,0 +1,6 @@
+source_expected.json 5082d251cfdaada2743276efdf9df5e6a96c0e3db750c522edcc8607c9c789f7
+scripts/serve_short.sh 427d0b4e05fdca44fd924dddea069074239c349775ffd513accde18106be698e
+scripts/run_short.py 200961bc2ad23763ecdef54a3d4b241ad8ccdeceb3feb717e5753e003a6e9119
+scripts/start_runtime.py 384450dc531a3361164b1f875d4f435989b6738ac8cb1c35b2a48a68b73f4322
+scripts/preflight.py 527d0be9ecdbfac7e6fa547e2a68f23ad3b7c76c2d3576b2d2fa66746c83f6bf
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied

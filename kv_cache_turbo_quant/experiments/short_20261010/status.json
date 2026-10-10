@@ -1,0 +1,10 @@
+{
+  "updated_utc": "2026-10-10T15:08:59.223325+00:00",
+  "stage": "benchmark_running",
+  "mode": "store4",
+  "concurrency": 60,
+  "input_len": 2000,
+  "output_len": 200,
+  "result": "/ws/short_ab_20261010/results/short_20261010T150112Z/s2_store4_in2000_out200_c60_warmup.json",
+  "started_utc": "2026-10-10T15:08:59.223286+00:00"
+}

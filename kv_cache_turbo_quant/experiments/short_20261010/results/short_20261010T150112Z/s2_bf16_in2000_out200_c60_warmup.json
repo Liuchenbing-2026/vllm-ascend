@@ -1,0 +1,1166 @@
+{
+  "captured_utc": "2026-10-10T15:04:28.879839+00:00",
+  "mode": "bf16",
+  "concurrency": 60,
+  "num_prompts": 60,
+  "input_len": 2000,
+  "output_len": 200,
+  "seed": 20261010,
+  "timeout_s": 3600.0,
+  "payload_sha256": [
+    "44e90c2a15a9ac386749a8b6800652e63f45aff34bd5416d980a9872de6cf21a",
+    "ca341d876c395e497abc63bf9e7d1263f39ee6b0082af7254190558fec1851a1",
+    "a7eec7f3e537cf90b195eb71e7955bd455f2faf3c3447e2ef662282de86121a1",
+    "ba7468e4506dafe7f7921c6d2e789edd9e71d3a4ce1379376df2555e60ac7de4",
+    "0381c61972791ea50763726e76887cd93b53e25dc47ecf6ef97bd790ed21dfb3",
+    "2e7f47e2515fe95a56edb2133f71e539de9bfc2cb4b6a8589ecd674830cba3d0",
+    "3746c6117859eca7a55c5c30ad690c1262b339104a61e8e166c16814c0c000f7",
+    "4b64b9982e7b1596f4fdd96db4de16ef03f28ea914a9d91c088f8ca6259303ef",
+    "017b065ddba3390fde3b13d5e1b6f7f18dba8d6f1cda09cf1dc497f0b90d5bb2",
+    "c9f53bc14dfa1d98e5138b414af4fbc04aee78278e24942fd249109b26fc8dd6",
+    "18f8288c1306efe5f33d6f68bdf1c63a33111cbff1f60b3bc9f938f80c40d1ff",
+    "bebafd71e42433aa4dfb157e95fb262a73bfe8c4e26f5f363dc916388db741d1",
+    "3f4bef125f02c6fa074e8eb05dcf75b3d07a6ded04d8700d1e9c0e8dad3b1c39",
+    "43234fc38ad2524197ac876a74efbba0a363c2f62b35c4e5719ff44c527748fd",
+    "43399d91dd1187b4b9a0d31732635335fd7d1ec7d963f509a17d3200c8ae9b13",
+    "2dac2c521cbb36efd4864d4cf079a6c5bff6023446c4ddc9cf7339edc50ff18c",
+    "6bfa8d7f6eb752cbceb5e0df6550921275b0b10c31bf76d379e8dff2592050ed",
+    "1d113f1d06d572472bc23225138b8a17f9ecb92a1f6b8377ede1d499722a2369",
+    "b506feee9aa1856b35664e96259241bafccb1dd5fc84b16ba0fb69a1bfc30e8f",
+    "d0ae298b0ecb49c8b6c9e5ca3348d55bbe69dc359c24c29567764150dfa8df83",
+    "edc291b372df26d7f94ec2a21d54c9e9577efdf51ff117b0669eb239186a9032",
+    "1230063890283b9eb5bbf622fc00f37cb7f7c2dc2d699ce5ddeaadc681bc7d47",
+    "2eb1057bb26aaeaec7e4ab4346348f087076a5829b9d3f0c5d6077c048efb3eb",
+    "b7d60c919c75db3cdaaf0de99b92c81c4b0d427d0193d28b156980768a3e67bb",
+    "12774b11bcea0e4636d7397f9f0f8a911da891c39ea5a737d74a40e669f186f6",
+    "e1c8e8248c62ac6a24274fac098a87418a1ada959491354d6caee7772b7f1cbf",
+    "e91078211a99127bebf36ef1ef16b682a5e7d0d73a733cebf14d3c16f9f3ce2e",
+    "320ef8b003eaa2950755a299406a841aa8d78ccd6d504cbdafb7813d188b5e5c",
+    "224409b9343dc1a53d72182ca04c181a71040b0cb9df494e445f6f867449a947",
+    "8fd862439794ba290a5d2ca88b1d1742e834003adbc06c29516ffdc4a9733348",
+    "a7aa7254ea28faa2a03a07fcf0f3f47cebeeba1a8a06f1470cac6bbb3eefe926",
+    "0b3016f5ebf6c855ec8e64faf2e0fc31282073db23083a0d15607a1034b0991e",
+    "8e91b8825e8546779cc26199a3497ef1d1a3e767f859e0b58addbe67e6113ede",
+    "d8135c3268337dec1e47ec7910ee07126f938d8a3e1a8b4112f2c497660ce303",
+    "9b7d6fcec17d5f754b08e6fc9ed2ab9802ff1f8c06e4516fbe93820a16f749b0",
+    "d19dc24b0dfc8efc957753f48354cd464cf228389e8116631caa626c19b68ba0",
+    "5bbc76a9c022a92b7b3015becdb2fe54342800fda43ca062015d6a19cef3971f",
+    "de1b7073317de13eb89fbf8fda04a44c8e724873667d261a07c4e753aabf3ccf",
+    "ec2280410cf17787deeaa4fbed3cfeeae643e5ce400e83caca4805ccf792336e",
+    "5edbc2958bdb8c5161afc6f768bd08a1fa71646a43df37eab36afa93ac3b26d6",
+    "b61bddd0a8a3fccb47c11b0a7e03bd5c5d92823b4da5e20679cedabddea55480",
+    "cfc6c82e4a323538129350dddb6d4d39a94c2da1008ee97f6fe3f2c4c6d77330",
+    "397022f61f3bc2931195740cb5a98f810edaad3b08e2bdb0c6eaff506f48b5b4",
+    "58f9c84c819f41435d448cef512ec81441b2354aed4eb5665c474a5faf5fdb44",
+    "4f8effc1a4bfde97df6aa47380633c67e50c2da24417377d4a218a9d212a9184",
+    "d0a266543855a5bbf77fae157c741d3d09972f5e1218a0af1ccb5b60484ad781",
+    "bfa1da6deb7c5eb8808d1b12601f8a9ccc4fc2b552dc55d1bc0443274af2fd7d",
+    "6585753a56eec76c45068a488fe91890b1117fe040fdd59f7940f7a24941ef8d",
+    "e51d6d883b531fa10658c6faa5a6db06eab5876e40c7ebec12f1e207fcb6ad99",
+    "51617043534007b31b36bb83555ab0aa6d71c426cbe42acdc12022f8d2d14344",
+    "4199bcb5b2a3ea3ac26c49011e880e93de8263505397b3217ca67c2024fd8524",
+    "2b5a750e89ec32f76723fb16b42418eac0c3967bdc7e188d53fd54eb1f5b7086",
+    "3543c259d0238645e974a7175a3cabe178b9d4387586490e75aab84f8d9719db",
+    "0f4f02f9b5ac6e7fd105124b90cdaa9c455685cd46cd4d954f69aae99b714832",
+    "fe8a8015b65907b06f8c53c3980a080fe0f34068a5e93cccd05b77eb5cf835ea",
+    "38d36c7034813a07544aaf2b446ecdded2ab4fa1a6e58852a7c8f5a132b1ad6d",
+    "641515d8d23a6e718c7eddeddc49eb0584ffcd68c034d34d7311c7189f325d7e",
+    "9566aace39d9b893ade8a36a6c66d28d834d07f617bd51d55d9d0f00e9bba9de",
+    "a8f2f32404c7e9ec461493f21d7299200e9e7dc6f0d76bc0ce909f589efbbd74",
+    "f031c42d278bf89aeb21516516d460216d35ce40011197ed81572897a5b6ba76"
+  ],
+  "successful": 60,
+  "failed": 0,
+  "duration_s": 40.605745169334114,
+  "complete_cohort": true,
+  "output_throughput_tps": 295.52468375983716,
+  "total_throughput_tps": 3250.771521358209,
+  "mean_ttft_s": 4.038190715030456,
+  "p99_ttft_s": 7.70141249557957,
+  "mean_tpot_ms": 171.22349917117998,
+  "p99_tpot_ms": 177.2746926993038,
+  "mean_latency_s": 38.111705970096715,
+  "requests": [
+    {
+      "id": 0,
+      "status": "success",
+      "events": 200,
+      "text": "\r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n",
+      "started_s": 0.001301109790802002,
+      "http_status": 200,
+      "last_token_s": 35.5890325428918,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 0.25888649467378855,
+      "tpot_s": 0.17753842235285433,
+      "latency_s": 35.58908917289227
+    },
+    {
+      "id": 1,
+      "status": "success",
+      "events": 200,
+      "text": ".1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "started_s": 0.0019902298226952553,
+      "http_status": 200,
+      "last_token_s": 35.748656201176345,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 0.5074630361050367,
+      "tpot_s": 0.17709142294005684,
+      "latency_s": 35.748694371432066
+    },
+    {
+      "id": 2,
+      "status": "success",
+      "events": 200,
+      "text": "\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n",
+      "started_s": 0.0023370906710624695,
+      "http_status": 200,
+      "last_token_s": 35.74500474333763,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 0.5069566955789924,
+      "tpot_s": 0.1770756183304454,
+      "latency_s": 35.74506352469325
+    },
+    {
+      "id": 3,
+      "status": "success",
+      "events": 200,
+      "text": "\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n",
+      "started_s": 0.002611870877444744,
+      "http_status": 200,
+      "last_token_s": 35.90297677740455,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 0.7549647158011794,
+      "tpot_s": 0.17662317618896164,
+      "latency_s": 35.90302129741758
+    },
+    {
+      "id": 4,
+      "status": "success",
+      "events": 200,
+      "text": "ating \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n",
+      "started_s": 0.002885631285607815,
+      "http_status": 200,
+      "last_token_s": 35.90526699181646,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 0.754754975438118,
+      "tpot_s": 0.17663573877577057,
+      "latency_s": 35.90530501212925
+    },
+    {
+      "id": 5,
+      "status": "success",
+      "events": 200,
+      "text": "s. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights. Copyrights.",
+      "started_s": 0.0031674709171056747,
+      "http_status": 200,
+      "last_token_s": 36.0624965550378,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 1.0015410976484418,
+      "tpot_s": 0.1761857058160269,
+      "latency_s": 36.0625451952219
+    },
+    {
+      "id": 6,
+      "status": "success",
+      "events": 200,
+      "text": "v\n. 1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "started_s": 0.0034384513273835182,
+      "http_status": 200,
+      "last_token_s": 36.062722955830395,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 1.0014240369200706,
+      "tpot_s": 0.17618743175331822,
+      "latency_s": 36.06275828555226
+    },
+    {
+      "id": 7,
+      "status": "success",
+      "events": 200,
+      "text": "' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' ' Germanic'(' ' '",
+      "started_s": 0.0037015508860349655,
+      "http_status": 200,
+      "last_token_s": 36.2210454903543,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 1.249152658507228,
+      "tpot_s": 0.17573815493390488,
+      "latency_s": 36.221087669953704
+    },
+    {
+      "id": 8,
+      "status": "success",
+      "events": 200,
+      "text": "\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n",
+      "started_s": 0.0039693210273981094,
+      "http_status": 200,
+      "last_token_s": 36.22320530470461,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 1.2488565379753709,
+      "tpot_s": 0.1757504963152223,
+      "latency_s": 36.22324330545962
+    },
+    {
+      "id": 9,
+      "status": "success",
+      "events": 200,
+      "text": "\n\t\t}\n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n\t\t// \n",
+      "started_s": 0.004357441328465939,
+      "http_status": 200,
+      "last_token_s": 36.379056804813445,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 1.4972879383713007,
+      "tpot_s": 0.17528527068563893,
+      "latency_s": 36.37909528519958
+    },
+    {
+      "id": 10,
+      "status": "success",
+      "events": 200,
+      "text": "\n  1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1",
+      "started_s": 0.00462678074836731,
+      "http_status": 200,
+      "last_token_s": 36.38122648000717,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 1.4970732796937227,
+      "tpot_s": 0.17529725226288165,
+      "latency_s": 36.381263189949095
+    },
+    {
+      "id": 11,
+      "status": "success",
+      "events": 200,
+      "text": "eried\n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n, \n\n,",
+      "started_s": 0.00490599125623703,
+      "http_status": 200,
+      "last_token_s": 36.5385585622862,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 1.7468813005834818,
+      "tpot_s": 0.17483254905378248,
+      "latency_s": 36.53860328160226
+    },
+    {
+      "id": 12,
+      "status": "success",
+      "events": 200,
+      "text": "\r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n",
+      "started_s": 0.005184181034564972,
+      "http_status": 200,
+      "last_token_s": 36.53849932271987,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 1.7466309312731028,
+      "tpot_s": 0.17483350950475762,
+      "latency_s": 36.53853254299611
+    },
+    {
+      "id": 13,
+      "status": "success",
+      "events": 200,
+      "text": "sBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackgroundsBackground",
+      "started_s": 0.005446971394121647,
+      "http_status": 200,
+      "last_token_s": 36.69520075339824,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 1.995396351441741,
+      "tpot_s": 0.1743708763917412,
+      "latency_s": 36.695242433808744
+    },
+    {
+      "id": 14,
+      "status": "success",
+      "events": 200,
+      "text": ". 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "started_s": 0.0057105813175439835,
+      "http_status": 200,
+      "last_token_s": 36.69535022508353,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 1.9947379417717457,
+      "tpot_s": 0.17437493609704413,
+      "latency_s": 36.69538334477693
+    },
+    {
+      "id": 15,
+      "status": "success",
+      "events": 200,
+      "text": " \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n",
+      "started_s": 0.005972822196781635,
+      "http_status": 200,
+      "last_token_s": 36.850139561109245,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 2.244366622529924,
+      "tpot_s": 0.17389835647527296,
+      "latency_s": 36.8501805504784
+    },
+    {
+      "id": 16,
+      "status": "success",
+      "events": 200,
+      "text": ", 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, 1999, ",
+      "started_s": 0.0062340619042515755,
+      "http_status": 200,
+      "last_token_s": 36.851464534178376,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 2.2445765929296613,
+      "tpot_s": 0.1739039595037624,
+      "latency_s": 36.85150136426091
+    },
+    {
+      "id": 17,
+      "status": "success",
+      "events": 200,
+      "text": " video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video video",
+      "started_s": 0.006597632542252541,
+      "http_status": 200,
+      "last_token_s": 37.02341212518513,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 2.493649653159082,
+      "tpot_s": 0.1735163943317892,
+      "latency_s": 37.023445285856724
+    },
+    {
+      "id": 18,
+      "status": "success",
+      "events": 200,
+      "text": ", next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next, next",
+      "started_s": 0.00687315221875906,
+      "http_status": 200,
+      "last_token_s": 37.02286268491298,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 2.4932977939024568,
+      "tpot_s": 0.17351540146236444,
+      "latency_s": 37.02290747500956
+    },
+    {
+      "id": 19,
+      "status": "success",
+      "events": 200,
+      "text": "\n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n. \n\n.",
+      "started_s": 0.007144952192902565,
+      "http_status": 200,
+      "last_token_s": 37.20345006417483,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 2.744092386215925,
+      "tpot_s": 0.17316260139677842,
+      "latency_s": 37.203491103835404
+    },
+    {
+      "id": 20,
+      "status": "success",
+      "events": 200,
+      "text": "\r\n \r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n \r\n \r\n\r\n\r\n\r\n",
+      "started_s": 0.007415302097797394,
+      "http_status": 200,
+      "last_token_s": 37.20332374423742,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 2.7438481664285064,
+      "tpot_s": 0.17316319385833626,
+      "latency_s": 37.203355574049056
+    },
+    {
+      "id": 21,
+      "status": "success",
+      "events": 200,
+      "text": "\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag\n\nfrag",
+      "started_s": 0.007692721672356129,
+      "http_status": 200,
+      "last_token_s": 37.38113314751536,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 2.997012209147215,
+      "tpot_s": 0.17278452732848312,
+      "latency_s": 37.38117788825184
+    },
+    {
+      "id": 22,
+      "status": "success",
+      "events": 200,
+      "text": ", 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "started_s": 0.007955041714012623,
+      "http_status": 200,
+      "last_token_s": 37.38136627804488,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 2.9974466897547245,
+      "tpot_s": 0.172783515519046,
+      "latency_s": 37.38140021916479
+    },
+    {
+      "id": 23,
+      "status": "success",
+      "events": 200,
+      "text": "\r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n",
+      "started_s": 0.008215881884098053,
+      "http_status": 200,
+      "last_token_s": 37.56468806229532,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 3.2483039312064648,
+      "tpot_s": 0.17244414136225555,
+      "latency_s": 37.56472483370453
+    },
+    {
+      "id": 24,
+      "status": "success",
+      "events": 200,
+      "text": "isestreams\n\nOkay, I need to figure out what the user is asking for. The input they provided is a mix of different programming languages and some random text. \n\nLooking at the input, there are parts that mention \"Java\", \"C++\", \"Python\", and some other terms like \"JSON\", \"XML\", etc. There are also some random words and phrases that don't seem to fit into any particular programming context.\n\nThe user's question is asking for the \"correct\" answer, but the input they provided is a mix of different programming languages and some random text. \n\nSo, the user is probably asking for help in understanding the input they provided, which is a mix of different programming languages and some random text. \n\nAlternatively, the user might be asking for help in parsing or processing the input they provided, which is a mix of different programming languages and some random text. \n\nBut since the user's question is asking for the \"correct\" answer, but the input",
+      "started_s": 0.00847566220909357,
+      "http_status": 200,
+      "last_token_s": 37.56253665871918,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 3.247053051367402,
+      "tpot_s": 0.17243961611734562,
+      "latency_s": 37.56258026883006
+    },
+    {
+      "id": 25,
+      "status": "success",
+      "events": 200,
+      "text": "\n 2023-03-15 15:33:33\n 2023-03-15 15:33:33\n 2023-03-15 15:33:33\n 2023-03-15 15:33:33\n 2023-03-15 15:33:33\n 2023-03-15 15:33:33\n 2023-03-15 15:33:33\n 2023-03-15 15:33:33\n 2023-03-15 15:33:33\n 2023-03-1",
+      "started_s": 0.010106933303177357,
+      "http_status": 200,
+      "last_token_s": 37.74507209286094,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 3.499168951995671,
+      "tpot_s": 0.17208996553198627,
+      "latency_s": 37.74510512314737
+    },
+    {
+      "id": 26,
+      "status": "success",
+      "events": 200,
+      "text": "\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£\n\n£",
+      "started_s": 0.010403573513031006,
+      "http_status": 200,
+      "last_token_s": 37.744690062478185,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 3.498481691814959,
+      "tpot_s": 0.17209149935006646,
+      "latency_s": 37.74473138246685
+    },
+    {
+      "id": 27,
+      "status": "success",
+      "events": 200,
+      "text": "ake the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to make the time to",
+      "started_s": 0.010681313462555408,
+      "http_status": 200,
+      "last_token_s": 37.92264864593744,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 3.7627480579540133,
+      "tpot_s": 0.1716577918994142,
+      "latency_s": 37.92269226536155
+    },
+    {
+      "id": 28,
+      "status": "success",
+      "events": 200,
+      "text": ", 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "started_s": 0.010946082882583141,
+      "http_status": 200,
+      "last_token_s": 37.924147110432386,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 3.7654212694615126,
+      "tpot_s": 0.17165188864809483,
+      "latency_s": 37.92418611980975
+    },
+    {
+      "id": 29,
+      "status": "success",
+      "events": 200,
+      "text": "pretation\r\n\r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n",
+      "started_s": 0.011209293268620968,
+      "http_status": 200,
+      "last_token_s": 38.2112608095631,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 4.0302533050999045,
+      "tpot_s": 0.17176385680634773,
+      "latency_s": 38.21130701992661
+    },
+    {
+      "id": 30,
+      "status": "success",
+      "events": 200,
+      "text": "inked link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link link",
+      "started_s": 0.011468303389847279,
+      "http_status": 200,
+      "last_token_s": 38.211424170061946,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 4.030398684553802,
+      "tpot_s": 0.1717639471633575,
+      "latency_s": 38.21145857963711
+    },
+    {
+      "id": 31,
+      "status": "success",
+      "events": 200,
+      "text": " \r\n \r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n",
+      "started_s": 0.011755772866308689,
+      "http_status": 200,
+      "last_token_s": 38.3746393956244,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 4.285045218653977,
+      "tpot_s": 0.17130449335161016,
+      "latency_s": 38.37467548530549
+    },
+    {
+      "id": 32,
+      "status": "success",
+      "events": 200,
+      "text": " — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant — enh_e Value significant",
+      "started_s": 0.012032262980937958,
+      "http_status": 200,
+      "last_token_s": 38.373746923170984,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 4.284198688343167,
+      "tpot_s": 0.17130426248657193,
+      "latency_s": 38.373786193318665
+    },
+    {
+      "id": 33,
+      "status": "success",
+      "events": 200,
+      "text": "ext_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_202",
+      "started_s": 0.012415013276040554,
+      "http_status": 200,
+      "last_token_s": 38.540129234083,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 4.538467020727694,
+      "tpot_s": 0.17086262418771508,
+      "latency_s": 38.54017510358244
+    },
+    {
+      "id": 34,
+      "status": "success",
+      "events": 200,
+      "text": "\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActiveMessage\n\nActive",
+      "started_s": 0.012692812830209732,
+      "http_status": 200,
+      "last_token_s": 38.54063671641052,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 4.539083361625671,
+      "tpot_s": 0.17086207715972285,
+      "latency_s": 38.54067318607122
+    },
+    {
+      "id": 35,
+      "status": "success",
+      "events": 200,
+      "text": ", \r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n",
+      "started_s": 0.01296242419630289,
+      "http_status": 200,
+      "last_token_s": 38.701698024757206,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 4.792610812932253,
+      "tpot_s": 0.17039742317499976,
+      "latency_s": 38.7017359547317
+    },
+    {
+      "id": 36,
+      "status": "success",
+      "events": 200,
+      "text": "ed\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+      "started_s": 0.01323576457798481,
+      "http_status": 200,
+      "last_token_s": 38.702193905599415,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 4.793163562193513,
+      "tpot_s": 0.17039713740404977,
+      "latency_s": 38.702229055576026
+    },
+    {
+      "id": 37,
+      "status": "success",
+      "events": 200,
+      "text": ", 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ",
+      "started_s": 0.013505884446203709,
+      "http_status": 200,
+      "last_token_s": 38.86342485528439,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 5.049736586399376,
+      "tpot_s": 0.16991803150193477,
+      "latency_s": 38.863460425287485
+    },
+    {
+      "id": 38,
+      "status": "success",
+      "events": 200,
+      "text": "\r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n",
+      "started_s": 0.0137729337438941,
+      "http_status": 200,
+      "last_token_s": 38.86266482528299,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 5.049267956987023,
+      "tpot_s": 0.16991656717736667,
+      "latency_s": 38.86270241532475
+    },
+    {
+      "id": 39,
+      "status": "success",
+      "events": 200,
+      "text": ", \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n",
+      "started_s": 0.014043394476175308,
+      "http_status": 200,
+      "last_token_s": 39.023137473501265,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 5.305302379652858,
+      "tpot_s": 0.16943635725551964,
+      "latency_s": 39.02316905371845
+    },
+    {
+      "id": 40,
+      "status": "success",
+      "events": 200,
+      "text": " \r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n",
+      "started_s": 0.014304294250905514,
+      "http_status": 200,
+      "last_token_s": 39.02276276424527,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 5.304361529648304,
+      "tpot_s": 0.16943920218390435,
+      "latency_s": 39.02280326373875
+    },
+    {
+      "id": 41,
+      "status": "success",
+      "events": 200,
+      "text": "\n\n were singprintfuda turnshouldats servercache App redistribamicisplaynonicht\n\n were singprintfuda turnshouldats servercache App redistribamicisplaynonicht\n\n were singprintfuda turnshouldats servercache App redistribamicisplaynonicht\n\n were singprintfuda turnshouldats servercache App redistribamicisplaynonicht\n\n were singprintfuda turnshouldats servercache App redistribamicisplaynonicht\n\n were singprintfuda turnshouldats servercache App redistribamicisplaynonicht\n\n were singprintfuda turnshouldats servercache App redistribamicisplaynonicht\n\n were singprintfuda turnshouldats servercache App redistribamicisplaynonicht\n\n were singprintfuda turnshouldats servercache App redistribamicisplaynonicht\n\n were singprintfuda turnshouldats servercache App redistribamicisplaynonicht\n\n were singprintfuda turnshouldats servercache App redistribamicisplaynonicht\n\n were singprintfuda turnshouldats servercache App redistribamicisplaynonicht\n\n were singprintfuda turnshouldats",
+      "started_s": 0.014679374173283577,
+      "http_status": 200,
+      "last_token_s": 39.18180978950113,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 5.562443424016237,
+      "tpot_s": 0.16894153952504973,
+      "latency_s": 39.18184147961438
+    },
+    {
+      "id": 42,
+      "status": "success",
+      "events": 200,
+      "text": "y\n\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n,,\n",
+      "started_s": 0.01495666429400444,
+      "http_status": 200,
+      "last_token_s": 39.181345920078456,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 5.561708424240351,
+      "tpot_s": 0.1689429019891362,
+      "latency_s": 39.18138473946601
+    },
+    {
+      "id": 43,
+      "status": "success",
+      "events": 200,
+      "text": "\n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n \n \n\n",
+      "started_s": 0.015220954082906246,
+      "http_status": 200,
+      "last_token_s": 39.342321339063346,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 5.81876325327903,
+      "tpot_s": 0.16846009088333827,
+      "latency_s": 39.34235288947821
+    },
+    {
+      "id": 44,
+      "status": "success",
+      "events": 200,
+      "text": "inuous\n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n, \n,",
+      "started_s": 0.01548102404922247,
+      "http_status": 200,
+      "last_token_s": 39.34195448923856,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 5.820182637311518,
+      "tpot_s": 0.16845111483380423,
+      "latency_s": 39.34199132863432
+    },
+    {
+      "id": 45,
+      "status": "success",
+      "events": 200,
+      "text": "（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n（\n\n",
+      "started_s": 0.015750563703477383,
+      "http_status": 200,
+      "last_token_s": 39.49989373330027,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 6.076231925748289,
+      "tpot_s": 0.16795809953543708,
+      "latency_s": 39.499929113313556
+    },
+    {
+      "id": 46,
+      "status": "success",
+      "events": 200,
+      "text": "_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023_2023",
+      "started_s": 0.016017314046621323,
+      "http_status": 200,
+      "last_token_s": 39.49921463243663,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 6.077758268453181,
+      "tpot_s": 0.16794701690443947,
+      "latency_s": 39.49925391189754
+    },
+    {
+      "id": 47,
+      "status": "success",
+      "events": 200,
+      "text": " \r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n \r\n\r\n \r\n \r\n \r\n",
+      "started_s": 0.016307574696838856,
+      "http_status": 200,
+      "last_token_s": 39.6580538675189,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 6.337663123384118,
+      "tpot_s": 0.167439149468014,
+      "latency_s": 39.65809279773384
+    },
+    {
+      "id": 48,
+      "status": "success",
+      "events": 200,
+      "text": "OT;_response\"]_response_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_otions_",
+      "started_s": 0.016572714783251286,
+      "http_status": 200,
+      "last_token_s": 39.658310098573565,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 6.337170013226569,
+      "tpot_s": 0.16744291500174371,
+      "latency_s": 39.658345078118145
+    },
+    {
+      "id": 49,
+      "status": "success",
+      "events": 200,
+      "text": "\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector\n\t\teffector",
+      "started_s": 0.016947384923696518,
+      "http_status": 200,
+      "last_token_s": 39.81627843249589,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 6.5977138401940465,
+      "tpot_s": 0.16692746026282335,
+      "latency_s": 39.816312172450125
+    },
+    {
+      "id": 50,
+      "status": "success",
+      "events": 200,
+      "text": "\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n  characteR\r\n ",
+      "started_s": 0.01723359525203705,
+      "http_status": 200,
+      "last_token_s": 39.815838671289384,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 6.597072409465909,
+      "tpot_s": 0.1669284736775049,
+      "latency_s": 39.81588514056057
+    },
+    {
+      "id": 51,
+      "status": "success",
+      "events": 200,
+      "text": "\r\n \r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n \r\n \r\n\r\n",
+      "started_s": 0.017499204725027084,
+      "http_status": 200,
+      "last_token_s": 39.97020963858813,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 6.855418862774968,
+      "tpot_s": 0.1664059837980561,
+      "latency_s": 39.97024356853217
+    },
+    {
+      "id": 52,
+      "status": "success",
+      "events": 200,
+      "text": ", administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration, administration",
+      "started_s": 0.017762495204806328,
+      "http_status": 200,
+      "last_token_s": 39.969789708033204,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 6.855431532487273,
+      "tpot_s": 0.16640380992736648,
+      "latency_s": 39.96983537822962
+    },
+    {
+      "id": 53,
+      "status": "success",
+      "events": 200,
+      "text": "\n\n \t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t\t//\t",
+      "started_s": 0.018029505386948586,
+      "http_status": 200,
+      "last_token_s": 40.12464290484786,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 7.114924597553909,
+      "tpot_s": 0.1658779814436882,
+      "latency_s": 40.12467588484287
+    },
+    {
+      "id": 54,
+      "status": "success",
+      "events": 200,
+      "text": " \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n",
+      "started_s": 0.018302525393664837,
+      "http_status": 200,
+      "last_token_s": 40.12427445501089,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 7.114490117877722,
+      "tpot_s": 0.16587831325192548,
+      "latency_s": 40.124320074915886
+    },
+    {
+      "id": 55,
+      "status": "success",
+      "events": 200,
+      "text": "\r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n",
+      "started_s": 0.018561335280537605,
+      "http_status": 200,
+      "last_token_s": 40.282435729168355,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 7.376976708881557,
+      "tpot_s": 0.16535406542857686,
+      "latency_s": 40.28246698901057
+    },
+    {
+      "id": 56,
+      "status": "success",
+      "events": 200,
+      "text": ", the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the, the",
+      "started_s": 0.01882177498191595,
+      "http_status": 200,
+      "last_token_s": 40.28202883899212,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 7.376305348239839,
+      "tpot_s": 0.16535539442589084,
+      "latency_s": 40.28206832893193
+    },
+    {
+      "id": 57,
+      "status": "success",
+      "events": 200,
+      "text": "\r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n",
+      "started_s": 0.019182365387678146,
+      "http_status": 200,
+      "last_token_s": 40.43606149498373,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 7.637844726443291,
+      "tpot_s": 0.16481515964090673,
+      "latency_s": 40.43610006477684
+    },
+    {
+      "id": 58,
+      "status": "success",
+      "events": 200,
+      "text": ". 2023-02-20 12:00:00\n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n",
+      "started_s": 0.01945424545556307,
+      "http_status": 200,
+      "last_token_s": 40.4358730847016,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 7.637091455981135,
+      "tpot_s": 0.16481799813427367,
+      "latency_s": 40.43590414430946
+    },
+    {
+      "id": 59,
+      "status": "success",
+      "events": 200,
+      "text": ", \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n \r\n",
+      "started_s": 0.019713955000042915,
+      "http_status": 200,
+      "last_token_s": 40.582732597365975,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 2000,
+        "total_tokens": 2200,
+        "completion_tokens": 200
+      },
+      "ttft_s": 7.792888065800071,
+      "tpot_s": 0.16477308809832114,
+      "latency_s": 40.58277201745659
+    }
+  ],
+  "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+}

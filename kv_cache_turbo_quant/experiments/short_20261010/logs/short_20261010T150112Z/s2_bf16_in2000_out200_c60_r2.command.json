@@ -1,0 +1,16 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/scripts/bench_client.py",
+  "--mode",
+  "bf16",
+  "--concurrency",
+  "60",
+  "--input-len",
+  "2000",
+  "--output-len",
+  "200",
+  "--timeout",
+  "3600",
+  "--output",
+  "/ws/short_ab_20261010/results/short_20261010T150112Z/s2_bf16_in2000_out200_c60_r2.json"
+]

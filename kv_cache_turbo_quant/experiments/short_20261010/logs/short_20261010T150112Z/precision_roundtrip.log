@@ -1,0 +1,7 @@
+[W1010 15:01:35.565651553 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/root/kvtq_integration/kvtq_store.py:53: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  rot = q.to(torch.float32).to(device).contiguous()
+bits=4 row_bytes=66
+recon rel err: full(qjl) mean=0.0878 max=0.1647 | mse-only mean=0.0957 max=0.1805
+q-side rotation equivalence max rel diff: 0.00166
+ROUNDTRIP OK

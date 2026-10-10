@@ -1,0 +1,330 @@
+{
+  "captured_utc": "2026-10-10T15:03:39.900220+00:00",
+  "mode": "bf16",
+  "concurrency": 16,
+  "num_prompts": 16,
+  "input_len": 20,
+  "output_len": 20,
+  "seed": 20261010,
+  "timeout_s": 3600.0,
+  "payload_sha256": [
+    "218c8335829060f0dd175acb60b0bf6ddf5b6ce9a07b979d9fef1ffdf53d2d56",
+    "8ae3619cd8d0c05c25012c69d220873fe2c32dfadeabf2c9efea3d05817b47c8",
+    "5dde412d98f681c1d5465219555abdde9f3fa8ec7a032bc1d4ccd91407f8ee66",
+    "01ea27df8d01c1dde5618e2d578197a29c24faad53bdc483fc6b14e052e8ec34",
+    "79833d45b7c7dfb64d767a59a984be2461ef7c821529999cdd886c6c6cb4f851",
+    "cf587f01430b34978118a49d50778e320396c118f2b74eec03d76af2664673a9",
+    "d3e74e1f160bd3cc4c62d7f142291e4add1ef844698c67cfc10dcac811066d6a",
+    "da6746c58cf557ab0c5eb904dc725234f989ad72b830c40c503a29a0a8530522",
+    "bc87b61f937dfdd9ed6158fc66ab1923cf68167981594d5675bbfda3391eef71",
+    "a592ac0207d3a446554924799e0ab3e53353b221468120e3f41bdb03622054c5",
+    "ab47c3d3b2ef2b2557833ff43aae1dac817339dddaf419fac23cc6e39b6b7691",
+    "39554994eca4cc0320ae38144d8b7af14c9fb473a878bd22a647b5fdae7dd883",
+    "4271a59feccba0f2535bdac523abb7154d7f39d6d3415b24e8ff2f85ec673a3e",
+    "4eeeeeb09337571e80ee1f40de8a61a3f57d49fc8c3d2cff8745dffea432efd1",
+    "4044f4b4e55246f0d92e66998a6cb5a0dc4a3c8dc6653fd3a070cb606df889c4",
+    "dee38bae08c2240c406da0250940ab63579973fd660d73c89c8215e3f3bff56a"
+  ],
+  "successful": 16,
+  "failed": 0,
+  "duration_s": 3.6933664474636316,
+  "complete_cohort": true,
+  "output_throughput_tps": 86.64182245435072,
+  "total_throughput_tps": 173.28364490870143,
+  "mean_ttft_s": 0.550089914817363,
+  "p99_ttft_s": 0.757876594318077,
+  "mean_tpot_ms": 152.20725819113127,
+  "p99_tpot_ms": 154.21090682870465,
+  "mean_latency_s": 3.4420648918603547,
+  "requests": [
+    {
+      "id": 0,
+      "status": "success",
+      "events": 20,
+      "text": "\n\n\nOkay, so I need to figure out what the user is asking for here. The",
+      "started_s": 0.0006452500820159912,
+      "http_status": 200,
+      "last_token_s": 2.981604124419391,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.169564388692379,
+      "tpot_s": 0.14800209135405326,
+      "latency_s": 2.9816547641530633
+    },
+    {
+      "id": 1,
+      "status": "success",
+      "events": 20,
+      "text": " \"train averagesoft aw Assert. Command Britishetime continues_read_or multiple.st\";\n\n pluginographicro strings",
+      "started_s": 0.0012625893577933311,
+      "http_status": 200,
+      "last_token_s": 3.134764519520104,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.3291579354554415,
+      "tpot_s": 0.14766350442445592,
+      "latency_s": 3.13479420915246
+    },
+    {
+      "id": 2,
+      "status": "success",
+      "events": 20,
+      "text": "ancem\ne\ne\ne\ne\ne\ne\ne\ne\ne",
+      "started_s": 0.001612689346075058,
+      "http_status": 200,
+      "last_token_s": 3.13407195918262,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.32899190578609705,
+      "tpot_s": 0.14763579228402754,
+      "latency_s": 3.134121679700911
+    },
+    {
+      "id": 3,
+      "status": "success",
+      "events": 20,
+      "text": "ipped…e…e…e…e…e…e…e…e…e…",
+      "started_s": 0.0018995506688952446,
+      "http_status": 200,
+      "last_token_s": 3.133894247934222,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.3286710437387228,
+      "tpot_s": 0.14764332653660522,
+      "latency_s": 3.1339272083714604
+    },
+    {
+      "id": 4,
+      "status": "success",
+      "events": 20,
+      "text": "\n```\n\nOkay, so I need to figure out what the user is asking for here. The",
+      "started_s": 0.0021763108670711517,
+      "http_status": 200,
+      "last_token_s": 3.3817993383854628,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.473562934435904,
+      "tpot_s": 0.15306507389208204,
+      "latency_s": 3.3818347891792655
+    },
+    {
+      "id": 5,
+      "status": "success",
+      "events": 20,
+      "text": ", and the like. The term \"wind\" is used in the sense of \"wind\" as",
+      "started_s": 0.0026297802105545998,
+      "http_status": 200,
+      "last_token_s": 3.381241529248655,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.4729539752006531,
+      "tpot_s": 0.15306776600252642,
+      "latency_s": 3.3812938295304775
+    },
+    {
+      "id": 6,
+      "status": "success",
+      "events": 20,
+      "text": "\n\nOkay, so I need to figure out what the user is asking for here. The query is",
+      "started_s": 0.0029131602495908737,
+      "http_status": 200,
+      "last_token_s": 3.3813217291608453,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.4728546356782317,
+      "tpot_s": 0.15307721544645334,
+      "latency_s": 3.381362119689584
+    },
+    {
+      "id": 7,
+      "status": "success",
+      "events": 20,
+      "text": "\n\nOkay, so I need to figure out what the user is asking for here. The query is",
+      "started_s": 0.0031905602663755417,
+      "http_status": 200,
+      "last_token_s": 3.527516051195562,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.610262755304575,
+      "tpot_s": 0.1535396471521572,
+      "latency_s": 3.527547131292522
+    },
+    {
+      "id": 8,
+      "status": "success",
+      "events": 20,
+      "text": ", and the other is the minimum of the two. The minimum of the two is the minimum of",
+      "started_s": 0.003466320224106312,
+      "http_status": 200,
+      "last_token_s": 3.5273779314011335,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.6101915556937456,
+      "tpot_s": 0.15353612503723094,
+      "latency_s": 3.52740597166121
+    },
+    {
+      "id": 9,
+      "status": "success",
+      "events": 20,
+      "text": "iFi.1000.1000.1000.10",
+      "started_s": 0.0037407903000712395,
+      "http_status": 200,
+      "last_token_s": 3.527036491781473,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.6097386255860329,
+      "tpot_s": 0.15354199295765475,
+      "latency_s": 3.5270660016685724
+    },
+    {
+      "id": 10,
+      "status": "success",
+      "events": 20,
+      "text": "\n1. The problem is to find the number of ways to tile a 2xN grid",
+      "started_s": 0.004011640325188637,
+      "http_status": 200,
+      "last_token_s": 3.526601491495967,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.6092148255556822,
+      "tpot_s": 0.15354666662843605,
+      "latency_s": 3.5266447914764285
+    },
+    {
+      "id": 11,
+      "status": "success",
+      "events": 20,
+      "text": " width\nimport { createCanvas, loadImage } from 'canvas';\nimport { join } from 'path",
+      "started_s": 0.004296070896089077,
+      "http_status": 200,
+      "last_token_s": 3.687635206617415,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.7579105766490102,
+      "tpot_s": 0.15419603315623184,
+      "latency_s": 3.6876708567142487
+    },
+    {
+      "id": 12,
+      "status": "success",
+      "events": 20,
+      "text": " —libcurlobalbudget someUS —libcurlobalbudget someUS —libcurlobalbudget some",
+      "started_s": 0.0045808302238583565,
+      "http_status": 200,
+      "last_token_s": 3.6874294579029083,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.7576840277761221,
+      "tpot_s": 0.1541971279014098,
+      "latency_s": 3.6874607978388667
+    },
+    {
+      "id": 13,
+      "status": "success",
+      "events": 20,
+      "text": " to the computer, and the computer will send the data to the server. The server will then process",
+      "started_s": 0.004956990480422974,
+      "http_status": 200,
+      "last_token_s": 3.6866652071475983,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.7566117774695158,
+      "tpot_s": 0.1542133384041096,
+      "latency_s": 3.686710407026112
+    },
+    {
+      "id": 14,
+      "status": "success",
+      "events": 20,
+      "text": "\r\n#include <iostream>\r\n#include <vector>\r\n#include <algorithm>\r\n#include <cmath>\r\n#include <map",
+      "started_s": 0.005235501565039158,
+      "http_status": 200,
+      "last_token_s": 3.6868442157283425,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.7571539971977472,
+      "tpot_s": 0.15419422202792607,
+      "latency_s": 3.686873085796833
+    },
+    {
+      "id": 15,
+      "status": "success",
+      "events": 20,
+      "text": "设置.  1. 2. 3. 4. 5. 6",
+      "started_s": 0.005503871478140354,
+      "http_status": 200,
+      "last_token_s": 3.686641626060009,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.7569136768579483,
+      "tpot_s": 0.15419620785274005,
+      "latency_s": 3.68667062651366
+    }
+  ],
+  "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+}

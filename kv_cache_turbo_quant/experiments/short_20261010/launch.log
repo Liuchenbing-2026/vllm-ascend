@@ -1,0 +1,2 @@
+{"container": "tq-128k-ab-20261010-runtime", "id": "0354eaafc53831afa0a11835e862a550873d9c1db0c8d54e178747c90b45663f", "launch_command": "source /usr/local/Ascend/cann-9.1.0/set_env.sh\n/ws/.venv/bin/python /ws/short_ab_20261010/scripts/run_short.py > /ws/short_ab_20261010/controller.log 2>&1\ntask_rc=$?\nprintf \"%s\\n\" \"$task_rc\" > /ws/short_ab_20261010/controller.exit\nexit \"$task_rc\"\n", "root": "/ws/short_ab_20261010"}
+/etc/profile.d/ascend.sh: line 2: /usr/local/Ascend/cann-8.5.0/set_env.sh: Permission denied
