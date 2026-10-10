@@ -137,6 +137,7 @@ python3 scripts/summarize_short.py --root . --run-id short_20261010T150112Z --ou
 | S10 / 10-10约23:35 | 新增S06–S09时以表后段落为插入点，空行使新增行与表头分离；阶段cf01a8c的README保留历史 | 文档生成插入点不当，静态GFM结构检查确认 | 移除同一问题表行之间空行，检查S01–S11连续；不影响原始实验，未执行浏览器渲染验收 | 静态结构已修正，历史提交不重写 |
 | S11 / 10-10约23:35 | docker-top-bf16.log实际采集时已经切换到TQ启动，不能作为BF16的宿主PID证据；原文件及runtime-bf16-snapshot.log保留 | 采集请求发出时模式已改变，标签仍沿用原计划；PID4129475属于TQ API | 对照状态时间/两个snapshot与TQ docker top确认；BF16只引用自身容器/procmaps及npu-smi快照，直接宿主PID匹配证据缺项 | 证据命名口径明确；不重测以补造历史PID证据，不把该文件用于BF16归属验收 |
 | S12 / 10-10约23:53 | 最终归档辅助脚本已汇总12组后断言结果目录应有18份JSON失败，实际为36份；archive-result-count-failure.json保留异常与文件清单 | glob包含18份测量结果及18份实时progress快照，辅助脚本计数口径错误；实际压测结果不是多跑或缺失 | 显式排除.progress.json，仅统计12正式+4预热+2冒烟，重新核验6个排除组usage/payload和88份快照SHA | 归档辅助计数已修正；未重跑或改测量原始字节，失败记录保留 |
+| S13 / 10-10约23:57 | Model_test提交前核对5个暂存路径时集合断言失败；modeltest-path-encoding-failure.json保留转义输出与NUL解码路径 | Git默认core.quotePath把中文路径渲染成八进制转义文本，辅助脚本按文本与Unicode文件名比较；实际5个文件均属本任务 | 检查原始NUL路径确认范围，仅撤销本次5文件暂存；Git调用显式core.quotePath=false，重新进行范围检查、正常提交与推送回读 | 归档发布检查口径已修正；首次断言发生在commit/push之前，无远端覆盖，最终发布结果见Task23固定交付链接 |
 
 原128K失败与未解决记录E01–E28保留在原固定归档，本轮不覆盖、不宣称已修复。其他卡3/4–7存在作业，preflight与host资源快照保留；只能确认抽样时0/1的归属，不能证明整个宿主独占或排除全部干扰。
 
