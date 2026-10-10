@@ -1,0 +1,33 @@
+{
+  "recorded_utc": "2026-10-10T15:59:44.389873+00:00",
+  "upstream": "13bfa7da7550aa83cca38b8848af29e612a00577",
+  "local_unpublished_commit": "4b8be71475c0a8c16a51efa715332102c0727250",
+  "conflicts": [
+    "codex管理/knowledge/index.json",
+    "项目交付/任务列表/README.md"
+  ],
+  "remote_changed_record_ids": [
+    "project-omnivoice-npu"
+  ],
+  "remote_tq_record_unchanged": true,
+  "remote_task23_row_unchanged": true,
+  "local_changed_record_ids": [
+    "tq-128k-benchmark-20261010"
+  ],
+  "preserved_other_records": 21,
+  "merge": "keep complete upstream index and task-list text; replace only own TQ record and Task23 row",
+  "stage_sha256": {
+    "1": {
+      "index": "c730009b4458e032e22d527134223c2e6dd2e60c959efbdc73b867ee9c5f2bab",
+      "task_list": "d207d1b23183730e015f63fa53b5cf479fce854fdf4ed312fa3b3ade8843c06a"
+    },
+    "2": {
+      "index": "0f6c294fb64d421f93c5f38fdb7c7d5091ea2bf5a06106172265e40eab7c3669",
+      "task_list": "693f9ea1f9200ccba4973dafdec5a1ec8a7dc134e940a0bb4ba3985e25e40e65"
+    },
+    "3": {
+      "index": "5b810b3789b9a66c77012d7ed4df1374c47247b255ec13a87744f1ad2ae01944",
+      "task_list": "c0f1a2a48844c5cbd3bae30f5342966ea970ecdb66de9f94eb0c1d7771b8b951"
+    }
+  }
+}
