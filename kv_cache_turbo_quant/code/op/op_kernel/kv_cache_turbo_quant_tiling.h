@@ -6,7 +6,7 @@
 #pragma pack(push, 8)
 struct alignas(8) KvCacheTurboQuantTilingData {
     uint32_t totalRows;       // num_tokens * num_kv_heads
-    uint32_t headDim;         // 128 or 256
+    uint32_t headDim;         // 64 / 128 / 256 / 512 (512 = MLA cKV, 64 = MLA kR)
     uint32_t qjlDim;          // rows of qjl_matrix (must equal headDim)
     uint32_t mseBits;         // 2 / 3 / 4
     uint32_t idxBytesPerRow;  // headDim * mseBits / 8

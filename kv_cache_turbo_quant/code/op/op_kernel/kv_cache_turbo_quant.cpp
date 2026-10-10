@@ -5,13 +5,14 @@
 using namespace AscendC;
 
 namespace {
-// head_dim is runtime-parameterized (128 or 256, from tiling). Each AIV always
-// processes HALF_ELEMS fp32 values per tile-half, so rows-per-tile shrink as the
-// dim grows (128 -> 64 rows/AIV, 256 -> 32 rows/AIV) and every UB/GM footprint
+// head_dim is runtime-parameterized (64/128/256/512, from tiling; MLA uses 512 for
+// the cKV latent and 64 for the kR rope key). Each AIV always processes HALF_ELEMS
+// fp32 values per tile-half, so rows-per-tile scale inversely with the dim
+// (512 -> 16, 256 -> 32, 128 -> 64, 64 -> 128 rows/AIV) and every UB/GM footprint
 // below is dimension-invariant.
 constexpr uint32_t HALF_ELEMS = 8192;            // fp32 elems per AIV per tile
 constexpr uint32_t TILE_ELEMS = 2 * HALF_ELEMS;  // fp32 elems per tile
-constexpr uint32_t MAX_HALF_ROWS = 64;           // rows per AIV at head_dim=128
+constexpr uint32_t MAX_HALF_ROWS = 128;          // rows per AIV at head_dim=64
 constexpr uint32_t MAX_LEVELS = 16;  // 2/3/4-bit -> 4/8/16 levels
 constexpr float MIN_NORM = 1e-30f;
 
@@ -55,6 +56,7 @@ public:
         headDim_ = td->headDim;
         halfRows_ = HALF_ELEMS / headDim_;
         tileRows_ = 2 * halfRows_;
+        nPartial_ = headDim_ / 64;  // 64-elem reduce repeats per row: 1/2/4/8 (dim 64/128/256/512)
         qjlDim_ = td->qjlDim;
         mseBits_ = td->mseBits;
         levels_ = 1U << mseBits_;
@@ -213,11 +215,15 @@ private:
             offEO.SetValue(i, 2 * i * sizeof(uint32_t));
             offEO.SetValue(halfRows_ + i, (2 * i + 1) * sizeof(uint32_t));
         }
-        // stride-4 offsets at [128, 128+4*halfRows) for the head_dim=256 row-sum tree
-        // (4 partials per row: gather lanes 4i+p, p = 0..3)
-        for (uint32_t p = 0; p < 4; ++p) {
-            for (uint32_t i = 0; i < halfRows_; ++i) {
-                offEO.SetValue(128 + p * halfRows_ + i, (4 * i + p) * sizeof(uint32_t));
+        // stride-nPartial offsets at [128, 128 + nPartial*halfRows) for the
+        // head_dim>=256 row-sum trees (nPartial partials per row: gather lanes
+        // nPartial*i + p, p = 0..nPartial-1; nPartial = dim/64 = 4 or 8).
+        // 256-entry buffer: dim 256 -> 128 + 4*32 = 256, dim 512 -> 128 + 8*16 = 256.
+        if (nPartial_ > 2) {
+            for (uint32_t p = 0; p < nPartial_; ++p) {
+                for (uint32_t i = 0; i < halfRows_; ++i) {
+                    offEO.SetValue(128 + p * halfRows_ + i, (nPartial_ * i + p) * sizeof(uint32_t));
+                }
             }
         }
         SetFlag<HardEvent::S_V>(0);
@@ -226,12 +232,19 @@ private:
 
     // per-row sum of src[halfRows,headDim] fp32 with the same reduction structure as
     // ReduceSum per row: tree within each 64-elem repeat, then pairwise over the
-    // headDim/64 partials ((p0+p1) for 128 dims, (p0+p1)+(p2+p3) for 256 dims).
+    // headDim/64 partials (single partial for 64 dims; (p0+p1) for 128; (p0+p1)+(p2+p3)
+    // for 256; full 3-level tree for 512). part layout is [row][partial] (repeat index
+    // r*nPartial + p), scratch lives past nPartial*halfRows.
     __aicore__ inline void RowSumsF32(const LocalTensor<float> &dst64, const LocalTensor<float> &src)
     {
         auto part = bufPart_.Get<float>();
-        const uint32_t nPartial = headDim_ / 64;  // 64-elem repeats per row: 2 or 4
+        const uint32_t nPartial = nPartial_;  // 64-elem repeats per row: 1/2/4/8
         ReduceRepeat<ReduceType::SUM, float, float>(part, src, 64, nPartial * halfRows_, 1, 1, 8);
+        if (nPartial == 1) {
+            // head_dim == 64: one 64-elem repeat per row, part holds the row sums
+            Adds(dst64, part, 0.0f, halfRows_);
+            return;
+        }
         auto offEO = bufOffEO_.Get<uint32_t>();
         if (nPartial == 2) {
             auto ev = part[halfRows_ * 2];
@@ -239,7 +252,7 @@ private:
             Gather(ev, part, offEO, 0, static_cast<uint64_t>(halfRows_), 1, 8);
             Gather(od, part, offEO[halfRows_], 0, static_cast<uint64_t>(halfRows_), 1, 8);
             Add(dst64, ev, od, halfRows_);
-        } else {
+        } else if (nPartial == 4) {
             auto a = part[halfRows_ * 4];
             auto b = part[halfRows_ * 5];
             auto t = part[halfRows_ * 6];
@@ -250,6 +263,19 @@ private:
             Gather(t, part, offEO[128 + 3 * halfRows_], 0, static_cast<uint64_t>(halfRows_), 1, 8);
             Add(b, b, t, halfRows_);
             Add(dst64, a, b, halfRows_);
+        } else {
+            // head_dim == 512: 8 partials, pairwise tree over p = 0..7
+            auto a = part[nPartial * halfRows_];
+            auto t = part[nPartial * halfRows_ + halfRows_];
+            Gather(dst64, part, offEO[128], 0, static_cast<uint64_t>(halfRows_), 1, 8);
+            Gather(t, part, offEO[128 + halfRows_], 0, static_cast<uint64_t>(halfRows_), 1, 8);
+            Add(dst64, dst64, t, halfRows_);
+            for (uint32_t p = 2; p < nPartial; p += 2) {
+                Gather(a, part, offEO[128 + p * halfRows_], 0, static_cast<uint64_t>(halfRows_), 1, 8);
+                Gather(t, part, offEO[128 + (p + 1) * halfRows_], 0, static_cast<uint64_t>(halfRows_), 1, 8);
+                Add(a, a, t, halfRows_);
+                Add(dst64, dst64, a, halfRows_);
+            }
         }
     }
 
@@ -571,6 +597,7 @@ private:
     uint32_t headDim_ = 0;
     uint32_t halfRows_ = 0;
     uint32_t tileRows_ = 0;
+    uint32_t nPartial_ = 0;
     uint32_t qjlDim_ = 0;
     uint32_t mseBits_ = 0;
     uint32_t levels_ = 0;

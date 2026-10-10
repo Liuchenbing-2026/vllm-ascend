@@ -22,6 +22,9 @@ CASES = [
     # (num_tokens, num_kv_heads, mse_bits, head_dim)
     (1, 8, 2, 128), (16, 8, 3, 128), (256, 8, 4, 128), (7, 4, 3, 128), (1024, 2, 2, 128),
     (1, 4, 4, 256), (7, 4, 3, 256), (256, 4, 4, 256), (1024, 2, 2, 256),
+    # MLA dims: cKV kv_lora_rank=512 / kR qk_rope_head_dim=64, H=1
+    (1, 1, 3, 512), (100, 1, 4, 512), (1024, 1, 2, 512),
+    (1, 1, 4, 64), (300, 1, 3, 64), (2048, 1, 2, 64),
 ]
 
 for num_tokens, num_kv_heads, mse_bits, head_dim in CASES:

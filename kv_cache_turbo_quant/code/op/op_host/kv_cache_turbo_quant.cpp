@@ -5,8 +5,9 @@
 
 namespace {
 constexpr uint32_t BYTE_BITS = 8;
-// supported head_dim values: 128 (64 rows/AIV/tile) and 256 (32 rows/AIV/tile);
-// the per-tile fp32 element count 16384 (64KB per workspace buf) is dimension-invariant.
+// supported head_dim values: 64 (128 rows/AIV/tile, MLA kR), 128 (64 rows),
+// 256 (32 rows) and 512 (16 rows, MLA cKV); the per-tile fp32 element count
+// 16384 (64KB per workspace buf) is dimension-invariant.
 constexpr uint32_t HALF_ELEMS_FIXED = 8192;
 constexpr uint64_t WS_MM_SLACK = 1024 * 1024;  // reserved front region for matmul internal scratch
 constexpr uint64_t WS_BUF_BYTES = 2 * HALF_ELEMS_FIXED * sizeof(float);
@@ -64,7 +65,8 @@ static ge::graphStatus TilingFunc(gert::TilingContext *context)
     if (context->GetAttrs() != nullptr && context->GetAttrs()->GetInt(0) != nullptr) {
         mseBits = *context->GetAttrs()->GetInt(0);
     }
-    if ((headDim != 128 && headDim != 256) || rotR != headDim || rotC != headDim || qjlC != headDim) {
+    if ((headDim != 64 && headDim != 128 && headDim != 256 && headDim != 512) || rotR != headDim ||
+        rotC != headDim || qjlC != headDim) {
         return ge::GRAPH_FAILED;
     }
     if (mseBits != 2 && mseBits != 3 && mseBits != 4) {
