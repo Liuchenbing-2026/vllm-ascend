@@ -2128,6 +2128,7 @@ def test_target_build_is_unaffected_by_the_approximation_flag(monkeypatch):
             positions=torch.tensor([0], dtype=torch.int64),
         )
         cad = builder.common_attn_metadata
+        assert cad is not None
         assert cad.seq_lens_cpu_is_exact is True
         assert cad.seq_lens_cpu_is_approximate is False
         assert cad.seq_lens_cpu.tolist() == [5]
