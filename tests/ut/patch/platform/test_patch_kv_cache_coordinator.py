@@ -111,10 +111,12 @@ def _make_coordinator(
     use_eagle: bool,
     kv_transfer_config=None,
     mamba_eagle: bool = False,
+    kv_cache_config=None,
 ):
     monkeypatch.setattr(mod, "BlockPool", _FakeBlockPool)
     monkeypatch.setattr(mod, "get_manager_for_kv_cache_spec", _fake_manager_factory)
-    kv_cache_config = _hybrid_config(mamba_eagle=mamba_eagle)
+    if kv_cache_config is None:
+        kv_cache_config = _hybrid_config(mamba_eagle=mamba_eagle)
     # The kv-transfer config is attached by the
     # get_kv_cache_config_from_groups builder in real engine startup.
     kv_cache_config.kv_transfer_config = kv_transfer_config
@@ -127,7 +129,29 @@ def _make_coordinator(
         dcp_world_size=1,
         pcp_world_size=1,
         hash_block_size=HASH_BLOCK_SIZE,
+        scheduler_block_size=HASH_BLOCK_SIZE,
     )
+
+
+@pytest.mark.parametrize("retention_interval", [None, 0, 1024])
+def test_resolved_retention_config_overrides_legacy_environment(monkeypatch, retention_interval):
+    config = _hybrid_config()
+    config.prefix_cache_retention_interval = retention_interval
+    monkeypatch.setattr(mod.envs_vllm, "VLLM_PREFIX_CACHE_RETENTION_INTERVAL", 2048, raising=False)
+    coordinator = _make_coordinator(monkeypatch, use_eagle=True, kv_cache_config=config)
+    assert coordinator.retention_interval == retention_interval
+
+
+@pytest.mark.parametrize("retention_interval", [None, 0, 1024])
+def test_legacy_config_without_retention_field_uses_environment(monkeypatch, retention_interval):
+    original = _hybrid_config()
+    config = SimpleNamespace(
+        **{k: v for k, v in vars(original).items() if k != "prefix_cache_retention_interval"},
+        needs_kv_cache_zeroing=getattr(original, "needs_kv_cache_zeroing", False),
+    )
+    monkeypatch.setattr(mod.envs_vllm, "VLLM_PREFIX_CACHE_RETENTION_INTERVAL", retention_interval, raising=False)
+    coordinator = _make_coordinator(monkeypatch, use_eagle=True, kv_cache_config=config)
+    assert coordinator.retention_interval == retention_interval
 
 
 # ---------------------------------------------------------------------------
