@@ -1,0 +1,327 @@
+{
+  "created_utc": "2026-10-10T16:49:43.268978+00:00",
+  "objective": "profile and optimize real TurboQuant store4 whole-model performance on Qwen3-30B-A3B TP2, retaining the previous metric/accuracy contract",
+  "baseline_commit": "d9e527a35100304fe6365ee2d090a08dd75c44d6",
+  "issues": [
+    {
+      "id": "O01",
+      "phenomenon": "initial git status query from workspace parent failed, not a repository",
+      "cause": "repository is source/vllm-ascend; workspace parent has no .git",
+      "impact": "read-only preparation only, no device work",
+      "evidence": "original failure output in session; no separate historical log file",
+      "state": "correct path identified; evidence-file gap retained"
+    },
+    {
+      "id": "O02",
+      "phenomenon": "profiling memory lookup guessed two non-existent document filenames",
+      "cause": "actual source catalog was not enumerated first",
+      "impact": "read-only searches only; actual catalog enumerated next",
+      "evidence": "rg stderr in session; original named paths retained",
+      "state": "will locate documents using index; no measurements lost"
+    },
+    {
+      "id": "O03",
+      "phenomenon": "local TQ fork checkout has no vllm_ascend/worker directory",
+      "cause": "the compiled official framework checkout is in preserved remote container /ws/source/vllm-ascend, separate from TQ fork checkout",
+      "impact": "profiler source search needs actual framework source",
+      "evidence": "logs/profiler-source-inspection-2.log",
+      "state": "remote actual source path verified"
+    },
+    {
+      "id": "O04",
+      "discovered_utc": "2026-10-10T16:51:58.945369+00:00",
+      "phenomenon": "git revision probe inside framework source exports failed before profiler source read",
+      "confirmed_cause": "preserved framework sources were delivered as exports without .git metadata",
+      "evidence": "logs/profiler-source-inspection.log and logs/profiler-source-inspection-2.log",
+      "handling": "report pinned archive commits separately; inspect actual source and loaded package paths without git assumption",
+      "state": "probe corrected; no model workload affected"
+    },
+    {
+      "id": "O05",
+      "discovered_utc": "2026-10-10T16:51:58.945672+00:00",
+      "phenomenon": "probe assumed kvtq_plugin.py name but actual installed integration file differs",
+      "confirmed_cause": "filename guessed before directory enumeration",
+      "evidence": [
+        "logs/profiler-source-inspection-2.log",
+        "logs/profiler-wrapper.log"
+      ],
+      "handling": "enumerate actual plugin and profiler files before reading",
+      "state": "actual kvtq_vllm_plugin.py identified and read"
+    },
+    {
+      "id": "O06",
+      "discovered_utc": "2026-10-10T17:01:23.917579118Z",
+      "phenomenon": "preserved runtime stopped during original TQ profiling; no controller.exit",
+      "impact": "BF16 collection complete; TQ prefill trace preserved, decode/60 request completion incomplete",
+      "evidence": [
+        "logs/unexpected-stop.log",
+        "logs/stop-events-and-clone.log",
+        "old-runtime-stop-state.json"
+      ],
+      "confirmed": "Docker exit 137, OOMKilled=false; initiator/cause pending event inspection",
+      "handling": "preserve original profiles and launch separately named task runtime from committed stopped runtime",
+      "state": "unresolved cause; recovery is not root-cause fix"
+    },
+    {
+      "id": "O07",
+      "phenomenon": "Docker events read used future --until and timed out after 15s",
+      "impact": "read-only audit interrupted before NPU status output; no device workload changed",
+      "evidence": "logs/unexpected-stop.log",
+      "confirmed_cause": "future end time causes docker events to wait",
+      "handling": "repeat with current UTC as until",
+      "state": "corrected query; all stop evidence retained"
+    },
+    {
+      "id": "O08",
+      "discovered_utc": "2026-10-10T17:04:08Z",
+      "phenomenon": "torch_npu profiler cannot parse worker daemon data",
+      "confirmed_cause": "framework worker process is daemon; profiler reports offline parsing required",
+      "handling": "independent non-daemon parser; six original views now validated complete",
+      "evidence": [
+        "analyse-initial.log",
+        "profile-summary-initial.json"
+      ],
+      "state": "parsing recovered; original raw records retained"
+    },
+    {
+      "id": "O09",
+      "discovered_utc": "2026-10-10T17:07:48.872410725Z",
+      "phenomenon": "separately named/relabelled optimization runtime also stopped during TQ collection",
+      "confirmed": "exit137 and OOMKilled=false; event history returned empty for second stop",
+      "hypothesis": "external cleanup/resource management; no actor confirmed",
+      "impact": "TQ prefill retained, full decode and load completion not obtained",
+      "handling": "asked user about concurrent cleanup; continue CPU trace analysis and implementation without repeatedly launching long model jobs",
+      "evidence": [
+        "logs/second-stop-audit.log",
+        "second-stop-state.json"
+      ],
+      "state": "unresolved"
+    },
+    {
+      "id": "O10",
+      "phenomenon": "host-side profile summary hit PermissionError on root-owned profiler output",
+      "confirmed_cause": "host admin account cannot read profiler output created with restricted permissions in task container",
+      "handling": "run CPU-only one-shot container on owned task mount without NPU access",
+      "evidence": [
+        "summary-initial.log",
+        "summary-initial-recovery.log",
+        "logs/summary-cpu-container.log"
+      ],
+      "state": "six views parsed and summarized successfully; original failure retained"
+    },
+    {
+      "id": "O11",
+      "phenomenon": "first kernel verifier invocation rejected due missing baseline anchor; no operator executed",
+      "confirmed_cause": "skill verifier enforces freeze_baseline.py before verify",
+      "handling": "preserved anchor-rejection log/exit; frozen wrapper that imports unchanged original read; original read SHA independently recorded",
+      "evidence": [
+        "verify/verify.initial-anchor-failure.log",
+        "verify/output/.baseline_anchor.json",
+        "verify/reference-integrity.json"
+      ],
+      "state": "frozen original oracle retained;7/7strict cases pass on112",
+      "remaining": "model integration still pending"
+    },
+    {
+      "id": "O12",
+      "phenomenon": "fused Triton tile_rows=32 compilation exceeds UB; verification2/7 passes,5/7 fails",
+      "confirmed_cause": "compiler reports2633728bits required vs1572864bits available; no cache corruption claim",
+      "handling": "reduce tile_rows to16; keep all original failures/cache IR; revalidate full same7 cases, no benchmark allowed before all pass",
+      "evidence": [
+        "verify/verify.log",
+        "verify/verify_result.json",
+        "triton-cache/"
+      ],
+      "state": "tile16 flat candidate7/7NPU bit exact pass; tile32 failures retained",
+      "remaining": "framework integration and model comparison pending"
+    },
+    {
+      "id": "O13",
+      "phenomenon": "host /proc/<other-task-pid>/environ read PermissionError interrupted readonly owner-config probe",
+      "handling": "used Docker inspect and PID cgroup ownership; no other task changed",
+      "evidence": "logs/current-resource-owner-config.log",
+      "state": "owner identified as task4-cpuoffload-final-20261008"
+    },
+    {
+      "id": "O14",
+      "phenomenon": "all8 .19 NPUs now occupied by another task after six-hour clock/time gap in active work",
+      "confirmed_cause": "npu-smi shows37151MiB process/card; PID ownership matches task4-cpuoffload-final-20261008",
+      "handling": "keep other task running, probe authorized .18 pool and avoid formal perf on shared cards",
+      "evidence": [
+        "logs/current-pid-ownership.log",
+        "logs/host18-resource-probe.log"
+      ],
+      "state": "environment selection in progress"
+    },
+    {
+      "id": "O15",
+      "phenomenon": ".18 ordinary account npu-smi fails187 and sudo-n requires password",
+      "confirmed_cause": "ordinary account lacks device/Docker privileges; known authorized authentication succeeds with sudo via secret stdin",
+      "handling": "read-only privileged telemetry with existing authorization, no secret printed/archived",
+      "evidence": [
+        "logs/host18-resource-probe.log",
+        "logs/host18-privileged-readonly.log",
+        "logs/host18-authenticated-readonly.log"
+      ],
+      "state": "actual .18 also all8 occupied, no devices changed"
+    },
+    {
+      "id": "O16",
+      "phenomenon": "third-host deployment Python import base64 loads /root/struct.py instead of standard library and crashes before creating container",
+      "confirmed_cause": "host SSH starts in /root; user script struct.py shadows stdlib struct",
+      "handling": "use python3 -I isolated startup, leave other project script unchanged",
+      "evidence": "logs/third-kernel-deploy.log",
+      "state": "isolated Python3 -I deployment recovered",
+      "remaining": "global filename collision untouched"
+    },
+    {
+      "id": "O17",
+      "phenomenon": "third host card0 changed from idle to occupied before deployment; guard rejected launch",
+      "confirmed_cause": "live telemetry changed; other python3.12 processes on0/1, active task containers on2/3 also visible",
+      "handling": "did not start on0 or terminate any process; separate short operator validation moved to newly released2 after fresh guard",
+      "evidence": [
+        "logs/third-kernel-deploy-isolated.log",
+        "logs/third-host-resource-current.log"
+      ],
+      "state": "resource race preserved; full-model paired resource lease pending"
+    },
+    {
+      "id": "O18",
+      "phenomenon": "progress commentary said third-host new-container operator validation had started before guarded deployment completed",
+      "impact": "actual card0 launch was rejected before container creation; no operator executed there",
+      "handling": "explicit user-facing correction, record successful actual launch separately",
+      "evidence": [
+        "logs/third-kernel-deploy-isolated.log",
+        "logs/third-kernel-card2-deploy.log"
+      ],
+      "state": "communication corrected; no failed stage recast as successful measurement"
+    },
+    {
+      "id": "O19",
+      "discovered_utc": "2026-10-10T23:43:56.934491+00:00",
+      "phenomenon": "new device-only container fails NPU readiness; no operator execution",
+      "confirmed_or_hypothesis": "driver management ret4 / device count failure; requirement beyond explicitly mounted device list not proven",
+      "handling": "retry in this task container with privileged setting; successful preflight verified; do not claim strict cgroup device isolation",
+      "evidence": "logs/third-kernel-card2-deploy.log",
+      "state": "recovered using known-compatible container setup; generic root cause remains incomplete",
+      "branch": "perf/tq-store-read-20261011",
+      "base_commit": "d9e527a35100304fe6365ee2d090a08dd75c44d6"
+    },
+    {
+      "id": "O20",
+      "discovered_utc": "2026-10-10T23:43:56.934491+00:00",
+      "phenomenon": "per-sequence tile16 implementation fails at multisequence case2 with scalar invalid GM / cross-device access;1/7passes and6 subsequent failures",
+      "confirmed_or_hypothesis": "generated IR for masked store loads destination then selects and writes; tail out-of-range/overlap is hypothesis, not independently sanitizer-proven",
+      "handling": "preserved failed implementation, logs and cache; changed to disjoint flat output tiles with fully padded final workspace; all same7cases passed strict bit comparison",
+      "evidence": "logs/third-kernel-privileged-retry.log",
+      "state": "regression corrected for tested7cases; formal model regression pending",
+      "branch": "perf/tq-store-read-20261011",
+      "base_commit": "d9e527a35100304fe6365ee2d090a08dd75c44d6"
+    },
+    {
+      "id": "O21",
+      "discovered_utc": "2026-10-10T23:43:56.934491+00:00",
+      "phenomenon": "microbenchmark empty case has no NPU kernel event and profile extraction fails after3attempts; result6/7 while commandexit0",
+      "confirmed_or_hypothesis": "empty implementation returns shape-only empty tensor without launching a kernel; profiler cannot assign device latency",
+      "handling": "retain case/log/failure; report only six nonempty cases individually;7/7 precision stays valid; no invented zero-latency speedup",
+      "evidence": "verify/benchmark.log",
+      "state": "not applicable latency for empty output; no whole-model speedup claim",
+      "branch": "perf/tq-store-read-20261011",
+      "base_commit": "d9e527a35100304fe6365ee2d090a08dd75c44d6"
+    },
+    {
+      "id": "O22",
+      "discovered_utc": "2026-10-10T23:48:14.095507+00:00",
+      "phenomenon": "one third-host SSH connection timed out before probe; concurrent SCP script upload connection closed",
+      "confirmed_cause": null,
+      "hypothesis": "transient network/connection condition; no host workload failure confirmed",
+      "handling": "retained failed status and retry using explicit connect timeout; do not treat successful retry as diagnosed root cause",
+      "evidence": "session outputs only; failed first call has no separate output file, pending evidence gap",
+      "state": "subsequent uploads succeeded; original network cause unresolved",
+      "branch": "perf/tq-store-read-20261011",
+      "remaining": "validate runtime file hashes before formal tests"
+    },
+    {
+      "id": "O23",
+      "discovered_utc": "2026-10-10T23:54:08.651113+00:00",
+      "phenomenon": "initial standalone benchmark removed raw profiler directories by default; timings and console log remain",
+      "confirmed_cause": "skill benchmark.py keep_res defaults false and parse cleanup removes profile directories",
+      "handling": "preserve initial JSON and log; rerun identical seven cases with --keep_res to retain successes and empty-case failures; no frequency locking and no relaxed verification gate",
+      "evidence": [
+        "verify/perf_result.json.initial",
+        "verify/benchmark.log.initial",
+        "benchmark.keep.command.json"
+      ],
+      "state": "identical raw-retaining repeat completed6/6nonempty;18profile directories and empty-case failures retrieved in verified1941-file112snapshot",
+      "remaining": "empty case no latency; first raw deletion gap retained",
+      "branch": "perf/tq-store-read-20261011"
+    },
+    {
+      "id": "O24",
+      "discovered_utc": "2026-10-11T00:01:14.498324+00:00",
+      "phenomenon": "first112 evidence pull accidentally reused the existing19 SSH multiplex connection despite changed destination; read-only command failed before any file payload",
+      "confirmed_cause": "adapted helper left ControlPath=/tmp/tq-128k-ssh19.sock unchanged; result was19 profile warning/default old Python; direct112 hostname bms-75847414-002/Python3.10.12 independently verified",
+      "handling": "use host/port/user-specific ControlPath; first failed TAR returned no files; pool18/19 helpers separately audited and already use host-specific paths",
+      "evidence": "failed pull traceback in session; separate historic logfile missing, explicitly pending gap",
+      "state": "host-specific multiplex path fixed;1941files from112 verified by SHA256 snapshot; original pull returned no files",
+      "remaining": "first failure evidence remains session-only",
+      "branch": "perf/tq-store-read-20261011"
+    },
+    {
+      "id": "O25",
+      "discovered_utc": "2026-10-11T00:14:00.674247+00:00",
+      "phenomenon": "contiguous-load candidate rejected by tl.gather frontend for int32 source,1/7empty passes6compilefailures",
+      "confirmed_cause": "installed Triton-Ascend gather accepts fp16/fp32/bf16/float8/int8; int32 input is rejected before kernel execution",
+      "handling": "preserve source/results/log; use int8 bitcast for raw bytes then restore uint8 bits before integer arithmetic; unchanged oracle and7cases must pass again",
+      "state": "int8-byte retry passed all seven strict bit checks; V2 retained as experimental, V1 selected for paired whole-model run",
+      "evidence": [
+        "verify_contiguous/verify.log.int32-failure",
+        "verify_contiguous/verify_result.json.int32-failure",
+        "candidates/kvtq_read_contiguous_v2_int32_failure.py"
+      ],
+      "branch": "perf/tq-store-read-20261011",
+      "remaining": "whole-model profiling and paired formal comparisons; do not infer model gain from kernel sum",
+      "verification": "V2 case4 0.0160 ms versus V1 0.0135 ms; case5 3.5293 versus3.8628 ms, device kernel sums only; six non-empty measured, empty no kernel"
+    },
+    {
+      "id": "O26",
+      "discovered_utc": "2026-10-11T00:39:59.922782+00:00",
+      "phenomenon": "Physical card3 occupied by a different task before full-model launch; previous2/3 free snapshot expired",
+      "confirmed_cause": "fresh npu-smi shows external PID1853545 on card3; cards2,5 no running processes",
+      "handling": "leave other job intact; background supervisor waits for free cards2,5, records ownership every20sec, interrupts only own pipeline on foreign ownership",
+      "evidence": "resource112-background-preflight.log and resource112-background.jsonl",
+      "state": "background allocation switched to2,5; ownership continues changing in shared host",
+      "remaining": "complete paired comparisons without card conflict"
+    },
+    {
+      "id": "O27",
+      "discovered_utc": "2026-10-11T00:39:59.922782+00:00",
+      "phenomenon": "CPU UT rerun invoked without required --integration-dir and exited argparse2",
+      "confirmed_cause": "missing required CLI argument; tests did not execute in failed invocation",
+      "handling": "rerun with actual integration source path; preserve original CLI failure record",
+      "evidence": "initial usage error in session; successful rerun logs/read-plan-final.log",
+      "state": "corrected invocation passed all four CPU UT",
+      "remaining": "read actual UT exit before reporting pass"
+    },
+    {
+      "id": "O28",
+      "discovered_utc": "2026-10-11T00:41:54.312579+00:00",
+      "phenomenon": "Initial integration gate passed14 strict read/FIA comparisons then failed framework attention import before mixed-history case",
+      "confirmed_cause": "test harness imported attention before normal ops registration, producing device_op/ops circular import",
+      "handling": "register unchanged vllm_ascend.ops first, preserve first attempt source/logs/exit and rerun original15-case gate; no mock, golden or threshold change",
+      "evidence": "attempts/*/logs/background/integration_bits4.log; scripts/verify_integration.first_import_failure.py",
+      "state": "corrected setup deployed; full rerun pending",
+      "remaining": "15/15 bit4 and 2/3-bit real integration then whole-model matrix"
+    },
+    {
+      "id": "O29",
+      "discovered_utc": "2026-10-11T00:44:27.815769+00:00",
+      "phenomenon": "pre-commit upstream PR refresh timed out via web and API URL inaccessible via web tool",
+      "confirmed_cause": null,
+      "handling": "read upstream GitHub REST via existing gh authentication; PR38479 confirmed closed/merged2026-04-15, headac46a983ef7ab8d8c23f058f04bc2493feef7109; branchliuchenbing-2026 remainsc7d80df37670a4473a021474e09cc471aee78b63",
+      "evidence": "web failure output and gh REST success in session; separate historical fetch log gap retained",
+      "state": "upstream state verified via primary API; network failure root cause unknown",
+      "remaining": "keep historical access failure, do not infer all similar changes absent"
+    }
+  ]
+}

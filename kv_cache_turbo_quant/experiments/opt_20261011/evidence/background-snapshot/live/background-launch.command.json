@@ -1,0 +1,10 @@
+[
+  "docker",
+  "exec",
+  "-e",
+  "TASK_NPU_CARDS=2,5",
+  "tq-opt-20261011-model",
+  "bash",
+  "-lc",
+  "source /usr/local/Ascend/cann-9.1.0/set_env.sh; exec /ws/.venv/bin/python -u /ws/opt_20261011/scripts/background_pipeline.py"
+]

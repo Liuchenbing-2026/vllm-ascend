@@ -21,6 +21,7 @@ is slow). Enable with VLLM_ASCEND_KVTQ_STORE=1.
 """
 import math
 import os
+from itertools import accumulate
 
 import torch
 
@@ -145,7 +146,7 @@ def _tq_reshape_and_cache(self, query, key, value, kv_cache, attn_metadata, outp
     return query, key, value, output
 
 
-def _dequant_dense(self, cache_bf16, block_table, seq_lens_list):
+def _dequant_dense_reference(self, cache_bf16, block_table, seq_lens_list):
     batch, max_blocks = block_table.shape
     block_size = cache_bf16.shape[1]
     num_kv_heads = cache_bf16.shape[2]
@@ -171,6 +172,44 @@ def _dequant_dense(self, cache_bf16, block_table, seq_lens_list):
     return dense.contiguous()
 
 
+def _read_plan(attn_metadata, segment, device, seq_lens_list):
+    """Share immutable sequence metadata across K/V and layers of one step.
+
+    Only two small metadata entries are retained. Reused metadata objects are
+    checked against the current lengths; block table values are always read
+    fresh by the kernel, so physical-page reuse cannot return stale KV data.
+    """
+    fingerprint = (str(device), tuple(seq_lens_list))
+    plans = getattr(attn_metadata, '_kvtq_read_plans', None) if attn_metadata is not None else None
+    if plans is not None and segment in plans and plans[segment][0] == fingerprint:
+        return plans[segment][1]
+    cumulative = [0, *accumulate(seq_lens_list)]
+    plan = (torch.tensor(cumulative, dtype=torch.int32, device=device),
+            cumulative, sum(seq_lens_list), max(seq_lens_list, default=0))
+    if attn_metadata is not None:
+        if plans is None:
+            plans = {}
+            attn_metadata._kvtq_read_plans = plans
+        plans[segment] = (fingerprint, plan)
+    return plan
+
+
+def _dequant_dense(self, cache_bf16, block_table, seq_lens_list,
+                   attn_metadata=None, segment='decode'):
+    if _MSE_BITS != 4:
+        return _dequant_dense_reference(self, cache_bf16, block_table, seq_lens_list)
+    key = ('paged_read4', str(cache_bf16.device))
+    if key not in _cache:
+        from kvtq_read import ModelNew
+        _cache[key] = ModelNew()
+    cumulative, _, total_tokens, max_seq_len = _read_plan(
+        attn_metadata, segment, cache_bf16.device, seq_lens_list)
+    _, _, centroids = _get_consts(cache_bf16.device)
+    return _cache[key](cache_bf16.view(torch.uint8), block_table, cumulative,
+                       centroids.view(torch.int16), total_tokens, max_seq_len,
+                       seq_lens_list).view(torch.bfloat16)
+
+
 def _tq_decode(self, query, attn_metadata, output, num_decodes=None):
     if self.key_cache is None:
         _warn_once("nocache", "decode called without kv cache (dummy run?), returning zeros")
@@ -181,10 +220,12 @@ def _tq_decode(self, query, attn_metadata, output, num_decodes=None):
     block_table = attn_metadata.block_tables[:batch]
     rot, rot_t, _ = _get_consts(query.device)
     q_rot = torch.matmul(query[:batch].float(), rot_t).to(torch.bfloat16)
-    k_dense = _dequant_dense(self, self.key_cache, block_table, seq_lens_list)
-    v_dense = _dequant_dense(self, self.value_cache, block_table, seq_lens_list)
-    kv_cum = torch.tensor(seq_lens_list, dtype=torch.int32, device=query.device).cumsum(dim=0)
-    q_cum = torch.arange(1, batch + 1, dtype=torch.int32, device=query.device)
+    k_dense = _dequant_dense(self, self.key_cache, block_table, seq_lens_list, attn_metadata)
+    v_dense = _dequant_dense(self, self.value_cache, block_table, seq_lens_list, attn_metadata)
+    # FIA accepts host cumulative lengths. They are already known by the
+    # scheduler, so tensor creation/cumsum and a later D2H read are unnecessary.
+    kv_cum = list(accumulate(seq_lens_list))
+    q_cum = list(range(1, batch + 1))
     attn_out, _ = torch_npu.npu_fused_infer_attention_score(
         query=q_rot,
         key=k_dense,
@@ -291,9 +332,11 @@ def _prefill_from_cache(self, query, attn_metadata, output,
     q_rot = torch.matmul(prefill_q.float(), rot_t).to(torch.bfloat16)
     prefill_bt = attn_metadata.block_tables[num_decodes:]
     prefill_sl = list(attn_metadata.seq_lens_list[num_decodes:])
-    k_dense = _dequant_dense(self, self.key_cache, prefill_bt, prefill_sl)
-    v_dense = _dequant_dense(self, self.value_cache, prefill_bt, prefill_sl)
-    kv_cum = torch.tensor(prefill_sl, dtype=torch.int32, device=query.device).cumsum(dim=0)
+    k_dense = _dequant_dense(self, self.key_cache, prefill_bt, prefill_sl,
+                             attn_metadata, 'prefill')
+    v_dense = _dequant_dense(self, self.value_cache, prefill_bt, prefill_sl,
+                             attn_metadata, 'prefill')
+    kv_cum = list(accumulate(prefill_sl))
     q_cum = list(attn_metadata.actual_seq_lengths_q)
     prefill_q_cum = [q_cum[i] - num_decode_tokens for i in range(num_decodes, len(q_cum))]
     attn_out, _ = torch_npu.npu_fused_infer_attention_score(

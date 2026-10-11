@@ -1,0 +1,7 @@
+{
+  "updated_utc": "2026-10-11T00:40:23.869870+00:00",
+  "stage": "failed",
+  "pipeline_pid": 25552,
+  "error_type": "RuntimeError",
+  "error": "integration_bits4 exited 1; retained /ws/opt_20261011/logs/background/integration_bits4.log"
+}

@@ -1,0 +1,56 @@
+{
+  "valid": true,
+  "filepath": "source/vllm-ascend/kv_cache_turbo_quant/code/integration/kvtq_read.py",
+  "checks": {
+    "triton_kernel_exists": {
+      "passed": true,
+      "kernels": [
+        {
+          "name": "_paged_read4",
+          "line": 13,
+          "has_tl_usage": true
+        }
+      ],
+      "error": null
+    },
+    "kernel_called_from_forward": {
+      "passed": true,
+      "called": [
+        "_paged_read4"
+      ],
+      "error": null
+    },
+    "no_forbidden_module_wide_ops": {
+      "passed": true,
+      "violations": [],
+      "error": null
+    },
+    "kernel_not_placeholder": {
+      "passed": true,
+      "placeholders": [],
+      "error": null
+    },
+    "no_dynamic_attr_evasion": {
+      "passed": true,
+      "violations": [],
+      "error": null
+    },
+    "no_host_math_fallback": {
+      "passed": true,
+      "violations": [],
+      "error": null
+    },
+    "no_host_sync_risk": {
+      "passed": true,
+      "violations": [],
+      "error": null
+    },
+    "no_forbidden_torch_ops": {
+      "passed": true,
+      "violations": [],
+      "error": null
+    }
+  },
+  "regression_type": null,
+  "suggestion": ""
+}

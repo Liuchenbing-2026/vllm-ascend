@@ -1,0 +1,42 @@
+[W1011 00:39:05.717217792 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/root/kvtq_integration/kvtq_store.py:97: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  bits = (lo.to(torch.int64) | (hi.to(torch.int64) << 8)) << 16
+{"name": "full_read_dispatch_1", "shape": [1, 1, 128], "mismatched_bf16_bits": 0}
+{"name": "full_read_dispatch_2", "shape": [432, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "full_read_dispatch_3", "shape": [290, 3, 128], "mismatched_bf16_bits": 0}
+{"name": "full_read_dispatch_4", "shape": [320, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "full_read_dispatch_5", "shape": [120060, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "full_read_dispatch_6", "shape": [0, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "full_read_dispatch_7", "shape": [799, 4, 128], "mismatched_bf16_bits": 0}
+{"name": "padded_block_table_c16", "shape": [320, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "padded_block_table_c60", "shape": [120060, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "all_256_codes", "shape": [4, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "same_lengths_new_physical_page", "shape": [4, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "same_metadata_changed_lengths", "shape": [129, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "FIA_decode_c16_host_lengths", "shape": [16, 8, 128], "mismatched_bf16_bits": 0}
+{"name": "FIA_decode_c60_host_lengths", "shape": [60, 8, 128], "mismatched_bf16_bits": 0}
+INFO 10-11 00:40:08 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-11 00:40:08 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-11 00:40:08 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-11 00:40:09 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-11 00:40:09 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+Traceback (most recent call last):
+  File "/ws/opt_20261011/scripts/verify_integration.py", line 117, in <module>
+    main()
+  File "/ws/opt_20261011/scripts/verify_integration.py", line 97, in main
+    from vllm_ascend.attention.attention_v1 import AscendAttentionState
+  File "/ws/source/vllm-ascend/vllm_ascend/attention/attention_v1.py", line 63, in <module>
+    from vllm_ascend.device.device_op import DeviceOperator
+  File "/ws/source/vllm-ascend/vllm_ascend/device/device_op.py", line 28, in <module>
+    from vllm_ascend.ops.triton.fla.chunk_scaled_dot_kkt import chunk_scaled_dot_kkt_fwd_kernel
+  File "/ws/source/vllm-ascend/vllm_ascend/ops/__init__.py", line 21, in <module>
+    import vllm_ascend.ops.fused_moe.fused_moe  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ws/source/vllm-ascend/vllm_ascend/ops/fused_moe/fused_moe.py", line 35, in <module>
+    from vllm_ascend.ops.fused_moe.moe_comm_method import get_moe_comm_method, setup_moe_comm_method
+  File "/ws/source/vllm-ascend/vllm_ascend/ops/fused_moe/moe_comm_method.py", line 34, in <module>
+    from vllm_ascend.ops.fused_moe.moe_mlp import apply_moe_mlp
+  File "/ws/source/vllm-ascend/vllm_ascend/ops/fused_moe/moe_mlp.py", line 22, in <module>
+    from vllm_ascend.device.device_op import DeviceOperator
+ImportError: cannot import name 'DeviceOperator' from partially initialized module 'vllm_ascend.device.device_op' (most likely due to a circular import) (/ws/source/vllm-ascend/vllm_ascend/device/device_op.py)
+[ERROR] 2026-10-11-00:40:20 (PID:25708, Device:0, RankID:-1) ERR99999 UNKNOWN applicaiton exception

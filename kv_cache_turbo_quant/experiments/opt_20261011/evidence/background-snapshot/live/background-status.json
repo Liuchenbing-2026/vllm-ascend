@@ -1,0 +1,9 @@
+{
+  "updated_utc": "2026-10-11T00:42:18.470028+00:00",
+  "stage": "integration_bits4",
+  "pipeline_pid": 26681,
+  "command": [
+    "/ws/.venv/bin/python",
+    "/ws/opt_20261011/scripts/verify_integration.py"
+  ]
+}

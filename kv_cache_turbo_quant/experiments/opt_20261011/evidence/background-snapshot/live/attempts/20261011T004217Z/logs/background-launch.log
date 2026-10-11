@@ -1,0 +1,10 @@
+{"updated_utc": "2026-10-11T00:38:54.642731+00:00", "stage": "integration_bits4", "pipeline_pid": 25552, "command": ["/ws/.venv/bin/python", "/ws/opt_20261011/scripts/verify_integration.py"]}
+{"updated_utc": "2026-10-11T00:40:23.869870+00:00", "stage": "failed", "pipeline_pid": 25552, "error_type": "RuntimeError", "error": "integration_bits4 exited 1; retained /ws/opt_20261011/logs/background/integration_bits4.log"}
+Traceback (most recent call last):
+  File "/ws/opt_20261011/scripts/background_pipeline.py", line 131, in <module>
+    main()
+  File "/ws/opt_20261011/scripts/background_pipeline.py", line 107, in main
+    run(f'integration_bits{bits}', [PYTHON, str(ROOT / 'scripts/verify_integration.py')],
+  File "/ws/opt_20261011/scripts/background_pipeline.py", line 41, in run
+    raise RuntimeError(f'{name} exited {code}; retained {logs / (name + ".log")}')
+RuntimeError: integration_bits4 exited 1; retained /ws/opt_20261011/logs/background/integration_bits4.log

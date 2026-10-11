@@ -1,0 +1,918 @@
+{
+  "op_name": "paged_read",
+  "warmup": 5,
+  "repeats": 50,
+  "max_retries": 3,
+  "total_cases": 7,
+  "passed_cases": 6,
+  "failed_cases": 1,
+  "nan_indices": [],
+  "inf_indices": [],
+  "zero_indices": [],
+  "negative_indices": [],
+  "none_indices": [],
+  "framework": {
+    "avg_latency_ms": 0.6525,
+    "peak_memory_mb": 65.83,
+    "operators": {
+      "aclnnArange_ArangeAiCore_Range": {
+        "avg_us": 8.7059
+      },
+      "aclnnBitwiseOrTensor_BitwiseOrAiCore_BitwiseOr": {
+        "avg_us": 4.1697
+      },
+      "aclnnIndexSelect_GatherV3AiCore_GatherV3": {
+        "avg_us": 3418.3992
+      },
+      "aclnnIndex_IndexAiCore_Index": {
+        "avg_us": 337.401
+      },
+      "aclnnIndex_IndexCheck_IndexCheck": {
+        "avg_us": 11.1099
+      },
+      "aclnnInplaceCopy_CastAiCore_Cast": {
+        "avg_us": 25.5714
+      },
+      "aclnnLeftShifts_BroadcastToAiCore_BroadcastTo": {
+        "avg_us": 8.8049
+      },
+      "aclnnLeftShifts_LeftShift_LeftShift": {
+        "avg_us": 786.3689
+      },
+      "aclnnLtTensor_LessAiCore_Less": {
+        "avg_us": 9.6968
+      },
+      "aclnnMul_MulAiCore_Mul": {
+        "avg_us": 36.1233
+      },
+      "aclnnNonzeroV2_NonzeroAiCore_MemSet": {
+        "avg_us": 13.9197
+      },
+      "aclnnNonzeroV2_NonzeroAiCore_NonZero": {
+        "avg_us": 21.6524
+      },
+      "aclnnInplaceCopy_SliceAiCore_Slice": {
+        "avg_us": 46.0791
+      },
+      "aclnnInplaceCopy_StridedSliceAiCore_StridedSlice": {
+        "avg_us": 36.1951
+      }
+    }
+  },
+  "implementation": {
+    "avg_latency_ms": 0.0449,
+    "peak_memory_mb": 27.47,
+    "operators": {
+      "_paged_read4": {
+        "avg_us": 661.7188
+      }
+    }
+  },
+  "speedup_vs_torch": 14.5217,
+  "npu_preflight": {
+    "status": "ready",
+    "exit_code": 0,
+    "duration_ms": 8862.004,
+    "visible_devices": "2",
+    "checks": [
+      {
+        "name": "torch_import",
+        "status": "pass",
+        "duration_ms": 7478.617
+      },
+      {
+        "name": "torch_npu_import",
+        "status": "pass",
+        "duration_ms": 0.01
+      },
+      {
+        "name": "npu_available",
+        "status": "pass",
+        "duration_ms": 0.322
+      },
+      {
+        "name": "device_visibility",
+        "status": "pass",
+        "duration_ms": 837.507,
+        "device_count": 1,
+        "device_index": 0
+      },
+      {
+        "name": "memory",
+        "status": "pass",
+        "duration_ms": 543.574,
+        "free_bytes": 65055322112,
+        "total_bytes": 65452113920,
+        "min_free_bytes": 1048576,
+        "free_mb": 62041.59,
+        "total_mb": 62420.0
+      },
+      {
+        "name": "npu_smi",
+        "status": "warn",
+        "duration_ms": 1.809,
+        "error": "npu-smi not found: [Errno 2] No such file or directory: 'npu-smi'"
+      }
+    ]
+  },
+  "failure_class": null,
+  "per_shape_results": [
+    {
+      "case_idx": 1,
+      "input_desc": [
+        {
+          "type": "tensor",
+          "shape": [
+            4,
+            128,
+            1,
+            66
+          ],
+          "dtype": "torch.uint8"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            1,
+            1
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            2
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            16
+          ],
+          "dtype": "torch.int16"
+        },
+        {
+          "type": "scalar",
+          "value": 1
+        },
+        {
+          "type": "scalar",
+          "value": 1
+        },
+        {
+          "type": "scalar",
+          "value": "[1]"
+        }
+      ],
+      "status": "pass",
+      "framework": {
+        "avg_latency_ms": 0.1146,
+        "peak_memory_mb": 33.49,
+        "operators": {
+          "aclnnArange_ArangeAiCore_Range": {
+            "avg_us": 8.2608,
+            "launch_count": 1
+          },
+          "aclnnBitwiseOrTensor_BitwiseOrAiCore_BitwiseOr": {
+            "avg_us": 1.6848,
+            "launch_count": 1
+          },
+          "aclnnIndexSelect_GatherV3AiCore_GatherV3": {
+            "avg_us": 12.2832,
+            "launch_count": 2
+          },
+          "aclnnIndex_IndexAiCore_Index": {
+            "avg_us": 6.5924,
+            "launch_count": 1
+          },
+          "aclnnIndex_IndexCheck_IndexCheck": {
+            "avg_us": 2.2372,
+            "launch_count": 1
+          },
+          "aclnnInplaceCopy_CastAiCore_Cast": {
+            "avg_us": 7.7476,
+            "launch_count": 6
+          },
+          "aclnnLeftShifts_BroadcastToAiCore_BroadcastTo": {
+            "avg_us": 2.6344,
+            "launch_count": 2
+          },
+          "aclnnLeftShifts_LeftShift_LeftShift": {
+            "avg_us": 52.7328,
+            "launch_count": 2
+          },
+          "aclnnLtTensor_LessAiCore_Less": {
+            "avg_us": 2.4844,
+            "launch_count": 1
+          },
+          "aclnnMul_MulAiCore_Mul": {
+            "avg_us": 1.4644,
+            "launch_count": 1
+          },
+          "aclnnNonzeroV2_NonzeroAiCore_MemSet": {
+            "avg_us": 12.626,
+            "launch_count": 1
+          },
+          "aclnnNonzeroV2_NonzeroAiCore_NonZero": {
+            "avg_us": 3.8804,
+            "launch_count": 1
+          }
+        }
+      },
+      "implementation": {
+        "avg_latency_ms": 0.0081,
+        "peak_memory_mb": 17.48,
+        "operators": {
+          "_paged_read4": {
+            "avg_us": 8.1356,
+            "launch_count": 1
+          }
+        }
+      },
+      "speedup_vs_torch": 14.1481,
+      "error_type": null,
+      "error_msg": null
+    },
+    {
+      "case_idx": 2,
+      "input_desc": [
+        {
+          "type": "tensor",
+          "shape": [
+            15,
+            128,
+            2,
+            66
+          ],
+          "dtype": "torch.uint8"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            6,
+            2
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            7
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            16
+          ],
+          "dtype": "torch.int16"
+        },
+        {
+          "type": "scalar",
+          "value": 432
+        },
+        {
+          "type": "scalar",
+          "value": 129
+        },
+        {
+          "type": "scalar",
+          "value": "[15, 16, 17, 127, 128, 129]"
+        }
+      ],
+      "status": "pass",
+      "framework": {
+        "avg_latency_ms": 0.3461,
+        "peak_memory_mb": 33.75,
+        "operators": {
+          "aclnnArange_ArangeAiCore_Range": {
+            "avg_us": 8.6432,
+            "launch_count": 1
+          },
+          "aclnnBitwiseOrTensor_BitwiseOrAiCore_BitwiseOr": {
+            "avg_us": 2.092,
+            "launch_count": 1
+          },
+          "aclnnIndexSelect_GatherV3AiCore_GatherV3": {
+            "avg_us": 88.4808,
+            "launch_count": 2
+          },
+          "aclnnIndex_IndexAiCore_Index": {
+            "avg_us": 72.8812,
+            "launch_count": 1
+          },
+          "aclnnIndex_IndexCheck_IndexCheck": {
+            "avg_us": 11.3572,
+            "launch_count": 1
+          },
+          "aclnnInplaceCopy_CastAiCore_Cast": {
+            "avg_us": 15.2956,
+            "launch_count": 6
+          },
+          "aclnnInplaceCopy_SliceAiCore_Slice": {
+            "avg_us": 7.9296,
+            "launch_count": 1
+          },
+          "aclnnInplaceCopy_StridedSliceAiCore_StridedSlice": {
+            "avg_us": 15.4092,
+            "launch_count": 2
+          },
+          "aclnnLeftShifts_BroadcastToAiCore_BroadcastTo": {
+            "avg_us": 4.5404,
+            "launch_count": 2
+          },
+          "aclnnLeftShifts_LeftShift_LeftShift": {
+            "avg_us": 70.234,
+            "launch_count": 2
+          },
+          "aclnnLtTensor_LessAiCore_Less": {
+            "avg_us": 8.998,
+            "launch_count": 1
+          },
+          "aclnnMul_MulAiCore_Mul": {
+            "avg_us": 16.7704,
+            "launch_count": 1
+          },
+          "aclnnNonzeroV2_NonzeroAiCore_MemSet": {
+            "avg_us": 14.3324,
+            "launch_count": 1
+          },
+          "aclnnNonzeroV2_NonzeroAiCore_NonZero": {
+            "avg_us": 9.148,
+            "launch_count": 1
+          }
+        }
+      },
+      "implementation": {
+        "avg_latency_ms": 0.022,
+        "peak_memory_mb": 17.69,
+        "operators": {
+          "_paged_read4": {
+            "avg_us": 22.0224,
+            "launch_count": 1
+          }
+        }
+      },
+      "speedup_vs_torch": 15.7318,
+      "error_type": null,
+      "error_msg": null
+    },
+    {
+      "case_idx": 3,
+      "input_desc": [
+        {
+          "type": "tensor",
+          "shape": [
+            15,
+            128,
+            3,
+            66
+          ],
+          "dtype": "torch.uint8"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            4,
+            3
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            5
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            16
+          ],
+          "dtype": "torch.int16"
+        },
+        {
+          "type": "scalar",
+          "value": 290
+        },
+        {
+          "type": "scalar",
+          "value": 257
+        },
+        {
+          "type": "scalar",
+          "value": "[0, 33, 0, 257]"
+        }
+      ],
+      "status": "pass",
+      "framework": {
+        "avg_latency_ms": 0.3556,
+        "peak_memory_mb": 33.85,
+        "operators": {
+          "aclnnArange_ArangeAiCore_Range": {
+            "avg_us": 8.6348,
+            "launch_count": 1
+          },
+          "aclnnBitwiseOrTensor_BitwiseOrAiCore_BitwiseOr": {
+            "avg_us": 2.318,
+            "launch_count": 1
+          },
+          "aclnnIndexSelect_GatherV3AiCore_GatherV3": {
+            "avg_us": 88.8892,
+            "launch_count": 2
+          },
+          "aclnnIndex_IndexAiCore_Index": {
+            "avg_us": 80.4996,
+            "launch_count": 1
+          },
+          "aclnnIndex_IndexCheck_IndexCheck": {
+            "avg_us": 11.926,
+            "launch_count": 1
+          },
+          "aclnnInplaceCopy_CastAiCore_Cast": {
+            "avg_us": 15.822,
+            "launch_count": 6
+          },
+          "aclnnInplaceCopy_SliceAiCore_Slice": {
+            "avg_us": 10.3616,
+            "launch_count": 2
+          },
+          "aclnnInplaceCopy_StridedSliceAiCore_StridedSlice": {
+            "avg_us": 15.1228,
+            "launch_count": 2
+          },
+          "aclnnLeftShifts_BroadcastToAiCore_BroadcastTo": {
+            "avg_us": 4.5592,
+            "launch_count": 2
+          },
+          "aclnnLeftShifts_LeftShift_LeftShift": {
+            "avg_us": 69.83,
+            "launch_count": 2
+          },
+          "aclnnLtTensor_LessAiCore_Less": {
+            "avg_us": 11.4208,
+            "launch_count": 1
+          },
+          "aclnnMul_MulAiCore_Mul": {
+            "avg_us": 16.3548,
+            "launch_count": 1
+          },
+          "aclnnNonzeroV2_NonzeroAiCore_MemSet": {
+            "avg_us": 13.964,
+            "launch_count": 1
+          },
+          "aclnnNonzeroV2_NonzeroAiCore_NonZero": {
+            "avg_us": 5.8616,
+            "launch_count": 1
+          }
+        }
+      },
+      "implementation": {
+        "avg_latency_ms": 0.0204,
+        "peak_memory_mb": 17.69,
+        "operators": {
+          "_paged_read4": {
+            "avg_us": 20.4256,
+            "launch_count": 1
+          }
+        }
+      },
+      "speedup_vs_torch": 17.4314,
+      "error_type": null,
+      "error_msg": null
+    },
+    {
+      "case_idx": 4,
+      "input_desc": [
+        {
+          "type": "tensor",
+          "shape": [
+            19,
+            128,
+            2,
+            66
+          ],
+          "dtype": "torch.uint8"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            16,
+            1
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            17
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            16
+          ],
+          "dtype": "torch.int16"
+        },
+        {
+          "type": "scalar",
+          "value": 320
+        },
+        {
+          "type": "scalar",
+          "value": 20
+        },
+        {
+          "type": "scalar",
+          "value": "[20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20]"
+        }
+      ],
+      "status": "pass",
+      "framework": {
+        "avg_latency_ms": 0.3404,
+        "peak_memory_mb": 33.81,
+        "operators": {
+          "aclnnArange_ArangeAiCore_Range": {
+            "avg_us": 8.2648,
+            "launch_count": 1
+          },
+          "aclnnBitwiseOrTensor_BitwiseOrAiCore_BitwiseOr": {
+            "avg_us": 2.0036,
+            "launch_count": 1
+          },
+          "aclnnIndexSelect_GatherV3AiCore_GatherV3": {
+            "avg_us": 70.4604,
+            "launch_count": 2
+          },
+          "aclnnIndex_IndexAiCore_Index": {
+            "avg_us": 76.4296,
+            "launch_count": 1
+          },
+          "aclnnIndex_IndexCheck_IndexCheck": {
+            "avg_us": 11.7236,
+            "launch_count": 1
+          },
+          "aclnnInplaceCopy_CastAiCore_Cast": {
+            "avg_us": 15.1248,
+            "launch_count": 6
+          },
+          "aclnnInplaceCopy_SliceAiCore_Slice": {
+            "avg_us": 7.5936,
+            "launch_count": 1
+          },
+          "aclnnInplaceCopy_StridedSliceAiCore_StridedSlice": {
+            "avg_us": 15.0784,
+            "launch_count": 2
+          },
+          "aclnnLeftShifts_BroadcastToAiCore_BroadcastTo": {
+            "avg_us": 4.6424,
+            "launch_count": 2
+          },
+          "aclnnLeftShifts_LeftShift_LeftShift": {
+            "avg_us": 68.7444,
+            "launch_count": 2
+          },
+          "aclnnLtTensor_LessAiCore_Less": {
+            "avg_us": 11.2328,
+            "launch_count": 1
+          },
+          "aclnnMul_MulAiCore_Mul": {
+            "avg_us": 16.4104,
+            "launch_count": 1
+          },
+          "aclnnNonzeroV2_NonzeroAiCore_MemSet": {
+            "avg_us": 14.2128,
+            "launch_count": 1
+          },
+          "aclnnNonzeroV2_NonzeroAiCore_NonZero": {
+            "avg_us": 18.482,
+            "launch_count": 1
+          }
+        }
+      },
+      "implementation": {
+        "avg_latency_ms": 0.0135,
+        "peak_memory_mb": 17.63,
+        "operators": {
+          "_paged_read4": {
+            "avg_us": 13.5124,
+            "launch_count": 1
+          }
+        }
+      },
+      "speedup_vs_torch": 25.2148,
+      "error_type": null,
+      "error_msg": null
+    },
+    {
+      "case_idx": 5,
+      "input_desc": [
+        {
+          "type": "tensor",
+          "shape": [
+            963,
+            128,
+            2,
+            66
+          ],
+          "dtype": "torch.uint8"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            60,
+            16
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            61
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            16
+          ],
+          "dtype": "torch.int16"
+        },
+        {
+          "type": "scalar",
+          "value": 120060
+        },
+        {
+          "type": "scalar",
+          "value": 2002
+        },
+        {
+          "type": "scalar",
+          "value": "[2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002]"
+        }
+      ],
+      "status": "pass",
+      "framework": {
+        "avg_latency_ms": 26.8295,
+        "peak_memory_mb": 225.97,
+        "operators": {
+          "aclnnArange_ArangeAiCore_Range": {
+            "avg_us": 9.318,
+            "launch_count": 1
+          },
+          "aclnnBitwiseOrTensor_BitwiseOrAiCore_BitwiseOr": {
+            "avg_us": 13.6816,
+            "launch_count": 1
+          },
+          "aclnnIndexSelect_GatherV3AiCore_GatherV3": {
+            "avg_us": 19966.7488,
+            "launch_count": 2
+          },
+          "aclnnIndex_IndexAiCore_Index": {
+            "avg_us": 1705.606,
+            "launch_count": 1
+          },
+          "aclnnIndex_IndexCheck_IndexCheck": {
+            "avg_us": 17.6968,
+            "launch_count": 1
+          },
+          "aclnnInplaceCopy_CastAiCore_Cast": {
+            "avg_us": 80.806,
+            "launch_count": 6
+          },
+          "aclnnInplaceCopy_SliceAiCore_Slice": {
+            "avg_us": 238.104,
+            "launch_count": 1
+          },
+          "aclnnInplaceCopy_StridedSliceAiCore_StridedSlice": {
+            "avg_us": 154.9068,
+            "launch_count": 2
+          },
+          "aclnnLeftShifts_BroadcastToAiCore_BroadcastTo": {
+            "avg_us": 30.612,
+            "launch_count": 2
+          },
+          "aclnnLeftShifts_LeftShift_LeftShift": {
+            "avg_us": 4350.376,
+            "launch_count": 2
+          },
+          "aclnnLtTensor_LessAiCore_Less": {
+            "avg_us": 14.9428,
+            "launch_count": 1
+          },
+          "aclnnMul_MulAiCore_Mul": {
+            "avg_us": 146.878,
+            "launch_count": 1
+          },
+          "aclnnNonzeroV2_NonzeroAiCore_MemSet": {
+            "avg_us": 14.056,
+            "launch_count": 1
+          },
+          "aclnnNonzeroV2_NonzeroAiCore_NonZero": {
+            "avg_us": 85.7228,
+            "launch_count": 1
+          }
+        }
+      },
+      "implementation": {
+        "avg_latency_ms": 3.8628,
+        "peak_memory_mb": 76.1,
+        "operators": {
+          "_paged_read4": {
+            "avg_us": 3862.8016,
+            "launch_count": 1
+          }
+        }
+      },
+      "speedup_vs_torch": 6.9456,
+      "error_type": null,
+      "error_msg": null
+    },
+    {
+      "case_idx": 6,
+      "input_desc": [
+        {
+          "type": "tensor",
+          "shape": [
+            5,
+            128,
+            2,
+            66
+          ],
+          "dtype": "torch.uint8"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            2,
+            1
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            3
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            16
+          ],
+          "dtype": "torch.int16"
+        },
+        {
+          "type": "scalar",
+          "value": 0
+        },
+        {
+          "type": "scalar",
+          "value": 0
+        },
+        {
+          "type": "scalar",
+          "value": "[0, 0]"
+        }
+      ],
+      "status": "fail",
+      "framework": null,
+      "implementation": null,
+      "speedup_vs_torch": null,
+      "error_type": "PROFILER_COLLECT_FAIL",
+      "error_msg": "Traceback (most recent call last):\n  File \"/ws/opt_20261011/verifier/benchmark.py\", line 929, in _run_shape_case\n    return _bench_once(config, model_spec, inputs, device, case_ctx)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/ws/opt_20261011/verifier/benchmark.py\", line 891, in _bench_once\n    fw_perf, impl_perf, speedup = run_single_benchmark(\n                                  ^^^^^^^^^^^^^^^^^^^^^\n  File \"/ws/opt_20261011/verifier/benchmark.py\", line 709, in run_single_benchmark\n    raise ProfilerCollectError(\nProfilerCollectError: [用例 6/7] PROFILER_COLLECT_FAIL: 无法从 profiler 提取有效时延数据\n"
+    },
+    {
+      "case_idx": 7,
+      "input_desc": [
+        {
+          "type": "tensor",
+          "shape": [
+            27,
+            64,
+            4,
+            66
+          ],
+          "dtype": "torch.uint8"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            3,
+            8
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            4
+          ],
+          "dtype": "torch.int32"
+        },
+        {
+          "type": "tensor",
+          "shape": [
+            16
+          ],
+          "dtype": "torch.int16"
+        },
+        {
+          "type": "scalar",
+          "value": 799
+        },
+        {
+          "type": "scalar",
+          "value": 511
+        },
+        {
+          "type": "scalar",
+          "value": "[31, 257, 511]"
+        }
+      ],
+      "status": "pass",
+      "framework": {
+        "avg_latency_ms": 0.599,
+        "peak_memory_mb": 34.1,
+        "operators": {
+          "aclnnArange_ArangeAiCore_Range": {
+            "avg_us": 9.1136,
+            "launch_count": 1
+          },
+          "aclnnBitwiseOrTensor_BitwiseOrAiCore_BitwiseOr": {
+            "avg_us": 3.238,
+            "launch_count": 1
+          },
+          "aclnnIndexSelect_GatherV3AiCore_GatherV3": {
+            "avg_us": 283.5328,
+            "launch_count": 2
+          },
+          "aclnnIndex_IndexAiCore_Index": {
+            "avg_us": 82.3972,
+            "launch_count": 1
+          },
+          "aclnnIndex_IndexCheck_IndexCheck": {
+            "avg_us": 11.7188,
+            "launch_count": 1
+          },
+          "aclnnInplaceCopy_CastAiCore_Cast": {
+            "avg_us": 18.6324,
+            "launch_count": 6
+          },
+          "aclnnInplaceCopy_SliceAiCore_Slice": {
+            "avg_us": 12.486,
+            "launch_count": 2
+          },
+          "aclnnInplaceCopy_StridedSliceAiCore_StridedSlice": {
+            "avg_us": 16.6536,
+            "launch_count": 2
+          },
+          "aclnnLeftShifts_BroadcastToAiCore_BroadcastTo": {
+            "avg_us": 5.8412,
+            "launch_count": 2
+          },
+          "aclnnLeftShifts_LeftShift_LeftShift": {
+            "avg_us": 106.2964,
+            "launch_count": 2
+          },
+          "aclnnLtTensor_LessAiCore_Less": {
+            "avg_us": 9.102,
+            "launch_count": 1
+          },
+          "aclnnMul_MulAiCore_Mul": {
+            "avg_us": 18.8616,
+            "launch_count": 1
+          },
+          "aclnnNonzeroV2_NonzeroAiCore_MemSet": {
+            "avg_us": 14.3272,
+            "launch_count": 1
+          },
+          "aclnnNonzeroV2_NonzeroAiCore_NonZero": {
+            "avg_us": 6.8196,
+            "launch_count": 1
+          }
+        }
+      },
+      "implementation": {
+        "avg_latency_ms": 0.0434,
+        "peak_memory_mb": 18.26,
+        "operators": {
+          "_paged_read4": {
+            "avg_us": 43.4152,
+            "launch_count": 1
+          }
+        }
+      },
+      "speedup_vs_torch": 13.8018,
+      "error_type": null,
+      "error_msg": null
+    }
+  ]
+}

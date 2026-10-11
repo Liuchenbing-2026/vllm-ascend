@@ -9,7 +9,7 @@ Modes (mutually exclusive):
 import os
 import sys
 
-_KVTQ_DIR = "/root/kvtq_integration"
+_KVTQ_DIR = os.path.dirname(os.path.abspath(__file__))
 for _p in (_KVTQ_DIR, os.path.join(_KVTQ_DIR, "torch_ext")):
     if _p not in sys.path:
         sys.path.insert(0, _p)

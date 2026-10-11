@@ -1,0 +1,9 @@
+test_changed_lengths_and_device_invalidate (__main__.ReadPlanTests) ... ok
+test_empty_batch_and_standalone_read (__main__.ReadPlanTests) ... ok
+test_mixed_batch_segments_and_bounded_retention (__main__.ReadPlanTests) ... ok
+test_reuses_k_v_and_layer_metadata (__main__.ReadPlanTests) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK

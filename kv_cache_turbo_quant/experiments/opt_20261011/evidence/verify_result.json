@@ -1,0 +1,86 @@
+{
+  "op_name": "paged_read",
+  "total_cases": 7,
+  "passed_cases": 7,
+  "failed_cases": 0,
+  "failures": [],
+  "npu_preflight": {
+    "status": "ready",
+    "exit_code": 0,
+    "duration_ms": 9146.681,
+    "visible_devices": "2",
+    "checks": [
+      {
+        "name": "torch_import",
+        "status": "pass",
+        "duration_ms": 7698.573
+      },
+      {
+        "name": "torch_npu_import",
+        "status": "pass",
+        "duration_ms": 0.008
+      },
+      {
+        "name": "npu_available",
+        "status": "pass",
+        "duration_ms": 0.237
+      },
+      {
+        "name": "device_visibility",
+        "status": "pass",
+        "duration_ms": 895.003,
+        "device_count": 1,
+        "device_index": 0
+      },
+      {
+        "name": "memory",
+        "status": "pass",
+        "duration_ms": 550.812,
+        "free_bytes": 65056657408,
+        "total_bytes": 65452113920,
+        "min_free_bytes": 1048576,
+        "free_mb": 62042.863,
+        "total_mb": 62420.0
+      },
+      {
+        "name": "npu_smi",
+        "status": "warn",
+        "duration_ms": 1.883,
+        "error": "npu-smi not found: [Errno 2] No such file or directory: 'npu-smi'"
+      }
+    ]
+  },
+  "environment": {
+    "timestamp": "2026-10-10T23:36:13+00:00",
+    "triton": {
+      "version": "3.2.0",
+      "path": "/usr/local/python3.12.13/lib/python3.12/site-packages/triton",
+      "key_sha256": "73b738272f0aea6d69eccefdb8a7405173f3f99169f46c355ea9b1beeb1be1da"
+    },
+    "cache": {
+      "dir": "/ws/opt_20261011/triton-cache-flat",
+      "fresh": false,
+      "fresh_effective": true,
+      "always_compile": false
+    },
+    "cann": {
+      "ascend_home_path": "/usr/local/Ascend/cann-9.1.0",
+      "info_sha256": "f03fc5d1e67a78d6999e7d341d68521c2418587f1494706f013acf85ec8a317b",
+      "info_file": "/usr/local/Ascend/cann-9.1.0/aarch64-linux/ascend_toolkit_install.info",
+      "version": "9.1.0"
+    },
+    "torch": {
+      "version": "2.10.0+cpu",
+      "torch_npu_version": "2.10.0.post4"
+    },
+    "device": {
+      "ASCEND_RT_VISIBLE_DEVICES": "2",
+      "current_device": 0,
+      "npu_name": "Ascend910B4-1"
+    },
+    "cmdline": {
+      "triton_impl_name": "triton_ascend_impl",
+      "non_compute": false
+    }
+  }
+}

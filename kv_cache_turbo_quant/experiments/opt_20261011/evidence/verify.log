@@ -1,0 +1,41 @@
+  测试第 1/7 组输入...
+  [输入类型判定] 来源=tensor，候选 dtypes=['torch.uint8', 'torch.int32', 'torch.int32', 'torch.int16']，最高精度=torch.int32，input_type=int
+  [输出概览] 共 1 个输出，non_compute=False
+  [输出 0] shape=[1, 1, 128], dtype=torch.int16
+  [评测模式] 模式=integer_compute（整数计算类），输入 dtype=torch.int32（int），输出 dtype=torch.int16；误差要求=|actual - golden| == 0（严格相等，finite=128/128）
+  测试第 2/7 组输入...
+  [输入类型判定] 来源=tensor，候选 dtypes=['torch.uint8', 'torch.int32', 'torch.int32', 'torch.int16']，最高精度=torch.int32，input_type=int
+  [输出概览] 共 1 个输出，non_compute=False
+  [输出 0] shape=[432, 2, 128], dtype=torch.int16
+  [评测模式] 模式=integer_compute（整数计算类），输入 dtype=torch.int32（int），输出 dtype=torch.int16；误差要求=|actual - golden| == 0（严格相等，finite=110592/110592）
+  测试第 3/7 组输入...
+  [输入类型判定] 来源=tensor，候选 dtypes=['torch.uint8', 'torch.int32', 'torch.int32', 'torch.int16']，最高精度=torch.int32，input_type=int
+  [输出概览] 共 1 个输出，non_compute=False
+  [输出 0] shape=[290, 3, 128], dtype=torch.int16
+  [评测模式] 模式=integer_compute（整数计算类），输入 dtype=torch.int32（int），输出 dtype=torch.int16；误差要求=|actual - golden| == 0（严格相等，finite=111360/111360）
+  测试第 4/7 组输入...
+  [输入类型判定] 来源=tensor，候选 dtypes=['torch.uint8', 'torch.int32', 'torch.int32', 'torch.int16']，最高精度=torch.int32，input_type=int
+  [输出概览] 共 1 个输出，non_compute=False
+  [输出 0] shape=[320, 2, 128], dtype=torch.int16
+  [评测模式] 模式=integer_compute（整数计算类），输入 dtype=torch.int32（int），输出 dtype=torch.int16；误差要求=|actual - golden| == 0（严格相等，finite=81920/81920）
+  测试第 5/7 组输入...
+  [输入类型判定] 来源=tensor，候选 dtypes=['torch.uint8', 'torch.int32', 'torch.int32', 'torch.int16']，最高精度=torch.int32，input_type=int
+  [输出概览] 共 1 个输出，non_compute=False
+  [输出 0] shape=[120060, 2, 128], dtype=torch.int16
+  [评测模式] 模式=integer_compute（整数计算类），输入 dtype=torch.int32（int），输出 dtype=torch.int16；误差要求=|actual - golden| == 0（严格相等，finite=30735360/30735360）
+  测试第 6/7 组输入...
+  [输入类型判定] 来源=tensor，候选 dtypes=['torch.uint8', 'torch.int32', 'torch.int32', 'torch.int16']，最高精度=torch.int32，input_type=int
+  [输出概览] 共 1 个输出，non_compute=False
+  [输出 0] shape=[0, 2, 128], dtype=torch.int16
+  输出为空张量（numel=0），通过
+  测试第 7/7 组输入...
+  [输入类型判定] 来源=tensor，候选 dtypes=['torch.uint8', 'torch.int32', 'torch.int32', 'torch.int16']，最高精度=torch.int32，input_type=int
+  [输出概览] 共 1 个输出，non_compute=False
+  [输出 0] shape=[799, 4, 128], dtype=torch.int16
+  [评测模式] 模式=integer_compute（整数计算类），输入 dtype=torch.int32（int），输出 dtype=torch.int16；误差要求=|actual - golden| == 0（严格相等，finite=409088/409088）
+验证结果已保存到: /ws/opt_20261011/verify/verify_result.json
+验证成功：共 7 组测试用例全部通过
+can not use command: npu-smi info
+[W1010 23:36:13.337623954 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/ws/opt_20261011/verify/kvtq_store_reference.py:97: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  bits = (lo.to(torch.int64) | (hi.to(torch.int64) << 8)) << 16
