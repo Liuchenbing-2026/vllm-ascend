@@ -24,6 +24,7 @@ from vllm.v1.core.kv_cache_utils import (
 )
 from vllm.v1.core.single_type_kv_cache_manager import (
     MambaManager,
+    SlidingWindowManager,
     get_manager_for_kv_cache_spec,
 )
 from vllm.v1.kv_cache_interface import (
@@ -209,11 +210,41 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                 for g in kv_cache_config.kv_cache_groups
                 if is_prefix_cacheable(g.kv_cache_spec)
             ), "block_size must be divisible by hash_block_size"
-        self.enable_partial_hash_hits = dcp_world_size == 1 and any(
+        has_partial_mamba_group = dcp_world_size == 1 and any(
             isinstance(g.kv_cache_spec, MambaSpec)
             and g.kv_cache_spec.mamba_cache_mode == "align"
             and g.kv_cache_spec.block_size > hash_block_size
             for g in kv_cache_config.kv_cache_groups
+        )
+        # Fine-grained hybrid prefix hits are a caller decision
+        # (``allow_partial_hash_hits``). The CPU-offload coordinator always asks
+        # for them (``allow_partial_hash_hits=not lazy_offload``), and Ascend
+        # hybrid packs need them as well: their joint scheduler block size is
+        # the LCM of the group page sizes (16384 tokens for DSV4:
+        # [512, 16384, 128, 128, 8, 32]), so a store that only publishes at
+        # that granularity never sees the short-lived sliding-window/sparse
+        # pages and can never fill the offload pool.
+        #
+        # A cacheable manager without fine-grained lookup only blocks this when
+        # it would report a hit the caller cannot materialize.
+        # SlidingWindowManager trims every hit back to its own page boundary
+        # (``resolve_block_hashes`` plus the trailing realign loops), so it is
+        # safe next to a finer joint alignment.
+        unsupported_partial_hit_managers = {
+            type(manager).__name__
+            for manager, group in zip(
+                self.single_type_managers, kv_cache_config.kv_cache_groups
+            )
+            if is_prefix_cacheable(group.kv_cache_spec)
+            # ``supports_fine_grained_hash_lookup`` defaults to False on the
+            # upstream base manager, so an unset flag means block-aligned only.
+            and not getattr(manager, "supports_fine_grained_hash_lookup", False)
+            and manager.block_size != hash_block_size
+            and not isinstance(manager, SlidingWindowManager)
+        }
+        self.enable_partial_hash_hits = dcp_world_size == 1 and (
+            has_partial_mamba_group
+            or (allow_partial_hash_hits and not unsupported_partial_hit_managers)
         )
         self.verify_and_split_kv_cache_groups()
 

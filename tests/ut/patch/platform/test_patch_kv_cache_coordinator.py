@@ -407,3 +407,93 @@ def test_per_group_lookup_matches_scheduler_call_convention():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# Fix ③: fine-grained hybrid hits follow ``allow_partial_hash_hits``
+# ---------------------------------------------------------------------------
+
+FINE_HASH_BLOCK_SIZE = 8
+
+FA_SPEC_512 = FullAttentionSpec(
+    block_size=512,
+    num_kv_heads=1,
+    head_size=8,
+    dtype=torch.float32,
+)
+SW_SPEC_128 = SlidingWindowSpec(
+    block_size=128,
+    num_kv_heads=1,
+    head_size=8,
+    dtype=torch.float32,
+    sliding_window=128,
+)
+
+
+class _FakeFineGrainedFAManager:
+    """Full attention serves sub-block hashes (upstream sets the flag True)."""
+
+    supports_fine_grained_hash_lookup = True
+
+    def __init__(self, **kwargs):
+        self.use_eagle = False
+        self.block_size = kwargs["block_size"]
+
+
+class _FakeSlidingWindowManager(SlidingWindowManager):
+    """Sliding window keeps block-aligned hits, never finer ones."""
+
+    supports_fine_grained_hash_lookup = False
+
+    def __init__(self, **kwargs):
+        self.use_eagle = False
+        self.block_size = kwargs["block_size"]
+
+
+def _hybrid_pack_manager_factory(**kwargs):
+    spec = kwargs["kv_cache_spec"]
+    if isinstance(spec, SlidingWindowSpec):
+        return _FakeSlidingWindowManager(block_size=spec.block_size)
+    return _FakeFineGrainedFAManager(block_size=spec.block_size)
+
+
+def _hybrid_pack_config() -> KVCacheConfig:
+    """DSV4-style pack: the joint scheduler block is 512, the hash block 8."""
+    groups = [
+        KVCacheGroupSpec(["mla-layer"], FA_SPEC_512, False),
+        KVCacheGroupSpec(["swa-layer"], SW_SPEC_128, False),
+    ]
+    return KVCacheConfig(num_blocks=8, kv_cache_tensors=[], kv_cache_groups=groups)
+
+
+def _make_hybrid_pack_coordinator(monkeypatch, *, allow_partial_hash_hits: bool):
+    monkeypatch.setattr(mod, "BlockPool", _FakeBlockPool)
+    monkeypatch.setattr(mod, "get_manager_for_kv_cache_spec", _hybrid_pack_manager_factory)
+    return AscendHybridKVCacheCoordinator(
+        kv_cache_config=_hybrid_pack_config(),
+        max_model_len=4096,
+        use_eagle=False,
+        enable_caching=True,
+        enable_kv_cache_events=False,
+        dcp_world_size=1,
+        pcp_world_size=1,
+        hash_block_size=FINE_HASH_BLOCK_SIZE,
+        allow_partial_hash_hits=allow_partial_hash_hits,
+    )
+
+
+def test_partial_hash_hits_follow_caller_request_on_hybrid_pack(monkeypatch):
+    """The CPU-offload coordinator asks for fine-grained hits; honor it."""
+    coordinator = _make_hybrid_pack_coordinator(monkeypatch, allow_partial_hash_hits=True)
+    assert coordinator.enable_partial_hash_hits
+    # Write-mask granularity must match the finer lookup boundary, otherwise
+    # the offload store only publishes at the 512-token joint block.
+    assert {m.cache_hit_alignment_tokens for m in coordinator.single_type_managers} == {
+        FINE_HASH_BLOCK_SIZE
+    }
+
+
+def test_partial_hash_hits_stay_off_when_caller_declines(monkeypatch):
+    coordinator = _make_hybrid_pack_coordinator(monkeypatch, allow_partial_hash_hits=False)
+    assert not coordinator.enable_partial_hash_hits
+    assert {m.cache_hit_alignment_tokens for m in coordinator.single_type_managers} == {512}
