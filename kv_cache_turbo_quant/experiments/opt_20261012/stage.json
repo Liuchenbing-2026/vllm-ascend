@@ -1,0 +1,10 @@
+{
+  "stage": "candidate_micro_screening",
+  "branch": "perf/tq-read-throughput-20261012",
+  "base": "eb63397b770b0cc5c02b2ad4b17aee8c1c8cf865",
+  "baseline": {
+    "s1_output_tps": 56.9313020837015,
+    "s2_output_tps": 120.06284500526483
+  },
+  "contract": "unchanged reference, integer bit equality; formal paired same-host 3 repetitions; s1 no regression/s2 gain; compare TTFT/TPOT as well"
+}

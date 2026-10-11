@@ -1,0 +1,9 @@
+{
+  "path": "/ws/opt_20261012/screen3/candidates/mapped_r32.py",
+  "long_ms": 2.7904020309448243,
+  "paired_baseline_ms": 3.8893638610839845,
+  "ratio": 0.7174443252442639,
+  "hybrid_sha256": "228ae934780c27591aff68ebe882535e5a9ce012ddc503a243585bdd5c8bf053",
+  "short_path": "unchanged V1 kernel; max context <= paged block size",
+  "status": "micro-selected; not yet adopted, whole-model gate pending"
+}

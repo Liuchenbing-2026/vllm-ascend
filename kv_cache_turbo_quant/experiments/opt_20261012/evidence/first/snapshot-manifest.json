@@ -1,0 +1,85 @@
+{
+  "snapshot_utc": "2026-10-11T16:58:34.089836+00:00",
+  "files": [
+    {
+      "path": "selection.json",
+      "bytes": 406,
+      "sha256": "f71ae58e7a14d946f1d31cebb90fcd976537f222c1fba0da9a61566746b060ef"
+    },
+    {
+      "path": "candidate/integration/kvtq_read.py",
+      "bytes": 9905,
+      "sha256": "228ae934780c27591aff68ebe882535e5a9ce012ddc503a243585bdd5c8bf053"
+    },
+    {
+      "path": "micro-results.json",
+      "bytes": 25659,
+      "sha256": "7b985ed23dcf7e2ba11b428eee7deaef30dde6f638bf5f4ea6f8332a1d613ddc"
+    },
+    {
+      "path": "screen2/micro-results.json",
+      "bytes": 6830,
+      "sha256": "32f4dba128a458cd6ef6a7cc2ca970479ea536ef2406e0141352c60dd0390403"
+    },
+    {
+      "path": "screen3/micro-results.json",
+      "bytes": 124563,
+      "sha256": "967aad85e9a7a90f570326f1f653f8e0534d9ff5c6659672b4e876998b110aae"
+    },
+    {
+      "path": "issues.jsonl",
+      "bytes": 1288,
+      "sha256": "371e7ca92142974a735ef820228c0d022bac7e62f000acf7028e1e3c06bedbe4"
+    },
+    {
+      "path": "logs/background-launch.log",
+      "bytes": 1169,
+      "sha256": "754637cb6de9503077f83dc4807ea3a142bfa7acf76527f930c7947333eff81c"
+    },
+    {
+      "path": "logs/gates/freeze_reference.command.json",
+      "bytes": 239,
+      "sha256": "3a17d6f137845bc433c947f2c17151aea36824f95aba481ad3fa704b9791f2aa"
+    },
+    {
+      "path": "logs/gates/freeze_reference.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "logs/gates/freeze_reference.log",
+      "bytes": 275,
+      "sha256": "232b17a8f7540e08bba30855170a34da3e87f1b462f0b9624800e234783e13c6"
+    },
+    {
+      "path": "logs/gates/verify_kernel.command.json",
+      "bytes": 235,
+      "sha256": "ed2b7df411ce95e4fe1b8b7a94c4d546477fe87fbbb32d402ebc56aac867d838"
+    },
+    {
+      "path": "logs/gates/verify_kernel.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "logs/shortbits_r16.failure.log",
+      "bytes": 4045,
+      "sha256": "4826788531280ff68c82c0a0be349bec75e2d307cc958ca2c7424e20c113aaf5"
+    },
+    {
+      "path": "screen2/logs/background-launch.log",
+      "bytes": 3976,
+      "sha256": "fcf190a980fbfb9141089d84c6e1a5120c7d3912a83232ba86d11b5001df8d4c"
+    },
+    {
+      "path": "screen3/logs/background-launch.log",
+      "bytes": 118304,
+      "sha256": "d46c3cf837a43b0bb04d7bdc4f5b78851c14870fa2de17b90e1f68b9aae2de17"
+    },
+    {
+      "path": "screen3/logs/mapped_r64.failure.log",
+      "bytes": 56461,
+      "sha256": "e5dd356f0f3bc25f7b6640b292a5fea0e2800b384252eccc3a524fc1cb8ffd82"
+    }
+  ]
+}

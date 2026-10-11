@@ -1,0 +1,5 @@
+SSH warring: Authorized users only. All activity may be monitored and reported 
+  File "<string>", line 1
+    import pathlib,json; r=pathlib.Path("/data02/tq-opt-20261011/opt_20261012"); print((r/"status.json").read_text()); p=pathlib.Path(json.loads((r/"status.json").read_text()).get("result_dir",str(r/"results/model_20261011T170023Z"))); a=[];\nfor f in p.glob("s*_r*.json"):\n x=json.loads(f.read_text());a.append({"file":f.name,"successful":x["successful"],"duration_s":x["duration_s"],"output_tps":x["successful"]*x["output_len"]/x["duration_s"] if "output_len" in x else None});\nprint(json.dumps(a))
+                                                                                                                                                                                                                                                  ^
+SyntaxError: unexpected character after line continuation character
