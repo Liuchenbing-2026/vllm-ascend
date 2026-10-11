@@ -310,8 +310,9 @@
       "confirmed_cause": "test harness imported attention before normal ops registration, producing device_op/ops circular import",
       "handling": "register unchanged vllm_ascend.ops first, preserve first attempt source/logs/exit and rerun original15-case gate; no mock, golden or threshold change",
       "evidence": "attempts/*/logs/background/integration_bits4.log; scripts/verify_integration.first_import_failure.py",
-      "state": "corrected setup deployed; full rerun pending",
-      "remaining": "15/15 bit4 and 2/3-bit real integration then whole-model matrix"
+      "state": "corrected real framework initialization; all15 bit4 integration comparisons passed, bit2/3 fallback each1 passed",
+      "remaining": "paired whole-model throughput, greedy output comparisons and profiling; do not infer semantic quality from integration",
+      "verification": "background-snapshot/live/verify/integration_bits4.json, integration_bits2.json, integration_bits3.json"
     },
     {
       "id": "O29",
@@ -322,6 +323,37 @@
       "evidence": "web failure output and gh REST success in session; separate historical fetch log gap retained",
       "state": "upstream state verified via primary API; network failure root cause unknown",
       "remaining": "keep historical access failure, do not infer all similar changes absent"
+    },
+    {
+      "id": "O30",
+      "discovered_utc": "2026-10-11T00:45:31.954906+00:00",
+      "phenomenon": "Second integration gate resolves circular import, still aborts mixed-history wrapper because no native forward context set",
+      "confirmed_cause": "framework _EXTRA_CTX delegates to vLLM get_forward_context, which asserts outside service context; harness did not establish context",
+      "handling": "initialize minimal native forward context using framework API, retain second attempt logs/exit; same real FIA wrapper and unchanged comparisons retained",
+      "evidence": "second background attempt integration_bits4.log; source runtime forward_context.py",
+      "state": "corrected real framework initialization; all15 bit4 integration comparisons passed, bit2/3 fallback each1 passed",
+      "remaining": "paired whole-model throughput, greedy output comparisons and profiling; do not infer semantic quality from integration",
+      "verification": "background-snapshot/live/verify/integration_bits4.json, integration_bits2.json, integration_bits3.json"
+    },
+    {
+      "id": "O31",
+      "discovered_utc": "2026-10-11T00:48:51.256520+00:00",
+      "phenomenon": "Long archive-update stdin Python reported Non-UTF-8 SyntaxError before any statement executed",
+      "confirmed_cause": null,
+      "handling": "write UTF-8 script file with encoding declaration using apply_patch, execute from file; preserve failure and no-mutation boundary",
+      "evidence": "original failed command and error in session; scripts/archive_background.py",
+      "state": "safe file-based archive retry prepared; encoding root cause unknown",
+      "remaining": "validate updated catalog, push and read back"
+    },
+    {
+      "id": "O32",
+      "discovered_utc": "2026-10-11T00:48:51.256520+00:00",
+      "phenomenon": "After successful source branch push, origin tracking-ref lookup failed despite fetch success",
+      "confirmed_cause": "checkout fetch refspec does not create origin/perf tracking reference for one-branch fetch",
+      "handling": "use actual fetched FETCH_HEAD; hash matches c223394cb0341ef3b1e5db712825fb3466a01b9c and read full fetched commit; do not re-push or rewrite history",
+      "evidence": "git fetch success then ambiguous origin ref; git rev-parse HEAD FETCH_HEAD plus git log FETCH_HEAD matching",
+      "state": "remote source content readback passed via fetched commit",
+      "remaining": "repeat proper fetched-commit verification for subsequent source commits"
     }
   ]
 }

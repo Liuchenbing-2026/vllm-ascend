@@ -108,9 +108,12 @@ def main():
         metadata = SimpleNamespace(seq_lens_list=[7, 20, 33], block_tables=table,
             attn_state=AscendAttentionState.ChunkedPrefill, num_decode_tokens=1,
             num_decodes=1, num_prefills=2, actual_seq_lengths_q=[1, 4, 9], attn_mask=mask)
-        equal('mixed_decode_prefill_with_history_sparse3',
-              original._tq_forward_fia(attention, query, query, query, metadata, torch.empty_like(query)),
-              candidate._tq_forward_fia(attention, query, query, query, metadata, torch.empty_like(query)), records)
+        from vllm.forward_context import ForwardContext, override_forward_context
+        context = ForwardContext(no_compile_layers={}, attn_metadata={'test': metadata}, slot_mapping={})
+        with override_forward_context(context):
+            equal('mixed_decode_prefill_with_history_sparse3',
+                  original._tq_forward_fia(attention, query, query, query, metadata, torch.empty_like(query)),
+                  candidate._tq_forward_fia(attention, query, query, query, metadata, torch.empty_like(query)), records)
     output = root / f'verify/integration_bits{bits}.json'
     output.write_text(json.dumps({'mse_bits': bits, 'passed': len(records), 'records': records,
         'scope': 'strict BF16 bit equality at real read and FIA integration APIs'}, indent=2) + '\n')

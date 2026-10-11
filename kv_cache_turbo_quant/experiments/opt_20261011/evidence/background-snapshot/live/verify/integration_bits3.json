@@ -1,0 +1,16 @@
+{
+  "mse_bits": 3,
+  "passed": 1,
+  "records": [
+    {
+      "name": "unchanged_3bit_fallback",
+      "shape": [
+        160,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    }
+  ],
+  "scope": "strict BF16 bit equality at real read and FIA integration APIs"
+}

@@ -3,7 +3,7 @@
 | 项目 | 已确认状态 | 未完成项 |
 |---|---|---|
 | 框架与原 TQ 算子 | 新容器从固定源码构建，三项 build/hash marker 均为0 | 整网精度与性能仍在后台执行 |
-| 融合读取 V1 | NPU七组严格 BF16 bit 检查通过，CPU元数据UT四组通过 | 真实 FIA 集成十五项及2/3-bit回归由后台门禁验证 |
+| 融合读取 V1 | NPU七组严格 BF16 bit 检查通过，CPU元数据UT四组通过 | 真实 FIA 集成十五项及2/3-bit各一项均已通过；glue/roundtrip由后台执行 |
 | 微基准 | 20×16,H2设备kernel累计0.3404→0.0135ms；ragged2000×60,H2为26.8295→3.8628ms | 单算子收益不等于整网收益 |
 | 后台程序 | host supervisor → 集成门禁 → BF16/优化TQ/原TQ各两场景 → profiling独立解析 → 自动JSON/Markdown汇总 | 最终结果回收、推送及回读尚待完成 |
 
@@ -23,7 +23,7 @@ vLLM `2cf0a6915ce544dc493a0990f2ea38d81601128a`，vLLM-Ascend `96df623103f921df1
 
 V1七组真实NPU严格int16 bit比较全部通过；空输入没有kernel，micro profiler三次无耗时结果作为不适用保留，性能仅六个非空组。raw保留复测的全部profile与设备日志已SHA回收。V2连续字节读取候选修正int32 Gather不支持后七组通过；短case变慢0.0135→0.0160ms、长case3.8628→3.5293ms，本轮选择V1以收敛整网验证，V2及初次失败源码/日志保留。
 
-初始原TQ prefill窗口GatherV3约38%、LeftShift约9.8%，每rank1680次aclrtSynchronizeStream；这些是窗口成本，不能外推整网占比。旧TQ采样两次被外部Docker停止，仅prefill有效，decode未完成，不伪造吞吐。完整失败与未解问题O01–O29保存在 `issues.json`。
+初始原TQ prefill窗口GatherV3约38%、LeftShift约9.8%，每rank1680次aclrtSynchronizeStream；这些是窗口成本，不能外推整网占比。旧TQ采样两次被外部Docker停止，仅prefill有效，decode未完成，不伪造吞吐。完整失败与未解问题O01–O32保存在 `issues.json`。
 
 ## 后台入口和完整启动命令
 
@@ -72,3 +72,7 @@ profiling诊断2000/32/c60，与正式负载分开；decode在所有请求获得
 恢复第一步：SSH进入宿主读取上述两份status、PID、exit及最新日志；`background.exit=0`才算流水线完成。若失败，先归档日志定位根因；重新运行必须保留旧run_id结果与失败记录，不能删除失败或放宽精度。源码分支的提交页作为交付SHA，不在文件中填写自指提交。CI及上游评审未执行，没有创建PR。
 
 后台启动已确认：宿主supervisor PID `1913143`，容器pipeline PID `26681`，开始时间2026-10-11T00:42:18Z；阶段集成门禁。首次attempt因为测试初始化导入顺序失败，14项严格对照已产生零bit差，未宣称十五项通过；首次源码/日志/exit保存在`evidence/background-snapshot/live/attempts/`及first_import_failure.py，重试与根因修复分开。以上PID/阶段是时间快照，接手时必须实时核查。
+
+第二次attempt按正常顺序注册ops后，mixed-history因未建立forward context中断，仍保留14项已零bit比较和完整报错。当前harness使用原生ForwardContext/override_forward_context建立正常执行上下文，再运行同一真实FIA wrapper，不mock、不删用例、不改判据；失败快照与当前阶段见evidence/background-snapshot。
+
+最新已验收阶段：2026-10-11T00:49:55Z，4-bit真实读/FIA/mixed-history严格bit门禁15/15、2-bit/3-bit回退各1/1通过；host PID1922823、pipeline PID26881。整网run_id `model_20261011T004955Z`，controller已启动并执行glue前置检查，随后自动formal与profiling。失败attempt仍保留；整网性能及四组greedy输出尚未完成。
