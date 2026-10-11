@@ -135,7 +135,11 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         # behavior. The scheduler always supplies the real value at runtime.
         token_budget = _select_kv_token_budget(max_model_len, max_in_flight_tokens)
         self.max_in_flight_tokens = token_budget
-        self.retention_interval = getattr(envs_vllm, "VLLM_PREFIX_CACHE_RETENTION_INTERVAL", None)
+        self.retention_interval = getattr(
+            kv_cache_config,
+            "prefix_cache_retention_interval",
+            getattr(envs_vllm, "VLLM_PREFIX_CACHE_RETENTION_INTERVAL", None),
+        )
         validate_retention_interval = getattr(
             vllm_kv_cache_coordinator,
             "_validate_prefix_cache_retention_interval",
