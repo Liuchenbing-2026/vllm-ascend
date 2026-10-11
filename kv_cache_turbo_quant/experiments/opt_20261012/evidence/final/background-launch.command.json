@@ -1,0 +1,10 @@
+[
+  "docker",
+  "exec",
+  "-e",
+  "TASK_NPU_CARDS=2,5",
+  "tq-opt-20261011-model",
+  "bash",
+  "-lc",
+  "source /usr/local/Ascend/cann-9.1.0/set_env.sh; export ASCEND_RT_VISIBLE_DEVICES=2,5 TRITON_CACHE_DIR=/ws/opt_20261012/triton-cache VLLM_ASCEND_KVTQ_BITS=4 VLLM_ASCEND_KVTQ_STORE=0; exec /ws/.venv/bin/python -u /ws/opt_20261012/scripts/model_pipeline.py"
+]

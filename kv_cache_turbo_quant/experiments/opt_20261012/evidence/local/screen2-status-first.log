@@ -1,0 +1,6 @@
+{"stage": "micro_finished", "passed": 2, "total": 2}
+
+[{"candidate": "baseline_v1", "status": "pass", "ms": [0.2637619972229004, 3.8984100341796877], "error": ""}, {"candidate": "mapped_r16", "status": "pass", "ms": [0.43881402015686033, 2.900901985168457], "error": ""}]
+2.8999200820922852, 2.9010360717773436, 2.900581932067871, 2.9006959915161135, 2.9075139999389648, 2.9055299758911133], "median_ms": 2.900901985168457, "scope": "NPU event interval across 10 Python dispatches; screening only, not kernel-only profiling or whole-model throughput"}], "status": "pass"}
+
+SSH warring: Authorized users only. All activity may be monitored and reported 

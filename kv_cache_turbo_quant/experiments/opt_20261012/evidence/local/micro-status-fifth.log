@@ -1,0 +1,4 @@
+{"stage": "micro_screening", "candidate": "select_r16", "pid": 35844}
+
+[{"candidate": "baseline_v1", "status": "pass", "ms": [0.23627800941467286, 3.892422103881836], "error": ""}, {"candidate": "contiguous_v2", "status": "pass", "ms": [0.23993000984191895, 3.5450679779052736], "error": ""}, {"candidate": "global_r16", "status": "pass", "ms": [0.23740999698638915, 15.47562255859375], "error": ""}, {"candidate": "half_r16", "status": "pass", "ms": [0.23781800270080566, 3.889640045166016], "error": ""}, {"candidate": "half_r32", "status": "pass", "ms": [0.2343219995498657, 3.6767501831054688], "error": ""}]
+SSH warring: Authorized users only. All activity may be monitored and reported 

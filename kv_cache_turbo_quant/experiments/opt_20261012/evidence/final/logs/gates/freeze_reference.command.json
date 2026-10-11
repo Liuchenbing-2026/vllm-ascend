@@ -1,0 +1,12 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/opt_20261011/verifier/freeze_baseline.py",
+  "--op_name",
+  "paged_read",
+  "--work_dir",
+  "/ws/opt_20261012/verify",
+  "--mode",
+  "user",
+  "--source_path",
+  "/ws/opt_20261011/verify/paged_read.py"
+]

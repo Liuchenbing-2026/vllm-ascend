@@ -1,0 +1,1 @@
+["/ws/.venv/bin/python", "/ws/opt_20261012/scripts/check_model_output.py", "--mode", "optimized", "--output", "/ws/opt_20261012/results/model_20261011T170023Z/precision_model_optimized.json"]

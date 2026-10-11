@@ -1,0 +1,184 @@
+{
+  "updated_utc": "2026-10-11T17:39:15.499576+00:00",
+  "stage": "finished",
+  "pipeline_pid": 41661,
+  "result_dir": "/ws/opt_20261012/results/model_20261011T170023Z",
+  "gates": [
+    {
+      "scene": 1,
+      "throughput_ratio": 1.0344112371505074,
+      "throughput_pass": true,
+      "ttft_ratio": 0.9701301187076597,
+      "tpot_ratio": 0.9662539322190465
+    },
+    {
+      "scene": 2,
+      "throughput_ratio": 1.2180635822364687,
+      "throughput_pass": true,
+      "ttft_ratio": 0.9734706670332204,
+      "tpot_ratio": 0.8007460359276574
+    }
+  ],
+  "accepted": true
+}
+0
+{
+  "scope": "same-host paired three formal repetitions, warmup/greedy/profiling excluded",
+  "physical_cards": "2,5",
+  "rows": [
+    {
+      "scene": 1,
+      "mode": "bf16",
+      "mode_meaning": "TQ off",
+      "input_len": 20,
+      "output_len": 20,
+      "concurrency": 16,
+      "successful": 48,
+      "duration_s": 12.825959797017276,
+      "output_tps": 74.84819968196466,
+      "mean_ttft_s": 0.417546735998864,
+      "mean_tpot_ms": 202.0631650311611,
+      "per_round_tps": [
+        74.70012047029728,
+        75.24778923339508,
+        74.59993106688084
+      ]
+    },
+    {
+      "scene": 1,
+      "mode": "original",
+      "mode_meaning": "prior V1 TQ",
+      "input_len": 20,
+      "output_len": 20,
+      "concurrency": 16,
+      "successful": 48,
+      "duration_s": 16.855671726167202,
+      "output_tps": 56.95412295611275,
+      "mean_ttft_s": 0.5174577292830994,
+      "mean_tpot_ms": 267.3060691408944,
+      "per_round_tps": [
+        57.103256216510935,
+        56.9007077594606,
+        56.85900364314992
+      ]
+    },
+    {
+      "scene": 1,
+      "mode": "optimized",
+      "mode_meaning": "candidate hybrid TQ",
+      "input_len": 20,
+      "output_len": 20,
+      "concurrency": 16,
+      "successful": 48,
+      "duration_s": 16.294942592270672,
+      "output_tps": 58.9139847878547,
+      "mean_ttft_s": 0.5020013283356093,
+      "mean_tpot_ms": 258.28554041340556,
+      "per_round_tps": [
+        58.54709099595116,
+        59.19657200474778,
+        59.00207105199922
+      ]
+    },
+    {
+      "scene": 2,
+      "mode": "bf16",
+      "mode_meaning": "TQ off",
+      "input_len": 2000,
+      "output_len": 200,
+      "concurrency": 60,
+      "successful": 180,
+      "duration_s": 147.53354608174413,
+      "output_tps": 244.0123006333314,
+      "mean_ttft_s": 4.134769327452199,
+      "mean_tpot_ms": 211.05928313837813,
+      "per_round_tps": [
+        243.4709556931638,
+        241.41836323358004,
+        247.21823196321026
+      ]
+    },
+    {
+      "scene": 2,
+      "mode": "original",
+      "mode_meaning": "prior V1 TQ",
+      "input_len": 2000,
+      "output_len": 200,
+      "concurrency": 60,
+      "successful": 180,
+      "duration_s": 300.29092326108366,
+      "output_tps": 119.88374343469687,
+      "mean_ttft_s": 6.750324251197485,
+      "mean_tpot_ms": 447.9414898420397,
+      "per_round_tps": [
+        119.78627483534594,
+        119.85311795961995,
+        120.01206184334525
+      ]
+    },
+    {
+      "scene": 2,
+      "mode": "optimized",
+      "mode_meaning": "candidate hybrid TQ",
+      "input_len": 2000,
+      "output_len": 200,
+      "concurrency": 60,
+      "successful": 180,
+      "duration_s": 246.53140249848366,
+      "output_tps": 146.0260219799846,
+      "mean_ttft_s": 6.57124265150374,
+      "mean_tpot_ms": 358.68737231854226,
+      "per_round_tps": [
+        146.1437556621287,
+        146.03064785636184,
+        145.90385969842265
+      ]
+    }
+  ],
+  "greedy_samples": [
+    {
+      "input_len": 20,
+      "output_len": 20,
+      "tokens_equal": true,
+      "tokens": 20
+    },
+    {
+      "input_len": 20,
+      "output_len": 20,
+      "tokens_equal": true,
+      "tokens": 20
+    },
+    {
+      "input_len": 2000,
+      "output_len": 200,
+      "tokens_equal": true,
+      "tokens": 200
+    },
+    {
+      "input_len": 2000,
+      "output_len": 200,
+      "tokens_equal": true,
+      "tokens": 200
+    }
+  ],
+  "gates": [
+    {
+      "scene": 1,
+      "throughput_ratio": 1.0344112371505074,
+      "throughput_pass": true,
+      "ttft_ratio": 0.9701301187076597,
+      "tpot_ratio": 0.9662539322190465
+    },
+    {
+      "scene": 2,
+      "throughput_ratio": 1.2180635822364687,
+      "throughput_pass": true,
+      "ttft_ratio": 0.9734706670332204,
+      "tpot_ratio": 0.8007460359276574
+    }
+  ],
+  "accepted": true,
+  "accuracy_limit": "four single-request greedy samples, not a semantic model quality benchmark"
+}
+SSH warring: Authorized users only. All activity may be monitored and reported 
+cat: /data02/tq-opt-20261011/opt_20261012/background-host.exit: No such file or directory

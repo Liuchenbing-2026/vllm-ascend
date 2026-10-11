@@ -1,0 +1,63 @@
+{
+  "checked_utc": "2026-10-11T17:13:41.562128+00:00",
+  "background-status.json": "{\n  \"updated_utc\": \"2026-10-11T17:00:23.808430+00:00\",\n  \"stage\": \"model_matrix\",\n  \"pipeline_pid\": 41661,\n  \"command\": [\n    \"/ws/.venv/bin/python\",\n    \"-u\",\n    \"/ws/opt_20261012/scripts/run_model_ab.py\",\n    \"--no-profile\"\n  ]\n}\n",
+  "status.json": "{\n  \"updated_utc\": \"2026-10-11T17:10:48.735729+00:00\",\n  \"stage\": \"server_starting\",\n  \"run_id\": \"model_20261011T170023Z\",\n  \"mode\": \"original\",\n  \"profiling\": false,\n  \"pid\": 45192,\n  \"log\": \"/ws/opt_20261012/logs/model_20261011T170023Z/serve_original_formal.log\"\n}\n",
+  "background.exit": null,
+  "formal": [
+    {
+      "file": "s1_bf16_in20_out20_c16_r1.json",
+      "complete": true,
+      "successful": 16,
+      "duration_s": 4.283794965595007,
+      "output_tps": 74.70012047029728,
+      "ttft_s": 0.41631560813402757,
+      "tpot_ms": 202.5791111212273
+    },
+    {
+      "file": "s1_bf16_in20_out20_c16_r2.json",
+      "complete": true,
+      "successful": 16,
+      "duration_s": 4.252616631798446,
+      "output_tps": 75.24778923339508,
+      "ttft_s": 0.4156532861525193,
+      "tpot_ms": 200.9839784127268
+    },
+    {
+      "file": "s1_bf16_in20_out20_c16_r3.json",
+      "complete": true,
+      "successful": 16,
+      "duration_s": 4.289548199623823,
+      "output_tps": 74.59993106688084,
+      "ttft_s": 0.42067131371004507,
+      "tpot_ms": 202.62640555952922
+    },
+    {
+      "file": "s2_bf16_in2000_out200_c60_r1.json",
+      "complete": true,
+      "successful": 60,
+      "duration_s": 49.28719306923449,
+      "output_tps": 243.4709556931638,
+      "ttft_s": 4.131001371657476,
+      "tpot_ms": 211.44246679482677
+    },
+    {
+      "file": "s2_bf16_in2000_out200_c60_r2.json",
+      "complete": true,
+      "successful": 60,
+      "duration_s": 49.70624371431768,
+      "output_tps": 241.41836323358004,
+      "ttft_s": 4.129331626867255,
+      "tpot_ms": 213.83945083470277
+    },
+    {
+      "file": "s2_bf16_in2000_out200_c60_r3.json",
+      "complete": true,
+      "successful": 60,
+      "duration_s": 48.540109298191965,
+      "output_tps": 247.21823196321026,
+      "ttft_s": 4.143974983831868,
+      "tpot_ms": 207.89593178560486
+    }
+  ]
+}
+SSH warring: Authorized users only. All activity may be monitored and reported 

@@ -1,0 +1,29 @@
+{
+  "checked_utc": "2026-10-11T17:38:06.502504+00:00",
+  "files": [
+    {
+      "path": "/ws/torch-extensions/turboquant_torch/build.ninja",
+      "bytes": 1385,
+      "sha256": "9471d7e673bfdd4d841939fc8fc518bc3975637d8e8661896889f56316d91906",
+      "mtime_utc": "2026-10-11T17:25:31.886033+00:00",
+      "source_lines": [
+        "build turboquant_torch.o: compile /ws/opt_20261012/candidate/integration/torch_ext/turboquant_torch.cpp"
+      ]
+    },
+    {
+      "path": "/ws/torch-extensions/turboquant_torch/turboquant_torch.so",
+      "bytes": 331240,
+      "sha256": "a330a1c708c23524e845d44c8271b6b01b476aab94e0eefa5d5cc23e93199294",
+      "mtime_utc": "2026-10-11T17:26:04.786173+00:00",
+      "source_lines": null
+    },
+    {
+      "path": "/usr/local/Ascend/cann-9.1.0/opp/vendors/customize/op_api/lib/libcust_opapi.so",
+      "bytes": 67680,
+      "sha256": "089bafab61cad104a6f5aaff2e08e5a2b01bbd350853c7682d0dc9acd3074071",
+      "mtime_utc": "2026-10-11T00:23:44.815771+00:00",
+      "source_lines": null
+    }
+  ]
+}
+SSH warring: Authorized users only. All activity may be monitored and reported 

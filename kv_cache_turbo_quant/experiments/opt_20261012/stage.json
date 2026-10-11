@@ -1,10 +1,30 @@
 {
-  "stage": "candidate_micro_screening",
+  "stage": "completed and adopted",
+  "run_id": "model_20261011T170023Z",
   "branch": "perf/tq-read-throughput-20261012",
   "base": "eb63397b770b0cc5c02b2ad4b17aee8c1c8cf865",
-  "baseline": {
-    "s1_output_tps": 56.9313020837015,
-    "s2_output_tps": 120.06284500526483
-  },
-  "contract": "unchanged reference, integer bit equality; formal paired same-host 3 repetitions; s1 no regression/s2 gain; compare TTFT/TPOT as well"
+  "production_code_commit": "2a83edbdd576b1bd4a5cdea7c2c41b22feb6167a",
+  "hybrid_sha256": "228ae934780c27591aff68ebe882535e5a9ce012ddc503a243585bdd5c8bf053",
+  "accepted": true,
+  "formal_groups": 18,
+  "formal_requests": 684,
+  "greedy_tokens_equal": 440,
+  "profiling_this_phase": false,
+  "gates": [
+    {
+      "scene": 1,
+      "throughput_ratio": 1.0344112371505074,
+      "throughput_pass": true,
+      "ttft_ratio": 0.9701301187076597,
+      "tpot_ratio": 0.9662539322190465
+    },
+    {
+      "scene": 2,
+      "throughput_ratio": 1.2180635822364687,
+      "throughput_pass": true,
+      "ttft_ratio": 0.9734706670332204,
+      "tpot_ratio": 0.8007460359276574
+    }
+  ],
+  "resource_release_evidence": "evidence/local/resource-release.log"
 }

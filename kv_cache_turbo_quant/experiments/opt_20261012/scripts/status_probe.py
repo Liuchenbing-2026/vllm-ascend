@@ -14,9 +14,11 @@ for name in ['background-status.json', 'status.json', 'background.exit']:
 out['formal'] = []
 for directory in sorted((root / 'results').glob('*')):
     for path in sorted(directory.glob('s*_r*.json')):
+        match = re.fullmatch(r's([12])_(bf16|original|optimized)_in(\d+)_out(\d+)_c(\d+)_r([1-3])\.json', path.name)
+        if match is None:
+            continue
         record = json.loads(path.read_text())
-        match = re.search(r'_out(\d+)_c(\d+)_r', path.name)
-        output_len, concurrency = map(int, match.groups())
+        output_len, concurrency = int(match.group(4)), int(match.group(5))
         complete = record['complete_cohort'] and record['successful'] == concurrency and not record['failed']
         requests = record['requests']
         out['formal'].append({'file': path.name, 'complete': complete,

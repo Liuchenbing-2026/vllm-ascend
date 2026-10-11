@@ -1,0 +1,142 @@
+{
+  "mse_bits": 4,
+  "passed": 15,
+  "records": [
+    {
+      "name": "full_read_dispatch_1",
+      "shape": [
+        1,
+        1,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "full_read_dispatch_2",
+      "shape": [
+        432,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "full_read_dispatch_3",
+      "shape": [
+        290,
+        3,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "full_read_dispatch_4",
+      "shape": [
+        320,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "full_read_dispatch_5",
+      "shape": [
+        120060,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "full_read_dispatch_6",
+      "shape": [
+        0,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "full_read_dispatch_7",
+      "shape": [
+        799,
+        4,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "padded_block_table_c16",
+      "shape": [
+        320,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "padded_block_table_c60",
+      "shape": [
+        120060,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "all_256_codes",
+      "shape": [
+        4,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "same_lengths_new_physical_page",
+      "shape": [
+        4,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "same_metadata_changed_lengths",
+      "shape": [
+        129,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "FIA_decode_c16_host_lengths",
+      "shape": [
+        16,
+        8,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "FIA_decode_c60_host_lengths",
+      "shape": [
+        60,
+        8,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "name": "mixed_decode_prefill_with_history_sparse3",
+      "shape": [
+        9,
+        8,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    }
+  ],
+  "scope": "strict BF16 bit equality at real read and FIA integration APIs"
+}

@@ -1,0 +1,2 @@
+{"files": ["tools/shared_bench/bench_client.py", "tools/shared_bench/collect_environment.py", "tools/shared_bench/run_matrix.py", "tools/verifier/_baseline_integrity.py", "tools/verifier/_common_utils.py", "tools/verifier/_log_utils.py", "tools/verifier/benchmark.py", "tools/verifier/freeze_baseline.py", "tools/verifier/hidden_state_probe.py", "tools/verifier/lock_npu_frequency.py", "tools/verifier/npu_preflight.py", "tools/verifier/validate_triton_impl.py", "tools/verifier/verify.py"]}
+SSH warring: Authorized users only. All activity may be monitored and reported 

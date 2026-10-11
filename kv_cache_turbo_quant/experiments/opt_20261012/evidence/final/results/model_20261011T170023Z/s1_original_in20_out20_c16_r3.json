@@ -1,0 +1,330 @@
+{
+  "captured_utc": "2026-10-11T17:18:02.853709+00:00",
+  "mode": "original",
+  "concurrency": 16,
+  "num_prompts": 16,
+  "input_len": 20,
+  "output_len": 20,
+  "seed": 20261010,
+  "timeout_s": 3600.0,
+  "payload_sha256": [
+    "218c8335829060f0dd175acb60b0bf6ddf5b6ce9a07b979d9fef1ffdf53d2d56",
+    "8ae3619cd8d0c05c25012c69d220873fe2c32dfadeabf2c9efea3d05817b47c8",
+    "5dde412d98f681c1d5465219555abdde9f3fa8ec7a032bc1d4ccd91407f8ee66",
+    "01ea27df8d01c1dde5618e2d578197a29c24faad53bdc483fc6b14e052e8ec34",
+    "79833d45b7c7dfb64d767a59a984be2461ef7c821529999cdd886c6c6cb4f851",
+    "cf587f01430b34978118a49d50778e320396c118f2b74eec03d76af2664673a9",
+    "d3e74e1f160bd3cc4c62d7f142291e4add1ef844698c67cfc10dcac811066d6a",
+    "da6746c58cf557ab0c5eb904dc725234f989ad72b830c40c503a29a0a8530522",
+    "bc87b61f937dfdd9ed6158fc66ab1923cf68167981594d5675bbfda3391eef71",
+    "a592ac0207d3a446554924799e0ab3e53353b221468120e3f41bdb03622054c5",
+    "ab47c3d3b2ef2b2557833ff43aae1dac817339dddaf419fac23cc6e39b6b7691",
+    "39554994eca4cc0320ae38144d8b7af14c9fb473a878bd22a647b5fdae7dd883",
+    "4271a59feccba0f2535bdac523abb7154d7f39d6d3415b24e8ff2f85ec673a3e",
+    "4eeeeeb09337571e80ee1f40de8a61a3f57d49fc8c3d2cff8745dffea432efd1",
+    "4044f4b4e55246f0d92e66998a6cb5a0dc4a3c8dc6653fd3a070cb606df889c4",
+    "dee38bae08c2240c406da0250940ab63579973fd660d73c89c8215e3f3bff56a"
+  ],
+  "successful": 16,
+  "failed": 0,
+  "duration_s": 5.627956515178084,
+  "complete_cohort": true,
+  "output_throughput_tps": 56.85900364314992,
+  "total_throughput_tps": 113.71800728629984,
+  "mean_ttft_s": 0.5142472196021117,
+  "p99_ttft_s": 0.5339960261713713,
+  "mean_tpot_ms": 267.970087328362,
+  "p99_tpot_ms": 268.5436915361176,
+  "mean_latency_s": 5.605713797907811,
+  "requests": [
+    {
+      "id": 0,
+      "status": "success",
+      "events": 20,
+      "text": "\n\n\nOkay, I need to figure out how to solve this problem. The user mentioned \"",
+      "started_s": 0.0006277924403548241,
+      "http_status": 200,
+      "last_token_s": 5.354172471910715,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.24984407052397728,
+      "tpot_s": 0.26864886323088094,
+      "latency_s": 5.354232292622328
+    },
+    {
+      "id": 1,
+      "status": "success",
+      "events": 20,
+      "text": " \"train averagesoft aw Assert. Command Britishetime continues_read_or multiple.st\";\n\n pluginographicro strings",
+      "started_s": 0.0012413151562213898,
+      "http_status": 200,
+      "last_token_s": 5.624268499203026,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.5341518288478255,
+      "tpot_s": 0.2679008773871158,
+      "latency_s": 5.624301169067621
+    },
+    {
+      "id": 2,
+      "status": "success",
+      "events": 20,
+      "text": "ancem\ne\n\nOkay, so I need to figure out what the user is asking for here",
+      "started_s": 0.0016051270067691803,
+      "http_status": 200,
+      "last_token_s": 5.623249883763492,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.533113144338131,
+      "tpot_s": 0.26790193365396636,
+      "latency_s": 5.623296635225415
+    },
+    {
+      "id": 3,
+      "status": "success",
+      "events": 20,
+      "text": "…e…e…e…e…e…e…e…e…e…e",
+      "started_s": 0.001906268298625946,
+      "http_status": 200,
+      "last_token_s": 5.623442395590246,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.533025573939085,
+      "tpot_s": 0.2679166748237453,
+      "latency_s": 5.623481756076217
+    },
+    {
+      "id": 4,
+      "status": "success",
+      "events": 20,
+      "text": "\n\nOkay, I need to figure out what the user is asking for here. The query is a",
+      "started_s": 0.0021991487592458725,
+      "http_status": 200,
+      "last_token_s": 5.623383096419275,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.5328399129211903,
+      "tpot_s": 0.2679233254472676,
+      "latency_s": 5.623414676636457
+    },
+    {
+      "id": 5,
+      "status": "success",
+      "events": 20,
+      "text": ", and the like. 1. What is the main idea of the passage? 2.",
+      "started_s": 0.002690620720386505,
+      "http_status": 200,
+      "last_token_s": 5.623650177381933,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.5328614031895995,
+      "tpot_s": 0.2679362512732807,
+      "latency_s": 5.6236830977723
+    },
+    {
+      "id": 6,
+      "status": "success",
+      "events": 20,
+      "text": "\n\nOkay, so I need to figure out what the user is asking for here. The query is",
+      "started_s": 0.0029770825058221817,
+      "http_status": 200,
+      "last_token_s": 5.622676222585142,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.5324505418539047,
+      "tpot_s": 0.26790661477532823,
+      "latency_s": 5.622706622816622
+    },
+    {
+      "id": 7,
+      "status": "success",
+      "events": 20,
+      "text": "\n\nOkay, I need to figure out the correct answer for this question. The user provided a mix",
+      "started_s": 0.003256034106016159,
+      "http_status": 200,
+      "last_token_s": 5.623438734561205,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.5324320811778307,
+      "tpot_s": 0.267947718599125,
+      "latency_s": 5.6234685545787215
+    },
+    {
+      "id": 8,
+      "status": "success",
+      "events": 20,
+      "text": ", and the user is to be able to select the desired option. The user is to be able",
+      "started_s": 0.0035412348806858063,
+      "http_status": 200,
+      "last_token_s": 5.622946202754974,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.5320659000426531,
+      "tpot_s": 0.2679410685638064,
+      "latency_s": 5.622977154329419
+    },
+    {
+      "id": 9,
+      "status": "success",
+      "events": 20,
+      "text": "iFi.1000.1000.1000.10",
+      "started_s": 0.003821936435997486,
+      "http_status": 200,
+      "last_token_s": 5.622735432349145,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.5318151786923409,
+      "tpot_s": 0.267943171245095,
+      "latency_s": 5.622765492647886
+    },
+    {
+      "id": 10,
+      "status": "success",
+      "events": 20,
+      "text": "\n1. 1. 1. 1. 1. 1. 1",
+      "started_s": 0.004112547263503075,
+      "http_status": 200,
+      "last_token_s": 5.622513001784682,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.531550157815218,
+      "tpot_s": 0.2679454128404981,
+      "latency_s": 5.622543681412935
+    },
+    {
+      "id": 11,
+      "status": "success",
+      "events": 20,
+      "text": " width\nimport { Module } from 'mosModule';\n\n// Create a new module instance\nconst my",
+      "started_s": 0.004400239326059818,
+      "http_status": 200,
+      "last_token_s": 5.621034354902804,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.5305698523297906,
+      "tpot_s": 0.2679191843459481,
+      "latency_s": 5.621067774482071
+    },
+    {
+      "id": 12,
+      "status": "success",
+      "events": 20,
+      "text": " —libcurlobalbudget someUS —libcurlobalbudget someUS —libcurlobalbudget some",
+      "started_s": 0.004680049605667591,
+      "http_status": 200,
+      "last_token_s": 5.62173467874527,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.5309009850025177,
+      "tpot_s": 0.26793861546014486,
+      "latency_s": 5.62176719866693
+    },
+    {
+      "id": 13,
+      "status": "success",
+      "events": 20,
+      "text": " to the cursor severalilitago tab effortsger doc change farm computer ;\n send to the cursor severalilit",
+      "started_s": 0.005101041868329048,
+      "http_status": 200,
+      "last_token_s": 5.620621433481574,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.5303635317832232,
+      "tpot_s": 0.2679083106157027,
+      "latency_s": 5.620650962926447
+    },
+    {
+      "id": 14,
+      "status": "success",
+      "events": 20,
+      "text": "\r\n#include <stdio.h>\r\n#include <stdlib.h>\r\n#include <string.h>\r\n",
+      "started_s": 0.005388002842664719,
+      "http_status": 200,
+      "last_token_s": 5.620868604630232,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.5301370909437537,
+      "tpot_s": 0.2679332375624462,
+      "latency_s": 5.620907055214047
+    },
+    {
+      "id": 15,
+      "status": "success",
+      "events": 20,
+      "text": "设置.ice\n1. 1. 1. 1. 1. 1",
+      "started_s": 0.005663073621690273,
+      "http_status": 200,
+      "last_token_s": 5.620126871392131,
+      "finish_reason": "length",
+      "usage": {
+        "prompt_tokens": 20,
+        "total_tokens": 40,
+        "completion_tokens": 20
+      },
+      "ttft_s": 0.5298342602327466,
+      "tpot_s": 0.26791013742944125,
+      "latency_s": 5.620156642049551
+    }
+  ],
+  "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+}

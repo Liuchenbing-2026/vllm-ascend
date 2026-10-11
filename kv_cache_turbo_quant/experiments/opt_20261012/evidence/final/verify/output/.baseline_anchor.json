@@ -1,0 +1,9 @@
+{
+  "op_name": "paged_read",
+  "torch_sha256": "671e1a7ca1b0f96e4ee11e5886120ab42a1cd86ab21ea87ec676db25b42166ee",
+  "torch_path": "/ws/opt_20261012/verify/paged_read.py",
+  "source_mode": "user",
+  "frozen_at": "2026-10-11T16:57:43+00:00",
+  "source_sha256": "671e1a7ca1b0f96e4ee11e5886120ab42a1cd86ab21ea87ec676db25b42166ee",
+  "source_path": "/ws/opt_20261011/verify/paged_read.py"
+}

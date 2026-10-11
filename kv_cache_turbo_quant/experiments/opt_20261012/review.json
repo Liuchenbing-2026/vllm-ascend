@@ -1,0 +1,28 @@
+{
+  "reviewed_utc": "2026-10-11T17:37:48.544338+00:00",
+  "base": "eb63397b770b0cc5c02b2ad4b17aee8c1c8cf865",
+  "hybrid_sha256": "228ae934780c27591aff68ebe882535e5a9ce012ddc503a243585bdd5c8bf053",
+  "short_kernel_ast_identical": true,
+  "coverage": [
+    {
+      "group": "128-dimension TQ4 paged read",
+      "changed_files": [
+        "code/integration/kvtq_read.py"
+      ],
+      "associated_files": [
+        "code/integration/kvtq_store.py",
+        "code/integration/kvtq_vllm_plugin.py",
+        "experiments/opt_20261012/scripts/verify_integration.py",
+        "experiments/opt_20261012/verify"
+      ],
+      "rules": "Python/Triton shape, dtype, padded stores, current stream, workspace and physical-page lifecycle, rounding",
+      "evidence": "Exact hybrid source; seven strict integer bit cases; integration15 cases plus2/3bit fallback; same short kernel AST; mapping recomputed from current tables each call; output/mapping padded full tiles; int32 physical token bounded by deployed2033536 KV token capacity",
+      "uncovered": "Full128K optimized serving and semantic model quality benchmark not run; deployed max_model_len4096 regime only"
+    }
+  ],
+  "limitations": [
+    "Short unchanged kernel measurement gain is observed whole-model cohort timing, not an identified kernel speedup",
+    "No new profiler collection this phase; screening NPU event intervals contain host dispatch gaps",
+    "Formal whole-model audit18groups684requests and fourgreedy440tokenIDs complete; both throughput and both latency means pass"
+  ]
+}

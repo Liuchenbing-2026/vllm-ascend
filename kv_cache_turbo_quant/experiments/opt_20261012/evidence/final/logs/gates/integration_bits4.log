@@ -1,0 +1,25 @@
+[W1011 16:59:11.569023115 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/root/kvtq_integration/kvtq_store.py:97: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  bits = (lo.to(torch.int64) | (hi.to(torch.int64) << 8)) << 16
+{"name": "full_read_dispatch_1", "shape": [1, 1, 128], "mismatched_bf16_bits": 0}
+{"name": "full_read_dispatch_2", "shape": [432, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "full_read_dispatch_3", "shape": [290, 3, 128], "mismatched_bf16_bits": 0}
+{"name": "full_read_dispatch_4", "shape": [320, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "full_read_dispatch_5", "shape": [120060, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "full_read_dispatch_6", "shape": [0, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "full_read_dispatch_7", "shape": [799, 4, 128], "mismatched_bf16_bits": 0}
+{"name": "padded_block_table_c16", "shape": [320, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "padded_block_table_c60", "shape": [120060, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "all_256_codes", "shape": [4, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "same_lengths_new_physical_page", "shape": [4, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "same_metadata_changed_lengths", "shape": [129, 2, 128], "mismatched_bf16_bits": 0}
+{"name": "FIA_decode_c16_host_lengths", "shape": [16, 8, 128], "mismatched_bf16_bits": 0}
+{"name": "FIA_decode_c60_host_lengths", "shape": [60, 8, 128], "mismatched_bf16_bits": 0}
+INFO 10-11 16:59:36 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-11 16:59:36 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-11 16:59:36 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 10-11 16:59:36 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-11 16:59:37 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+[KVTQ-STORE] WARNING prefill chunk with history: batched dequant-from-cache path engaged
+[KVTQ-STORE] WARNING prefill chunk with history: batched dequant-from-cache path engaged
+{"name": "mixed_decode_prefill_with_history_sparse3", "shape": [9, 8, 128], "mismatched_bf16_bits": 0}

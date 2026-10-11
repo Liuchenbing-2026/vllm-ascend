@@ -1,0 +1,16 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/scripts/bench_client.py",
+  "--mode",
+  "optimized",
+  "--concurrency",
+  "1",
+  "--input-len",
+  "64",
+  "--output-len",
+  "16",
+  "--timeout",
+  "300",
+  "--output",
+  "/ws/opt_20261012/results/model_20261011T170023Z/smoke_optimized.json"
+]

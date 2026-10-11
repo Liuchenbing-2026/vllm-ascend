@@ -1,0 +1,6 @@
+[
+  "/ws/.venv/bin/python",
+  "-u",
+  "/ws/opt_20261012/scripts/run_model_ab.py",
+  "--no-profile"
+]

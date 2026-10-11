@@ -1,0 +1,29 @@
+{
+  "updated_utc": "2026-10-11T17:00:23.808430+00:00",
+  "stage": "model_matrix",
+  "pipeline_pid": 41661,
+  "command": [
+    "/ws/.venv/bin/python",
+    "-u",
+    "/ws/opt_20261012/scripts/run_model_ab.py",
+    "--no-profile"
+  ]
+}
+
+{
+  "updated_utc": "2026-10-11T17:01:07.919624+00:00",
+  "stage": "server_starting",
+  "run_id": "model_20261011T170023Z",
+  "mode": "bf16",
+  "profiling": false,
+  "pid": 43516,
+  "log": "/ws/opt_20261012/logs/model_20261011T170023Z/serve_bf16_formal.log"
+}
+
+ration.py"]}
+{"updated_utc": "2026-10-11T16:59:55.715857+00:00", "stage": "integration_bits2", "pipeline_pid": 41661, "command": ["/ws/.venv/bin/python", "/ws/opt_20261012/scripts/verify_integration.py"]}
+{"updated_utc": "2026-10-11T17:00:09.846958+00:00", "stage": "integration_bits3", "pipeline_pid": 41661, "command": ["/ws/.venv/bin/python", "/ws/opt_20261012/scripts/verify_integration.py"]}
+{"updated_utc": "2026-10-11T17:00:23.808430+00:00", "stage": "model_matrix", "pipeline_pid": 41661, "command": ["/ws/.venv/bin/python", "-u", "/ws/opt_20261012/scripts/run_model_ab.py", "--no-profile"]}
+
+[('freeze_reference.exit', '0\n'), ('integration_bits4.exit', '0\n'), ('integration_bits2.exit', '0\n'), ('integration_bits3.exit', '0\n'), ('verify_kernel.exit', '0\n')]
+SSH warring: Authorized users only. All activity may be monitored and reported 

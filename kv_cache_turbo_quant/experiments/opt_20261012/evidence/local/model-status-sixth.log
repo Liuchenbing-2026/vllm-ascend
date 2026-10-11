@@ -1,0 +1,5 @@
+SSH warring: Authorized users only. All activity may be monitored and reported 
+Traceback (most recent call last):
+  File "/data02/tq-opt-20261011/opt_20261012/scripts/status_probe.py", line 20, in <module>
+    complete = record['complete_cohort'] and record['successful'] == concurrency and not record['failed']
+KeyError: 'complete_cohort'

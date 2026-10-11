@@ -1,0 +1,4 @@
+{"mode": "bf16", "input_len": 20, "seed_offset": 0, "complete": true}
+{"mode": "bf16", "input_len": 20, "seed_offset": 1, "complete": true}
+{"mode": "bf16", "input_len": 2000, "seed_offset": 0, "complete": true}
+{"mode": "bf16", "input_len": 2000, "seed_offset": 1, "complete": true}

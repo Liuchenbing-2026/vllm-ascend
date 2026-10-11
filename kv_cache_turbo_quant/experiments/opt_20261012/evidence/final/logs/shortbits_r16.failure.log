@@ -1,0 +1,58 @@
+Traceback (most recent call last):
+  File "/usr/local/python3.12.13/lib/python3.12/site-packages/triton/language/core.py", line 35, in wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/site-packages/triton/language/core.py", line 2214, in gather
+    return semantic.gather(src, index, axis, _builder)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/site-packages/triton/language/semantic.py", line 1818, in gather
+    raise ValueError(f"Expected dtype fp16/fp32/bf16/f8E5M2/f8E4M3FN/int8, but got {src.dtype}")
+ValueError: Expected dtype fp16/fp32/bf16/f8E5M2/f8E4M3FN/int8, but got int16
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/ws/opt_20261012/scripts/micro_screen.py", line 40, in main
+    actual = candidate(*args)
+             ^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ws/opt_20261012/candidates/shortbits_r16.py", line 81, in forward
+    _paged_read4[(programs,)](
+  File "/usr/local/python3.12.13/lib/python3.12/site-packages/triton/runtime/jit.py", line 333, in <lambda>
+    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/site-packages/triton/runtime/jit.py", line 622, in run
+    kernel = self._do_compile(key, signature, device, backend, target, constants, options, configs[0], warmup)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/site-packages/triton/runtime/jit.py", line 787, in _do_compile
+    kernel = self.compile(src, target=target, options=options.__dict__)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/site-packages/triton/compiler/compiler.py", line 282, in compile
+    module = src.make_ir(options, codegen_fns, module_map, context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/site-packages/triton/backends/ascend/__init__.py", line 38, in _patched_make_ir
+    module = _original_make_ir(self, options, codegen_fns, module_map, context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python3.12.13/lib/python3.12/site-packages/triton/compiler/compiler.py", line 102, in make_ir
+    return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+triton.compiler.errors.CompilationError: at 33:19:
+            lower = tl.where(right, mid, lower)
+            upper = tl.where(right, upper, mid - 1)
+        seq = lower
+        begin = tl.load(Cum + seq)
+        position = token - begin
+        physical = tl.load(Table + seq * table_stride0 +
+                           (position // block_size) * table_stride1).to(tl.int64)
+        source_row = ((physical * block_size + position % block_size) * heads + head)
+        packed = tl.load(Cache + source_row[:, None] * 66 + lanes[None, :]).to(tl.int32)
+        lo = (packed & 15).reshape((tile_rows * 64,))
+        hi = (packed >> 4).reshape((tile_rows * 64,))
+        low_cent = tl.gather(cent, lo, axis=0).to(tl.bfloat16, bitcast=True).to(tl.float32).reshape((tile_rows, 64))
+                   ^
+ValueError('Expected dtype fp16/fp32/bf16/f8E5M2/f8E4M3FN/int8, but got int16')

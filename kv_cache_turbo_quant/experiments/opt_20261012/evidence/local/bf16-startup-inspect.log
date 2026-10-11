@@ -1,0 +1,46 @@
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+(Worker pid=43665) INFO 10-11 17:02:26 [parallel_state.py:1982] rank 0 in world size 2 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[rank0]:[W1011 17:02:26.399490702 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+[rank1]:[W1011 17:02:26.403185168 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+(Worker pid=43666) INFO 10-11 17:02:26 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker pid=43665) INFO 10-11 17:02:26 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP1 pid=43666) INFO 10-11 17:02:26 [model_runner_v1.py:4190] Starting to load model /models/Qwen3-30B-A3B...
+(Worker_TP0 pid=43665) INFO 10-11 17:02:26 [model_runner_v1.py:4190] Starting to load model /models/Qwen3-30B-A3B...
+(Worker_TP1 pid=43666) INFO 10-11 17:02:27 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP0 pid=43665) INFO 10-11 17:02:27 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP0 pid=43665) INFO 10-11 17:02:29 [weight_utils.py:858] Filesystem type for checkpoints: EXT4. Checkpoint size: 56.87 GiB. Available RAM: 972.96 GiB.
+(Worker_TP0 pid=43665) INFO 10-11 17:02:29 [weight_utils.py:881] Auto-prefetch is disabled because the filesystem (EXT4) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:   0% Completed | 0/16 [00:00<?, ?it/s]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:   6% Completed | 1/16 [00:08<02:04,  8.31s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  12% Completed | 2/16 [00:15<01:49,  7.84s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  19% Completed | 3/16 [00:25<01:51,  8.54s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  25% Completed | 4/16 [00:29<01:23,  6.94s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  31% Completed | 5/16 [00:36<01:16,  6.96s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  38% Completed | 6/16 [00:45<01:14,  7.48s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  44% Completed | 7/16 [00:54<01:12,  8.03s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  50% Completed | 8/16 [01:04<01:10,  8.85s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  56% Completed | 9/16 [01:14<01:03,  9.13s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  62% Completed | 10/16 [01:22<00:53,  8.86s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  69% Completed | 11/16 [01:32<00:45,  9.00s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  75% Completed | 12/16 [01:40<00:35,  8.84s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  81% Completed | 13/16 [01:49<00:26,  8.76s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  88% Completed | 14/16 [01:57<00:17,  8.65s/it]
+(Worker_TP1 pid=43666) INFO 10-11 17:04:27 [model_runner_v1.py:4277] Loading model weights took 28.5335 GB
+(Worker_TP1 pid=43666) INFO 10-11 17:04:27 [model_runner_v1.py:4330] Model runner load_model total time: 120.42 seconds
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards:  94% Completed | 15/16 [02:06<00:08,  8.66s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards: 100% Completed | 16/16 [02:07<00:00,  6.49s/it]
+(Worker_TP0 pid=43665) Loading safetensors checkpoint shards: 100% Completed | 16/16 [02:07<00:00,  7.99s/it]
+(Worker_TP0 pid=43665) 
+(Worker_TP0 pid=43665) INFO 10-11 17:04:37 [default_loader.py:430] Loading weights took 127.89 seconds
+(Worker_TP0 pid=43665) INFO 10-11 17:04:39 [model_runner_v1.py:4277] Loading model weights took 28.5335 GB
+(Worker_TP0 pid=43665) INFO 10-11 17:04:39 [model_runner_v1.py:4330] Model runner load_model total time: 132.50 seconds
+(Worker_TP1 pid=43666) INFO 10-11 17:04:48 [worker.py:571] Initial free memory 60.58 GiB, reserved 24.00 GiB for KV Cache as specified by kv_cache_memory_bytes, skipping memory profiling. This does not respect the gpu_memory_utilization config. Only use kv_cache_memory_bytes when you want manual control of KV cache memory size. If OOM'ed, check the difference of initial free memory between the current run and the previous run where kv_cache_memory_bytes is suggested and update it correspondingly.
+(Worker_TP0 pid=43665) INFO 10-11 17:04:48 [worker.py:571] Initial free memory 60.58 GiB, reserved 24.00 GiB for KV Cache as specified by kv_cache_memory_bytes, skipping memory profiling. This does not respect the gpu_memory_utilization config. Only use kv_cache_memory_bytes when you want manual control of KV cache memory size. If OOM'ed, check the difference of initial free memory between the current run and the previous run where kv_cache_memory_bytes is suggested and update it correspondingly.
+(EngineCore pid=43639) INFO 10-11 17:04:48 [kv_cache_utils.py:1869] GPU KV cache size: 524,288 tokens, Maximum concurrency for 4,096 tokens per request: 128.00x
+(Worker_TP0 pid=43665) INFO 10-11 17:04:49 [kernel_warmup.py:41] Starting Triton kernel warmup.
+(Worker_TP1 pid=43666) INFO 10-11 17:04:49 [kernel_warmup.py:41] Starting Triton kernel warmup.
+(Worker_TP0 pid=43665) INFO 10-11 17:04:49 [kernel_warmup.py:33] rejection_sampler Triton warmup complete in 0.000s.
+(Worker_TP1 pid=43666) INFO 10-11 17:04:49 [kernel_warmup.py:33] rejection_sampler Triton warmup complete in 0.000s.
+SSH warring: Authorized users only. All activity may be monitored and reported 

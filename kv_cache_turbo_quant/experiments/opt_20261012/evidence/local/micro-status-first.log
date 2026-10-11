@@ -1,0 +1,8 @@
+
+{"stage": "micro_screening", "candidate": "baseline_v1", "pid": 35844}
+
+[W1011 16:47:11.683814123 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/ws/opt_20261011/verify/kvtq_store_reference.py:97: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  bits = (lo.to(torch.int64) | (hi.to(torch.int64) << 8)) << 16
+
+SSH warring: Authorized users only. All activity may be monitored and reported 

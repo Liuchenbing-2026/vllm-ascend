@@ -1,0 +1,4 @@
+[W1011 17:00:05.870301016 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/root/kvtq_integration/kvtq_store.py:97: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  bits = (lo.to(torch.int64) | (hi.to(torch.int64) << 8)) << 16
+{"name": "unchanged_2bit_fallback", "shape": [160, 2, 128], "mismatched_bf16_bits": 0}

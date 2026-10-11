@@ -1,0 +1,16 @@
+(APIServer pid=47700) INFO:     127.0.0.1:58448 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=47700) INFO:     127.0.0.1:58450 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=47700) INFO:     127.0.0.1:58452 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=47700) INFO:     127.0.0.1:58454 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=47700) INFO:     127.0.0.1:58456 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=47700) INFO:     127.0.0.1:58458 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=47700) INFO:     127.0.0.1:58460 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=47700) INFO:     127.0.0.1:58462 - "POST /v1/completions HTTP/1.1" 200 OK
+(Worker_TP1 pid=47864) [KVTQ-STORE] pid=47864 quant_calls=52000 tokens=1131040
+(Worker_TP0 pid=47863) [KVTQ-STORE] pid=47863 quant_calls=52000 tokens=1131040
+(APIServer pid=47700) INFO 10-11 17:32:13 [loggers.py:310] Engine 000: Avg prompt throughput: 632.0 tokens/s, Avg generation throughput: 49.9 tokens/s, Running: 4 reqs, Waiting: 14 reqs, GPU KV cache usage: 0.3%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=47863) [KVTQ-STORE] WARNING prefill chunk with history: batched dequant-from-cache path engaged
+(Worker_TP1 pid=47864) [KVTQ-STORE] WARNING prefill chunk with history: batched dequant-from-cache path engaged
+(APIServer pid=47700) INFO 10-11 17:32:23 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 4 reqs, Waiting: 14 reqs, GPU KV cache usage: 0.3%, Prefix cache hit rate: 0.0%
+(APIServer pid=47700) INFO 10-11 17:32:33 [loggers.py:310] Engine 000: Avg prompt throughput: 799.9 tokens/s, Avg generation throughput: 1.2 tokens/s, Running: 8 reqs, Waiting: 52 reqs, GPU KV cache usage: 0.7%, Prefix cache hit rate: 0.0%
+SSH warring: Authorized users only. All activity may be monitored and reported 

@@ -1,0 +1,4 @@
+[freeze] OK: anchor written to /ws/opt_20261012/verify/output/.baseline_anchor.json
+          sha256=671e1a7ca1b0f96e4ee11e5886120ab42a1cd86ab21ea87ec676db25b42166ee
+          mode=user
+          source_sha256=671e1a7ca1b0f96e4ee11e5886120ab42a1cd86ab21ea87ec676db25b42166ee

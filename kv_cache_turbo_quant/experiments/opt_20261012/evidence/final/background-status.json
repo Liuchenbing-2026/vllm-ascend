@@ -1,0 +1,23 @@
+{
+  "updated_utc": "2026-10-11T17:39:15.499576+00:00",
+  "stage": "finished",
+  "pipeline_pid": 41661,
+  "result_dir": "/ws/opt_20261012/results/model_20261011T170023Z",
+  "gates": [
+    {
+      "scene": 1,
+      "throughput_ratio": 1.0344112371505074,
+      "throughput_pass": true,
+      "ttft_ratio": 0.9701301187076597,
+      "tpot_ratio": 0.9662539322190465
+    },
+    {
+      "scene": 2,
+      "throughput_ratio": 1.2180635822364687,
+      "throughput_pass": true,
+      "ttft_ratio": 0.9734706670332204,
+      "tpot_ratio": 0.8007460359276574
+    }
+  ],
+  "accepted": true
+}

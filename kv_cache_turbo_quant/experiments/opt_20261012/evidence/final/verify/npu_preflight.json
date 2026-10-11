@@ -1,0 +1,47 @@
+{
+  "status": "ready",
+  "exit_code": 0,
+  "duration_ms": 10601.22,
+  "visible_devices": "2,5",
+  "checks": [
+    {
+      "name": "torch_import",
+      "status": "pass",
+      "duration_ms": 8639.376
+    },
+    {
+      "name": "torch_npu_import",
+      "status": "pass",
+      "duration_ms": 0.008
+    },
+    {
+      "name": "npu_available",
+      "status": "pass",
+      "duration_ms": 0.201
+    },
+    {
+      "name": "device_visibility",
+      "status": "pass",
+      "duration_ms": 880.722,
+      "device_count": 2,
+      "device_index": 0
+    },
+    {
+      "name": "memory",
+      "status": "pass",
+      "duration_ms": 563.927,
+      "free_bytes": 65053589504,
+      "total_bytes": 65452113920,
+      "min_free_bytes": 1048576,
+      "free_mb": 62039.938,
+      "total_mb": 62420.0
+    },
+    {
+      "name": "npu_smi",
+      "status": "pass",
+      "duration_ms": 516.834,
+      "returncode": 0,
+      "stdout": "NPU ID                         Chip ID                        Chip Logic ID                  Chip Name                     \n\t0                              0                              0                              Ascend 910B4-1\n\t0                              1                              -                              Mcu                           \n\t1                              0                              1                              Ascend 910B4-1\n\t1                              1                              -                              Mcu                           \n\t2                              0                              2                              Ascend 910B4-1\n\t2                              1                              -                              Mcu                           \n\t3                              0                              3                              Ascend 910B4-1\n\t3                              1                              -                              Mcu                           \n\t4                              0                              4                              Ascend 910B4-1\n\t4                              1                              -                              Mcu                           \n\t5                              0                              5                              Ascend 910B4-1\n\t5                              1                              -                              Mcu                           \n\t6                              0                              6                              Ascend 910B4-1\n\t6                              1                              -                              Mcu                           \n\t7                              0                              7                              Ascend 910B4-1\n\t7                              1                              -                              Mcu"
+    }
+  ]
+}

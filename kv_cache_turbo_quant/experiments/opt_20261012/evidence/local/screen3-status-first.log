@@ -1,0 +1,4 @@
+{"stage": "micro_finished", "passed": 4, "total": 5}
+
+[{"candidate": "baseline_v1", "status": "pass", "ms": [0.2417059898376465, 3.8893638610839845], "error": ""}, {"candidate": "mapped_contiguous_r32", "status": "pass", "ms": [0.3913980007171631, 3.07189998626709], "error": ""}, {"candidate": "mapped_r16", "status": "pass", "ms": [0.3849260091781616, 2.8878660202026367], "error": ""}, {"candidate": "mapped_r32", "status": "pass", "ms": [0.3931080102920532, 2.7904020309448243], "error": ""}, {"candidate": "mapped_r64", "status": "fail", "ms": [], "error": "\n///------------------[ERROR][Triton][BEG]------------------\n[ConvertLinalgRToBinary] encounters error:\n// -----// IR Dump After PlanMemory Failed (hivm-plan-memory) //----- //\nfunc.func @_paged_read4(%arg0: i64 {hacc.arg_type = #hacc.arg_type<ffts_base_address>}, %arg1: memref<?xi8, #hivm.address_s"}]
+SSH warring: Authorized users only. All activity may be monitored and reported 

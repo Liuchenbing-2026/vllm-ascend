@@ -1,0 +1,29 @@
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=25000 tokens=418504
+(Worker_TP0 pid=45355) [KVTQ-STORE] pid=45355 quant_calls=26000 tokens=419504
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=26000 tokens=419504
+(Worker_TP0 pid=45355) [KVTQ-STORE] pid=45355 quant_calls=27000 tokens=420504
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=27000 tokens=420504
+(APIServer pid=45192) INFO 10-11 17:16:53 [loggers.py:310] Engine 000: Avg prompt throughput: 200.0 tokens/s, Avg generation throughput: 3.9 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.1%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=45355) [KVTQ-STORE] pid=45355 quant_calls=28000 tokens=421504
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=28000 tokens=421504
+(Worker_TP0 pid=45355) [KVTQ-STORE] pid=45355 quant_calls=29000 tokens=422504
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=29000 tokens=422504
+(Worker_TP0 pid=45355) [KVTQ-STORE] pid=45355 quant_calls=30000 tokens=423504
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=30000 tokens=423504
+(APIServer pid=45192) INFO 10-11 17:17:03 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 3.8 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.1%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=45355) [KVTQ-STORE] pid=45355 quant_calls=31000 tokens=424504
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=31000 tokens=424504
+(Worker_TP0 pid=45355) [KVTQ-STORE] pid=45355 quant_calls=32000 tokens=425504
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=32000 tokens=425504
+(Worker_TP0 pid=45355) [KVTQ-STORE] pid=45355 quant_calls=33000 tokens=426504
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=33000 tokens=426504
+(Worker_TP0 pid=45355) [KVTQ-STORE] pid=45355 quant_calls=34000 tokens=427504
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=34000 tokens=427504
+(APIServer pid=45192) INFO 10-11 17:17:13 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 3.8 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.1%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=45355) [KVTQ-STORE] pid=45355 quant_calls=35000 tokens=428504
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=35000 tokens=428504
+(Worker_TP0 pid=45355) [KVTQ-STORE] pid=45355 quant_calls=36000 tokens=429504
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=36000 tokens=429504
+(Worker_TP0 pid=45355) [KVTQ-STORE] pid=45355 quant_calls=37000 tokens=430504
+(Worker_TP1 pid=45356) [KVTQ-STORE] pid=45356 quant_calls=37000 tokens=430504
+SSH warring: Authorized users only. All activity may be monitored and reported 

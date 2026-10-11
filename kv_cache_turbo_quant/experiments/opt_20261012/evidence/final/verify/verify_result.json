@@ -1,0 +1,87 @@
+{
+  "op_name": "paged_read",
+  "total_cases": 7,
+  "passed_cases": 7,
+  "failed_cases": 0,
+  "failures": [],
+  "npu_preflight": {
+    "status": "ready",
+    "exit_code": 0,
+    "duration_ms": 10601.22,
+    "visible_devices": "2,5",
+    "checks": [
+      {
+        "name": "torch_import",
+        "status": "pass",
+        "duration_ms": 8639.376
+      },
+      {
+        "name": "torch_npu_import",
+        "status": "pass",
+        "duration_ms": 0.008
+      },
+      {
+        "name": "npu_available",
+        "status": "pass",
+        "duration_ms": 0.201
+      },
+      {
+        "name": "device_visibility",
+        "status": "pass",
+        "duration_ms": 880.722,
+        "device_count": 2,
+        "device_index": 0
+      },
+      {
+        "name": "memory",
+        "status": "pass",
+        "duration_ms": 563.927,
+        "free_bytes": 65053589504,
+        "total_bytes": 65452113920,
+        "min_free_bytes": 1048576,
+        "free_mb": 62039.938,
+        "total_mb": 62420.0
+      },
+      {
+        "name": "npu_smi",
+        "status": "pass",
+        "duration_ms": 516.834,
+        "returncode": 0,
+        "stdout": "NPU ID                         Chip ID                        Chip Logic ID                  Chip Name                     \n\t0                              0                              0                              Ascend 910B4-1\n\t0                              1                              -                              Mcu                           \n\t1                              0                              1                              Ascend 910B4-1\n\t1                              1                              -                              Mcu                           \n\t2                              0                              2                              Ascend 910B4-1\n\t2                              1                              -                              Mcu                           \n\t3                              0                              3                              Ascend 910B4-1\n\t3                              1                              -                              Mcu                           \n\t4                              0                              4                              Ascend 910B4-1\n\t4                              1                              -                              Mcu                           \n\t5                              0                              5                              Ascend 910B4-1\n\t5                              1                              -                              Mcu                           \n\t6                              0                              6                              Ascend 910B4-1\n\t6                              1                              -                              Mcu                           \n\t7                              0                              7                              Ascend 910B4-1\n\t7                              1                              -                              Mcu"
+      }
+    ]
+  },
+  "environment": {
+    "timestamp": "2026-10-11T16:57:54+00:00",
+    "triton": {
+      "version": "3.2.0",
+      "path": "/usr/local/python3.12.13/lib/python3.12/site-packages/triton",
+      "key_sha256": "73b738272f0aea6d69eccefdb8a7405173f3f99169f46c355ea9b1beeb1be1da"
+    },
+    "cache": {
+      "dir": "/ws/opt_20261012/model-triton-cache",
+      "fresh": false,
+      "fresh_effective": true,
+      "always_compile": false
+    },
+    "cann": {
+      "ascend_home_path": "/usr/local/Ascend/cann-9.1.0",
+      "info_sha256": "f03fc5d1e67a78d6999e7d341d68521c2418587f1494706f013acf85ec8a317b",
+      "info_file": "/usr/local/Ascend/cann-9.1.0/aarch64-linux/ascend_toolkit_install.info",
+      "version": "9.1.0"
+    },
+    "torch": {
+      "version": "2.10.0+cpu",
+      "torch_npu_version": "2.10.0.post4"
+    },
+    "device": {
+      "ASCEND_RT_VISIBLE_DEVICES": "2,5",
+      "current_device": 0,
+      "npu_name": "Ascend910B4-1"
+    },
+    "cmdline": {
+      "triton_impl_name": "triton_ascend_impl",
+      "non_compute": false
+    }
+  }
+}

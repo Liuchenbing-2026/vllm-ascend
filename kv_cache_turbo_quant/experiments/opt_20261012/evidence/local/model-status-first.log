@@ -1,0 +1,23 @@
+{
+  "updated_utc": "2026-10-11T16:57:43.183369+00:00",
+  "stage": "verify_kernel",
+  "pipeline_pid": 41661,
+  "command": [
+    "/ws/.venv/bin/python",
+    "/ws/opt_20261011/verifier/verify.py",
+    "--op_name",
+    "paged_read",
+    "--verify_dir",
+    "/ws/opt_20261012/verify",
+    "--output",
+    "/ws/opt_20261012/verify/verify_result.json",
+    "--timeout",
+    "1800"
+  ]
+}
+
+
+: "freeze_reference", "pipeline_pid": 41661, "command": ["/ws/.venv/bin/python", "/ws/opt_20261011/verifier/freeze_baseline.py", "--op_name", "paged_read", "--work_dir", "/ws/opt_20261012/verify", "--mode", "user", "--source_path", "/ws/opt_20261011/verify/paged_read.py"]}
+{"updated_utc": "2026-10-11T16:57:43.183369+00:00", "stage": "verify_kernel", "pipeline_pid": 41661, "command": ["/ws/.venv/bin/python", "/ws/opt_20261011/verifier/verify.py", "--op_name", "paged_read", "--verify_dir", "/ws/opt_20261012/verify", "--output", "/ws/opt_20261012/verify/verify_result.json", "--timeout", "1800"]}
+
+SSH warring: Authorized users only. All activity may be monitored and reported 

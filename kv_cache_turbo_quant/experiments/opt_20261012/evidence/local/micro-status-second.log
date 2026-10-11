@@ -1,0 +1,6 @@
+{"stage": "micro_screening", "candidate": "contiguous_v2", "pid": 35844}
+
+[{"candidate": "baseline_v1", "status": "pass", "ms": [0.23627800941467286, 3.892422103881836], "error": ""}]
+ughput"}, {"case": 5, "input_lengths": [2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002], "heads": 2, "event_elapsed_ms_per_call": [3.892047882080078, 3.8930679321289063, 3.893321990966797, 3.8928279876708984, 3.8921558380126955, 3.9219081878662108, 3.892422103881836, 3.8922760009765627, 3.892232131958008], "median_ms": 3.892422103881836, "scope": "NPU event interval across 10 Python dispatches; screening only, not kernel-only profiling or whole-model throughput"}], "status": "pass"}
+
+SSH warring: Authorized users only. All activity may be monitored and reported 

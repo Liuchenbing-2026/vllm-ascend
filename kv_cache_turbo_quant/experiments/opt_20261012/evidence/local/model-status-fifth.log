@@ -1,0 +1,8 @@
+{
+  "checked_utc": "2026-10-11T17:06:01.385670+00:00",
+  "background-status.json": "{\n  \"updated_utc\": \"2026-10-11T17:00:23.808430+00:00\",\n  \"stage\": \"model_matrix\",\n  \"pipeline_pid\": 41661,\n  \"command\": [\n    \"/ws/.venv/bin/python\",\n    \"-u\",\n    \"/ws/opt_20261012/scripts/run_model_ab.py\",\n    \"--no-profile\"\n  ]\n}\n",
+  "status.json": "{\n  \"updated_utc\": \"2026-10-11T17:05:17.998905+00:00\",\n  \"stage\": \"benchmark_running\",\n  \"mode\": \"bf16\",\n  \"concurrency\": 1,\n  \"input_len\": 64,\n  \"output_len\": 16,\n  \"result\": \"/ws/opt_20261012/results/model_20261011T170023Z/smoke_bf16.json\",\n  \"started_utc\": \"2026-10-11T17:05:17.998866+00:00\"\n}\n",
+  "background.exit": null,
+  "formal": []
+}
+SSH warring: Authorized users only. All activity may be monitored and reported 

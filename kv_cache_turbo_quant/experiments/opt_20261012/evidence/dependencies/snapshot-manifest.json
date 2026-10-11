@@ -1,0 +1,70 @@
+{
+  "snapshot_utc": "2026-10-11T17:43:31.993616+00:00",
+  "files": [
+    {
+      "path": "tools/shared_bench/bench_client.py",
+      "bytes": 7999,
+      "sha256": "c88ba2133df6b66bf1f0c160465149bfec44a81862dde17f6c529c2c477e1f77"
+    },
+    {
+      "path": "tools/shared_bench/collect_environment.py",
+      "bytes": 2236,
+      "sha256": "f73a7003142fde71cf9a5ac378eb08dadcec3d0cbf31cbf627f8277d4f463cb7"
+    },
+    {
+      "path": "tools/shared_bench/run_matrix.py",
+      "bytes": 12148,
+      "sha256": "e634326a534b5f839e12290b1ff4f88ae7d0366274056679828f0d8836342083"
+    },
+    {
+      "path": "tools/verifier/_baseline_integrity.py",
+      "bytes": 7614,
+      "sha256": "00aba0cb9250e18c25473380661ce3d68e67a681189414b8ef0813dd174b3f9d"
+    },
+    {
+      "path": "tools/verifier/_common_utils.py",
+      "bytes": 10854,
+      "sha256": "f33c0788c90c7bdc30db1e558c295fb4724be578f5d0c3a0be616c78aaadc9ef"
+    },
+    {
+      "path": "tools/verifier/_log_utils.py",
+      "bytes": 1800,
+      "sha256": "43d7d41b412870d3b497c478fb3688532cb70e9007574d2db36f953bcdb36cb5"
+    },
+    {
+      "path": "tools/verifier/benchmark.py",
+      "bytes": 55802,
+      "sha256": "18a502c7834151229b7ec9cd5e464e2720e26de8ce42a2f9616a1094702d9e64"
+    },
+    {
+      "path": "tools/verifier/freeze_baseline.py",
+      "bytes": 6665,
+      "sha256": "cd12cd0e24cf9280caa416b4445d524fa0c3cabecd8ed1186ca95811613cdf53"
+    },
+    {
+      "path": "tools/verifier/hidden_state_probe.py",
+      "bytes": 17556,
+      "sha256": "0417aa6d870ac41639609dc8a18bf470747e24ca1075d1945e3caa1e474c082b"
+    },
+    {
+      "path": "tools/verifier/lock_npu_frequency.py",
+      "bytes": 16288,
+      "sha256": "fda175e0e774e73227b8e7801b359a1a79b331819a2845d251b9be2be9c6cf5d"
+    },
+    {
+      "path": "tools/verifier/npu_preflight.py",
+      "bytes": 13627,
+      "sha256": "5c8476c165410b0559e1f170a1c16affafb99f3b4198a84b458335f58604f8be"
+    },
+    {
+      "path": "tools/verifier/validate_triton_impl.py",
+      "bytes": 88512,
+      "sha256": "43629646684a873dfe0bc834e4d6e168b07d0ce5b88acd8c96b766fb68da8338"
+    },
+    {
+      "path": "tools/verifier/verify.py",
+      "bytes": 56058,
+      "sha256": "0d80e9e78f8e0c7bc7861dfb2bd5dc9058103ffe5c187db098a8b36e2252b429"
+    }
+  ]
+}

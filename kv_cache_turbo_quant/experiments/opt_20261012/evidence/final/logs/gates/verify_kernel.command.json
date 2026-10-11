@@ -1,0 +1,12 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/opt_20261011/verifier/verify.py",
+  "--op_name",
+  "paged_read",
+  "--verify_dir",
+  "/ws/opt_20261012/verify",
+  "--output",
+  "/ws/opt_20261012/verify/verify_result.json",
+  "--timeout",
+  "1800"
+]
