@@ -1,0 +1,53 @@
+{
+  "run_id": "model_20261011T004955Z",
+  "modes": [
+    "bf16",
+    "optimized",
+    "original"
+  ],
+  "scenarios": [
+    [
+      1,
+      20,
+      20,
+      16
+    ],
+    [
+      2,
+      2000,
+      200,
+      60
+    ]
+  ],
+  "measured_repetitions": 3,
+  "warmup_cohorts_per_scenario_mode": 1,
+  "physical_cards": [
+    2,
+    5
+  ],
+  "timeout_s": 3600,
+  "profiler_active_during_formal": false,
+  "base_commit": "d9e527a35100304fe6365ee2d090a08dd75c44d6",
+  "script_sha256": {
+    "scripts/summarize_profiles.py": "d6293e0f1c035d35a5a798767c4b57fb4e13d75545b0ec70f578a3a09068a566",
+    "scripts/check_model_output.py": "b4eded56b21f168c0507b535258a9ed7b8121dce9e6bbe8ce223b74597963c37",
+    "scripts/verify_integration.py": "91867c1b2cad282ce3b85fcfa799344a29be2cb0d007729eb2cd86ba5b4570a8",
+    "scripts/background_host.py": "cb5445550309398f16eedbf102af8cebdc2bb6241f06b6feae21f1ab246ffd83",
+    "scripts/hash_model_third.py": "b057cffb0686367b4218643c647b59b2f4511093e1dd417c2bcbec0f8db1408a",
+    "scripts/profile_load.py": "bc6723c8fa52956f843da40da6fbf7a525de181f583ec4ea5727e5611b2ac191",
+    "scripts/watch_resources112.py": "7672376262accfe18cdb20fea34133af6fa81a1a8a34a55bce5ab9707349f990",
+    "scripts/verify_integration.first_import_failure.py": "797db9750e23dd38ed7e59519c91dc34999fa0b18bbd11a5ef4423fad7c247d8",
+    "scripts/run_model_ab.py": "a9f95b56fb3983ba1bf45ae50322ed12f517836c63269fedc6650f944c50b9c0",
+    "scripts/background_pipeline.py": "358c0068ee29e231f47488cca08f3e752a69f18617adc03202bfa3ddd5dbbf25",
+    "scripts/analyse_profiles.py": "9a4a8ac41a5ba1c0ce5ffab184d9a5f44283cfba97350b76a3ddc6f20b9d0778",
+    "scripts/verify_integration.second_context_failure.py": "aed230823f06c46799684a3ca5aa0b22a4d260a805bf9f3cd5bda5e7ad033145"
+  },
+  "candidate_sha256": {
+    "kvtq_shadow.py": "0b36310ac6f42cdb7443d4a928a836bc473359a6277275e38b1520f044f043f8",
+    "run_shadow.py": "37d48271349383b351a2e5d646261e1d5e00d27b2abd576a00363e21821ee80f",
+    "kvtq_vllm_plugin.py": "c768b8f771bb64bf56a37e67c80d95979dc9d04cfb663d222304f9a8da18fd81",
+    "kvtq_read.py": "f831a00a2745cb1685715e9bf51cbf1ec0ecc573b6c579e9e4ee7134faf17813",
+    "kvtq_store.py": "1d76e7e1723f447294c8bb18712c58e2b69d4c20ae694f3a2fb90bbf3abcf8aa",
+    "test_store_roundtrip.py": "f4502d6452251544d34a2635753f8f9b01f92645214531efe865ebd54098bb57"
+  }
+}

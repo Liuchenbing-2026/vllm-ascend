@@ -1,0 +1,16 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/scripts/bench_client.py",
+  "--mode",
+  "bf16",
+  "--concurrency",
+  "1",
+  "--input-len",
+  "64",
+  "--output-len",
+  "16",
+  "--timeout",
+  "300",
+  "--output",
+  "/ws/opt_20261011/results/model_20261011T004955Z/smoke_bf16.json"
+]

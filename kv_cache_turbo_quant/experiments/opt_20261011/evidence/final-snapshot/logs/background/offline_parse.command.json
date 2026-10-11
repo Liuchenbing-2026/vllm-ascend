@@ -1,0 +1,9 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/opt_20261011/scripts/analyse_profiles.py",
+  "--root",
+  "/ws/opt_20261011/profiles112/model_20261011T004955Z",
+  "--modes",
+  "original",
+  "optimized"
+]

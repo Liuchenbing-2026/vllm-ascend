@@ -1,0 +1,33 @@
+offline_parse /ws/opt_20261011/profiles112/model_20261011T004955Z/original/dp0_pp0_tp0_dcp0_ep0_rank0_33046_20261011021805193_ascend_pt
+[2026-10-11 02:20:23] [INFO] [33717] profiler.py: Start parsing profiling data in sync mode at: /ws/opt_20261011/profiles112/model_20261011T004955Z/original/dp0_pp0_tp0_dcp0_ep0_rank0_33046_20261011021805193_ascend_pt
+|/-\|/-\|/-\|/-[2026-10-11 02:20:37] [INFO] [33726] profiler.py: CANN profiling data parsed in a total time of 0:00:14.043747
+\|/-\[2026-10-11 02:20:43] [INFO] [33717] profiler.py: All profiling data parsed in a total time of 0:00:20.852952
+offline_parse /ws/opt_20261011/profiles112/model_20261011T004955Z/original/dp0_pp0_tp0_dcp0_ep0_rank0_33046_20261011021910085_ascend_pt
+[2026-10-11 02:20:44] [INFO] [33982] profiler.py: Start parsing profiling data in sync mode at: /ws/opt_20261011/profiles112/model_20261011T004955Z/original/dp0_pp0_tp0_dcp0_ep0_rank0_33046_20261011021910085_ascend_pt
+|/-\|/[2026-10-11 02:20:49] [INFO] [33991] profiler.py: CANN profiling data parsed in a total time of 0:00:05.036010
+-[2026-10-11 02:20:51] [INFO] [33982] profiler.py: All profiling data parsed in a total time of 0:00:06.591624
+offline_parse /ws/opt_20261011/profiles112/model_20261011T004955Z/original/dp0_pp0_tp1_dcp0_ep1_rank1_33047_20261011021805193_ascend_pt
+[2026-10-11 02:20:51] [INFO] [34247] profiler.py: Start parsing profiling data in sync mode at: /ws/opt_20261011/profiles112/model_20261011T004955Z/original/dp0_pp0_tp1_dcp0_ep1_rank1_33047_20261011021805193_ascend_pt
+|/-\|/-\|/-\|/[2026-10-11 02:21:04] [INFO] [34256] profiler.py: CANN profiling data parsed in a total time of 0:00:13.041653
+-\|/-[2026-10-11 02:21:11] [INFO] [34247] profiler.py: All profiling data parsed in a total time of 0:00:20.005623
+offline_parse /ws/opt_20261011/profiles112/model_20261011T004955Z/original/dp0_pp0_tp1_dcp0_ep1_rank1_33047_20261011021910085_ascend_pt
+[2026-10-11 02:21:11] [INFO] [34512] profiler.py: Start parsing profiling data in sync mode at: /ws/opt_20261011/profiles112/model_20261011T004955Z/original/dp0_pp0_tp1_dcp0_ep1_rank1_33047_20261011021910085_ascend_pt
+|/-\|/[2026-10-11 02:21:17] [INFO] [34521] profiler.py: CANN profiling data parsed in a total time of 0:00:05.039223
+-[2026-10-11 02:21:18] [INFO] [34512] profiler.py: All profiling data parsed in a total time of 0:00:06.609525
+offline_parse /ws/opt_20261011/profiles112/model_20261011T004955Z/optimized/dp0_pp0_tp0_dcp0_ep0_rank0_31502_20261011012026481_ascend_pt
+[2026-10-11 02:21:19] [INFO] [34777] profiler.py: Start parsing profiling data in sync mode at: /ws/opt_20261011/profiles112/model_20261011T004955Z/optimized/dp0_pp0_tp0_dcp0_ep0_rank0_31502_20261011012026481_ascend_pt
+|/-\|/-\|/-\|/[2026-10-11 02:21:32] [INFO] [34786] profiler.py: CANN profiling data parsed in a total time of 0:00:13.040411
+-\|/-\[2026-10-11 02:21:39] [INFO] [34777] profiler.py: All profiling data parsed in a total time of 0:00:20.629562
+offline_parse /ws/opt_20261011/profiles112/model_20261011T004955Z/optimized/dp0_pp0_tp0_dcp0_ep0_rank0_31502_20261011012042975_ascend_pt
+[2026-10-11 02:21:40] [INFO] [35042] profiler.py: Start parsing profiling data in sync mode at: /ws/opt_20261011/profiles112/model_20261011T004955Z/optimized/dp0_pp0_tp0_dcp0_ep0_rank0_31502_20261011012042975_ascend_pt
+|/-\|/-\|/-[2026-10-11 02:21:50] [INFO] [35051] profiler.py: CANN profiling data parsed in a total time of 0:00:10.032123
+\|/-[2026-10-11 02:21:55] [INFO] [35042] profiler.py: All profiling data parsed in a total time of 0:00:15.659234
+offline_parse /ws/opt_20261011/profiles112/model_20261011T004955Z/optimized/dp0_pp0_tp1_dcp0_ep1_rank1_31503_20261011012026481_ascend_pt
+[2026-10-11 02:21:56] [INFO] [35307] profiler.py: Start parsing profiling data in sync mode at: /ws/opt_20261011/profiles112/model_20261011T004955Z/optimized/dp0_pp0_tp1_dcp0_ep1_rank1_31503_20261011012026481_ascend_pt
+|/-\|/-\|/-\|/[2026-10-11 02:22:10] [INFO] [35316] profiler.py: CANN profiling data parsed in a total time of 0:00:14.044929
+-\|/-\[2026-10-11 02:22:17] [INFO] [35307] profiler.py: All profiling data parsed in a total time of 0:00:21.299514
+offline_parse /ws/opt_20261011/profiles112/model_20261011T004955Z/optimized/dp0_pp0_tp1_dcp0_ep1_rank1_31503_20261011012042975_ascend_pt
+[2026-10-11 02:22:18] [INFO] [35572] profiler.py: Start parsing profiling data in sync mode at: /ws/opt_20261011/profiles112/model_20261011T004955Z/optimized/dp0_pp0_tp1_dcp0_ep1_rank1_31503_20261011012042975_ascend_pt
+|/-\|/-\|/-[2026-10-11 02:22:28] [INFO] [35581] profiler.py: CANN profiling data parsed in a total time of 0:00:10.031150
+\|/-\[2026-10-11 02:22:34] [INFO] [35572] profiler.py: All profiling data parsed in a total time of 0:00:16.030051
+offline_parse_finished

@@ -1,0 +1,433 @@
+INFO 10-11 02:13:26 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-11 02:13:26 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-11 02:13:26 [__init__.py:66] Loading plugin ascend
+INFO 10-11 02:13:26 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-11 02:13:27 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-11 02:13:38 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 10-11 02:13:38 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+[KVTQ] plugin register() called pid=32891 shadow=0 store=1
+[KVTQ-STORE] installed (mse_bits=4, row_bytes=66, compression=3.88x)
+(APIServer pid=32891) INFO 10-11 02:13:40 [api_utils.py:333] 
+(APIServer pid=32891) INFO 10-11 02:13:40 [api_utils.py:333]        █     █     █▄   ▄█
+(APIServer pid=32891) INFO 10-11 02:13:40 [api_utils.py:333]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.28.0
+(APIServer pid=32891) INFO 10-11 02:13:40 [api_utils.py:333]   █▄█▀ █     █     █     █  model   /models/Qwen3-30B-A3B
+(APIServer pid=32891) INFO 10-11 02:13:40 [api_utils.py:333]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=32891) INFO 10-11 02:13:40 [api_utils.py:333] 
+(APIServer pid=32891) INFO 10-11 02:13:40 [api_utils.py:272] non-default args: {'host': '127.0.0.1', 'port': 18377, 'model': '/models/Qwen3-30B-A3B', 'dtype': 'bfloat16', 'max_model_len': 4096, 'enforce_eager': True, 'served_model_name': ['qwen3-30b-tq-ab'], 'hf_overrides': {'rope_scaling': {'rope_type': 'yarn', 'factor': 4.0, 'original_max_position_embeddings': 40960}}, 'tensor_parallel_size': 2, 'kv_cache_memory_bytes': 25769803776, 'enable_prefix_caching': False, 'max_num_batched_tokens': 4096, 'max_num_seqs': 64, 'async_scheduling': False, 'profiler_config': ProfilerConfig(profiler='torch', torch_profiler_dir='/ws/opt_20261011/profiles112/model_20261011T004955Z/original', proton_profiler_dir='', proton_context='shadow', proton_data='tree', proton_backend=None, proton_mode=None, proton_hook=None, proton_output_format=None, torch_profiler_with_stack=False, torch_profiler_with_flops=False, torch_profiler_use_gzip=True, torch_profiler_dump_cuda_time_total=True, torch_profiler_record_shapes=False, torch_profiler_with_memory=False, capture_torch_profiler=False, detailed_trace_annotation=False, ignore_frontend=False, delay_iterations=0, max_iterations=0, warmup_iterations=0, active_iterations=5, wait_iterations=0)}
+(APIServer pid=32891) WARNING 10-11 02:13:40 [envs.py:2213] Unknown vLLM environment variable detected: VLLM_ASCEND_KVTQ
+(APIServer pid=32891) WARNING 10-11 02:13:40 [envs.py:2213] Unknown vLLM environment variable detected: VLLM_ASCEND_KVTQ_STORE
+(APIServer pid=32891) WARNING 10-11 02:13:40 [envs.py:2213] Unknown vLLM environment variable detected: VLLM_ASCEND_KVTQ_BITS
+(APIServer pid=32891) INFO 10-11 02:13:40 [model.py:672] Resolved architecture: Qwen3MoeForCausalLM
+(APIServer pid=32891) INFO 10-11 02:13:40 [model.py:1965] Using max model len 4096
+(APIServer pid=32891) INFO 10-11 02:13:40 [scheduler.py:242] Chunked prefill is enabled with max_num_batched_tokens=4096.
+(APIServer pid=32891) WARNING 10-11 02:13:40 [vllm.py:1285] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(APIServer pid=32891) WARNING 10-11 02:13:40 [vllm.py:1354] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(APIServer pid=32891) INFO 10-11 02:13:40 [kernel.py:308] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+(APIServer pid=32891) INFO 10-11 02:13:40 [vllm.py:1533] Cudagraph is disabled under eager mode
+(APIServer pid=32891) INFO 10-11 02:13:40 [utils.py:224] No quantization signature detected from model files for "/models/Qwen3-30B-A3B". The model will be loaded as float. To force a quantization method, pass "--quantization <method>" explicitly.
+(APIServer pid=32891) WARNING 10-11 02:13:40 [platform.py:650] GPU-specific parameter is not supported on Ascend. parameter=disable_cascade_attn, value=True, action: resetting to False.
+(APIServer pid=32891) INFO 10-11 02:13:40 [platform.py:862] The timeout interval of the HCCL operator is 1836s. Timeout in seconds for execute_model RPC calls in multiprocessing must be greater than 1836s, Set VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=3000
+(APIServer pid=32891) INFO 10-11 02:13:40 [ascend_config.py:231] Dynamic EPLB is False
+(APIServer pid=32891) INFO 10-11 02:13:40 [ascend_config.py:232] The number of redundant experts is 0
+(APIServer pid=32891) INFO 10-11 02:13:40 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+(APIServer pid=32891) INFO 10-11 02:13:40 [platform.py:1089] Compilation disabled, using eager mode by default
+(APIServer pid=32891) INFO 10-11 02:13:40 [utils.py:1326] Block size is set to 128 if prefix cache or chunked prefill is enabled.
+(APIServer pid=32891) INFO 10-11 02:13:40 [platform.py:1344] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+(APIServer pid=32891) INFO 10-11 02:13:40 [compilation.py:329] Enabled custom fusions: norm_quant, act_quant
+INFO 10-11 02:13:55 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-11 02:13:55 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-11 02:13:55 [__init__.py:66] Loading plugin ascend
+INFO 10-11 02:13:55 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-11 02:13:55 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-11 02:14:07 [ascend_config.py:231] Dynamic EPLB is False
+INFO 10-11 02:14:07 [ascend_config.py:232] The number of redundant experts is 0
+INFO 10-11 02:14:07 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+(EngineCore pid=33017) INFO 10-11 02:14:07 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+(EngineCore pid=33017) INFO 10-11 02:14:07 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+(EngineCore pid=33017) [KVTQ] plugin register() called pid=33017 shadow=0 store=1
+(EngineCore pid=33017) [KVTQ-STORE] installed (mse_bits=4, row_bytes=66, compression=3.88x)
+(EngineCore pid=33017) INFO 10-11 02:14:09 [core.py:122] Initializing a V1 LLM engine (v0.28.0) with config: model='/models/Qwen3-30B-A3B', speculative_config=None, tokenizer='/models/Qwen3-30B-A3B', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=4096, download_dir=None, load_format=auto, tensor_parallel_size=2, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=True, quantization=None, quantization_config=None, enforce_eager=True, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=npu, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=qwen3-30b-tq-ab, enable_prefix_caching=False, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.NONE: 0>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'vllm_ascend.compilation.compiler_interface.AscendCompiler', 'custom_ops': ['all'], 'ir_enable_torch_wrap': False, 'splitting_ops': [], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [4096], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'size_asserts': False, 'alignment_asserts': False, 'scalar_asserts': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.NONE: 0>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 0, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': True, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native']), enable_flashinfer_autotune=True, enable_cutedsl_warmup=True, enable_jit_warmup=True, enable_bf16x3_router_gemm=False, moe_backend='auto', linear_backend='auto')
+(EngineCore pid=33017) INFO 10-11 02:14:09 [multiproc_executor.py:150] DP group leader: node_rank=0, node_rank_within_dp=0, master_addr=127.0.0.1, mq_connect_ip=192.168.0.2 (local), world_size=2, local_world_size=2
+INFO 10-11 02:14:17 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-11 02:14:17 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-11 02:14:17 [__init__.py:66] Loading plugin ascend
+INFO 10-11 02:14:17 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-11 02:14:18 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 10-11 02:14:18 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 10-11 02:14:18 [__init__.py:66] Loading plugin ascend
+INFO 10-11 02:14:18 [__init__.py:254] Platform plugin ascend is activated
+INFO 10-11 02:14:18 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-11 02:14:18 [platform.py:69] Breakable CUDAGraph on Ascend is opt-in; using VLLM_USE_BREAKABLE_CUDAGRAPH=0.
+INFO 10-11 02:14:29 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 10-11 02:14:29 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+[KVTQ] plugin register() called pid=33046 shadow=0 store=1
+INFO 10-11 02:14:30 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 10-11 02:14:30 [__init__.py:109] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+[KVTQ] plugin register() called pid=33047 shadow=0 store=1
+[KVTQ-STORE] installed (mse_bits=4, row_bytes=66, compression=3.88x)
+[KVTQ-STORE] installed (mse_bits=4, row_bytes=66, compression=3.88x)
+WARNING 10-11 02:14:33 [patch_triton.py:332] NPU Triton causal_conv1d_update is unavailable (cannot import name 'causal_conv1d_update_npu' from 'vllm_ascend.ops.triton.mamba.causal_conv1d' (/ws/source/vllm-ascend/vllm_ascend/ops/triton/mamba/causal_conv1d.py)); falling back to the PyTorch implementation, which syncs per request and therefore stalls ACL graph capture at decode-FULL.
+WARNING 10-11 02:14:34 [patch_triton.py:332] NPU Triton causal_conv1d_update is unavailable (cannot import name 'causal_conv1d_update_npu' from 'vllm_ascend.ops.triton.mamba.causal_conv1d' (/ws/source/vllm-ascend/vllm_ascend/ops/triton/mamba/causal_conv1d.py)); falling back to the PyTorch implementation, which syncs per request and therefore stalls ACL graph capture at decode-FULL.
+INFO 10-11 02:14:34 [ascend_config.py:231] Dynamic EPLB is False
+INFO 10-11 02:14:34 [ascend_config.py:232] The number of redundant experts is 0
+INFO 10-11 02:14:34 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+INFO 10-11 02:14:34 [ascend_config.py:231] Dynamic EPLB is False
+INFO 10-11 02:14:34 [ascend_config.py:232] The number of redundant experts is 0
+INFO 10-11 02:14:34 [ascend_config.py:621] FlashComm1 is disabled. Using flashinfer_all2allv as the all2all backend.
+(Worker pid=33046) INFO 10-11 02:14:36 [parallel_state.py:1638] world_size=2 rank=0 local_rank=0 distributed_init_method=file:///tmp/vllm_dist_a4562e8fa10a4a159de5a0aa7ff4fed0 backend=hccl
+[rank0]:[W1011 02:14:36.017119279 ProcessGroupGloo.cpp:511] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+(Worker pid=33047) INFO 10-11 02:14:37 [parallel_state.py:1638] world_size=2 rank=1 local_rank=1 distributed_init_method=file:///tmp/vllm_dist_a4562e8fa10a4a159de5a0aa7ff4fed0 backend=hccl
+[rank1]:[W1011 02:14:37.631631430 ProcessGroupGloo.cpp:511] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+(Worker pid=33046) INFO 10-11 02:14:37 [parallel_state.py:1982] rank 0 in world size 2 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+[Gloo] Rank 1 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[Gloo] Rank 0 is connected to 1 peer ranks. Expected number of connected peer ranks is : 1
+[rank0]:[W1011 02:14:37.977565831 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+[rank1]:[W1011 02:14:37.978032513 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+(Worker pid=33047) INFO 10-11 02:14:38 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker pid=33046) INFO 10-11 02:14:38 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP1 pid=33047) INFO 10-11 02:14:38 [model_runner_v1.py:4190] Starting to load model /models/Qwen3-30B-A3B...
+(Worker_TP0 pid=33046) INFO 10-11 02:14:38 [model_runner_v1.py:4190] Starting to load model /models/Qwen3-30B-A3B...
+(Worker_TP0 pid=33046) INFO 10-11 02:14:38 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP1 pid=33047) INFO 10-11 02:14:38 [platform.py:1367] FA3 will not be enabled when rl_config.enable_training_consistency is false. Note that Ascend NPU will use its registered plugin backend instead.
+(Worker_TP0 pid=33046) INFO 10-11 02:14:40 [weight_utils.py:858] Filesystem type for checkpoints: EXT4. Checkpoint size: 56.87 GiB. Available RAM: 972.66 GiB.
+(Worker_TP0 pid=33046) INFO 10-11 02:14:40 [weight_utils.py:881] Auto-prefetch is disabled because the filesystem (EXT4) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:   0% Completed | 0/16 [00:00<?, ?it/s]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:   6% Completed | 1/16 [00:06<01:42,  6.81s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  12% Completed | 2/16 [00:14<01:46,  7.59s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  19% Completed | 3/16 [00:23<01:44,  8.08s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  25% Completed | 4/16 [00:31<01:38,  8.18s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  31% Completed | 5/16 [00:40<01:31,  8.28s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  38% Completed | 6/16 [00:48<01:22,  8.24s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  44% Completed | 7/16 [00:56<01:14,  8.27s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  50% Completed | 8/16 [01:05<01:06,  8.29s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  56% Completed | 9/16 [01:15<01:01,  8.85s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  62% Completed | 10/16 [01:24<00:53,  8.99s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  69% Completed | 11/16 [01:33<00:45,  9.05s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  75% Completed | 12/16 [01:43<00:37,  9.27s/it]
+(Worker_TP1 pid=33047) INFO 10-11 02:16:26 [model_runner_v1.py:4277] Loading model weights took 28.5335 GB
+(Worker_TP1 pid=33047) INFO 10-11 02:16:26 [model_runner_v1.py:4330] Model runner load_model total time: 108.75 seconds
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  81% Completed | 13/16 [01:52<00:27,  9.19s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  88% Completed | 14/16 [02:01<00:18,  9.23s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards:  94% Completed | 15/16 [02:10<00:09,  9.08s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards: 100% Completed | 16/16 [02:12<00:00,  6.83s/it]
+(Worker_TP0 pid=33046) Loading safetensors checkpoint shards: 100% Completed | 16/16 [02:12<00:00,  8.27s/it]
+(Worker_TP0 pid=33046) 
+(Worker_TP0 pid=33046) INFO 10-11 02:16:52 [default_loader.py:430] Loading weights took 132.33 seconds
+(Worker_TP0 pid=33046) INFO 10-11 02:16:53 [model_runner_v1.py:4277] Loading model weights took 28.5335 GB
+(Worker_TP0 pid=33046) INFO 10-11 02:16:53 [model_runner_v1.py:4330] Model runner load_model total time: 135.71 seconds
+(Worker_TP0 pid=33046) INFO 10-11 02:16:57 [worker.py:571] Initial free memory 60.58 GiB, reserved 24.00 GiB for KV Cache as specified by kv_cache_memory_bytes, skipping memory profiling. This does not respect the gpu_memory_utilization config. Only use kv_cache_memory_bytes when you want manual control of KV cache memory size. If OOM'ed, check the difference of initial free memory between the current run and the previous run where kv_cache_memory_bytes is suggested and update it correspondingly.
+(Worker_TP1 pid=33047) INFO 10-11 02:16:58 [worker.py:571] Initial free memory 60.58 GiB, reserved 24.00 GiB for KV Cache as specified by kv_cache_memory_bytes, skipping memory profiling. This does not respect the gpu_memory_utilization config. Only use kv_cache_memory_bytes when you want manual control of KV cache memory size. If OOM'ed, check the difference of initial free memory between the current run and the previous run where kv_cache_memory_bytes is suggested and update it correspondingly.
+(EngineCore pid=33017) INFO 10-11 02:16:58 [kv_cache_utils.py:1869] GPU KV cache size: 2,033,536 tokens, Maximum concurrency for 4,096 tokens per request: 496.47x
+(Worker_TP0 pid=33046) INFO 10-11 02:16:59 [kernel_warmup.py:41] Starting Triton kernel warmup.
+(Worker_TP1 pid=33047) INFO 10-11 02:16:59 [kernel_warmup.py:41] Starting Triton kernel warmup.
+(Worker_TP0 pid=33046) INFO 10-11 02:16:59 [kernel_warmup.py:33] rejection_sampler Triton warmup complete in 0.000s.
+(Worker_TP1 pid=33047) INFO 10-11 02:16:59 [kernel_warmup.py:33] rejection_sampler Triton warmup complete in 0.000s.
+(Worker_TP0 pid=33046) INFO 10-11 02:16:59 [kernel_warmup.py:33] penalties Triton warmup complete in 0.031s.
+(Worker_TP0 pid=33046) INFO 10-11 02:16:59 [kernel_warmup.py:33] rms Triton warmup complete in 0.000s.
+(Worker_TP0 pid=33046) INFO 10-11 02:16:59 [kernel_warmup.py:49] Triton kernel warmup finished in 0.031s.
+(Worker_TP1 pid=33047) INFO 10-11 02:16:59 [kernel_warmup.py:33] penalties Triton warmup complete in 0.033s.
+(Worker_TP1 pid=33047) INFO 10-11 02:16:59 [kernel_warmup.py:33] rms Triton warmup complete in 0.000s.
+(Worker_TP1 pid=33047) INFO 10-11 02:16:59 [kernel_warmup.py:49] Triton kernel warmup finished in 0.034s.
+(Worker_TP0 pid=33046) INFO 10-11 02:17:01 [cpu_binding.py:539] [cpu_bind_mode] mode=topo_affinity rank=0 visible_npus=[2, 5]
+(Worker_TP0 pid=33046) INFO 10-11 02:17:01 [cpu_binding.py:623] The CPU allocation plan is as follows:
+(Worker_TP0 pid=33046) INFO 10-11 02:17:01 [cpu_binding.py:637] NPU2: main=[98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128 129 130 131 132 133 134 135 136 137 138 139 140 141]  acl=[142]  release=[[143]]
+(Worker_TP0 pid=33046) INFO 10-11 02:17:01 [cpu_binding.py:663] [migrate] NPU:2 -> NUMA [2]
+(Worker_TP1 pid=33047) INFO 10-11 02:17:01 [cpu_binding.py:539] [cpu_bind_mode] mode=topo_affinity rank=1 visible_npus=[2, 5]
+(Worker_TP1 pid=33047) INFO 10-11 02:17:01 [cpu_binding.py:623] The CPU allocation plan is as follows:
+(Worker_TP1 pid=33047) INFO 10-11 02:17:01 [cpu_binding.py:637] NPU5: main=[50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93]  acl=[94]  release=[[95]]
+(Worker_TP1 pid=33047) INFO 10-11 02:17:01 [cpu_binding.py:663] [migrate] NPU:5 -> NUMA [1]
+(Worker_TP1 pid=33047) INFO 10-11 02:17:09 [cpu_binding.py:773] NPU5(PCI 0000:02:00.0): sq_send_trigger_irq IRQ_ID=3394 -> CPU48, cq_update_irq IRQ_ID=3395 -> CPU49
+(Worker_TP0 pid=33046) INFO 10-11 02:17:14 [cpu_binding.py:773] NPU2(PCI 0000:81:00.0): sq_send_trigger_irq IRQ_ID=2626 -> CPU96, cq_update_irq IRQ_ID=2627 -> CPU97
+(EngineCore pid=33017) INFO 10-11 02:17:14 [core.py:354] init engine (profile, create kv cache, warmup model) took 20.06 s
+(EngineCore pid=33017) WARNING 10-11 02:17:16 [vllm.py:1285] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(EngineCore pid=33017) WARNING 10-11 02:17:16 [vllm.py:1354] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(EngineCore pid=33017) INFO 10-11 02:17:16 [kernel.py:308] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+(EngineCore pid=33017) INFO 10-11 02:17:16 [vllm.py:1533] Cudagraph is disabled under eager mode
+(APIServer pid=32891) INFO 10-11 02:17:16 [async_llm.py:186] Torch profiler enabled. AsyncLLM CPU traces will be collected under /ws/opt_20261011/profiles112/model_20261011T004955Z/original
+(EngineCore pid=33017) INFO 10-11 02:17:17 [utils.py:224] No quantization signature detected from model files for "/models/Qwen3-30B-A3B". The model will be loaded as float. To force a quantization method, pass "--quantization <method>" explicitly.
+(EngineCore pid=33017) INFO 10-11 02:17:17 [platform.py:862] The timeout interval of the HCCL operator is 1836s. Timeout in seconds for execute_model RPC calls in multiprocessing must be greater than 1836s, Set VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=3000
+(EngineCore pid=33017) INFO 10-11 02:17:17 [platform.py:1089] Compilation disabled, using eager mode by default
+(EngineCore pid=33017) INFO 10-11 02:17:17 [platform.py:1344] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+(EngineCore pid=33017) INFO 10-11 02:17:17 [compilation.py:329] Enabled custom fusions: norm_quant, act_quant
+(APIServer pid=32891) INFO 10-11 02:17:17 [api_server.py:653] Supported tasks: ['generate']
+(APIServer pid=32891) WARNING 10-11 02:17:17 [api_router.py:41] Profiler with mode 'torch' is enabled in the API server. This should ONLY be used for local development!
+(APIServer pid=32891) INFO 10-11 02:17:18 [hf.py:551] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=32891) WARNING 10-11 02:17:18 [model.py:1713] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 0.6, 'top_k': 20, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+(APIServer pid=32891) INFO 10-11 02:17:18 [api_server.py:657] Starting vLLM server on http://127.0.0.1:18377
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:51] Available routes are:
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /openapi.json, Methods: HEAD, GET
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /docs, Methods: HEAD, GET
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /docs/oauth2-redirect, Methods: HEAD, GET
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /redoc, Methods: HEAD, GET
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /load, Methods: GET
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /version, Methods: GET
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /health, Methods: GET
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /metrics, Methods: GET
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /start_profile, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /stop_profile, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /tokenize, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /detokenize, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/models, Methods: GET
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /ping, Methods: GET
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /ping, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /invocations, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/chat/completions/batch, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/responses, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/completions, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/messages, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /generative_scoring, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /is_scaling_elastic_ep, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/chat/completions/render, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/completions/render, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/chat/completions/derender, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /v1/completions/derender, Methods: POST
+(APIServer pid=32891) INFO 10-11 02:17:18 [launcher.py:60] Route: /inference/v1/generate, Methods: POST
+(APIServer pid=32891) INFO:     Started server process [32891]
+(APIServer pid=32891) INFO:     Waiting for application startup.
+(APIServer pid=32891) INFO:     Application startup complete.
+(APIServer pid=32891) INFO:     127.0.0.1:56108 - "GET /health HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56110 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56112 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56114 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56116 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56118 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56120 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56122 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56124 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56126 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56128 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56130 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56132 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56134 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56136 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56138 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56140 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56142 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56144 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56146 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56148 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56150 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56152 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56154 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56156 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56158 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56160 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56162 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56164 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56166 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56168 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56172 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56174 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56176 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56178 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56180 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56182 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56184 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56186 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56190 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56192 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56194 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56196 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56198 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56200 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56202 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56204 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56206 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56208 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56210 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56212 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56214 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56216 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56218 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56220 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56222 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56224 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56226 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56228 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56232 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56234 - "POST /v1/completions HTTP/1.1" 200 OK
+(Worker_TP0 pid=33046) [KVTQ-STORE] pid=33046 quant_calls=1 tokens=2000
+(Worker_TP1 pid=33047) [KVTQ-STORE] pid=33047 quant_calls=1 tokens=2000
+(Worker_TP0 pid=33046) [KVTQ-STORE] WARNING prefill chunk with history: batched dequant-from-cache path engaged
+(Worker_TP1 pid=33047) [KVTQ-STORE] WARNING prefill chunk with history: batched dequant-from-cache path engaged
+(APIServer pid=32891) INFO 10-11 02:17:29 [loggers.py:310] Engine 000: Avg prompt throughput: 1762.6 tokens/s, Avg generation throughput: 2.9 tokens/s, Running: 12 reqs, Waiting: 48 reqs, GPU KV cache usage: 1.1%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=33046) [KVTQ-STORE] pid=33046 quant_calls=1000 tokens=3894784
+(Worker_TP1 pid=33047) [KVTQ-STORE] pid=33047 quant_calls=1000 tokens=3894784
+(APIServer pid=32891) INFO 10-11 02:17:39 [loggers.py:310] Engine 000: Avg prompt throughput: 3199.9 tokens/s, Avg generation throughput: 12.4 tokens/s, Running: 15 reqs, Waiting: 32 reqs, GPU KV cache usage: 1.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=33046) [KVTQ-STORE] pid=33046 quant_calls=2000 tokens=7990784
+(Worker_TP1 pid=33047) [KVTQ-STORE] pid=33047 quant_calls=2000 tokens=7990784
+(APIServer pid=32891) INFO 10-11 02:17:49 [loggers.py:310] Engine 000: Avg prompt throughput: 2799.9 tokens/s, Avg generation throughput: 11.2 tokens/s, Running: 15 reqs, Waiting: 18 reqs, GPU KV cache usage: 1.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=32891) INFO 10-11 02:17:59 [loggers.py:310] Engine 000: Avg prompt throughput: 3399.9 tokens/s, Avg generation throughput: 13.3 tokens/s, Running: 16 reqs, Waiting: 1 reqs, GPU KV cache usage: 1.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=33046) [KVTQ-STORE] pid=33046 quant_calls=3000 tokens=11556504
+(Worker_TP1 pid=33047) [KVTQ-STORE] pid=33047 quant_calls=3000 tokens=11556504
+(APIServer pid=32891) INFO 10-11 02:18:05 [api_router.py:23] Starting profiler...
+ERROR: External init callback must run in same thread as registerClient (692842880 != -1637291424)
+(APIServer pid=32891) INFO 10-11 02:18:05 [api_router.py:25] Profiler started.
+(APIServer pid=32891) INFO:     127.0.0.1:56236 - "POST /start_profile HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56236 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56238 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56240 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56242 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56244 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56246 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56248 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56250 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56252 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56254 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56256 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56258 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56260 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56262 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56264 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56266 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56268 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56270 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56272 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56274 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56276 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56280 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56282 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56284 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56286 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56288 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56290 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56292 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56294 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56296 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56298 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56300 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56302 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56304 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56306 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56310 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56312 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56314 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56316 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56318 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56320 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56322 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56324 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56326 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56330 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56332 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56334 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56336 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56338 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56340 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56342 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56344 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56346 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56348 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56350 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56352 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56354 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56356 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56358 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO:     127.0.0.1:56360 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO 10-11 02:18:08 [api_router.py:31] Stopping profiler...
+(Worker_TP0 pid=33046) [KVTQ-STORE] pid=33046 quant_calls=4000 tokens=13194112
+(Worker_TP1 pid=33047) [KVTQ-STORE] pid=33047 quant_calls=4000 tokens=13194112
+(Worker_TP0 pid=33046) [2026-10-11 02:18:08] [WARNING] [33046] profiler.py: Incorrect schedule: Stop profiler while current state is RECORD which may result in incomplete parsed data.
+(Worker_TP1 pid=33047) [2026-10-11 02:18:08] [WARNING] [33047] profiler.py: Incorrect schedule: Stop profiler while current state is RECORD which may result in incomplete parsed data.
+(APIServer pid=32891) INFO 10-11 02:18:09 [loggers.py:310] Engine 000: Avg prompt throughput: 2199.7 tokens/s, Avg generation throughput: 10.0 tokens/s, Running: 10 reqs, Waiting: 50 reqs, GPU KV cache usage: 0.9%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=33046) [2026-10-11 02:18:09] [ERROR] [33046] profiler.py: The profiling data cannot be parsed during the daemon process, it is recommended that you use an offline parsing interface to parse the collected data. 
+(Worker_TP0 pid=33046) For example: 
+(Worker_TP0 pid=33046) from torch_npu.profiler.profiler import analyse
+(Worker_TP0 pid=33046) analyse("profiling_data_path")
+(Worker_TP0 pid=33046) INFO 10-11 02:18:09 [wrapper.py:80] Profiler stopped successfully.
+(Worker_TP1 pid=33047) [2026-10-11 02:18:09] [ERROR] [33047] profiler.py: The profiling data cannot be parsed during the daemon process, it is recommended that you use an offline parsing interface to parse the collected data. 
+(Worker_TP1 pid=33047) For example: 
+(Worker_TP1 pid=33047) from torch_npu.profiler.profiler import analyse
+(Worker_TP1 pid=33047) analyse("profiling_data_path")
+(APIServer pid=32891) INFO 10-11 02:18:09 [api_router.py:33] Profiler stopped.
+(APIServer pid=32891) INFO:     127.0.0.1:56362 - "POST /stop_profile HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO 10-11 02:18:19 [loggers.py:310] Engine 000: Avg prompt throughput: 2799.8 tokens/s, Avg generation throughput: 11.9 tokens/s, Running: 24 reqs, Waiting: 36 reqs, GPU KV cache usage: 2.4%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=33046) [KVTQ-STORE] pid=33046 quant_calls=5000 tokens=17290112
+(Worker_TP1 pid=33047) [KVTQ-STORE] pid=33047 quant_calls=5000 tokens=17290112
+(APIServer pid=32891) INFO 10-11 02:18:29 [loggers.py:310] Engine 000: Avg prompt throughput: 1999.8 tokens/s, Avg generation throughput: 14.5 tokens/s, Running: 34 reqs, Waiting: 26 reqs, GPU KV cache usage: 3.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=32891) INFO 10-11 02:18:39 [loggers.py:310] Engine 000: Avg prompt throughput: 1599.8 tokens/s, Avg generation throughput: 15.2 tokens/s, Running: 42 reqs, Waiting: 18 reqs, GPU KV cache usage: 4.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=32891) INFO 10-11 02:18:49 [loggers.py:310] Engine 000: Avg prompt throughput: 1599.8 tokens/s, Avg generation throughput: 18.4 tokens/s, Running: 50 reqs, Waiting: 10 reqs, GPU KV cache usage: 5.0%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=33046) [KVTQ-STORE] pid=33046 quant_calls=6000 tokens=21386112
+(Worker_TP1 pid=33047) [KVTQ-STORE] pid=33047 quant_calls=6000 tokens=21386112
+(APIServer pid=32891) INFO 10-11 02:18:59 [loggers.py:310] Engine 000: Avg prompt throughput: 1199.6 tokens/s, Avg generation throughput: 15.9 tokens/s, Running: 56 reqs, Waiting: 4 reqs, GPU KV cache usage: 5.6%, Prefix cache hit rate: 0.0%
+(APIServer pid=32891) INFO 10-11 02:19:07 [api_router.py:23] Starting profiler...
+(APIServer pid=32891) INFO 10-11 02:19:09 [loggers.py:310] Engine 000: Avg prompt throughput: 999.9 tokens/s, Avg generation throughput: 17.6 tokens/s, Running: 60 reqs, Waiting: 0 reqs, GPU KV cache usage: 6.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=32891) INFO 10-11 02:19:10 [api_router.py:25] Profiler started.
+(APIServer pid=32891) INFO:     127.0.0.1:56364 - "POST /start_profile HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO 10-11 02:19:13 [api_router.py:31] Stopping profiler...
+(Worker_TP0 pid=33046) [2026-10-11 02:19:13] [WARNING] [33046] profiler.py: Incorrect schedule: Stop profiler while current state is RECORD which may result in incomplete parsed data.
+(Worker_TP1 pid=33047) [2026-10-11 02:19:13] [WARNING] [33047] profiler.py: Incorrect schedule: Stop profiler while current state is RECORD which may result in incomplete parsed data.
+(Worker_TP0 pid=33046) [2026-10-11 02:19:14] [ERROR] [33046] profiler.py: The profiling data cannot be parsed during the daemon process, it is recommended that you use an offline parsing interface to parse the collected data. 
+(Worker_TP0 pid=33046) For example: 
+(Worker_TP0 pid=33046) from torch_npu.profiler.profiler import analyse
+(Worker_TP0 pid=33046) analyse("profiling_data_path")
+(Worker_TP1 pid=33047) [2026-10-11 02:19:14] [ERROR] [33047] profiler.py: The profiling data cannot be parsed during the daemon process, it is recommended that you use an offline parsing interface to parse the collected data. 
+(Worker_TP1 pid=33047) For example: 
+(Worker_TP1 pid=33047) from torch_npu.profiler.profiler import analyse
+(Worker_TP1 pid=33047) analyse("profiling_data_path")
+(APIServer pid=32891) INFO 10-11 02:19:14 [api_router.py:33] Profiler stopped.
+(APIServer pid=32891) INFO:     127.0.0.1:56236 - "POST /stop_profile HTTP/1.1" 200 OK
+(APIServer pid=32891) INFO 10-11 02:19:19 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 17.6 tokens/s, Running: 55 reqs, Waiting: 0 reqs, GPU KV cache usage: 5.5%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=33046) [KVTQ-STORE] pid=33046 quant_calls=7000 tokens=23193560
+(Worker_TP1 pid=33047) [KVTQ-STORE] pid=33047 quant_calls=7000 tokens=23193560
+(APIServer pid=32891) INFO 10-11 02:19:29 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 20.8 tokens/s, Running: 47 reqs, Waiting: 0 reqs, GPU KV cache usage: 4.7%, Prefix cache hit rate: 0.0%
+(APIServer pid=32891) INFO 10-11 02:19:39 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 17.6 tokens/s, Running: 39 reqs, Waiting: 0 reqs, GPU KV cache usage: 3.9%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=33046) [KVTQ-STORE] pid=33046 quant_calls=8000 tokens=23235296
+(Worker_TP1 pid=33047) [KVTQ-STORE] pid=33047 quant_calls=8000 tokens=23235296
+(APIServer pid=32891) INFO 10-11 02:19:49 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 20.4 tokens/s, Running: 27 reqs, Waiting: 0 reqs, GPU KV cache usage: 2.7%, Prefix cache hit rate: 0.0%
+(APIServer pid=32891) INFO 10-11 02:19:59 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 14.7 tokens/s, Running: 13 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.3%, Prefix cache hit rate: 0.0%
+(Worker_TP0 pid=33046) [KVTQ-STORE] pid=33046 quant_calls=9000 tokens=23256216
+(Worker_TP1 pid=33047) [KVTQ-STORE] pid=33047 quant_calls=9000 tokens=23256216
+(Worker_TP0 pid=33046) INFO 10-11 02:20:02 [wrapper.py:156] Shutting down profiler
+(EngineCore pid=33017) INFO 10-11 02:20:02 [core.py:1329] [shutdown] EngineCore: trigger received signal=SIGTERM
+(APIServer pid=32891) INFO 10-11 02:20:02 [launcher.py:114] [shutdown] API server: shutdown triggered
+(APIServer pid=32891) INFO 10-11 02:20:02 [launcher.py:130] [shutdown] API server: stopping engine client mode=abort timeout=0s
+(EngineCore pid=33017) INFO 10-11 02:20:02 [core.py:1465] [shutdown] EngineCore: start mode=abort timeout=0s
+(EngineCore pid=33017) INFO 10-11 02:20:02 [core.py:1496] [shutdown] EngineCore: request processing complete; starting resource teardown
+(APIServer pid=32891) INFO 10-11 02:20:02 [core_client.py:689] [shutdown] MPClient: start timeout=0s
+(EngineCore pid=33017) INFO 10-11 02:20:02 [core.py:1342] [shutdown] EngineCore: exiting busy loop
+(APIServer pid=32891) INFO 10-11 02:20:02 [core_client.py:691] [shutdown] MPClient: stopping engine manager
+(EngineCore pid=33017) INFO 10-11 02:20:02 [multiproc_executor.py:469] [shutdown] Executor: waiting for worker exit count=2
+(APIServer pid=32891) INFO 10-11 02:20:02 [utils.py:615] [shutdown] Process manager: send sigterm to process EngineCore
+(APIServer pid=32891) WARNING 10-11 02:20:02 [utils.py:635] [shutdown] Process manager: force killing remaining processes count=1
+(APIServer pid=32891) WARNING 10-11 02:20:02 [utils.py:640] [shutdown] Process manager: force killing remaining process EngineCore pid 33017
+(APIServer pid=32891) INFO 10-11 02:20:03 [core_client.py:693] [shutdown] MPClient: engine manager stopped
+(APIServer pid=32891) INFO 10-11 02:20:03 [core_client.py:694] [shutdown] MPClient: cleaning up background resources
+(APIServer pid=32891) INFO 10-11 02:20:03 [core_client.py:696] [shutdown] MPClient: complete
+(APIServer pid=32891) ERROR 10-11 02:20:03 [async_llm.py:744] AsyncLLM output_handler failed.
+(APIServer pid=32891) ERROR 10-11 02:20:03 [async_llm.py:744] Traceback (most recent call last):
+(APIServer pid=32891) ERROR 10-11 02:20:03 [async_llm.py:744]   File "/ws/source/vllm/vllm/v1/engine/async_llm.py", line 690, in output_handler
+(APIServer pid=32891) ERROR 10-11 02:20:03 [async_llm.py:744]     outputs = await engine_core.get_output_async()
+(APIServer pid=32891) ERROR 10-11 02:20:03 [async_llm.py:744]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=32891) ERROR 10-11 02:20:03 [async_llm.py:744]   File "/ws/source/vllm/vllm/v1/engine/core_client.py", line 1104, in get_output_async
+(APIServer pid=32891) ERROR 10-11 02:20:03 [async_llm.py:744]     raise self._format_exception(outputs) from None
+(APIServer pid=32891) ERROR 10-11 02:20:03 [async_llm.py:744] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.
+(APIServer pid=32891) INFO 10-11 02:20:03 [launcher.py:139] [shutdown] API server: engine client stopped
+(APIServer pid=32891) INFO 10-11 02:20:03 [launcher.py:142] [shutdown] API server: signalling HTTP server shutdown
+(APIServer pid=32891) INFO 10-11 02:20:03 [launcher.py:163] [shutdown] API server: shutting down FastAPI HTTP server
+(APIServer pid=32891) INFO:     Shutting down
+(APIServer pid=32891) INFO:     Waiting for application shutdown.
+(APIServer pid=32891) INFO:     Application shutdown complete.
+/usr/local/python3.12.13/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 2 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+/usr/local/python3.12.13/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 4 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

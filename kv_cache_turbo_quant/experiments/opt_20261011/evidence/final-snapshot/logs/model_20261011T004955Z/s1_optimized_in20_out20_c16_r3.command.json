@@ -1,0 +1,16 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/scripts/bench_client.py",
+  "--mode",
+  "optimized",
+  "--concurrency",
+  "16",
+  "--input-len",
+  "20",
+  "--output-len",
+  "20",
+  "--timeout",
+  "3600",
+  "--output",
+  "/ws/opt_20261011/results/model_20261011T004955Z/s1_optimized_in20_out20_c16_r3.json"
+]

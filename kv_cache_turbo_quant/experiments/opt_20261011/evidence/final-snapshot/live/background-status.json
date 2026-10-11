@@ -1,0 +1,8 @@
+{
+  "updated_utc": "2026-10-11T02:23:10.340122+00:00",
+  "stage": "finished",
+  "pipeline_pid": 26881,
+  "result_dir": "/ws/opt_20261011/results/model_20261011T004955Z",
+  "report": "/ws/opt_20261011/results/model_20261011T004955Z/background-results.md",
+  "note": "computed local artifacts; remote publication of final results remains a separate verified step"
+}

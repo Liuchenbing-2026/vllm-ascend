@@ -1,0 +1,109 @@
+{
+  "scope": "paired same-host formal cohorts; warmup, precision and profiling excluded",
+  "physical_cards": "2,5",
+  "rows": [
+    {
+      "scene": 1,
+      "mode": "bf16",
+      "input_len": 20,
+      "output_len": 20,
+      "concurrency": 16,
+      "successful": 48,
+      "duration_s": 12.696643551811576,
+      "output_tps": 75.61053408190118,
+      "mean_ttft_s": 0.41201277798973024,
+      "mean_tpot_ms": 200.10862377954223
+    },
+    {
+      "scene": 1,
+      "mode": "optimized",
+      "input_len": 20,
+      "output_len": 20,
+      "concurrency": 16,
+      "successful": 48,
+      "duration_s": 16.862428310327232,
+      "output_tps": 56.9313020837015,
+      "mean_ttft_s": 0.5191763400992689,
+      "mean_tpot_ms": 267.31488891272693
+    },
+    {
+      "scene": 1,
+      "mode": "original",
+      "input_len": 20,
+      "output_len": 20,
+      "concurrency": 16,
+      "successful": 48,
+      "duration_s": 26.16946235205978,
+      "output_tps": 36.6839787185937,
+      "mean_ttft_s": 0.6133126799832098,
+      "mean_tpot_ms": 425.1223609082221
+    },
+    {
+      "scene": 2,
+      "mode": "bf16",
+      "input_len": 2000,
+      "output_len": 200,
+      "concurrency": 60,
+      "successful": 180,
+      "duration_s": 146.7890053410083,
+      "output_tps": 245.2499757483043,
+      "mean_ttft_s": 4.144860227638856,
+      "mean_tpot_ms": 209.6373851269864
+    },
+    {
+      "scene": 2,
+      "mode": "optimized",
+      "input_len": 2000,
+      "output_len": 200,
+      "concurrency": 60,
+      "successful": 180,
+      "duration_s": 299.84296972490847,
+      "output_tps": 120.06284500526483,
+      "mean_ttft_s": 6.737411850007872,
+      "mean_tpot_ms": 447.3896366194106
+    },
+    {
+      "scene": 2,
+      "mode": "original",
+      "input_len": 2000,
+      "output_len": 200,
+      "concurrency": 60,
+      "successful": 180,
+      "duration_s": 1965.9323135493323,
+      "output_tps": 18.311922415581492,
+      "mean_ttft_s": 23.316671421265024,
+      "mean_tpot_ms": 3075.676363095379
+    }
+  ],
+  "greedy_samples": [
+    {
+      "input_len": 20,
+      "output_len": 20,
+      "seed_offset": 0,
+      "tokens_equal": true,
+      "matched_tokens": 20
+    },
+    {
+      "input_len": 20,
+      "output_len": 20,
+      "seed_offset": 1,
+      "tokens_equal": true,
+      "matched_tokens": 20
+    },
+    {
+      "input_len": 2000,
+      "output_len": 200,
+      "seed_offset": 0,
+      "tokens_equal": true,
+      "matched_tokens": 200
+    },
+    {
+      "input_len": 2000,
+      "output_len": 200,
+      "seed_offset": 1,
+      "tokens_equal": true,
+      "matched_tokens": 200
+    }
+  ],
+  "accuracy_limit": "four greedy samples, not a semantic quality benchmark"
+}

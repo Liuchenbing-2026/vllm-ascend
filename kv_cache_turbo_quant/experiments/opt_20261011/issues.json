@@ -311,7 +311,7 @@
       "handling": "register unchanged vllm_ascend.ops first, preserve first attempt source/logs/exit and rerun original15-case gate; no mock, golden or threshold change",
       "evidence": "attempts/*/logs/background/integration_bits4.log; scripts/verify_integration.first_import_failure.py",
       "state": "corrected real framework initialization; all15 bit4 integration comparisons passed, bit2/3 fallback each1 passed",
-      "remaining": "paired whole-model throughput, greedy output comparisons and profiling; do not infer semantic quality from integration",
+      "remaining": "Original failure retained; full15/1/1 integration passed and684 formal requests complete; semantic quality unmeasured",
       "verification": "background-snapshot/live/verify/integration_bits4.json, integration_bits2.json, integration_bits3.json"
     },
     {
@@ -332,7 +332,7 @@
       "handling": "initialize minimal native forward context using framework API, retain second attempt logs/exit; same real FIA wrapper and unchanged comparisons retained",
       "evidence": "second background attempt integration_bits4.log; source runtime forward_context.py",
       "state": "corrected real framework initialization; all15 bit4 integration comparisons passed, bit2/3 fallback each1 passed",
-      "remaining": "paired whole-model throughput, greedy output comparisons and profiling; do not infer semantic quality from integration",
+      "remaining": "Original failure retained; full15/1/1 integration passed and684 formal requests complete; semantic quality unmeasured",
       "verification": "background-snapshot/live/verify/integration_bits4.json, integration_bits2.json, integration_bits3.json"
     },
     {
@@ -342,7 +342,7 @@
       "confirmed_cause": null,
       "handling": "write UTF-8 script file with encoding declaration using apply_patch, execute from file; preserve failure and no-mutation boundary",
       "evidence": "original failed command and error in session; scripts/archive_background.py",
-      "state": "safe file-based archive retry prepared; encoding root cause unknown",
+      "state": "File-based UTF-8 scripts execute successfully; catalog/push verification follows; stdin encoding root cause unresolved",
       "remaining": "validate updated catalog, push and read back"
     },
     {
@@ -354,6 +354,47 @@
       "evidence": "git fetch success then ambiguous origin ref; git rev-parse HEAD FETCH_HEAD plus git log FETCH_HEAD matching",
       "state": "remote source content readback passed via fetched commit",
       "remaining": "repeat proper fetched-commit verification for subsequent source commits"
+    },
+    {
+      "id": "O33",
+      "discovered_utc": "2026-10-11T03:29:27.613957+00:00",
+      "phenomenon": "Live PID probe used check_output(ps) after pipeline completed; ps exit1 aborted remaining probe",
+      "confirmed_cause": "Completed pipeline and supervisor no longer have live PIDs; background.exit0 and result files prove normal completion",
+      "handling": "Read finished status and markers before checking live PID; independently check own container top, physical cards and port",
+      "evidence": "finished background/status snapshots; evidence/final-resource.json",
+      "state": "Completion verified; PID disappearance is not a benchmark failure",
+      "remaining": "none for this read-only probe"
+    },
+    {
+      "id": "O34",
+      "discovered_utc": "2026-10-11T03:29:27.613957+00:00",
+      "phenomenon": "Optimized TQ remains below BF16 throughput:56.931/75.611 and120.063/245.250 tokens/s",
+      "confirmed_cause": "Decode profiles show fused paged read still materializes BF16 history; read kernel occupies87.50% rank0/88.48% rank1 of sampled kernel sums",
+      "hypothesis": "Further gain may require direct compressed-KV attention or fused tiled dequant+attention, not merely dispatch fusion",
+      "handling": "Retain original-vs-optimized-vs-BF16 three-way results; record1.552x and6.557x gain without claiming BF16 parity",
+      "evidence": "evidence/final-snapshot/results/model_20261011T004955Z/summary.json and profile-summary.json",
+      "state": "Measured improvement delivered; BF16 gap remains open",
+      "remaining": "New compressed-attention kernel design and precision/performance validation; 128K optimized rerun and semantic accuracy not measured"
+    },
+    {
+      "id": "O35",
+      "discovered_utc": "2026-10-11T03:31:07.381847+00:00",
+      "phenomenon": "Known EngineDeadError/resource_tracker semaphore/shared-memory warnings recur during own server shutdown after completed cohorts/profiling",
+      "confirmed_cause": "errors follow own termination; underlying shutdown cleanup root cause not established",
+      "handling": "retain complete logs and exact order; do not mark completed cohorts failed, do not call cleanup bug fixed",
+      "evidence": "final-snapshot/logs/model_20261011T004955Z/serve_original_formal.log:02:13:10 and serve_optimized_profile.log:01:20:53; complete client/profile results",
+      "state": "known shutdown limitation reproduced; no benchmark requests failed",
+      "remaining": "shutdown cleanup root cause and framework fix"
+    },
+    {
+      "id": "O36",
+      "discovered_utc": "2026-10-11T03:31:07.381847+00:00",
+      "phenomenon": "git diff --check flags native CR/trailing whitespace in untouched raw server logs",
+      "confirmed_cause": "framework logs include carriage returns and formatted blank lines; raw evidence byte preservation required",
+      "handling": "preserve raw bytes and manifest; separately diff-check production source, scripts and Markdown; no trimming historical logs",
+      "evidence": "original diff-check output in session; final-snapshot/snapshot-manifest.json",
+      "state": "code/scripts/Markdown checks passed; raw logging format retained",
+      "remaining": "none; raw format is an evidence limitation, not an implementation failure"
     }
   ]
 }

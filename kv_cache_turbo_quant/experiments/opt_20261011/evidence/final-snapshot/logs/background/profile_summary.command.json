@@ -1,0 +1,11 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/opt_20261011/scripts/summarize_profiles.py",
+  "--root",
+  "/ws/opt_20261011/profiles112/model_20261011T004955Z",
+  "--modes",
+  "original",
+  "optimized",
+  "--output",
+  "/ws/opt_20261011/results/model_20261011T004955Z/profile-summary.json"
+]
