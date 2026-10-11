@@ -57,6 +57,7 @@ class BlockTable:
             # logical pages, even if another backend advertises smaller sizes.
             kernel_sizes = [block_size]
             self.max_num_blocks_per_req = max_num_blocks_per_req = 1
+        self.is_circular_group = kv_cache_group is not None and is_circular_kv_cache_spec(kv_cache_group.kv_cache_spec)
 
         # If kernel_sizes is None or [0], use physical block size (no splitting)
         if kernel_sizes is None or kernel_sizes == [0]:
@@ -153,6 +154,9 @@ class BlockTable:
         query_start_loc: torch.Tensor,
         positions: torch.Tensor,
     ) -> None:
+        if self.is_circular_group:
+            self.slot_mapping.gpu.fill_(PAD_SLOT_ID)
+            return
         num_tokens = positions.shape[0]
         total_cp_world_size = self.dcp_world_size
         total_cp_rank = self.dcp_rank
@@ -201,6 +205,9 @@ class BlockTable:
         # here because M (max_model_len) is not necessarily divisible by
         # block_size.
 
+        if self.is_circular_group:
+            self.slot_mapping.gpu.fill_(PAD_SLOT_ID)
+            return
         if self.dcp_world_size > 1:
             if not isinstance(req_indices, torch.Tensor):
                 req_indices = torch.from_numpy(req_indices)
@@ -343,12 +350,12 @@ class MultiGroupBlockTable:
         block_sizes: list[int],
         num_speculative_tokens: int = 0,
         max_num_blocks: list[int] | None = None,
-        kernel_sizes: list[list[int]] | None = None,
+        kernel_sizes: list[int] | None = None,
         cp_kv_cache_interleave_size: int = 1,
         kv_cache_groups: KVCacheGroupSpec = None,
     ) -> None:
         if kernel_sizes is None:
-            kernel_sizes = [[0]] * len(block_sizes)
+            kernel_sizes = [0] * len(block_sizes)
         # Ensure kernel_sizes matches block_sizes length
         elif len(kernel_sizes) == 1 and len(block_sizes) > 1:
             kernel_sizes = kernel_sizes * len(block_sizes)
@@ -380,12 +387,12 @@ class MultiGroupBlockTable:
                     max_num_batched_tokens,
                     pin_memory,
                     device,
-                    kernel_size_list,
+                    [kernel_size],
                     cp_kv_cache_interleave_size,
                     num_speculative_tokens,
                     kv_cache_group,
                 )
-                for block_size, kernel_size_list, max_num_blocks_per_req, kv_cache_group in zip(
+                for block_size, kernel_size, max_num_blocks_per_req, kv_cache_group in zip(
                     block_sizes, kernel_sizes, max_num_blocks, kv_cache_groups
                 )
             ]
@@ -398,13 +405,11 @@ class MultiGroupBlockTable:
                     max_num_batched_tokens,
                     pin_memory,
                     device,
-                    kernel_size_list,
+                    [kernel_size],
                     cp_kv_cache_interleave_size,
                     num_speculative_tokens,
                 )
-                for block_size, kernel_size_list, max_num_blocks_per_req in zip(
-                    block_sizes, kernel_sizes, max_num_blocks
-                )
+                for block_size, kernel_size, max_num_blocks_per_req in zip(block_sizes, kernel_sizes, max_num_blocks)
             ]
 
         active_block_tables = [block_table for block_table in self.block_tables if not block_table.is_mamba_group]

@@ -1,7 +1,10 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 import torch
+from vllm.config.compilation import CUDAGraphMode
+from vllm.v1.kv_cache_interface import FullAttentionSpec
 
 import vllm_ascend.attention.attention_v1 as attn_module
 from tests.ut.base import TestBase
@@ -19,9 +22,9 @@ from vllm_ascend.attention.context_parallel.attention_cp import (
 )
 from vllm_ascend.attention.utils import (
     AscendCommonAttentionMetadata,
-    PagedAttentionGraphParam,
     cache_graph_workspace,
     needs_layer_aware_fia_graph_replay,
+    requires_contiguous_pa_kv_cache,
     using_paged_attention,
 )
 from vllm_ascend.device.device_op import A5DeviceAdaptor
@@ -33,6 +36,76 @@ LARGE_HEAD_PREFILL_PATH = "vllm_ascend.device.utils.npu_large_head_prefill_atten
 
 
 class TestAttentionGraphHelpers(TestBase):
+    @patch("vllm_ascend.attention.utils.using_paged_attention", return_value=True)
+    def test_pa_contiguous_cache_requirement_is_limited_to_normal_impl(self, mock_using_pa):
+        config = SimpleNamespace(model_config=SimpleNamespace(runner_type="generate"))
+        spec = FullAttentionSpec(block_size=8, num_kv_heads=2, head_size=128, dtype=torch.float16)
+        for impl_cls in (AscendAttentionBackendImpl, AscendC8AttentionBackendImpl, AscendAttentionDCPImpl):
+            with self.subTest(impl=impl_cls):
+                impl = impl_cls.__new__(impl_cls)
+                impl.sliding_window = None
+                self.assertEqual(
+                    requires_contiguous_pa_kv_cache(SimpleNamespace(impl=impl), config, spec),
+                    impl_cls is AscendAttentionBackendImpl,
+                )
+        impl = AscendAttentionBackendImpl.__new__(AscendAttentionBackendImpl)
+        impl.sliding_window = 128
+        self.assertFalse(requires_contiguous_pa_kv_cache(SimpleNamespace(impl=impl), config, spec))
+        self.assertFalse(requires_contiguous_pa_kv_cache(None, config, spec))
+        impl.sliding_window = None
+        config.model_config.runner_type = "pooling"
+        self.assertFalse(requires_contiguous_pa_kv_cache(SimpleNamespace(impl=impl), config, spec))
+        config.model_config.runner_type = "generate"
+        padded_spec = FullAttentionSpec(
+            block_size=8,
+            num_kv_heads=2,
+            head_size=128,
+            dtype=torch.float16,
+            page_size_padded=spec.real_page_size_bytes + 64,
+        )
+        self.assertFalse(requires_contiguous_pa_kv_cache(SimpleNamespace(impl=impl), config, padded_spec))
+        mock_using_pa.assert_called_once()
+
+    def test_paged_attention_allocation_checks_any_configured_shape(self):
+        config = SimpleNamespace(
+            speculative_config=None,
+            model_config=SimpleNamespace(is_hybrid=False),
+            compilation_config=SimpleNamespace(cudagraph_mode=CUDAGraphMode.FULL_DECODE_ONLY),
+        )
+        pa_config = SimpleNamespace(pa_shape_list=[32, 60])
+        with (
+            patch(
+                "vllm_ascend.attention.utils.get_current_hardware_profile",
+                return_value=get_hardware_profile(AscendDeviceType.A3),
+            ),
+            patch("vllm_ascend.attention.utils.get_ascend_config", return_value=pa_config),
+        ):
+            self.assertTrue(using_paged_attention(None, config, head_size=128))
+            self.assertTrue(using_paged_attention(60, config, head_size=128))
+            self.assertFalse(using_paged_attention(31, config, head_size=128))
+            config.model_config.is_hybrid = True
+            self.assertTrue(using_paged_attention(None, config, head_size=128))
+            self.assertTrue(using_paged_attention(60, config, head_size=128))
+            config.model_config.is_hybrid = False
+            pa_config.pa_shape_list = []
+            self.assertFalse(using_paged_attention(None, config, head_size=128))
+            pa_config.pa_shape_list = [60]
+            config.speculative_config = object()
+            self.assertFalse(using_paged_attention(None, config, head_size=128))
+            config.speculative_config = None
+            config.compilation_config.cudagraph_mode = CUDAGraphMode.NONE
+            self.assertFalse(using_paged_attention(None, config, head_size=128))
+            self.assertTrue(using_paged_attention(None, config, head_size=512))
+            self.assertTrue(using_paged_attention(60, config, head_size=512))
+            config.speculative_config = object()
+            self.assertFalse(using_paged_attention(None, config, head_size=512))
+            config.speculative_config = None
+        with patch(
+            "vllm_ascend.attention.utils.get_current_hardware_profile",
+            return_value=get_hardware_profile(AscendDeviceType.A5),
+        ):
+            self.assertFalse(using_paged_attention(None, config, head_size=512))
+
     def test_cache_graph_workspace_keeps_first_workspace_by_default(self):
         graph_params = SimpleNamespace(workspaces={1: torch.empty(4)})
         candidate_workspace = torch.empty(8)
@@ -59,6 +132,7 @@ class TestAttentionGraphHelpers(TestBase):
             return_value=get_hardware_profile(AscendDeviceType.A2),
         ):
             self.assertTrue(using_paged_attention(1, vllm_config, head_size=FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE))
+            self.assertTrue(using_paged_attention(None, vllm_config, head_size=FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE))
 
 
 class TestAscendAttentionBackend(TestBase):
@@ -75,6 +149,8 @@ class TestAscendAttentionBackend(TestBase):
 
     def test_supports_pcp_only_for_main_implementation(self):
         with patch("vllm_ascend.attention.attention_v1.enable_dcp", return_value=False):
+            self.assertTrue(AscendAttentionBackend.supports_pcp())
+        with patch("vllm_ascend.attention.attention_v1.enable_dcp", return_value=True):
             self.assertTrue(AscendAttentionBackend.supports_pcp())
 
         class OtherAttentionBackend(AscendAttentionBackend):
@@ -184,7 +260,9 @@ class TestAscendAttentionMetadataBuilder(TestBase):
         self.assertTrue(torch.equal(unpadded_metadata._seq_lens_cpu, internal_seq_lens_cpu[:2]))
         self.assertIsNone(unpadded_metadata.seq_lens_cpu)
 
-    def _build_parallel_drafting_metadata(self, *, seq_lens_cpu_is_exact, seq_lens_cpu_is_approximate=False):
+    def _build_parallel_drafting_metadata(
+        self, *, seq_lens_cpu_is_exact, seq_lens_cpu_is_approximate=False, query_len=4, enforce_eager=True
+    ):
         """Run ``build`` for a parallel-drafting batch, recording every tolist.
 
         Returns ``(metadata, tolist_sources)``.
@@ -192,25 +270,27 @@ class TestAscendAttentionMetadataBuilder(TestBase):
         seq_lens_device = torch.tensor([4, 5, 6], dtype=torch.int32)
         seq_lens_cpu = torch.tensor([4, 5, 6], dtype=torch.int32)
         common_attn_metadata = AscendCommonAttentionMetadata(
-            query_start_loc=torch.tensor([0, 1, 2, 3], dtype=torch.int32),
-            query_start_loc_cpu=torch.tensor([0, 1, 2, 3], dtype=torch.int32),
+            query_start_loc=torch.arange(4, dtype=torch.int32) * query_len,
+            query_start_loc_cpu=torch.arange(4, dtype=torch.int32) * query_len,
             seq_lens=seq_lens_device,
             seq_lens_cpu=seq_lens_cpu,
             seq_lens_cpu_is_exact=seq_lens_cpu_is_exact,
             seq_lens_cpu_is_approximate=seq_lens_cpu_is_approximate,
             num_computed_tokens_cpu=None,
             num_reqs=3,
-            num_actual_tokens=3,
-            max_query_len=1,
+            num_actual_tokens=3 * query_len,
+            max_query_len=query_len,
             block_table_tensor=torch.zeros((3, 1), dtype=torch.int32),
-            slot_mapping=torch.arange(3, dtype=torch.int32),
+            slot_mapping=torch.arange(3 * query_len, dtype=torch.int32),
             causal=True,
-            actual_seq_lengths_q=[1, 2, 3],
-            positions=torch.arange(3),
+            actual_seq_lengths_q=[query_len, 2 * query_len, 3 * query_len],
+            positions=torch.arange(3 * query_len),
             attn_state=AscendAttentionState.DecodeOnly,
             max_seq_len=6,
         )
-        self.builder.speculative_config = SimpleNamespace(parallel_drafting=True)
+        self.builder.speculative_config = SimpleNamespace(
+            parallel_drafting=True, enforce_eager=enforce_eager, use_dspark=lambda: False
+        )
 
         tolist_sources = []
         original_tolist = torch.Tensor.tolist
@@ -255,6 +335,38 @@ class TestAscendAttentionMetadataBuilder(TestBase):
         self.assertIs(metadata.seq_lens, seq_lens_device)
         self.assertEqual(metadata.seq_lens_list, [4, 5, 6])
         self.assertTrue(any(src is seq_lens_device for src in tolist_sources))
+
+    def test_untrusted_mirror_preserves_mainline_length_selection(self):
+        # The mainline GLM selector may intentionally choose CPU lengths. OFF
+        # must preserve that choice rather than reinstate the old device path.
+        mainline_lens = torch.tensor([9, 10, 11], dtype=torch.int32)
+        with patch.object(attn_module, "_select_seq_lens", return_value=mainline_lens):
+            metadata, sources, device_lens, _ = self._build_parallel_drafting_metadata(seq_lens_cpu_is_exact=False)
+        self.assertIs(metadata.seq_lens, mainline_lens)
+        self.assertEqual(metadata.seq_lens_list, [9, 10, 11])
+        self.assertFalse(any(source is device_lens for source in sources))
+        self.assertFalse(metadata.draft_kv_upper_bound)
+
+    def test_masked_bound_keeps_device_lengths_when_mainline_selected_cpu(self):
+        mainline_lens = torch.tensor([9, 10, 11], dtype=torch.int32)
+        with patch.object(attn_module, "_select_seq_lens", return_value=mainline_lens):
+            metadata, _, device_lens, _ = self._build_parallel_drafting_metadata(
+                seq_lens_cpu_is_exact=False, seq_lens_cpu_is_approximate=True
+            )
+        self.assertIs(metadata.seq_lens, device_lens)
+        self.assertTrue(metadata.draft_kv_upper_bound)
+
+    def test_bound_falls_back_before_graph_or_single_token_build(self):
+        for query_len, enforce_eager in ((1, True), (4, False)):
+            with self.subTest(query_len=query_len, enforce_eager=enforce_eager):
+                metadata, sources, device_lens, _ = self._build_parallel_drafting_metadata(
+                    seq_lens_cpu_is_exact=False,
+                    seq_lens_cpu_is_approximate=True,
+                    query_len=query_len,
+                    enforce_eager=enforce_eager,
+                )
+                self.assertFalse(metadata.draft_kv_upper_bound)
+                self.assertTrue(any(source is device_lens for source in sources))
 
     def test_seq_lens_cpu_is_exact_defaults_to_false(self):
         """Unaudited producers must keep the previous (device) behaviour."""
@@ -347,8 +459,10 @@ def test_pcp_metadata_keeps_expanded_slot_mapping() -> None:
     assert metadata.attn_state == AscendAttentionState.ChunkedPrefill
 
 
-def test_pcp_cache_write_uses_gathered_inputs() -> None:
+@pytest.mark.parametrize("cache_write_error", [False, True], ids=["success", "cache-write-error"])
+def test_pcp_cache_write_uses_gathered_inputs_and_restores_metadata(cache_write_error) -> None:
     impl = AscendAttentionBackendImpl.__new__(AscendAttentionBackendImpl)
+    impl.is_pcp_decode_sharded = False
     impl.attn_type = attn_module.AttentionType.DECODER
     impl.key_cache = None
     impl.value_cache = None
@@ -384,14 +498,16 @@ def test_pcp_cache_write_uses_gathered_inputs() -> None:
         patch("vllm_ascend.attention.attention_v1.DeviceOperator.reshape_and_cache") as reshape_and_cache,
         patch("vllm_ascend.attention.attention_v1.notify_kv_cache_written"),
     ):
-        result = impl._reshape_and_cache_pcp(
-            query,
-            key,
-            value,
-            (key_cache, value_cache),
-            metadata,
-            output,
-        )
+
+        def write_cache():
+            return impl._reshape_and_cache_pcp(query, key, value, (key_cache, value_cache), metadata, output)
+
+        if cache_write_error:
+            reshape_and_cache.side_effect = RuntimeError("cache write failed")
+            with pytest.raises(RuntimeError, match="cache write failed"):
+                write_cache()
+        else:
+            result = write_cache()
 
     local_inputs, actual_slots, num_decode_tokens = gather_inputs.call_args.args
     torch.testing.assert_close(local_inputs[0], key)
@@ -405,10 +521,12 @@ def test_pcp_cache_write_uses_gathered_inputs() -> None:
     torch.testing.assert_close(cache_args["slot_mapping"], gathered_slots)
     assert metadata.slot_mapping is slot_mapping
     assert metadata.num_actual_tokens == 3
-    assert result[0] is query
-    assert result[1] is key
-    assert result[2] is value
-    assert result[3] is output
+    reshape_and_cache.assert_called_once()
+    if not cache_write_error:
+        assert result[0] is query
+        assert result[1] is gathered_key
+        assert result[2] is gathered_value
+        assert result[3] is output
 
 
 def test_pcp_builder_keeps_short_extend_in_prefill() -> None:
@@ -448,6 +566,7 @@ class TestAscendAttentionBackendImpl(TestBase):
         self.attention_type.DECODER = "decoder"
         self.attention_type.ENCODER = "encoder"
         self.attn_metadata = MagicMock()
+        self.attn_metadata.draft_kv_upper_bound = False
         self.attn_metadata.return_value = "1"
         self.layer_no_quant = MagicMock(spec=["layer_name", "_k_scale_float", "_v_scale_float"])
         self.layer_no_quant.layer_name = "test_layer"
@@ -574,6 +693,45 @@ class TestAscendAttentionBackendImpl(TestBase):
             attn_type=self.attention_type.DECODER,
             kv_sharing_target_layer_name="producer_layer",
         )
+
+    def test_kv_cache_dtype_honors_layer_override(self):
+        self.mock_vllm_config.cache_config.cache_dtype = "fp8"
+        self.mock_vllm_config.model_config.dtype = torch.bfloat16
+        for recipe_c8 in (False, True):
+            self.mock_vllm_config.quant_config.enable_c8_quant = recipe_c8
+            for layer_dtype, expected in (("auto", torch.bfloat16), ("bfloat16", torch.bfloat16)):
+                with self.subTest(layer_dtype=layer_dtype, recipe_c8=recipe_c8):
+                    impl = AscendAttentionBackendImpl(
+                        num_heads=16,
+                        head_size=128,
+                        scale=128**-0.5,
+                        num_kv_heads=1,
+                        alibi_slopes=None,
+                        sliding_window=None,
+                        kv_cache_dtype=layer_dtype,
+                        logits_soft_cap=None,
+                        attn_type=self.attention_type.DECODER,
+                        kv_sharing_target_layer_name=None,
+                    )
+                    self.assertEqual(impl.kv_cache_dtype, expected)
+                    self.assertFalse(impl.enable_c8_quant)
+
+    def test_quantized_layer_still_requires_quantized_weights(self):
+        self.mock_vllm_config.cache_config.cache_dtype = "bfloat16"
+        self.mock_vllm_config.quant_config.enable_c8_quant = False
+        with self.assertRaisesRegex(ValueError, "corresponding quantized weights are required"):
+            AscendAttentionBackendImpl(
+                num_heads=16,
+                head_size=128,
+                scale=128**-0.5,
+                num_kv_heads=1,
+                alibi_slopes=None,
+                sliding_window=None,
+                kv_cache_dtype="fp8",
+                logits_soft_cap=None,
+                attn_type=self.attention_type.DECODER,
+                kv_sharing_target_layer_name=None,
+            )
 
     def test_hnd_layout_is_recorded_during_initialization(self):
         with patch.object(attn_module.envs_vllm, "VLLM_KV_CACHE_LAYOUT", "HND"):
@@ -1008,126 +1166,6 @@ class TestAscendAttentionBackendImpl(TestBase):
 
         assert output.shape == (10, 8, 64)
 
-    @patch("vllm_ascend.attention.attention_v1.torch.npu.stream")
-    @patch("vllm_ascend.attention.attention_v1.torch.npu.graph_task_update_begin")
-    @patch("vllm_ascend.attention.attention_v1.torch.npu.graph_task_update_end")
-    @patch("torch_npu.npu_fused_infer_attention_score")
-    @patch("vllm_ascend.attention.attention_v1.get_graph_params")
-    @patch("vllm_ascend.attention.attention_v1._EXTRA_CTX")
-    @patch("vllm_ascend.attention.attention_v1.using_paged_attention", return_value=False)
-    @patch("vllm_ascend.attention.attention_v1.needs_layer_aware_fia_graph_replay", return_value=False)
-    @patch("vllm_ascend.attention.attention_v1._ATTN_KEYS_BUFFER", new=[])
-    def test_update_graph_params(
-        self,
-        mock_needs_layer_aware_fia_graph_replay,
-        mock_using_paged_attention,
-        mock_EXTRA_CTX,
-        mock_get_graph_params,
-        mock_fia,
-        mock_graph_task_update_end,
-        mock_graph_task_update_begin,
-        mock_stream,
-    ):
-        """Test behavior when _ATTN_KEYS_BUFFER is [] after dummy_run."""
-
-        mock_EXTRA_CTX.sinks = False
-        mock_EXTRA_CTX.is_draft_model = False
-
-        param: list[MagicMock | None] = [MagicMock()] * 22
-        param[16] = None  # sliding_window
-        param[17] = None  # c8_k_aq_scale
-        param[21] = None  # layer_name
-
-        mock_get_graph_params.return_value.attn_params = {1: [tuple(param)] * 3}
-        mock_get_graph_params.return_value.handles = {1: [MagicMock()] * 3}
-        mock_get_graph_params.return_value.events = {1: [MagicMock()] * 3}
-
-        attn_metadata_keys = [
-            "model.layers.10.self_attn.attn",
-            "model.layers.2.self_attn.attn",
-            "model.layers.5.self_attn.attn",
-        ]
-        forward_context = MagicMock()
-        forward_context.attn_metadata = {key: MagicMock() for key in attn_metadata_keys}
-        # breakpoint()
-        self.impl.update_graph_params(self.mock_stream, forward_context, 1, self.mock_vllm_config)
-
-        expected = [
-            "model.layers.2.self_attn.attn",
-            "model.layers.5.self_attn.attn",
-            "model.layers.10.self_attn.attn",
-        ]
-        self.assertEqual(attn_module._ATTN_KEYS_BUFFER, expected)
-        self.assertEqual(mock_fia.out.call_count, 3)
-
-    @patch("vllm_ascend.attention.attention_v1.torch.npu.stream")
-    @patch("vllm_ascend.attention.attention_v1.torch.npu.graph_task_update_begin")
-    @patch("vllm_ascend.attention.attention_v1.torch.npu.graph_task_update_end")
-    @patch("vllm_ascend.attention.attention_v1.torch_npu._npu_paged_attention")
-    @patch("vllm_ascend.attention.attention_v1.torch_npu._npu_paged_attention_get_workspace", return_value=MagicMock())
-    @patch("vllm_ascend.attention.attention_v1.get_graph_params")
-    @patch("vllm_ascend.attention.attention_v1._EXTRA_CTX")
-    @patch("vllm_ascend.attention.attention_v1.using_paged_attention", return_value=True)
-    @patch("vllm_ascend.attention.attention_v1.needs_layer_aware_fia_graph_replay", return_value=False)
-    @patch("vllm_ascend.attention.attention_v1._ATTN_KEYS_BUFFER", new=[])
-    def test_update_graph_params_handles_captured_paged_attention_params(
-        self,
-        mock_needs_layer_aware_fia_graph_replay,
-        mock_using_paged_attention,
-        mock_EXTRA_CTX,
-        mock_get_graph_params,
-        mock_get_workspace,
-        mock_paged_attention,
-        mock_graph_task_update_end,
-        mock_graph_task_update_begin,
-        mock_stream,
-    ):
-        mock_EXTRA_CTX.sinks = False
-        mock_EXTRA_CTX.is_draft_model = False
-
-        query = MagicMock()
-        key_cache = MagicMock()
-        value_cache = MagicMock()
-        block_table = MagicMock()
-        output = MagicMock()
-        captured_seq_lens = MagicMock()
-        current_seq_lens = MagicMock()
-        pa_param = PagedAttentionGraphParam(
-            (
-                query,
-                key_cache,
-                value_cache,
-                8,
-                8,
-                1.0,
-                block_table,
-                captured_seq_lens,
-                output,
-            ),
-            "model.layers.0.self_attn.attn",
-        )
-
-        mock_get_graph_params.return_value.attn_params = {1: [pa_param]}
-        mock_get_graph_params.return_value.handles = {1: [MagicMock()]}
-        mock_get_graph_params.return_value.events = {1: [MagicMock()]}
-
-        forward_context = MagicMock()
-        forward_context.attn_metadata = {
-            "model.layers.0.self_attn.attn": MagicMock(
-                seq_lens=current_seq_lens,
-                block_tables=block_table,
-                seq_lens_list=[10],
-            ),
-        }
-
-        self.impl.update_graph_params(self.mock_stream, forward_context, 1, self.mock_vllm_config)
-
-        mock_get_workspace.assert_called_once()
-        mock_paged_attention.assert_called_once()
-        self.assertEqual(mock_paged_attention.call_args.kwargs["context_lens"], current_seq_lens)
-        mock_graph_task_update_begin.assert_called_once()
-        mock_graph_task_update_end.assert_called_once()
-
 
 class TestBuildDraftTailMask(TestBase):
     """The mask is the whole correctness argument for #16271's draft path.
@@ -1292,6 +1330,59 @@ class TestForwardDraftTailMasked(TestBase):
         self.assertEqual(kwargs["actual_seq_lengths_kv"], [10, 12])
         self.assertEqual(tuple(kwargs["query"].shape), (2, 3, 2, 4))
         self.assertEqual(tuple(kwargs["atten_mask"].shape), (2, 3, 2 * 4))
+
+    def test_non_contiguous_query_preserves_token_order(self):
+        impl, meta = self._impl(), self._metadata()
+        query = torch.arange(48, dtype=torch.float32).reshape(2, 6, 4).transpose(0, 1)
+        self.assertFalse(query.is_contiguous())
+        output = torch.empty_like(query)
+        fake = MagicMock(side_effect=lambda **kwargs: (kwargs["query"].clone(), None))
+        with patch.object(attn_module.torch_npu, "npu_fused_infer_attention_score", fake):
+            result = AscendAttentionBackendImpl._forward_draft_tail_masked(
+                impl,
+                query,
+                torch.zeros(1),
+                torch.zeros(1),
+                meta,
+                torch.zeros((2, 3), dtype=torch.int32),
+                4,
+                [10, 12],
+                6,
+                output,
+            )
+        torch.testing.assert_close(result, query)
+
+    def test_declined_mask_reads_exact_lengths_without_mutating_shared_metadata(self):
+        impl = AscendAttentionBackendImpl.__new__(AscendAttentionBackendImpl)
+        impl.sinks = torch.zeros(2)
+        impl.sliding_window = None
+        impl.num_heads, impl.num_kv_heads, impl.head_size, impl.scale = 2, 1, 4, 0.5
+        impl.key_cache = torch.zeros(3, 4, 1, 4)
+        impl.value_cache = torch.zeros_like(impl.key_cache)
+        impl._get_kv_cache_view = lambda key, value: (key, value, 4)
+        meta = AscendMetadata(
+            attn_state=AscendAttentionState.PrefillCacheHit,
+            seq_lens=torch.tensor([7, 9], dtype=torch.int32),
+            seq_lens_list=[10, 12],
+            actual_seq_lengths_q=[3, 6],
+            block_tables=torch.zeros((2, 3), dtype=torch.int32),
+            draft_kv_upper_bound=True,
+            draft_query_lens=[3, 3],
+            draft_tail_mask_cache={},
+            causal=False,
+        )
+        query = torch.zeros(6, 2, 4)
+        output = torch.empty_like(query)
+        fake = MagicMock(return_value=(torch.ones_like(query), None))
+        with (
+            patch.object(attn_module, "_EXTRA_CTX", SimpleNamespace(capturing=False)),
+            patch.object(attn_module.torch_npu, "npu_fused_infer_attention_score_v2", fake),
+        ):
+            result = impl.forward_fused_infer_attention(query, query, query, meta, output)
+        self.assertEqual(fake.call_args.kwargs["actual_seq_kvlen"], [7, 9])
+        self.assertEqual(meta.seq_lens_list, [10, 12])
+        self.assertTrue(meta.draft_kv_upper_bound)
+        torch.testing.assert_close(result, torch.ones_like(query))
 
     def test_mask_is_built_once_and_reused_across_layers(self):
         """One mask per step, shared by every layer in the attention group."""

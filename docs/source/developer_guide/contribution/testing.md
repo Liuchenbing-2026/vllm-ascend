@@ -248,8 +248,9 @@ You can run tests with `pytest` as well. Typical examples:
 For running nightly single-node model test cases locally, refer to the following example.
 
 ```bash
+export CONFIG_BASE_PATH=tests/e2e/cases/models/configs/Qwen
 export CONFIG_YAML_PATH=Qwen3-32B.yaml
-VLLM_USE_MODELSCOPE=true pytest -sv tests/e2e/nightly/single_node/models/scripts/test_single_node.py
+VLLM_USE_MODELSCOPE=true pytest -sv tests/e2e/common/single_node/test_single_node.py
 ```
 
 For running nightly multi-node model test cases locally, refer to the `Running Locally` section in [Multi Node Test](./multi_node_test.md).
@@ -257,6 +258,24 @@ For running nightly multi-node model test cases locally, refer to the `Running L
 #### E2E test examples
 
 - Offline test example: [`tests/e2e/pull_request/one_card/test_qwen3_0_6b.py`](https://github.com/vllm-project/vllm-ascend/blob/main/tests/e2e/pull_request/one_card/test_qwen3_0_6b.py)
+
+### Csrc incremental build cache checks
+
+For changes to native build inputs or the cache adapter, run the cache engine,
+concurrency, and snapshot-key tests before requesting an NPU build:
+
+```bash
+pytest -q --confcutdir=tests/ut/_tools \
+  tests/ut/_tools/test_build_cache.py \
+  tests/ut/_tools/test_build_cache_concurrency.py \
+  tests/ut/_tools/test_prepare_csrc_l1_restore.py
+```
+
+On CI, a successful restore step only proves that an outer L1 snapshot was
+available. Check the inner cache telemetry for action HIT/MISS/BYPASS to
+establish whether a source build actually reused compiled work. See the
+[persistent csrc build cache design](../Design_Documents/persistent_csrc_build_cache.md)
+for the identity and failure contracts.
 
 ### PR selective testing (CI)
 
@@ -311,6 +330,48 @@ The CI resource is limited, and you might need to reduce the number of layers of
     model = model.to(DIST_DTYPE)
     model.save_pretrained(DIST_MODEL_PATH)
     ```
+
+### CI workflow triggers and the `schedule_` prefix
+
+Workflow files under `.github/workflows/` whose names start with `schedule_`
+belong to the recurring CI family (nightly, weekly, doc, coverage, and similar
+periodic jobs). The `schedule_` prefix does **not** guarantee that the workflow
+declares a GitHub Actions `schedule:` (cron) trigger.
+
+Some `schedule_*.yaml` files intentionally omit `schedule:` and are dispatched by
+the project's external automation through `workflow_dispatch` instead. This is by
+design, not a missing cron entry, because the external scheduler has more control
+over when resource-heavy NPU jobs run.
+
+Workflows with a native GitHub cron trigger:
+
+| Workflow | Additional triggers |
+|---|---|
+| `schedule_doc_linkcheck.yaml` | PR path filter, `workflow_dispatch` |
+| `schedule_doc_translate.yaml` | `workflow_dispatch` |
+| `schedule_e2e_upstream_test.yaml` | - |
+| `schedule_lint_image_build.yaml` | `workflow_dispatch`, `push` |
+| `schedule_main2main.yaml` | `workflow_dispatch` |
+| `schedule_stale_manage.yaml` | `issue_comment` |
+
+Workflows without a cron trigger, dispatched externally via `workflow_dispatch`:
+
+| Workflow | Additional triggers |
+|---|---|
+| `schedule_doc_getting_started_test.yaml` | PR path filter |
+| `schedule_e2e_test.yaml` | - |
+| `schedule_image_build_and_push.yaml` | PR label, tag `push` |
+| `schedule_nightly_test_310p.yaml` | - |
+| `schedule_nightly_test_a2.yaml` | - |
+| `schedule_nightly_test_a3.yaml` | - |
+| `schedule_nightly_test_a3_560t.yaml` | - |
+| `schedule_nightly_test_a5.yaml` | - |
+| `schedule_release_code_and_wheel.yml` | tag `push` |
+| `schedule_test_coverage.yaml` | - |
+| `schedule_weekly_test_310p.yaml` | - |
+| `schedule_weekly_test_a2.yaml` | - |
+| `schedule_weekly_test_a3.yaml` | - |
+| `schedule_weekly_test_a3_560t.yaml` | - |
 
 ### Run doctest
 

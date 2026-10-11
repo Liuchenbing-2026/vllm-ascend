@@ -26,7 +26,8 @@ Run specific E2E tests under `tests/e2e/pull_request/`. Tests are automatically 
 | Test path contains | Runner |
 |---|---|
 | `four_card/_310p` | 310P 4-card |
-| `_310p` (under `one_card`/`two_card`) | 310P single card |
+| `two_card/_310p` | 310P 2-card |
+| `one_card/_310p` | 310P single card |
 | `four_card` | A3 4-card |
 | `two_card` | A3 2-card |
 | Others (e.g. `one_card`) | A2 single card |
@@ -94,6 +95,8 @@ binary bisect for genuine failures. By default, AOP hooks are disabled.
 ```
 
 This triggers `workflow_dispatch` on both `schedule_nightly_test_a2.yaml` and `schedule_nightly_test_a3.yaml`.
+
+> **Note**: These `schedule_*` workflows do not declare a GitHub Actions `schedule:` (cron) trigger; they are dispatched externally via `workflow_dispatch`. See [CI workflow triggers and the schedule_ prefix](../developer_guide/contribution/testing.md#ci-workflow-triggers-and-the-schedule_-prefix).
 
 ### `/cherry-pick`
 
