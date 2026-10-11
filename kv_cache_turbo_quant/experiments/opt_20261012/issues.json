@@ -173,5 +173,18 @@
     "verification": "audit.json generated2026-10-11T17:41:17Z proves18groups684requests440tokenIDs and unchanged store/plugin/quantizer source",
     "status": "audit recovered with unchanged invariants",
     "remaining": "Original full first-attempt stdout evidence gap; no model run modified"
+  },
+  {
+    "id": "R14",
+    "discovered_utc": "2026-10-11T17:47:04.848472+00:00",
+    "phenomenon_and_impact": "Automated pre-push commit-message range used a missing origin tracking ref and failed; shell continued to authorized push",
+    "raw_evidence": "Original tool output fatal ambiguous argument origin/perf/tq-read-throughput-20261012..HEAD; complete stdout not separately saved; git log -2 output already manually reviewed before command",
+    "confirmed_cause": "Remote fetch configuration stores FETCH_HEAD without creating this task tracking ref; shell did not halt on failed Python check",
+    "handling": "Check exact fixed published base eedf2eb..HEAD successfully; do subsequent push steps via check=True subprocess operations; no forbidden marker in either already-reviewed new commit",
+    "branch": "perf/tq-read-throughput-20261012",
+    "base_commit": "eedf2eb1b7b561df34de9332836640922b4f55f7",
+    "verification": "Exact-SHA check succeeded for both full commit messages and trailers; normal push a6c09d0; upcoming fetch readback checks full tree",
+    "status": "publication check recovered; command-sequencing recurrence retained",
+    "remaining": "No force push or history rewrite; source tracking configuration not globally changed"
   }
 ]

@@ -107,6 +107,6 @@ export ASCEND_RT_VISIBLE_DEVICES=2,5 TASK_NPU_CARDS=2,5
 
 `tools/verifier`和`tools/shared_bench`是本次实际使用工具的原样副本；模型、算子库及镜像不导出。后台宿主入口和完整服务参数见前述命令及`scripts/serve_optimized.sh`。正式profiler关闭；可选profiling脚本保留但本轮未调用。
 
-本轮问题R01–R13保留，包含两次路径管理失误、编译/UB限制、速度回退候选、状态探针/归档/缓存问题、torch glue复用描述修正、本地审计Python版本问题、关闭警告。BF16主动关闭时EngineDeadError及各模式resource_tracker警告根因未隔离，完整请求已先结束，资源释放独立核验；不称所有问题闭环。阶段归档eedf2eb的运行中叙述由本最终版本更新，不改写发布历史。
+本轮问题R01–R14保留，包含两次路径管理失误、编译/UB限制、速度回退候选、状态探针/归档/缓存问题、torch glue复用描述修正、本地审计Python版本问题、tracking-ref推送检查及关闭警告。BF16主动关闭时EngineDeadError及各模式resource_tracker警告根因未隔离，完整请求已先结束，资源释放独立核验；不称所有问题闭环。阶段归档eedf2eb的运行中叙述由本最终版本更新，不改写发布历史。
 
 原始下载210文件逐一SHA验证，发布完整源码、逐请求数据、命令、原始日志及失败记录；Python解释器`.pyc`/`__pycache__`无需复现而不发布，原下载清单保留，发布文件另有`published-evidence-manifest.json`。未采用的K/V合并量化思路仅在本地准备，未测、未部署，不计入本轮收益。
