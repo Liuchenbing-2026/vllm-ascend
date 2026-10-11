@@ -57,17 +57,17 @@ from vllm.platforms import current_platform
 from vllm.transformers_utils.utils import maybe_model_redirect
 from vllm.utils.network_utils import get_open_port
 
+from tests.e2e.common.multi_node.internal_dp.multi_node_config import DisaggregatedPrefillCfg, NodeInfo
 from tests.e2e.coverage_taxonomy import (
     validate_coverage_marker,
 )
 from tests.e2e.model_utils import TokensTextLogprobs, TokensTextLogprobsPromptLogprobs
-from tests.e2e.nightly.multi_node.internal_dp.scripts.multi_node_config import DisaggregatedPrefillCfg, NodeInfo
 from vllm_ascend.ascend_config import clear_ascend_config
 
 # TODO: remove this part after the patch merged into vllm, if
 # we not explicitly patch here, some of them might be effectiveless
 # in pytest scenario
-from vllm_ascend.utils import adapt_patch, vllm_version_is  # noqa E402
+from vllm_ascend.utils import adapt_patch  # noqa E402
 
 adapt_patch(True)
 adapt_patch(False)
@@ -2007,14 +2007,8 @@ PROMPT_CONFIGS = {
         "model": "vllm-ascend/HunyuanOCR",
         "prompt_fn": hunyuan_prompt,
         "mm_processor_kwargs": {},
-        **(
-            {
-                "skip": "HunyuanVL is not supported on vLLM main branch "
-                "(upstream vllm-project/vllm#53272 removed native Hunyuan V1/VL)."
-            }
-            if not vllm_version_is("0.28.0")
-            else {}
-        ),
+        "skip": "HunyuanVL is not supported by the pinned vLLM versions "
+        "(upstream vllm-project/vllm#53272 removed native Hunyuan V1/VL).",
     },
 }
 
