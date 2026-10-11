@@ -93,6 +93,12 @@ Useful options:
   CANN builds whose public ops package lacks Ascend910B binaries for newer
   custom ops (e.g. `AddRmsNormBias`, `CausalConv1d`), the affected kernels
   are probed once at worker init and fall back to the `torch_npu`
-  implementations; models whose layers have no fallback (e.g. GDN
-  causal-conv1d on such CANN builds) cannot serve yet and fail with a clear
-  aclnn error.
+  implementations. Rebuilding the vendor package with kernel binaries
+  (`COMPILE_CUSTOM_KERNELS=1`, i.e. `build.sh --pkg`) restores full op
+  support; GDN models (Qwen3.5) have been validated end to end on
+  Ascend910B4 with the rebuilt package. One build-time hazard: third-party
+  CANN vendor packages installed in the same Python environment (e.g. the
+  `fla_npu` pip package) can register same-named ops with different
+  signatures; CANN's opc consistency check then fails the build with
+  `invalid input nums` errors. Neutralize such packages (e.g. rename their
+  `opp/` directory) before compiling custom ops.
