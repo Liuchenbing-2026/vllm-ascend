@@ -78,6 +78,31 @@ const OpApiI8 &GetOpApiI8()
     return api;
 }
 
+// aclnnKvTqReadBench: (packed, dense, mode, rows, out)
+using GetWorkspaceSizeRbFn = aclnnStatus (*)(const aclTensor *, const aclTensor *,
+    int64_t, int64_t, aclTensor *, uint64_t *, aclOpExecutor **);
+
+struct OpApiRb {
+    GetWorkspaceSizeRbFn getWorkspaceSize = nullptr;
+    RunFn run = nullptr;
+};
+
+const OpApiRb &GetOpApiRb()
+{
+    static const OpApiRb api = [] {
+        void *handle = dlopen(kOpApiSoPath, RTLD_NOW | RTLD_GLOBAL);
+        TORCH_CHECK(handle != nullptr, "dlopen ", kOpApiSoPath, " failed: ", dlerror());
+        OpApiRb resolved;
+        resolved.getWorkspaceSize = reinterpret_cast<GetWorkspaceSizeRbFn>(
+            dlsym(handle, "aclnnKvTqReadBenchGetWorkspaceSize"));
+        resolved.run = reinterpret_cast<RunFn>(dlsym(handle, "aclnnKvTqReadBench"));
+        TORCH_CHECK(resolved.getWorkspaceSize != nullptr && resolved.run != nullptr,
+            "dlsym aclnnKvTqReadBench failed: ", dlerror());
+        return resolved;
+    }();
+    return api;
+}
+
 aclDataType ToAclType(const at::ScalarType dtype)
 {
     switch (dtype) {
@@ -204,6 +229,42 @@ void KvCacheInt8Store(const at::Tensor &x, const at::Tensor &scale, const at::Te
 
 } // namespace
 
+// Read-path microbenchmark (see code/op/op_kernel/kv_tq_read_bench.cpp).
+at::Tensor KvTqReadBench(const at::Tensor &packed, const at::Tensor &dense,
+    int64_t mode, int64_t rows)
+{
+    const OpApiRb &api = GetOpApiRb();
+    at::Tensor out = at::empty({1024}, packed.options().dtype(at::kFloat));
+
+    aclTensor *packedTensor = WrapTensor(packed);
+    aclTensor *denseTensor = WrapTensor(dense);
+    aclTensor *outTensor = WrapTensor(out);
+
+    uint64_t workspaceSize = 0;
+    aclOpExecutor *executor = nullptr;
+    aclnnStatus status = api.getWorkspaceSize(packedTensor, denseTensor, mode, rows,
+        outTensor, &workspaceSize, &executor);
+    TORCH_CHECK(status == ACL_SUCCESS,
+        "aclnnKvTqReadBenchGetWorkspaceSize failed, ret=", static_cast<int>(status));
+
+    at::Tensor workspace;
+    void *workspacePtr = nullptr;
+    if (workspaceSize > 0) {
+        workspace = at::empty({static_cast<int64_t>(workspaceSize)},
+            packed.options().dtype(at::kByte));
+        workspacePtr = workspace.data_ptr();
+    }
+    aclrtStream stream = c10_npu::getCurrentNPUStream().stream();
+    status = api.run(workspacePtr, workspaceSize, executor, stream);
+
+    aclDestroyTensor(packedTensor);
+    aclDestroyTensor(denseTensor);
+    aclDestroyTensor(outTensor);
+    TORCH_CHECK(status == ACL_SUCCESS,
+        "aclnnKvTqReadBench failed, ret=", static_cast<int>(status));
+    return out;
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {}
 
 TORCH_LIBRARY(turboquant, m)
@@ -211,10 +272,12 @@ TORCH_LIBRARY(turboquant, m)
     m.def("kv_cache_turbo_quant(Tensor kv, Tensor rotation, Tensor qjl, int mse_bits) "
           "-> (Tensor, Tensor, Tensor, Tensor)");
     m.def("kvtq_int8_store(Tensor x, Tensor scale, Tensor slots, Tensor(a!) cache) -> ()");
+    m.def("kvtq_read_bench(Tensor packed, Tensor dense, int mode, int rows) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(turboquant, PrivateUse1, m)
 {
     m.impl("kv_cache_turbo_quant", &KvCacheTurboQuant);
     m.impl("kvtq_int8_store", &KvCacheInt8Store);
+    m.impl("kvtq_read_bench", &KvTqReadBench);
 }

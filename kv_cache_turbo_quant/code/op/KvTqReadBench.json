@@ -1,0 +1,15 @@
+[{
+    "op": "KvTqReadBench",
+    "language": "cpp",
+    "input_desc": [
+        {"name": "packed", "param_type": "required", "format": ["ND"], "type": ["uint8"]},
+        {"name": "dense", "param_type": "required", "format": ["ND"], "type": ["bfloat16"]}
+    ],
+    "output_desc": [
+        {"name": "out", "param_type": "required", "format": ["ND"], "type": ["float32"]}
+    ],
+    "attr": [
+        {"name": "mode", "type": "int", "default_value": "0", "param_type": "required"},
+        {"name": "rows", "type": "int", "default_value": "0", "param_type": "required"}
+    ]
+}]
