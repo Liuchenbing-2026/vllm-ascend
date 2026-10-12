@@ -48,6 +48,7 @@ def _make_metadata(state=AscendAttentionState.PrefillNoCache):
         num_prefills=1,
         causal=True,
         attn_mask=None,
+        draft_kv_upper_bound=False,
     )
 
 
