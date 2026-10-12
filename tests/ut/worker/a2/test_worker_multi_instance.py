@@ -274,6 +274,32 @@ class TestDetermineAvailableMemoryMultiInstance(TestBase):
         self.assertIn("Error in memory profiling", str(ctx.exception))
 
     @patch("vllm_ascend.worker.worker.logger")
+    def test_accepts_unchanged_free_memory_after_profile(self, mock_logger):
+        """
+        determine_available_memory() must accept an unchanged free-memory
+        snapshot (after == before). With a memory virtualization layer such as
+        HAMi vNPU, profiling can legitimately report the same free memory
+        before and after, and that must not abort startup.
+        """
+        total = int(64 * GiB_bytes)
+        requested_memory = int(total * 0.9)
+        init_free = int(60 * GiB_bytes)
+        non_kv_cache = int(0.5 * GiB_bytes)
+
+        worker = self._make_worker(requested_memory, init_free, total)
+        # Legit for HAMi vNPU: free memory unchanged across profiling
+        profile_result = self._make_profile_result(
+            free_memory_after=init_free,
+            non_kv_cache_memory=non_kv_cache,
+        )
+
+        with self._patch_memory_profiling(profile_result):
+            result = worker.determine_available_memory()
+
+        self.assertEqual(result, requested_memory - non_kv_cache)
+        self.assertGreater(result, 0)
+
+    @patch("vllm_ascend.worker.worker.logger")
     def test_second_instance_tight_memory_still_positive(self, mock_logger):
         """
         Edge case: card is almost full when second instance starts.
