@@ -1351,6 +1351,70 @@ class TestNPUWorker(TestBase):
     @patch("vllm_ascend.worker.worker.torch.npu.empty_cache")
     @patch("vllm_ascend.worker.worker.torch.npu.memory_stats")
     @patch("vllm_ascend.worker.worker.torch.npu.mem_get_info")
+    def test_determine_available_memory_accepts_unchanged_free_memory(
+        self,
+        mock_torch_mem_get_info,
+        mock_torch_memory_stats,
+        mock_torch_empty_cache,
+        mock_torch_reset_peak_memory_stats,
+        mock_memory_profiling,
+        mock_get_ascend_config,
+    ):
+        """Test determine_available_memory accepts an unchanged free-memory snapshot
+
+        A memory virtualization layer (e.g. a HAMi vNPU quota) can report the same
+        free memory before and after profiling. That is not an error, so startup
+        must continue instead of aborting on the strict comparison.
+        """
+        from vllm_ascend.worker.worker import NPUWorker
+
+        mock_profile_result = MagicMock()
+        mock_profile_result.non_torch_increase = 1000
+        mock_profile_result.torch_peak_increase = 9000
+        mock_profile_result.weights_memory = 500
+        mock_profile_result.before_profile = MagicMock()
+        mock_profile_result.before_profile.torch_peak = 0
+        mock_profile_result.after_profile = MagicMock()
+        # Equal to the initial snapshot below: the run did not observe a change.
+        mock_profile_result.after_profile.free_memory = 8500
+
+        mock_context = MagicMock()
+        mock_context.__enter__ = MagicMock(return_value=mock_profile_result)
+        mock_context.__exit__ = MagicMock(return_value=False)
+        mock_memory_profiling.return_value = mock_context
+        mock_get_ascend_config.return_value.sparse_kv_offload_config.enabled = False
+
+        mock_init_snapshot = MagicMock()
+        mock_init_snapshot.free_memory = 8500
+        mock_init_snapshot.total_memory = 10000
+
+        with patch.object(NPUWorker, "__init__", lambda x, **kwargs: None):
+            worker = NPUWorker()
+            worker._kvpp_cache_allocation_plan = None
+            worker.vllm_config = MagicMock(kv_transfer_config=None)
+            worker.init_snapshot = mock_init_snapshot
+            worker.requested_memory = 10000 * 0.8
+            worker.model_runner = MagicMock()
+            worker.model_runner.model_memory_usage = 500
+            worker.cache_config = MagicMock()
+            worker.cache_config.gpu_memory_utilization = 0.8
+            worker.cache_config.kv_cache_memory_bytes = None
+            worker.device = "npu:0"
+
+            mock_torch_memory_stats.return_value = {"allocated_bytes.all.peak": 9000}
+
+            result = worker.determine_available_memory()
+
+            # non_kv_cache_memory = 1000 + 9000 + 500 = 10500
+            # available = requested(8000) - non_kv_cache(10500) = -2500
+            self.assertEqual(result, int(8000 - 10500))
+
+    @patch("vllm_ascend.worker.worker.get_ascend_config")
+    @patch("vllm_ascend.worker.worker.memory_profiling")
+    @patch("vllm_ascend.worker.worker.torch.npu.reset_peak_memory_stats")
+    @patch("vllm_ascend.worker.worker.torch.npu.empty_cache")
+    @patch("vllm_ascend.worker.worker.torch.npu.memory_stats")
+    @patch("vllm_ascend.worker.worker.torch.npu.mem_get_info")
     def test_determine_available_memory_negative_result(
         self,
         mock_torch_mem_get_info,

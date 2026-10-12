@@ -617,7 +617,11 @@ class NPUWorker(WorkerBase):
         self.non_torch_memory = profile_result.non_torch_increase
 
         free_gpu_memory = profile_result.after_profile.free_memory
-        assert self.init_snapshot.free_memory > free_gpu_memory, (
+        # A run that leaves free memory unchanged is not an error: memory
+        # virtualization layers (e.g. a HAMi vNPU quota) can report the same
+        # value before and after profiling. Only an increase means another
+        # process shared the container and released memory while we profiled.
+        assert self.init_snapshot.free_memory >= free_gpu_memory, (
             "Error in memory profiling. "
             f"Initial free memory {GiB(self.init_snapshot.free_memory)} GiB, "
             f"current free memory {GiB(free_gpu_memory)} GiB. "
