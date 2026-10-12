@@ -1,9 +1,12 @@
 # Qwen3-30B-A3B int8 原生 KV cache 路径（B2）128k 实测
 
-> 日期：2026-10-11。环境：Atlas 800T A2，vllm-ascend 0.28.0rc，TP=2，enforce-eager，
+> 日期：2026-10-11（容量/未融合数据）、2026-10-12（写路径融合后复测）。
+> 环境：Atlas 800T A2，vllm-ascend 0.28.0rc，TP=2，enforce-eager，
 > max_model_len=133120（YaRN x4 via `--hf-overrides`，原生 40960）。
 > 模式：`VLLM_ASCEND_KVTQ_STORE=int8` —— KV cache 分配为 int8（NZ 排布 + per-channel scale），
-> 写路径走自研算子散写，读路径走 FIA 原生 antiquant（mode 0），无任何 Python 解压。
+> 读路径走 FIA 原生 antiquant（mode 0），无任何 Python 解压。
+> 写路径：自研融合算子 `KvCacheInt8Store`（单 kernel 完成 per-channel 量化 + NZ 散写，
+> `VLLM_ASCEND_KVTQ_INT8_FUSED=0` 可回退 PyTorch 链，两者 bit-exact 等价）。
 > 输入 128k（131072），输出 1k（1024），`--ignore-eos`，random 数据集。
 
 ## 三种模式容量
@@ -13,57 +16,85 @@
 | GPU KV cache size | 351,616 tokens | 703,360 tokens (**2.00x**) | 1,364,096 tokens (**3.88x**) |
 | 133,120 上下文最大并发 | 2.64 | 5.28 | 10.25 |
 
-## TTFT（ms，越低越好）
+## 写路径融合后（当前口径，KvCacheInt8Store）
 
-| 并发 | base | int8 | tq4 | int8 vs base |
-|---|---|---|---|---|
-| 1 | 37,891 | 39,963 | 38,693 | +5.5% |
-| 2 | 56,197 | 58,919 | 60,387 | +4.8% |
-| 4 | 197,349 | 97,911 | 107,438 | **-50.4%** |
-| 8 | 474,690 | 266,362 | 211,800 | **-43.9%** |
-| 16 | 1,016,360 | 606,502 | 709,752 | **-40.3%** |
-| 32 | 2,129,892 | 1,301,883 | 1,652,732 | **-38.9%** |
+### TTFT（ms，越低越好）
 
-## TPOT（ms，越低越好）
-
-| 并发 | base | int8 | tq4 | int8 vs base |
-|---|---|---|---|---|
-| 1 | 193.8 | 233.8 | 3,127.1 | +20.6% |
-| 2 | 221.2 | 260.6 | 6,351.3 | +17.8% |
-| 4 | 229.9 | 292.1 | 12,927.1 | +27.0% |
-| 8 | 229.4 | 330.9 | 27,135.4 | +44.2% |
-| 16 | 230.6 | 353.2 | 31,157.8 | +53.2% |
-| 32 | 232.8 | 360.7 | 33,895.6 | +54.9% |
-
-## 输出吞吐（tok/s）
-
-| 并发 | base | int8 | 提升 |
+| 并发 | base | int8 融合 | int8 vs base |
 |---|---|---|---|
-| 4 | 7.3 | 10.3 | **+41%** |
-| 8 | 7.4 | 10.3 | **+39%** |
-| 16 | 7.4 | 10.3 | **+39%** |
-| 32 | 7.4 | 11.1 | **+50%** |
+| 1 | 37,891 | 38,521 | +1.7% |
+| 2 | 56,197 | 56,988 | +1.4% |
+| 4 | 197,349 | 94,495 | **-52.1%** |
+| 8 | 474,690 | 246,222 | **-48.1%** |
+| 16 | 1,016,360 | 548,813 | **-46.0%** |
+| 32 | 2,129,892 | 1,179,369 | **-44.6%** |
+
+### TPOT（ms，越低越好）
+
+| 并发 | base | int8 融合 | int8 vs base |
+|---|---|---|---|
+| 1 | 193.8 | 190.5 | **-1.7%** |
+| 2 | 221.2 | 219.7 | **-0.7%** |
+| 4 | 229.9 | 253.6 | +10.3% |
+| 8 | 229.4 | 289.9 | +26.4% |
+| 16 | 230.6 | 310.2 | +34.5% |
+| 32 | 232.8 | 317.6 | +36.4% |
+
+### 输出吞吐（tok/s）与端到端耗时
+
+| 并发 | base tok/s | int8 融合 tok/s | 提升 | base 总耗时(s) | int8 总耗时(s) | 缩短 |
+|---|---|---|---|---|---|---|
+| 1 | 4.3 | 4.4 | +2% | 472 | 467 | -1% |
+| 2 | 7.2 | 7.3 | +1% | 283 | 282 | -0% |
+| 4 | 7.3 | 11.6 | **+59%** | 564 | 354 | -37% |
+| 8 | 7.4 | 11.6 | **+57%** | 1,106 | 706 | -36% |
+| 16 | 7.4 | 11.6 | **+57%** | 2,203 | 1,415 | -36% |
+| 32 | 7.4 | 12.4 | **+68%** | 4,423 | 2,637 | **-40%** |
+
+## 写路径融合前后对比（int8 自身）
+
+| 并发 | TPOT 未融合 | TPOT 融合 | 修复幅度 | TTFT 未融合 | TTFT 融合 |
+|---|---|---|---|---|---|
+| 1 | 233.8 | 190.5 | -18.5% | 39,963 | 38,521 |
+| 2 | 260.6 | 219.7 | -15.7% | 58,919 | 56,988 |
+| 4 | 292.1 | 253.6 | -13.2% | 97,911 | 94,495 |
+| 8 | 330.9 | 289.9 | -12.4% | 266,362 | 246,222 |
+| 16 | 353.2 | 310.2 | -12.2% | 606,502 | 548,813 |
+| 32 | 360.7 | 317.6 | -12.0% | 1,301,883 | 1,179,369 |
 
 ## 结论
 
-- **TTFT / 排队时延全面大幅改善**（c4+ 降低 39~50%）：容量 2x 意味着同样 32 条 128k 请求，
-  baseline 要排 12 轮队，int8 只排 6 轮。这是容量红利的直接体现。
-- **TPOT 劣化 18~55%**：写路径目前是每 token 每层约 7 个小算子的 eager 调度（~20-27ms/step），
-  吃掉了 int8 读带宽收益（kernel 微基准 128k 单层读提速 c8 2.61x）。低并发读收益本来就小，
-  净效果为负；**修复路径：写路径融合成单个 NPU kernel（自研算子加 int8 输出模式），
-  预计写开销 <2ms，低并发 TPOT 转正，高并发读收益兑现**。
-- tq4（Python 解压读路径）TPOT 劣化 16~146x，仅作容量上限参考，不可用。
-- int8 路径容量 2.00x < tq4 的 3.88x，但时延可用性完全不同量级。
+- **容量红利兑现**：c4+ TTFT 降低 45~52%，输出吞吐提升 57~68%，端到端总耗时缩短 36~40%。
+  根因：128k 请求下 baseline KV 容量只够 ~2.64 条并发，其余排队；int8 容量 2x →
+  并发额度 5.28 条，排队轮次减半。
+- **低并发（c1/c2，无排队）TPOT 已转正**（-1.7% / -0.7%）：写路径融合后（单 kernel
+  量化+散写，替代原来每 token 每层 ~7 个 PyTorch 小算子、~20-27ms/step 的 eager 调度），
+  int8 读带宽收益（FIA antiquant 直接读 int8，HBM 流量减半）在单条 decode 上开始兑现。
+- **c4+ TPOT 仍高 10~36%，但口径需说明**：此时 int8 实际运行的 decode batch 约为
+  baseline 的 2 倍（5.28 vs 2.64 条 128k 序列同时在跑），per-step 计算量更大，
+  单请求 TPOT 上升是 batch-size 效应而非纯开销；换来的是吞吐近翻倍、TTFT 近减半。
+  若业务在意单请求时延上限，可通过 `--max-num-seqs` 限制并发额度换取 TPOT 持平。
+- tq4（TurboQuant 4bit，Python 解压读路径）TPOT 劣化 16~146x，仅作容量上限参考，不可用；
+  其容量 3.88x 需待 int4 融合读算子（FIA int4 antiquant）落地后才可用化。
+- 精度：int8 per-channel 量化 gsm8k 73.5%（baseline bf16 74.0%），融合写与 PyTorch 写
+  bit-exact 等价，精度结论不受融合影响。
 
 ## 复现
 
 ```bash
+# 1. 安装融合算子包（op_i8store 源码 + 老 kv_tq 合并构建，见 code/op/build_op.sh）
+#    构建后 install 到 ASCEND OPP customize 目录，并：
+source $ASCEND_HOME/opp/vendors/customize/bin/set_env.bash
+
+# 2. 启动服务（写路径默认走融合算子；VLLM_ASCEND_KVTQ_INT8_FUSED=0 回退 PyTorch 链）
 VLLM_ASCEND_KVTQ_STORE=int8 ASCEND_RT_VISIBLE_DEVICES=6,7 \
 python3 -m vllm.entrypoints.openai.api_server \
   --model /home/models/Qwen3-30B-A3B --served-model-name qwen3-30b \
   --tensor-parallel-size 2 --max-model-len 133120 --max-num-batched-tokens 133120 \
-  --hf-overrides '{"rope_scaling":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":40960}}' \
+  --hf-overrides ''{"rope_scaling":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":40960}}'' \
   --gpu-memory-utilization 0.92 --no-enable-prefix-caching --enforce-eager --port 8379
 # 启动日志应出现 GPU KV cache size: 703,360 tokens（base 为 351,616）
-# 压测命令见 docs/qwen3_30b_128k.md 与 reproduce.md
+# 且日志中 fused op unavailable 计数为 0
+
+# 3. 压测命令见 docs/qwen3_30b_128k.md 与 reproduce.md
 ```
