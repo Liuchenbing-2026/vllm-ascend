@@ -1195,16 +1195,25 @@ class KVPoolScheduler:
 
 
 class LookupKeyClient:
+    # An IPC round trip takes microseconds; this bound only exists so that a
+    # dead or wedged lookup server cannot block the scheduler forever.
+    RECV_TIMEOUT_MS = 10_000
+
     def __init__(self, vllm_config: "VllmConfig"):
         self.encoder = MsgpackEncoder()
         self.ctx = zmq.Context()  # type: ignore[attr-defined]
-        socket_path = get_zmq_rpc_path_lookup(vllm_config)
-        self.socket = make_zmq_socket(
+        self.socket_path = get_zmq_rpc_path_lookup(vllm_config)
+        self.socket = self._open_socket()
+
+    def _open_socket(self):
+        socket = make_zmq_socket(
             self.ctx,
-            socket_path,
+            self.socket_path,
             zmq.REQ,  # type: ignore[attr-defined]
             bind=False,
         )
+        socket.setsockopt(zmq.RCVTIMEO, self.RECV_TIMEOUT_MS)  # type: ignore[attr-defined]
+        return socket
 
     def lookup(
         self,
@@ -1223,10 +1232,25 @@ class LookupKeyClient:
             hbm_hit_tokens.to_bytes(4, byteorder="big"),
             *hash_frames,
         ]
-        self.socket.send_multipart(all_frames, copy=False)
-        resp = self.socket.recv()
+        try:
+            self.socket.send_multipart(all_frames, copy=False)
+            resp = self.socket.recv()
+        except zmq.ZMQError:  # type: ignore[attr-defined]
+            # Without the timeout this call blocks the scheduler forever; with
+            # it we get here. A REQ socket stays wedged after a failed
+            # exchange, so rebuild it and let the caller recompute instead.
+            logger.exception(
+                "KV pool lookup RPC failed (token_len=%d); treating it as a cache miss.",
+                token_len,
+            )
+            self._reset_socket()
+            return 0
         result = int.from_bytes(resp, "big")
         return result
+
+    def _reset_socket(self):
+        self.socket.close(linger=0)
+        self.socket = self._open_socket()
 
     def close(self):
         self.socket.close(linger=0)

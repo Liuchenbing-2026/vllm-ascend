@@ -483,29 +483,44 @@ class LookupKeyServer:
 
         def process_request():
             while self.running:
-                all_frames = self.socket.recv_multipart(copy=False)
-                token_len = int.from_bytes(all_frames[0], byteorder="big")
-                kv_group_ids = self.decoder.decode([all_frames[1]])
-                hbm_hit_tokens = int.from_bytes(all_frames[2], byteorder="big")
-                hashes_str = self.decoder.decode(all_frames[3:])
-                result = self.pool_worker.lookup_scheduler(
-                    token_len,
-                    hashes_str,
-                    kv_group_ids,
-                    use_layerwise=False,
-                    hbm_hit_tokens=hbm_hit_tokens,
-                )
-                logger.debug(
-                    "KV pool lookup response token_len=%d groups=%s hit_tokens=%d",
-                    token_len,
-                    kv_group_ids,
-                    result,
-                )
-                response = result.to_bytes(4, "big")
-                self.socket.send(response)
+                try:
+                    all_frames = self.socket.recv_multipart(copy=False)
+                    token_len = int.from_bytes(all_frames[0], byteorder="big")
+                    kv_group_ids = self.decoder.decode([all_frames[1]])
+                    hbm_hit_tokens = int.from_bytes(all_frames[2], byteorder="big")
+                    hashes_str = self.decoder.decode(all_frames[3:])
+                    result = self.pool_worker.lookup_scheduler(
+                        token_len,
+                        hashes_str,
+                        kv_group_ids,
+                        use_layerwise=False,
+                        hbm_hit_tokens=hbm_hit_tokens,
+                    )
+                    logger.debug(
+                        "KV pool lookup response token_len=%d groups=%s hit_tokens=%d",
+                        token_len,
+                        kv_group_ids,
+                        result,
+                    )
+                    response = result.to_bytes(4, "big")
+                except Exception:  # noqa: BLE001 - must never tear down the reply loop
+                    if not self.running:
+                        return
+                    # Without a reply the REQ/REP pair wedges the scheduler
+                    # forever, so answer "no hit tokens": the scheduler then
+                    # recomputes the request instead of hanging.
+                    logger.exception("KV pool lookup handler failed; replying 0 hit tokens.")
+                    response = (0).to_bytes(4, "big")
+                try:
+                    self.socket.send(response)
+                except zmq.ZMQError:  # type: ignore[attr-defined]
+                    if self.running:
+                        raise
+                    return
 
         self.thread = threading.Thread(target=process_request, daemon=True)
         self.thread.start()
 
     def close(self):
+        self.running = False
         self.socket.close(linger=0)

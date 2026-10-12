@@ -23,6 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
+import zmq
 from vllm.v1.kv_cache_interface import (
     FullAttentionSpec,
     KVCacheGroupSpec,
@@ -950,6 +951,33 @@ class TestLookupKeyClient(unittest.TestCase):
         client = LookupKeyClient(config)
         client.close()
         mock_socket.close.assert_called_once_with(linger=0)
+
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.pool_scheduler.make_zmq_socket")
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.pool_scheduler.MsgpackEncoder")
+    def test_lookup_times_out_and_rebuilds_a_wedged_socket(self, mock_encoder_cls, mock_make_socket):
+        """A dead lookup server must degrade to a miss, not block forever."""
+        config = MagicMock()
+        config.parallel_config.data_parallel_rank = 0
+        config.kv_transfer_config.kv_connector_extra_config = {}
+        mock_encoder_cls.return_value.encode.return_value = [b"frame"]
+
+        wedged_socket = MagicMock()
+        wedged_socket.recv.side_effect = zmq.Again()  # what RCVTIMEO raises
+        fresh_socket = MagicMock()
+        fresh_socket.recv.return_value = (5).to_bytes(4, "big")
+        mock_make_socket.side_effect = [wedged_socket, fresh_socket]
+
+        client = LookupKeyClient(config)
+        self.assertEqual(wedged_socket.setsockopt.call_args.args, (zmq.RCVTIMEO, LookupKeyClient.RECV_TIMEOUT_MS))
+
+        self.assertEqual(client.lookup(64, [b"\xaa\xbb"], hbm_hit_tokens=16), 0)
+
+        wedged_socket.close.assert_called_once_with(linger=0)
+        self.assertIs(client.socket, fresh_socket)
+        # The rebuilt REQ socket carries the timeout and is used next.
+        self.assertEqual(fresh_socket.setsockopt.call_args.args, (zmq.RCVTIMEO, LookupKeyClient.RECV_TIMEOUT_MS))
+        self.assertEqual(client.lookup(64, [b"\xaa\xbb"]), 5)
+        fresh_socket.recv.assert_called_once()
 
 
 class TestKVPoolSchedulerStoreQueryKeys(unittest.TestCase):

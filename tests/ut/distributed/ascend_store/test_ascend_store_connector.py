@@ -15,9 +15,13 @@
 # This file is a part of the vllm-ascend project.
 #
 
+import queue
+import time
 import types
 import unittest
 from unittest.mock import MagicMock, patch
+
+import zmq
 
 # isort: off
 import tests.ut.distributed.ascend_store._mock_deps  # noqa: F401, E402
@@ -638,6 +642,91 @@ class TestAscendStoreConnectorLayerwise(unittest.TestCase):
             )
 
             self.assertFalse(connector.prepare_mamba_state_copy(MagicMock()))
+
+
+class TestLookupKeyServer(unittest.TestCase):
+    """A failing lookup handler must not kill the reply loop."""
+
+    connector_mod: types.ModuleType
+
+    @classmethod
+    def setUpClass(cls):
+        from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store import ascend_store_connector
+
+        cls.connector_mod = ascend_store_connector
+
+    class _FakeRepSocket:
+        """Minimal zmq REP stand-in driven by an inbox queue."""
+
+        def __init__(self):
+            self.inbox: queue.SimpleQueue = queue.SimpleQueue()
+            self.sent: list[bytes] = []
+            self.closed = False
+
+        def recv_multipart(self, copy=False):
+            frames = self.inbox.get()
+            if frames is None:
+                raise zmq.ZMQError()  # emulate recv() on a closed socket
+            return frames
+
+        def send(self, response):
+            self.sent.append(response)
+
+        def close(self, linger=0):
+            self.closed = True
+            self.inbox.put(None)
+
+    @staticmethod
+    def _request_frames():
+        return [(8).to_bytes(4, "big"), b"groups", (0).to_bytes(4, "big"), b"hash"]
+
+    def _start_server(self, pool_worker):
+        socket = self._FakeRepSocket()
+        decoder = MagicMock()
+        decoder.decode.side_effect = lambda frames: list(frames)
+        config = MagicMock()
+        config.parallel_config.data_parallel_rank = 0
+        config.kv_transfer_config.kv_connector_extra_config = {}
+        with (
+            patch.object(self.connector_mod, "make_zmq_socket", return_value=socket),
+            patch.object(self.connector_mod, "MsgpackDecoder", return_value=decoder),
+        ):
+            server = self.connector_mod.LookupKeyServer(pool_worker, config)
+        self.addCleanup(server.ctx.term)
+        return server, socket
+
+    def _wait_for_replies(self, socket, count, timeout=5.0):
+        deadline = time.monotonic() + timeout
+        while len(socket.sent) < count and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(len(socket.sent), count)
+
+    def test_failing_handler_replies_zero_and_keeps_the_thread_alive(self):
+        pool_worker = MagicMock()
+        pool_worker.lookup_scheduler.side_effect = [RuntimeError("lookup exploded"), 7]
+        server, socket = self._start_server(pool_worker)
+
+        socket.inbox.put(self._request_frames())
+        self._wait_for_replies(socket, 1)
+        self.assertEqual(socket.sent, [(0).to_bytes(4, "big")])
+        self.assertTrue(server.thread.is_alive())
+
+        # The next request is still served, so the scheduler never wedges.
+        socket.inbox.put(self._request_frames())
+        self._wait_for_replies(socket, 2)
+        self.assertEqual(socket.sent[1], (7).to_bytes(4, "big"))
+
+    def test_close_stops_the_request_loop(self):
+        pool_worker = MagicMock()
+        pool_worker.lookup_scheduler.return_value = 3
+        server, socket = self._start_server(pool_worker)
+
+        server.close()
+        server.thread.join(timeout=5.0)
+
+        self.assertFalse(server.running)
+        self.assertTrue(socket.closed)
+        self.assertFalse(server.thread.is_alive())
 
 
 if __name__ == "__main__":
