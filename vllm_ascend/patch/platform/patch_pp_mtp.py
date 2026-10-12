@@ -61,6 +61,21 @@ def _use_pp_ipc_runtime_patch(vllm_config, use_pp: bool) -> bool:
     return not getattr(vllm_config, "use_v2_model_runner", False)
 
 
+def _is_placeholder_only_spec_tokens(spec_token_ids) -> bool:
+    """Whether every scheduled speculative slot is the ``-1`` placeholder.
+
+    Upstream counts placeholder slots as valid speculative tokens when it
+    slices the synchronous PP payload, so a request that carries only
+    placeholders ends up with a zero-length slice even though its real token
+    was scheduled (issue #18129).
+    """
+    if not spec_token_ids:
+        return False
+    from vllm.v1.sample.rejection_sampler import PLACEHOLDER_TOKEN_ID
+
+    return all(token_id == PLACEHOLDER_TOKEN_ID for token_id in spec_token_ids)
+
+
 def _patch_model_runner_output() -> None:
     from vllm.v1 import outputs as outputs_mod
 
@@ -189,7 +204,11 @@ def _patch_scheduler_make_cached_request_data() -> None:
         finally:
             self.scheduler_config.async_scheduling = saved_async
 
-        if not saved_async or not use_pp_ipc_runtime_patch or not cached_reqs_data.new_token_ids:
+        # The synchronous PP payload is the only one that carries a per-request
+        # sampled-token list. When the wrapped call ran with async scheduling the
+        # list is omitted entirely, so an empty list means there is nothing to
+        # repair.
+        if not cached_reqs_data.new_token_ids:
             return cached_reqs_data
 
         for req_index, req in enumerate(chain(running_reqs, resumed_reqs)):
@@ -198,6 +217,15 @@ def _patch_scheduler_make_cached_request_data() -> None:
             if cached_reqs_data.new_token_ids[req_index]:
                 continue
             if req.num_output_tokens <= 0 or not req.all_token_ids:
+                continue
+            if not saved_async and not _is_placeholder_only_spec_tokens(spec_decode_tokens.get(req.request_id)):
+                # Synchronous PP without the IPC backport: an empty slice built
+                # from real speculative tokens is intentional (the step only
+                # verifies drafts, so there is no confirmed token to forward).
+                # Only a placeholder-only slot list reveals the upstream bug
+                # where the ``-1`` placeholder is subtracted as a real spec
+                # token, dropping the last confirmed token and desynchronising
+                # the scheduler from the PP worker (issue #18129).
                 continue
             cached_reqs_data.new_token_ids[req_index] = [req.all_token_ids[-1]]
         return cached_reqs_data

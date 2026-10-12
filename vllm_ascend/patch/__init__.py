@@ -617,7 +617,11 @@
 #    How：
 #       Temporarily build cached request data with sync-PP semantics in PP IPC
 #       mode, then fill the last confirmed output token for requests whose
-#       clamped upstream slice is empty.
+#       clamped upstream slice is empty. The same backfill is applied to the
+#       upstream synchronous PP payload (including Model Runner V2), where
+#       placeholder-only speculative tokens combined with a single scheduled
+#       token also produce an empty slice and would otherwise drop a real token
+#       (issue #18129).
 #    Related PR (if no, explain why):
 #       Backport of local vLLM PP+MTP branch changes.
 #    Future Plan:

@@ -439,3 +439,116 @@ def test_pp_ipc_cached_request_data_skips_empty_output_tokens():
         req_to_new_blocks={"req-0": blocks},
     )
     assert cached.new_token_ids == [[]]
+
+
+def _make_pp_scheduler(use_v2_model_runner: bool, async_scheduling: bool) -> Scheduler:
+    scheduler = Scheduler.__new__(Scheduler)
+    scheduler.use_pp = True
+    scheduler.use_v2_model_runner = use_v2_model_runner
+    scheduler.scheduler_config = SimpleNamespace(async_scheduling=async_scheduling)
+    scheduler.vllm_config = SimpleNamespace(
+        kv_transfer_config=None,
+        speculative_config=object(),
+        use_v2_model_runner=use_v2_model_runner,
+    )
+    scheduler.prev_step_scheduled_req_ids = set()
+    return scheduler
+
+
+@pytest.mark.parametrize("use_v2_model_runner", [False, True])
+def test_pp_sync_cached_request_data_backfills_placeholder_only_spec_token(use_v2_model_runner):
+    """Synchronous PP must not drop the last real token (issue #18129).
+
+    ``num_scheduled_tokens == 1`` with ``scheduled_spec_decode_tokens == [-1]``
+    means the only scheduled speculative token is the placeholder. Upstream
+    subtracts it from the scheduled count and produces a zero-length slice, so
+    without a backfill the PP worker never receives the last prompt token.
+    """
+    scheduler = _make_pp_scheduler(use_v2_model_runner, async_scheduling=False)
+    request = SimpleNamespace(
+        request_id="req-0",
+        all_token_ids=[10, 11, 12],
+        num_computed_tokens=2,
+        num_output_tokens=1,
+        num_output_placeholders=0,
+    )
+    blocks = SimpleNamespace(get_block_ids=lambda allow_none: ([0],))
+    cached = Scheduler._make_cached_request_data(
+        scheduler,
+        running_reqs=[request],
+        resumed_reqs=[],
+        num_scheduled_tokens={"req-0": 1},
+        spec_decode_tokens={"req-0": [-1]},
+        req_to_new_blocks={"req-0": blocks},
+    )
+    assert cached.new_token_ids == [[12]]
+
+
+def test_pp_sync_cached_request_data_keeps_padded_decode_payload():
+    """The backfill must not inflate a padded decode payload.
+
+    With placeholder slots counted in ``num_scheduled_tokens`` upstream already
+    slices a single real token, so the repair must leave it untouched.
+    """
+    scheduler = _make_pp_scheduler(use_v2_model_runner=True, async_scheduling=False)
+    request = SimpleNamespace(
+        request_id="req-0",
+        all_token_ids=[10, 11, 12],
+        num_computed_tokens=2,
+        num_output_tokens=1,
+        num_output_placeholders=0,
+    )
+    blocks = SimpleNamespace(get_block_ids=lambda allow_none: ([0],))
+    cached = Scheduler._make_cached_request_data(
+        scheduler,
+        running_reqs=[request],
+        resumed_reqs=[],
+        num_scheduled_tokens={"req-0": 2},
+        spec_decode_tokens={"req-0": [-1]},
+        req_to_new_blocks={"req-0": blocks},
+    )
+    assert cached.new_token_ids == [[12]]
+
+
+def test_pp_sync_cached_request_data_keeps_prefill_chunk_payload():
+    """Prefill chunks keep their full payload."""
+    scheduler = _make_pp_scheduler(use_v2_model_runner=True, async_scheduling=False)
+    request = SimpleNamespace(
+        request_id="req-0",
+        all_token_ids=[0, 1, 2, 3, 4, 5, 6, 7],
+        num_computed_tokens=0,
+        num_output_tokens=0,
+        num_output_placeholders=0,
+    )
+    blocks = SimpleNamespace(get_block_ids=lambda allow_none: ([0],))
+    cached = Scheduler._make_cached_request_data(
+        scheduler,
+        running_reqs=[request],
+        resumed_reqs=[],
+        num_scheduled_tokens={"req-0": 4},
+        spec_decode_tokens={},
+        req_to_new_blocks={"req-0": blocks},
+    )
+    assert cached.new_token_ids == [[0, 1, 2, 3]]
+
+
+def test_pp_async_cached_request_data_omits_payload():
+    """Async PP (Model Runner V2) keeps omitting the payload; nothing to repair."""
+    scheduler = _make_pp_scheduler(use_v2_model_runner=True, async_scheduling=True)
+    request = SimpleNamespace(
+        request_id="req-0",
+        all_token_ids=[10, 11, 12],
+        num_computed_tokens=2,
+        num_output_tokens=1,
+        num_output_placeholders=0,
+    )
+    blocks = SimpleNamespace(get_block_ids=lambda allow_none: ([0],))
+    cached = Scheduler._make_cached_request_data(
+        scheduler,
+        running_reqs=[request],
+        resumed_reqs=[],
+        num_scheduled_tokens={"req-0": 1},
+        spec_decode_tokens={"req-0": [-1]},
+        req_to_new_blocks={"req-0": blocks},
+    )
+    assert cached.new_token_ids == []
