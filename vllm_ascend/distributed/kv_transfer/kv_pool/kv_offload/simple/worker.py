@@ -173,6 +173,14 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
         difference is recording the store barrier with ``torch.npu`` instead
         of the CUDA stream used by the upstream implementation.
         """
+        # A failed transfer never gets an event, so the ordered event list it
+        # belongs to would stall forever. Fail loudly instead of hanging.
+        backend_error = getattr(self._backend, "error", None)
+        if backend_error is not None:
+            raise RuntimeError(
+                "Ascend KV-offload copy backend failed; see the logged traceback for the original exception."
+            ) from backend_error
+
         metadata = self._connector_metadata
         if metadata is not None:
             if metadata.load_cpu_blocks:

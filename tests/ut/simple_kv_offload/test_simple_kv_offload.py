@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM Ascend project
 
+import contextlib
+import logging
+import queue
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -13,9 +17,15 @@ from vllm.distributed.kv_transfer.kv_connector.v1.simple_cpu_offload_connector i
 from vllm.v1.simple_kv_offload.metadata import SimpleCPUOffloadMetadata
 
 from vllm_ascend.distributed.kv_transfer.kv_pool.kv_offload.simple import (
+    copy_backend as copy_backend_module,
+)
+from vllm_ascend.distributed.kv_transfer.kv_pool.kv_offload.simple import (
     simple_cpu_offload_connector as connector_module,
 )
 from vllm_ascend.distributed.kv_transfer.kv_pool.kv_offload.simple import worker as worker_module
+from vllm_ascend.distributed.kv_transfer.kv_pool.kv_offload.simple.copy_backend import (
+    NPUDmaCopyBackend,
+)
 from vllm_ascend.distributed.kv_transfer.kv_pool.kv_offload.simple.simple_cpu_offload_connector import (
     AscendSimpleCPUOffloadConnector,
 )
@@ -232,3 +242,93 @@ def test_get_finished_records_store_barrier_on_npu(
     store_event = store_call["wait_event"]
     assert isinstance(store_event, FakeEvent)
     assert store_event.recorded_stream is current_stream
+
+
+class _RecordingNpuEvent:
+    def __init__(self) -> None:
+        self.recorded_stream = None
+
+    def record(self, stream) -> None:
+        self.recorded_stream = stream
+
+
+def _make_copy_backend(monkeypatch: pytest.MonkeyPatch) -> NPUDmaCopyBackend:
+    """Build an unstarted backend whose NPU calls are inert on CPU."""
+    monkeypatch.setattr(
+        torch,
+        "npu",
+        SimpleNamespace(
+            Event=_RecordingNpuEvent,
+            set_device=lambda device: None,
+            stream=lambda stream: contextlib.nullcontext(),
+        ),
+        raising=False,
+    )
+
+    backend = NPUDmaCopyBackend()
+    backend._device = torch.device("cpu")
+    backend._load_stream = object()
+    backend._store_stream = object()
+    backend._load_params = object()
+    backend._store_params = object()
+    backend._queue = queue.SimpleQueue()
+    return backend
+
+
+def test_copy_loop_survives_copy_failure_and_records_error(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A raising copy must not kill the thread nor strand later transfers."""
+    backend = _make_copy_backend(monkeypatch)
+    failure = RuntimeError("aclrtMemcpyBatchAsync failed")
+    calls: list[list[int]] = []
+
+    def fake_copy_blocks(src_blocks, dst_blocks, params) -> None:
+        calls.append(list(src_blocks))
+        if len(calls) == 1:
+            raise failure
+
+    monkeypatch.setattr(copy_backend_module, "copy_blocks", fake_copy_blocks)
+
+    failed_events: list[tuple[int, object]] = []
+    ok_events: list[tuple[int, object]] = []
+    backend.launch_copy([0], [1], is_store=False, event_idx=7, events_list=failed_events)
+    backend.launch_copy([2], [3], is_store=False, event_idx=8, events_list=ok_events)
+    backend._queue.put(None)
+
+    with caplog.at_level(logging.ERROR):
+        backend._copy_loop()
+
+    # The failing job is dropped, but the loop kept draining the queue.
+    assert calls == [[0], [2]]
+    assert backend.error is failure
+    assert failed_events == []
+    assert [event_idx for event_idx, _ in ok_events] == [8]
+    assert "NPU KV-offload load copy failed" in caplog.text
+    assert "aclrtMemcpyBatchAsync failed" in caplog.text
+
+
+def test_shutdown_reports_a_recorded_copy_failure(caplog: pytest.LogCaptureFixture) -> None:
+    backend = NPUDmaCopyBackend()
+    backend._queue = queue.SimpleQueue()
+    backend._thread = threading.Thread(target=lambda: None)
+    backend._thread.start()
+    backend._error = RuntimeError("aclrtMemcpyBatchAsync failed")
+
+    with caplog.at_level(logging.ERROR):
+        backend.shutdown()
+
+    assert "recorded a failed transfer" in caplog.text
+
+
+def test_get_finished_raises_when_copy_backend_failed() -> None:
+    """The stranded request must fail loudly instead of waiting forever."""
+    failure = RuntimeError("aclrtMemcpyBatchAsync failed")
+    worker = SimpleCPUOffloadNPUWorker.__new__(SimpleCPUOffloadNPUWorker)
+    worker._backend = SimpleNamespace(error=failure)
+
+    with pytest.raises(RuntimeError, match="copy backend failed") as excinfo:
+        worker.get_finished(set())
+
+    assert excinfo.value.__cause__ is failure
