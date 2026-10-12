@@ -1342,6 +1342,27 @@ class FinegrainedTPConfig:
 
         vc = vllm_config
         enabled_configs = []
+        # The fine-grained TP groups are created per pipeline stage inside
+        # init_ascend_model_parallel, while the dense weights they split only exist on the
+        # first (embedding) or last (lm_head) stage. Pipeline parallelism is therefore
+        # documented as unsupported (docs/source/user_guide/feature_guide/Fine_grained_TP.md)
+        # and has to be rejected here: the group layout would otherwise silently pair ranks
+        # from different stages and hang the first cross-DP exchange. A knob of 1 requests
+        # no split, so it stays allowed.
+        if vc.parallel_config.pipeline_parallel_size > 1 and any(
+            size > 1
+            for size in (
+                self.oproj_tensor_parallel_size,
+                self.lmhead_tensor_parallel_size,
+                self.embedding_tensor_parallel_size,
+                self.mlp_tensor_parallel_size,
+            )
+        ):
+            raise AssertionError(
+                "finegrained_tp_config does not support pipeline_parallel_size > 1, got "
+                f"pipeline_parallel_size={vc.parallel_config.pipeline_parallel_size}. "
+                "Set pipeline_parallel_size=1 or disable the fine-grained TP knobs."
+            )
         if self.oproj_tensor_parallel_size > 1 or self.mlp_tensor_parallel_size > 1:
             # o_proj's _forward_o_proj reshape misaligns under tp > 1; mlp is untested there.
             if vc.parallel_config.tensor_parallel_size > 1:

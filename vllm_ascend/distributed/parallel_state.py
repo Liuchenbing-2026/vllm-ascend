@@ -181,15 +181,20 @@ def init_ascend_model_parallel(
         if group_size is None:
             return None
         if group_size not in _group_cache:
-            rank_grid = torch.arange(world_size).reshape(global_pp_size, global_dp_size, global_tp_size)
+            # A fine-grained TP group splits the DP axis of the rank layout, so it
+            # must keep pp / pcp / tp / external_dp fixed. Rebuilding the grid as
+            # (pp, dp, tp) instead pairs ranks from different pipeline stages
+            # whenever pp > 1 and silently hangs the first cross-DP exchange.
             num_chunks = global_dp_size // group_size
             group_ranks = []
-            for pp_idx in range(global_pp_size):
-                stage_ranks = rank_grid[pp_idx]  # (dp, tp)
-                for chunk in range(num_chunks):
-                    for tp_idx in range(global_tp_size):
-                        group = stage_ranks[chunk * group_size : (chunk + 1) * group_size, tp_idx].tolist()
-                        group_ranks.append(group)
+            for external_dp_ranks in all_ranks:  # (dp, pp, pcp, tp)
+                for pp_idx in range(global_pp_size):
+                    for pcp_idx in range(global_pcp_size):
+                        for tp_idx in range(global_tp_size):
+                            dp_ranks = external_dp_ranks[:, pp_idx, pcp_idx, tp_idx]  # (dp,)
+                            for chunk in range(num_chunks):
+                                group = dp_ranks[chunk * group_size : (chunk + 1) * group_size].tolist()
+                                group_ranks.append(group)
             pg = init_model_parallel_group(group_ranks, get_world_group().local_rank, backend, group_name=group_name)
             _group_cache[group_size] = pg
 
