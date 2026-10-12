@@ -1,0 +1,16 @@
+[{
+    "op": "KvCacheInt8Store",
+    "language": "cpp",
+    "input_desc": [
+        {"name": "x", "param_type": "required", "format": ["ND"], "type": ["bfloat16"]},
+        {"name": "scale", "param_type": "required", "format": ["ND"], "type": ["float32"]},
+        {"name": "slots", "param_type": "required", "format": ["ND"], "type": ["int32"]}
+    ],
+    "output_desc": [
+        {"name": "cache", "param_type": "required", "format": ["ND"], "type": ["int8"]}
+    ],
+    "attr": [
+        {"name": "num_blocks", "type": "int", "default_value": "0", "param_type": "required"},
+        {"name": "block_size", "type": "int", "default_value": "0", "param_type": "required"}
+    ]
+}]

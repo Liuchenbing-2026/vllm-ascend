@@ -53,12 +53,39 @@ const OpApi &GetOpApi()
     return api;
 }
 
+// aclnnKvCacheInt8Store: (x, scale, slots, num_blocks, block_size, cache)
+using GetWorkspaceSizeI8Fn = aclnnStatus (*)(const aclTensor *, const aclTensor *, const aclTensor *,
+    int64_t, int64_t, aclTensor *, uint64_t *, aclOpExecutor **);
+
+struct OpApiI8 {
+    GetWorkspaceSizeI8Fn getWorkspaceSize = nullptr;
+    RunFn run = nullptr;
+};
+
+const OpApiI8 &GetOpApiI8()
+{
+    static const OpApiI8 api = [] {
+        void *handle = dlopen(kOpApiSoPath, RTLD_NOW | RTLD_GLOBAL);
+        TORCH_CHECK(handle != nullptr, "dlopen ", kOpApiSoPath, " failed: ", dlerror());
+        OpApiI8 resolved;
+        resolved.getWorkspaceSize = reinterpret_cast<GetWorkspaceSizeI8Fn>(
+            dlsym(handle, "aclnnKvCacheInt8StoreGetWorkspaceSize"));
+        resolved.run = reinterpret_cast<RunFn>(dlsym(handle, "aclnnKvCacheInt8Store"));
+        TORCH_CHECK(resolved.getWorkspaceSize != nullptr && resolved.run != nullptr,
+            "dlsym aclnnKvCacheInt8Store failed: ", dlerror());
+        return resolved;
+    }();
+    return api;
+}
+
 aclDataType ToAclType(const at::ScalarType dtype)
 {
     switch (dtype) {
         case at::kBFloat16: return ACL_BF16;
         case at::kFloat: return ACL_FLOAT;
         case at::kByte: return ACL_UINT8;
+        case at::kChar: return ACL_INT8;
+        case at::kInt: return ACL_INT32;
         default:
             TORCH_CHECK(false, "unsupported dtype for kv_cache_turbo_quant: ", dtype);
     }
@@ -129,6 +156,52 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> KvCacheTurboQuant(con
     return std::make_tuple(quantIdx, quantQjl, quantNorm, quantGamma);
 }
 
+// Fused per-(kv_head, channel) int8 quantize + NZ-layout scatter into the paged
+// KV cache. cache is mutated in place: [num_blocks, block_size, H, D] int8,
+// addressed as NZ [num_blocks, H, D/32, block_size, 32].
+void KvCacheInt8Store(const at::Tensor &x, const at::Tensor &scale, const at::Tensor &slots,
+    at::Tensor cache)
+{
+    const OpApiI8 &api = GetOpApiI8();
+    TORCH_CHECK(x.dim() == 3, "x must be [num_tokens, num_kv_heads, head_dim]");
+    TORCH_CHECK(scale.dim() == 2 && scale.size(0) == x.size(1) && scale.size(1) == x.size(2),
+        "scale must be [num_kv_heads, head_dim]");
+    TORCH_CHECK(slots.dim() == 1 && slots.size(0) == x.size(0), "slots must be [num_tokens]");
+    TORCH_CHECK(cache.dim() == 4 && cache.size(2) == x.size(1) && cache.size(3) == x.size(2),
+        "cache must be [num_blocks, block_size, num_kv_heads, head_dim]");
+    const int64_t numBlocks = cache.size(0);
+    const int64_t blockSize = cache.size(1);
+
+    aclTensor *xTensor = WrapTensor(x);
+    aclTensor *scaleTensor = WrapTensor(scale);
+    aclTensor *slotsTensor = WrapTensor(slots);
+    aclTensor *cacheTensor = WrapTensor(cache);
+
+    uint64_t workspaceSize = 0;
+    aclOpExecutor *executor = nullptr;
+    aclnnStatus status = api.getWorkspaceSize(xTensor, scaleTensor, slotsTensor, numBlocks,
+        blockSize, cacheTensor, &workspaceSize, &executor);
+    TORCH_CHECK(status == ACL_SUCCESS,
+        "aclnnKvCacheInt8StoreGetWorkspaceSize failed, ret=", static_cast<int>(status));
+
+    at::Tensor workspace;
+    void *workspacePtr = nullptr;
+    if (workspaceSize > 0) {
+        workspace = at::empty({static_cast<int64_t>(workspaceSize)},
+            x.options().dtype(at::kByte));
+        workspacePtr = workspace.data_ptr();
+    }
+    aclrtStream stream = c10_npu::getCurrentNPUStream().stream();
+    status = api.run(workspacePtr, workspaceSize, executor, stream);
+
+    aclDestroyTensor(xTensor);
+    aclDestroyTensor(scaleTensor);
+    aclDestroyTensor(slotsTensor);
+    aclDestroyTensor(cacheTensor);
+    TORCH_CHECK(status == ACL_SUCCESS,
+        "aclnnKvCacheInt8Store failed, ret=", static_cast<int>(status));
+}
+
 } // namespace
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {}
@@ -137,9 +210,11 @@ TORCH_LIBRARY(turboquant, m)
 {
     m.def("kv_cache_turbo_quant(Tensor kv, Tensor rotation, Tensor qjl, int mse_bits) "
           "-> (Tensor, Tensor, Tensor, Tensor)");
+    m.def("kvtq_int8_store(Tensor x, Tensor scale, Tensor slots, Tensor(a!) cache) -> ()");
 }
 
 TORCH_LIBRARY_IMPL(turboquant, PrivateUse1, m)
 {
     m.impl("kv_cache_turbo_quant", &KvCacheTurboQuant);
+    m.impl("kvtq_int8_store", &KvCacheInt8Store);
 }
