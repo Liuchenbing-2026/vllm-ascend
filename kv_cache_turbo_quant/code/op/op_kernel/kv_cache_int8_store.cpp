@@ -46,7 +46,14 @@ public:
         for (uint32_t r = aiv; r < totalRows; r += nAiv) {
             const uint32_t n = r / td_->numKvHeads;
             const uint32_t h = r - n * td_->numKvHeads;
-            const uint32_t slot = static_cast<uint32_t>(slotPtr_[n]);
+            const int32_t slotRaw = slotPtr_[n];
+            // Graph-capture safety: padded/dummy slots may be negative or out
+            // of range. Skip those rows instead of scattering to invalid GM.
+            if (slotRaw < 0 ||
+                slotRaw >= static_cast<int32_t>(td_->numBlocks * td_->blockSize)) {
+                continue;
+            }
+            const uint32_t slot = static_cast<uint32_t>(slotRaw);
             const uint32_t blk = slot / td_->blockSize;
             const uint32_t off = slot - blk * td_->blockSize;
 

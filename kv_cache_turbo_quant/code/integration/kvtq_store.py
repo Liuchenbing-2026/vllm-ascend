@@ -212,15 +212,41 @@ def _i8_fused_ok():
     return _i8_fused_state["ok"]
 
 
+def _i8_is_capturing():
+    try:
+        fn = getattr(torch.npu, "is_current_stream_capturing", None)
+        return bool(fn()) if fn is not None else False
+    except Exception:
+        return False
+
+
+def _int8_ensure_bufs(self, num_kv_heads, head_dim, device):
+    """Allocate scale buffers with a data-independent default. Must run
+    eagerly (profile run) before graph capture: tensors created during
+    capture would land in the graph memory pool and be invalid on replay."""
+    for which in ("k", "v"):
+        if getattr(self, "_i8_%s_scale" % which, None) is None:
+            scale = torch.full((num_kv_heads, head_dim), 0.02,
+                               dtype=torch.float32, device=device)
+            setattr(self, "_i8_%s_scale" % which, scale)
+            setattr(self, "_i8_%s_aq" % which,
+                    scale.to(torch.bfloat16).view(num_kv_heads, 1, head_dim).contiguous())
+            setattr(self, "_i8_%s_cal" % which, False)
+
+
 def _int8_scale(self, x, which, num_kv_heads, head_dim):
     """Per-(kv_head, channel) affine int8 scale. Calibrated from the first
-    write (a full prefill, representative) and frozen; later outliers clamp."""
-    scale = getattr(self, "_i8_%s_scale" % which, None)
-    if scale is None:
-        scale = (x.float().abs().amax(dim=0) / 127.0).clamp_min(1e-8)  # (kvh, d)
-        setattr(self, "_i8_%s_scale" % which, scale)
-        setattr(self, "_i8_%s_aq" % which,
-                scale.to(torch.bfloat16).view(num_kv_heads, 1, head_dim).contiguous())
+    real (eager) write and frozen; later outliers clamp. Calibration updates
+    the buffers IN PLACE so graphs captured earlier keep seeing the new
+    values (they hold pointers to these tensors)."""
+    _int8_ensure_bufs(self, num_kv_heads, head_dim, x.device)
+    scale = getattr(self, "_i8_%s_scale" % which)
+    if not getattr(self, "_i8_%s_cal" % which) and not _i8_is_capturing():
+        cal = (x.float().abs().amax(dim=0) / 127.0).clamp_min(1e-8)  # (kvh, d)
+        scale.copy_(cal)
+        getattr(self, "_i8_%s_aq" % which).copy_(
+            scale.to(torch.bfloat16).view(num_kv_heads, 1, head_dim))
+        setattr(self, "_i8_%s_cal" % which, True)
         print("[KVTQ-INT8] pid=%d %s scale frozen, amax mean %.3f"
               % (os.getpid(), which, scale.mean().item() * 127), flush=True)
     return scale
@@ -236,13 +262,19 @@ def _int8_write(self, x, cache, slots, which):
     else:
         q = torch.round(x.float() / scale).clamp(-127, 127).to(torch.int8)
         view5 = cache.view(nb, kvh, d // 32, bs, 32)  # NZ relabel, no copy
-        sl = slots.long()
+        sl = slots.long().clamp(0, nb * bs - 1)  # capture dummy slots may be OOB
         view5[sl // bs, :, :, sl % bs, :] = q.view(-1, kvh, d // 32, 32)
     stats["quant_calls"] += 1
     stats["quant_tokens"] += x.shape[0]
 
 
 def _int8_reshape_and_cache(self, query, key, value, kv_cache, attn_metadata, output):
+    # Eager profile run reaches here before KV caches exist: allocate scale
+    # buffers now (normal allocator). During graph capture this is a no-op,
+    # so no allocation ever happens inside the graph memory pool.
+    if key is not None and key.numel() > 0:
+        _int8_ensure_bufs(self, key.shape[-2] if key.dim() == 3 else self.num_kv_heads,
+                          key.shape[-1], key.device)
     if len(kv_cache) > 1:
         if self.key_cache is None:
             self.key_cache, self.value_cache = kv_cache[0], kv_cache[1]

@@ -70,10 +70,22 @@
 - **低并发（c1/c2，无排队）TPOT 已转正**（-1.7% / -0.7%）：写路径融合后（单 kernel
   量化+散写，替代原来每 token 每层 ~7 个 PyTorch 小算子、~20-27ms/step 的 eager 调度），
   int8 读带宽收益（FIA antiquant 直接读 int8，HBM 流量减半）在单条 decode 上开始兑现。
-- **c4+ TPOT 仍高 10~36%，但口径需说明**：此时 int8 实际运行的 decode batch 约为
-  baseline 的 2 倍（5.28 vs 2.64 条 128k 序列同时在跑），per-step 计算量更大，
-  单请求 TPOT 上升是 batch-size 效应而非纯开销；换来的是吞吐近翻倍、TTFT 近减半。
-  若业务在意单请求时延上限，可通过 `--max-num-seqs` 限制并发额度换取 TPOT 持平。
+- **c4+ TPOT 高 10~36% 是 batch-size 效应，不是算子开销**（2026-10-12 已定位）：
+  int8 实际运行的 decode batch 约为 baseline 的 2 倍（5.28 vs 2.64 条 128k 序列同时在跑）。
+  证据链：(a) 同 batch 下直接对比（c1/c2）int8 TPOT 持平略优（-1.7% / -0.7%）；
+  (b) int8 c4 无排队（容量 5.28 ≥ 4），TPOT 253.6 = batch 2→4 的每步计算增长，
+  每翻倍 ~+15%，外推到 batch 5.28 得 ~290ms，与 c8 实测 289.9 吻合；
+  (c) 反向判别实验 `--max-num-seqs 2` + c8：TPOT 453ms（更差）——排队请求的
+  128k prefill 与 decode 抢占干扰主导，证明限并发换 TPOT 在 128k 场景不成立。
+  **结论：int8 的 TPOT 表现等于"base 跑到它根本跑不了的 batch 规模"时的表现，
+  同 batch 口径下无劣化。**
+- **图模式（关 enforce-eager）在 128k 场景是负收益，维持 eager 为正确配置**
+  （2026-10-12 实测）：baseline 图模式 c1 TPOT 316.6ms vs eager 193.8ms（劣化 63%，
+  FIA v2 graph 路径在长上下文 decode 更慢）；TTFT 不变（37.6s vs 37.9s）。
+  int8 模式的 eager 限制因此不构成实际损失。顺带完成图模式加固：融合 kernel 增加
+  slot 越界守卫（dummy slot 跳过）、scale 标定改为 eager 预分配 + 原地 copy_ 更新
+  （消除 capture 期 host-sync 与图池分配），int8 写路径现在可安全穿过 graph capture，
+  在 FIA v2 读路径移植（device seq_lens + antiquant 参数）前由守卫清晰报错。
 - tq4（TurboQuant 4bit，Python 解压读路径）TPOT 劣化 16~146x，仅作容量上限参考，不可用；
   其容量 3.88x 需待 int4 融合读算子（FIA int4 antiquant）落地后才可用化。
 - 精度：int8 per-channel 量化 gsm8k 73.5%（baseline bf16 74.0%），融合写与 PyTorch 写
