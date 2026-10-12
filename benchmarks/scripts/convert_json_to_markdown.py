@@ -91,7 +91,10 @@ if __name__ == "__main__":
         with open(test_file) as f:
             raw_result = json.loads(f.read())
 
-        if "serving" in str(test_file):
+        # Classify by the result file name only: a parent directory named e.g.
+        # "serving_reports" used to override the actual result type and made the
+        # script read serving-only keys from a latency/throughput result.
+        if "serving" in test_file.name:
             # this result is generated via `benchmark_serving.py`
 
             # update the test name of this result
@@ -101,7 +104,7 @@ if __name__ == "__main__":
             serving_results.append(raw_result)
             continue
 
-        elif "latency" in f.name:
+        elif "latency" in test_file.name:
             # this result is generated via `benchmark_latency.py`
 
             # update the test name of this result
@@ -117,7 +120,7 @@ if __name__ == "__main__":
             latency_results.append(raw_result)
             continue
 
-        elif "throughput" in f.name:
+        elif "throughput" in test_file.name:
             # this result is generated via `benchmark_throughput.py`
 
             # update the test name of this result
