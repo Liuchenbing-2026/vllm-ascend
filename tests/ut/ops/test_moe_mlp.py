@@ -65,9 +65,10 @@ def _w8a8_layer():
 
 
 class TestW8A8FusedMoEMethod(unittest.TestCase):
-    def _make_method(self, use_expert_weight_list=False):
+    def _make_method(self, use_expert_weight_list=False, eplb_active=False):
         method = AscendW8A8DynamicFusedMoEMethod.__new__(AscendW8A8DynamicFusedMoEMethod)
         method.use_expert_weight_list = use_expert_weight_list
+        method.eplb_active = eplb_active
         return method
 
     def test_apply_gmm1_act_quant_custom_op_path(self):
@@ -177,6 +178,80 @@ class TestW8A8FusedMoEMethod(unittest.TestCase):
         self.assertEqual(out, "out")
         self.assertEqual(mock_gmm.call_args.kwargs["split_item"], 2)
         self.assertEqual(mock_gmm.call_args.kwargs["per_token_scale"], ["pscale"])
+
+    def _w8a8_layer_bf16_scale(self):
+        """Stacked W8A8 layer whose retained scale already is the GMM1 dtype."""
+        layer = _w8a8_layer()
+        retained = torch.randn(1, 8).to(torch.bfloat16)
+        layer.w13_weight_scale = retained
+        layer.w13_weight_scale_fp32 = retained.float()
+        layer.w2_weight_scale = torch.randn(1, 16).to(torch.bfloat16)
+        return layer, retained
+
+    @patch("torch_npu.npu_dynamic_quant", return_value=("qx", "pscale"), create=True)
+    def test_apply_gmm1_reuses_retained_scale_without_eplb(self, _mock_quant):
+        method = self._make_method()
+        layer, retained = self._w8a8_layer_bf16_scale()
+        mlp_compute_input = _mlp_compute_input(layer=layer)
+        with patch("torch_npu.npu_grouped_matmul", return_value=["out"], create=True) as mock_gmm:
+            method.apply_gmm1(mlp_compute_input)
+        scale = mock_gmm.call_args.kwargs["scale"]
+        self.assertEqual(len(scale), 1)
+        self.assertIs(scale[0], retained)
+        self.assertEqual(scale[0].dtype, torch.bfloat16)
+
+    @patch("torch_npu.npu_dynamic_quant", return_value=("qx", "pscale"), create=True)
+    def test_apply_gmm1_reused_scale_matches_conversion(self, _mock_quant):
+        method = self._make_method()
+        layer, retained = self._w8a8_layer_bf16_scale()
+        mlp_compute_input = _mlp_compute_input(layer=layer)
+        with patch("torch_npu.npu_grouped_matmul", return_value=["out"], create=True) as mock_gmm:
+            method.apply_gmm1(mlp_compute_input)
+        reused = mock_gmm.call_args.kwargs["scale"][0]
+        converted = layer.w13_weight_scale_fp32.to(torch.bfloat16)
+        self.assertTrue(torch.equal(reused, converted))
+
+    @patch("torch_npu.npu_dynamic_quant", return_value=("qx", "pscale"), create=True)
+    def test_apply_gmm1_keeps_conversion_when_eplb_active(self, _mock_quant):
+        method = self._make_method(eplb_active=True)
+        layer, retained = self._w8a8_layer_bf16_scale()
+        mlp_compute_input = _mlp_compute_input(layer=layer)
+        with patch("torch_npu.npu_grouped_matmul", return_value=["out"], create=True) as mock_gmm:
+            method.apply_gmm1(mlp_compute_input)
+        scale = mock_gmm.call_args.kwargs["scale"]
+        self.assertIsNot(scale[0], retained)
+        self.assertEqual(scale[0].dtype, torch.bfloat16)
+        self.assertTrue(torch.equal(scale[0], retained))
+
+    @patch("torch_npu.npu_dynamic_quant", return_value=("qx", "pscale"), create=True)
+    def test_apply_gmm1_keeps_conversion_for_expert_lists(self, _mock_quant):
+        method = self._make_method(use_expert_weight_list=True)
+        layer = _w8a8_layer()
+        layer.w13_weight_list = [torch.randn(8, 16)]
+        layer.w2_weight_list = [torch.randn(16, 8)]
+        layer.w13_weight_scale_fp32_list = [torch.randn(8).float()]
+        layer.w2_weight_scale_list = [torch.randn(16).to(torch.bfloat16)]
+        mlp_compute_input = _mlp_compute_input(layer=layer)
+        with patch("torch_npu.npu_grouped_matmul", return_value=["out"], create=True) as mock_gmm:
+            method.apply_gmm1(mlp_compute_input)
+        scale = mock_gmm.call_args.kwargs["scale"]
+        self.assertEqual(len(scale), 1)
+        self.assertEqual(scale[0].dtype, torch.bfloat16)
+        self.assertIsNot(scale[0], layer.w13_weight_scale_fp32_list[0])
+
+    @patch("torch_npu.npu_dynamic_quant", return_value=("qx", "pscale"), create=True)
+    def test_apply_gmm1_keeps_conversion_on_dtype_mismatch(self, _mock_quant):
+        method = self._make_method()
+        layer = _w8a8_layer()
+        # Retained scale is FP32 but the GMM1 dtype is BF16: still must cast.
+        layer.w13_weight_scale = torch.randn(1, 8).float()
+        layer.w2_weight_scale = torch.randn(1, 16).to(torch.bfloat16)
+        mlp_compute_input = _mlp_compute_input(layer=layer)
+        with patch("torch_npu.npu_grouped_matmul", return_value=["out"], create=True) as mock_gmm:
+            method.apply_gmm1(mlp_compute_input)
+        scale = mock_gmm.call_args.kwargs["scale"]
+        self.assertIsNot(scale[0], layer.w13_weight_scale)
+        self.assertEqual(scale[0].dtype, torch.bfloat16)
 
     def test_apply_act_quant_and_gmm2(self):
         method = self._make_method()

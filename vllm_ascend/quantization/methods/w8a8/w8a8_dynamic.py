@@ -160,6 +160,14 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         self.use_expert_weight_list = self.dynamic_eplb or (
             vllm_config.use_v2_model_runner is True and vllm_config.parallel_config.enable_eplb is True
         )
+        # EPLB registers the FP32 scale copy (``w13_weight_scale_fp32``) as its
+        # weight view and can re-map experts on it, so the retained original
+        # BF16 scale must not be reused for GMM1 while EPLB is active.
+        self.eplb_active = bool(
+            self.use_expert_weight_list
+            or self.dynamic_eplb
+            or getattr(vllm_config.parallel_config, "enable_eplb", False)
+        )
         self.in_dtype = vllm_config.model_config.dtype
         try:
             device_group = get_mc2_group().device_group
@@ -514,10 +522,7 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         layer = mlp_compute_input.layer
         w1, w1_scale, _, w2_scale = self._get_mlp_weights(layer)
         w2_scale_dtype = w2_scale[0].dtype
-        # w1 may be a per-expert weight list (MRv2 EPLB: use_expert_weight_list),
-        # then scales must be per-expert too — aclnn grouped_matmul requires
-        # len(scale) == len(weight). The stacked path keeps a single-element list.
-        scale = [s.to(w2_scale_dtype) for s in w1_scale]
+        scale = self._gmm1_scale(layer, w1_scale, w2_scale_dtype)
         hidden_states = torch_npu.npu_grouped_matmul(
             x=[hidden_states],
             weight=w1 if isinstance(w1, list) else [w1],
@@ -532,6 +537,28 @@ class AscendW8A8DynamicFusedMoEMethod(AscendMoEScheme):
         )[0]
         dispose_tensor(mlp_compute_input.hidden_states)
         return hidden_states
+
+    def _gmm1_scale(self, layer: torch.nn.Module, w1_scale: list, target_dtype: torch.dtype) -> list:
+        """Return the GMM1 scale list cast to ``target_dtype``.
+
+        ``_get_mlp_weights`` hands out the FP32 copy of the W13 scale, but the
+        per-call FP32->BF16 conversion allocates a temporary that already
+        exists: the retained ``layer.w13_weight_scale`` holds the same values.
+        Reuse it on eligible non-EPLB stacked-weight calls, and keep casting
+        per-expert (EPLB/MRv2) lists and dtype mismatches exactly as before.
+        """
+        # w1 may be a per-expert weight list (MRv2 EPLB: use_expert_weight_list),
+        # then scales must be per-expert too — aclnn grouped_matmul requires
+        # len(scale) == len(weight). The stacked path keeps a single-element list.
+        if not getattr(self, "eplb_active", True) and not self.use_expert_weight_list and len(w1_scale) == 1:
+            retained = getattr(layer, "w13_weight_scale", None)
+            if (
+                isinstance(retained, torch.Tensor)
+                and retained.dtype == target_dtype
+                and retained.shape == w1_scale[0].shape
+            ):
+                return [retained]
+        return [s.to(target_dtype) for s in w1_scale]
 
     def apply_act_quant(self, mlp_compute_input: MoEMlpComputeInput, hidden_states: torch.Tensor):
         return torch_npu.npu_dynamic_quant(hidden_states, dst_type=self.act_quant_type)
