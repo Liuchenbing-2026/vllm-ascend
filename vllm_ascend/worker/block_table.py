@@ -11,6 +11,7 @@ from vllm.v1.kv_cache_interface import (
 from vllm.v1.utils import CpuGpuBuffer
 
 from vllm_ascend.core.kv_cache_interface import (
+    is_circular_buffer_kv_cache_spec,
     is_circular_kv_cache_spec,
     is_prefix_cacheable,
 )
@@ -61,7 +62,13 @@ class BlockTable:
             # logical pages, even if another backend advertises smaller sizes.
             kernel_sizes = [block_size]
             self.max_num_blocks_per_req = max_num_blocks_per_req = 1
-        self.is_circular_group = kv_cache_group is not None and is_circular_kv_cache_spec(kv_cache_group.kv_cache_spec)
+        # Only ``CircularBufferSpec`` groups own their circular addressing and
+        # want an all-PAD slot mapping from the generic writers. The GLM-5-Next
+        # KPool tail also reports ``is_circular`` but its writer consumes the
+        # slot mapping, so it must keep the ring math (see #17532).
+        self.is_circular_group = kv_cache_group is not None and is_circular_buffer_kv_cache_spec(
+            kv_cache_group.kv_cache_spec
+        )
         # Fixed for the group's lifetime. A bounded-replay sliding-window group
         # opts out of prefix caching, so it is the one group that has to keep
         # writing the replayed positions -- that write rebuilds its window.
