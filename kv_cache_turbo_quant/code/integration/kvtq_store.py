@@ -30,6 +30,8 @@ _MSE_BITS = int(os.environ.get("VLLM_ASCEND_KVTQ_BITS", "4"))
 _HEAD_DIM = 128
 _IDX_BYTES = {2: 32, 3: 48, 4: 64}[_MSE_BITS]
 _ROW_BYTES = _IDX_BYTES + 2  # + bf16 norm; qjl/gamma not stored in v1
+_MIN_FUSED_WRITE_TOKENS = 1024
+_MIN_NATIVE_READ_TOKENS = 65536
 
 CENTROIDS = {
     2: [-0.1335033178, -0.04002048075, 0.04002048075, 0.1335033178],
@@ -105,7 +107,9 @@ def _write_cache(self, tensor, cache_bf16, slots):
     rot32, qjl32 = _get_quant_matrices(x.device)
     idx, _qjlb, norm, _gamma = torch.ops.turboquant.kv_cache_turbo_quant(
         x, rot32, qjl32, _MSE_BITS)
-    if _MSE_BITS == 4:
+    # The first full-model matrix showed a short-scenario regression for the
+    # fused writer. Keep the existing short path; large prefill writes improved.
+    if _MSE_BITS == 4 and x.shape[0] >= _MIN_FUSED_WRITE_TOKENS:
         from kvtq_write import PackedCacheWriter
 
         writer = getattr(self, '_kvtq_packed_writer', None)
@@ -207,6 +211,13 @@ def _dequant_dense(self, cache_bf16, block_table, seq_lens_list,
                    attn_metadata=None, segment='decode'):
     if _MSE_BITS != 4:
         return _dequant_dense_reference(self, cache_bf16, block_table, seq_lens_list)
+    if sum(seq_lens_list) >= _MIN_NATIVE_READ_TOKENS:
+        key = ('native_paged_read4', str(cache_bf16.device))
+        if key not in _cache:
+            from kvtq_native_read import NativePagedReader
+            _cache[key] = NativePagedReader()
+        return _cache[key](cache_bf16.view(torch.uint8), block_table, seq_lens_list,
+                           _get_byte_lut(cache_bf16.device), attn_metadata, segment)
     key = ('paged_read4', str(cache_bf16.device))
     if key not in _cache:
         from kvtq_read import ModelNew
