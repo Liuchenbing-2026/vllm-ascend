@@ -1,0 +1,1 @@
+{"native_invocations": 38, "invocations_without_access_error": 38, "passed_codec_cases": 15, "passed_async_cases": 20, "exit_leak_bytes": [2097152], "all_memory_issues_closed": false, "scope": "known baseline2MiB exit leak remains separately open; native access checks are positive coverage"}

@@ -1,0 +1,21 @@
+{
+  "utc": "2026-10-13T18:16:52.512783+00:00",
+  "files": {
+    "kvtq_native_read.py": {
+      "sha256": "6f8d1c3ec931115a0e055c950c3bdc60aeef334f54f004a538097a5b833577c5",
+      "bytes": 2417
+    },
+    "torch_ext/tq_queued_read.cpp": {
+      "sha256": "165d45596be408186b9dc28a237aec86a2d645eea26a358ce6aa46bd115cbda8",
+      "bytes": 4954
+    },
+    "torch_ext/build_queued_read.py": {
+      "sha256": "4dd5b1c4e2c3b9a6ae85642317da2a575cbb4a3beb92e446305aeb1a4615da44",
+      "bytes": 926
+    },
+    "torch-extensions/tq_queued_read/tq_queued_read.so": {
+      "sha256": "5a79f9f73a19820c9964533716dec202a779bf0a8e307e06e0c771ea64bd51d5",
+      "bytes": 334616
+    }
+  }
+}

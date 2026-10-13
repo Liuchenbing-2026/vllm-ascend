@@ -1,0 +1,715 @@
+{
+  "passed": 15,
+  "async_passed": 20,
+  "async_records": [
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "heads": 2,
+      "nondefault_stream": false,
+      "repeat": 0,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "heads": 2,
+      "nondefault_stream": false,
+      "repeat": 1,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "heads": 2,
+      "nondefault_stream": false,
+      "repeat": 2,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "heads": 2,
+      "nondefault_stream": false,
+      "repeat": 3,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "heads": 2,
+      "nondefault_stream": false,
+      "repeat": 4,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "heads": 2,
+      "nondefault_stream": true,
+      "repeat": 0,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "heads": 2,
+      "nondefault_stream": true,
+      "repeat": 1,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "heads": 2,
+      "nondefault_stream": true,
+      "repeat": 2,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "heads": 2,
+      "nondefault_stream": true,
+      "repeat": 3,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "heads": 2,
+      "nondefault_stream": true,
+      "repeat": 4,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        0,
+        33,
+        0,
+        257
+      ],
+      "heads": 3,
+      "nondefault_stream": false,
+      "repeat": 0,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        0,
+        33,
+        0,
+        257
+      ],
+      "heads": 3,
+      "nondefault_stream": false,
+      "repeat": 1,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        0,
+        33,
+        0,
+        257
+      ],
+      "heads": 3,
+      "nondefault_stream": false,
+      "repeat": 2,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        0,
+        33,
+        0,
+        257
+      ],
+      "heads": 3,
+      "nondefault_stream": false,
+      "repeat": 3,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        0,
+        33,
+        0,
+        257
+      ],
+      "heads": 3,
+      "nondefault_stream": false,
+      "repeat": 4,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        0,
+        33,
+        0,
+        257
+      ],
+      "heads": 3,
+      "nondefault_stream": true,
+      "repeat": 0,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        0,
+        33,
+        0,
+        257
+      ],
+      "heads": 3,
+      "nondefault_stream": true,
+      "repeat": 1,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        0,
+        33,
+        0,
+        257
+      ],
+      "heads": 3,
+      "nondefault_stream": true,
+      "repeat": 2,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        0,
+        33,
+        0,
+        257
+      ],
+      "heads": 3,
+      "nondefault_stream": true,
+      "repeat": 3,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "async_producer_reader_consumer",
+      "lengths": [
+        0,
+        33,
+        0,
+        257
+      ],
+      "heads": 3,
+      "nondefault_stream": true,
+      "repeat": 4,
+      "mismatched_bf16_bits": 0
+    }
+  ],
+  "records": [
+    {
+      "case": 0,
+      "total_tokens": 1,
+      "lengths": [
+        1
+      ],
+      "shape": [
+        1,
+        1,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "case": 0,
+      "variant": "same_lengths_changed_physical_pages",
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "case": 1,
+      "total_tokens": 432,
+      "lengths": [
+        15,
+        16,
+        17,
+        127,
+        128,
+        129
+      ],
+      "shape": [
+        432,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "case": 1,
+      "variant": "same_lengths_changed_physical_pages",
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "case": 2,
+      "total_tokens": 290,
+      "lengths": [
+        0,
+        33,
+        0,
+        257
+      ],
+      "shape": [
+        290,
+        3,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "case": 2,
+      "variant": "same_lengths_changed_physical_pages",
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "case": 3,
+      "total_tokens": 320,
+      "lengths": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "shape": [
+        320,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "case": 3,
+      "variant": "same_lengths_changed_physical_pages",
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "case": 4,
+      "total_tokens": 120060,
+      "lengths": [
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002,
+        2000,
+        2001,
+        2002
+      ],
+      "shape": [
+        120060,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "case": 4,
+      "variant": "same_lengths_changed_physical_pages",
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "case": 5,
+      "total_tokens": 0,
+      "lengths": [
+        0,
+        0
+      ],
+      "shape": [
+        0,
+        2,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "case": 6,
+      "total_tokens": 799,
+      "lengths": [
+        31,
+        257,
+        511
+      ],
+      "shape": [
+        799,
+        4,
+        128
+      ],
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "case": 6,
+      "variant": "same_lengths_changed_physical_pages",
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "long_c60",
+      "total_tokens": 120000,
+      "mismatched_bf16_bits": 0
+    },
+    {
+      "variant": "long_c128",
+      "total_tokens": 256000,
+      "mismatched_bf16_bits": 0
+    }
+  ],
+  "timings": [
+    {
+      "case": 0,
+      "tokens": 1,
+      "reader": "native_old",
+      "device_event_mean_us": 74.77200031280518,
+      "iterations": 20
+    },
+    {
+      "case": 0,
+      "tokens": 1,
+      "reader": "native",
+      "device_event_mean_us": 70.65600156784058,
+      "iterations": 20
+    },
+    {
+      "case": 1,
+      "tokens": 432,
+      "reader": "native_old",
+      "device_event_mean_us": 76.64700150489807,
+      "iterations": 20
+    },
+    {
+      "case": 1,
+      "tokens": 432,
+      "reader": "native",
+      "device_event_mean_us": 73.66899847984314,
+      "iterations": 20
+    },
+    {
+      "case": 2,
+      "tokens": 290,
+      "reader": "native_old",
+      "device_event_mean_us": 130.21399974822998,
+      "iterations": 20
+    },
+    {
+      "case": 2,
+      "tokens": 290,
+      "reader": "native",
+      "device_event_mean_us": 115.7539963722229,
+      "iterations": 20
+    },
+    {
+      "case": 3,
+      "tokens": 320,
+      "reader": "native_old",
+      "device_event_mean_us": 77.78199911117554,
+      "iterations": 20
+    },
+    {
+      "case": 3,
+      "tokens": 320,
+      "reader": "native",
+      "device_event_mean_us": 74.18299913406372,
+      "iterations": 20
+    },
+    {
+      "case": 4,
+      "tokens": 120060,
+      "reader": "native_old",
+      "device_event_mean_us": 361.5230083465576,
+      "iterations": 20
+    },
+    {
+      "case": 4,
+      "tokens": 120060,
+      "reader": "native",
+      "device_event_mean_us": 362.3699903488159,
+      "iterations": 20
+    },
+    {
+      "case": 6,
+      "tokens": 799,
+      "reader": "native_old",
+      "device_event_mean_us": 134.27599668502808,
+      "iterations": 20
+    },
+    {
+      "case": 6,
+      "tokens": 799,
+      "reader": "native",
+      "device_event_mean_us": 124.07200336456299,
+      "iterations": 20
+    },
+    {
+      "tokens": 120000,
+      "reader": "native_old",
+      "device_event_mean_us": 362.1109962463379,
+      "iterations": 20
+    },
+    {
+      "tokens": 120000,
+      "reader": "native",
+      "device_event_mean_us": 362.1469974517822,
+      "iterations": 20
+    },
+    {
+      "tokens": 256000,
+      "reader": "native_old",
+      "device_event_mean_us": 751.4289855957031,
+      "iterations": 20
+    },
+    {
+      "tokens": 256000,
+      "reader": "native",
+      "device_event_mean_us": 752.1240234375,
+      "iterations": 20
+    }
+  ],
+  "scope": "strict original BF16 read bits; micro latency is not model throughput"
+}

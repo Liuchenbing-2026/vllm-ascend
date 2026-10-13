@@ -1,0 +1,1 @@
+["docker", "exec", "tq-opt-20261011-model", "bash", "-lc", "source /usr/local/Ascend/cann-9.1.0/set_env.sh && export TORCH_EXTENSIONS_DIR=/ws/queued_read_20261014/torch-extensions MAX_JOBS=2 && exec /ws/.venv/bin/python /ws/queued_read_20261014/torch_ext/build_queued_read.py"]
