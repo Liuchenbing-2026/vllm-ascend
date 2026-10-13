@@ -1,0 +1,1858 @@
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c041604000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(0) on device 0
+======    code in :0 (serialNo:5104)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(11) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(12) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(13) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(14) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(15) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(16) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(17) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(18) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(19) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(8) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(9) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(10) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(11) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(12) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(13) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(14) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(15) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(16) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(17) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(18) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(19) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(20) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(21) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(22) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(23) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(24) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(25) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(26) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(27) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(28) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(29) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(30) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(31) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(32) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(33) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(34) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(35) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(36) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(37) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(38) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(39) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(8) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(9) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(10) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c04000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(0) on device 0
+======    code in :0 (serialNo:59762)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c08000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(1) on device 0
+======    code in :0 (serialNo:67979)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c0c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(1) on device 0
+======    code in :0 (serialNo:67987)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c10000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(2) on device 0
+======    code in :0 (serialNo:75316)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c14000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(2) on device 0
+======    code in :0 (serialNo:75324)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c18000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(3) on device 0
+======    code in :0 (serialNo:83261)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c1c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(3) on device 0
+======    code in :0 (serialNo:83269)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c20000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(4) on device 0
+======    code in :0 (serialNo:91158)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c24000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(4) on device 0
+======    code in :0 (serialNo:91166)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c28000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(5) on device 0
+======    code in :0 (serialNo:98959)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c2c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(5) on device 0
+======    code in :0 (serialNo:98967)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c30000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(6) on device 0
+======    code in :0 (serialNo:106260)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c34000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(6) on device 0
+======    code in :0 (serialNo:106268)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c38000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(7) on device 0
+======    code in :0 (serialNo:114065)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c3c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(7) on device 0
+======    code in :0 (serialNo:114073)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c40000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(8) on device 0
+======    code in :0 (serialNo:121890)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c44000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(8) on device 0
+======    code in :0 (serialNo:121898)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c48000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(9) on device 0
+======    code in :0 (serialNo:129731)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c4c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(9) on device 0
+======    code in :0 (serialNo:129739)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c50000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(10) on device 0
+======    code in :0 (serialNo:137488)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c54000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(10) on device 0
+======    code in :0 (serialNo:137496)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c58000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(11) on device 0
+======    code in :0 (serialNo:145245)
+
+====== WARNING: out of bounds of size 776
+======    at 0x12c042c5c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(11) on device 0
+======    code in :0 (serialNo:145253)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c60000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(12) on device 0
+======    code in :0 (serialNo:152276)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c64000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(12) on device 0
+======    code in :0 (serialNo:152284)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c68000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(13) on device 0
+======    code in :0 (serialNo:159207)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c6c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(13) on device 0
+======    code in :0 (serialNo:159215)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c70000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(14) on device 0
+======    code in :0 (serialNo:165610)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c74000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(14) on device 0
+======    code in :0 (serialNo:165618)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c78000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(15) on device 0
+======    code in :0 (serialNo:172541)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c7c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(15) on device 0
+======    code in :0 (serialNo:172549)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c80000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(16) on device 0
+======    code in :0 (serialNo:179480)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c84000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(16) on device 0
+======    code in :0 (serialNo:179488)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c88000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(17) on device 0
+======    code in :0 (serialNo:186327)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c8c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(17) on device 0
+======    code in :0 (serialNo:186335)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c90000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(18) on device 0
+======    code in :0 (serialNo:193246)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c94000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(18) on device 0
+======    code in :0 (serialNo:193254)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c98000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(19) on device 0
+======    code in :0 (serialNo:199481)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c042c9c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(19) on device 0
+======    code in :0 (serialNo:199489)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(11) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(12) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(13) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(14) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(15) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(16) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(17) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(18) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(19) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(8) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(9) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(10) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(11) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(12) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(13) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(14) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(15) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(16) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(17) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(18) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(19) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(20) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(21) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(22) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(23) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(24) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(25) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(26) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(27) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(28) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(29) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(30) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(31) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(32) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(33) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(34) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(35) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(36) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(37) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(38) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(39) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(8) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(9) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(10) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(8) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(9) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(10) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(11) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(12) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(13) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(14) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(15) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(16) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(17) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(18) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(19) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(31) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(32) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(33) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(34) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(35) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(36) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(37) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(38) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(39) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(8) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(9) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(10) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(11) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(12) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(13) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(14) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(15) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(16) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(17) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(18) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(19) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(20) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(21) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(22) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(23) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(24) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(25) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(26) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(27) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(28) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(29) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(30) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c04000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(0) on device 0
+======    code in :0 (serialNo:426083)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c08000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(1) on device 0
+======    code in :0 (serialNo:436136)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c0c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(1) on device 0
+======    code in :0 (serialNo:436144)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c10000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(2) on device 0
+======    code in :0 (serialNo:445869)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c14000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(2) on device 0
+======    code in :0 (serialNo:445877)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c18000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(3) on device 0
+======    code in :0 (serialNo:455598)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c1c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(3) on device 0
+======    code in :0 (serialNo:455606)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c20000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(4) on device 0
+======    code in :0 (serialNo:463933)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c24000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(4) on device 0
+======    code in :0 (serialNo:463941)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c28000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(5) on device 0
+======    code in :0 (serialNo:472740)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c2c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(5) on device 0
+======    code in :0 (serialNo:472748)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c30000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(6) on device 0
+======    code in :0 (serialNo:481579)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c34000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(6) on device 0
+======    code in :0 (serialNo:481587)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c38000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(7) on device 0
+======    code in :0 (serialNo:490342)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c3c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(7) on device 0
+======    code in :0 (serialNo:490350)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c40000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(8) on device 0
+======    code in :0 (serialNo:499165)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c44000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(8) on device 0
+======    code in :0 (serialNo:499173)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c48000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(9) on device 0
+======    code in :0 (serialNo:507932)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c4c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(9) on device 0
+======    code in :0 (serialNo:507940)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c50000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(10) on device 0
+======    code in :0 (serialNo:516163)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c54000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(10) on device 0
+======    code in :0 (serialNo:516171)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c58000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(11) on device 0
+======    code in :0 (serialNo:524978)
+
+====== WARNING: out of bounds of size 256
+======    at 0x12c042c5c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(11) on device 0
+======    code in :0 (serialNo:524986)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c60000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(12) on device 0
+======    code in :0 (serialNo:533149)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c64000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(12) on device 0
+======    code in :0 (serialNo:533157)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c68000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(13) on device 0
+======    code in :0 (serialNo:542000)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c6c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(13) on device 0
+======    code in :0 (serialNo:542008)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c70000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(14) on device 0
+======    code in :0 (serialNo:550835)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c74000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(14) on device 0
+======    code in :0 (serialNo:550843)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c78000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(15) on device 0
+======    code in :0 (serialNo:559610)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c7c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(15) on device 0
+======    code in :0 (serialNo:559618)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c80000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(16) on device 0
+======    code in :0 (serialNo:567841)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c84000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(16) on device 0
+======    code in :0 (serialNo:567849)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c88000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(17) on device 0
+======    code in :0 (serialNo:576676)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c8c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(17) on device 0
+======    code in :0 (serialNo:576684)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c90000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(18) on device 0
+======    code in :0 (serialNo:585419)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c94000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(18) on device 0
+======    code in :0 (serialNo:585427)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c98000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(19) on device 0
+======    code in :0 (serialNo:593346)
+
+====== WARNING: out of bounds of size 512
+======    at 0x12c042c9c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(19) on device 0
+======    code in :0 (serialNo:593354)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(8) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(9) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(10) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(11) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(12) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(13) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(14) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(15) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(16) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(17) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(18) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(19) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(31) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(32) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(33) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(34) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(35) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(36) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(37) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(38) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(39) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(8) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(9) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(10) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(11) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(12) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(13) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(14) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(15) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(16) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(17) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(18) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(19) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(20) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(21) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(22) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(23) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(24) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(25) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(26) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(27) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(28) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(29) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(30) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(8) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(9) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(10) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(11) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(12) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(13) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(14) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(15) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(16) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(17) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(18) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(19) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(39) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(8) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(9) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(10) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(11) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(12) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(13) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(14) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(15) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(16) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(17) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(18) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(19) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(20) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(21) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(22) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(23) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(24) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(25) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(26) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(27) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(28) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(29) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(30) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(31) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(32) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(33) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(34) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(35) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(36) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(37) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(38) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+====== WARNING: out of bounds of size 760
+======    at 0x12c042c04000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(0) on device 0
+======    code in :0 (serialNo:895222)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c04800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(0) on device 0
+======    code in :0 (serialNo:895223)
+
+====== WARNING: out of bounds of size 760
+======    at 0x12c042c08000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(1) on device 0
+======    code in :0 (serialNo:908349)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c08800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(1) on device 0
+======    code in :0 (serialNo:908350)
+
+====== WARNING: out of bounds of size 760
+======    at 0x12c042c0c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(1) on device 0
+======    code in :0 (serialNo:908357)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c0c800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(1) on device 0
+======    code in :0 (serialNo:908358)
+
+====== WARNING: out of bounds of size 760
+======    at 0x12c042c10000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(2) on device 0
+======    code in :0 (serialNo:920668)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c10800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(2) on device 0
+======    code in :0 (serialNo:920669)
+
+====== WARNING: out of bounds of size 760
+======    at 0x12c042c14000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(2) on device 0
+======    code in :0 (serialNo:920676)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c14800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(2) on device 0
+======    code in :0 (serialNo:920677)
+
+====== WARNING: out of bounds of size 760
+======    at 0x12c042c18000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(3) on device 0
+======    code in :0 (serialNo:933135)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c18800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(3) on device 0
+======    code in :0 (serialNo:933136)
+
+====== WARNING: out of bounds of size 760
+======    at 0x12c042c1c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(3) on device 0
+======    code in :0 (serialNo:933143)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c1c800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(3) on device 0
+======    code in :0 (serialNo:933144)
+
+====== WARNING: out of bounds of size 1016
+======    at 0x12c042c20000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(4) on device 0
+======    code in :0 (serialNo:945598)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c20800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(4) on device 0
+======    code in :0 (serialNo:945599)
+
+====== WARNING: out of bounds of size 1016
+======    at 0x12c042c24000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(4) on device 0
+======    code in :0 (serialNo:945606)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c24800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(4) on device 0
+======    code in :0 (serialNo:945607)
+
+====== WARNING: out of bounds of size 1016
+======    at 0x12c042c28000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(5) on device 0
+======    code in :0 (serialNo:957965)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c28800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(5) on device 0
+======    code in :0 (serialNo:957966)
+
+====== WARNING: out of bounds of size 1016
+======    at 0x12c042c2c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(5) on device 0
+======    code in :0 (serialNo:957973)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c2c800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(5) on device 0
+======    code in :0 (serialNo:957974)
+
+====== WARNING: out of bounds of size 1016
+======    at 0x12c042c30000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(6) on device 0
+======    code in :0 (serialNo:970508)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c30800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(6) on device 0
+======    code in :0 (serialNo:970509)
+
+====== WARNING: out of bounds of size 1016
+======    at 0x12c042c34000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(6) on device 0
+======    code in :0 (serialNo:970516)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c34800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(6) on device 0
+======    code in :0 (serialNo:970517)
+
+====== WARNING: out of bounds of size 1016
+======    at 0x12c042c38000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(7) on device 0
+======    code in :0 (serialNo:983039)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c38800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(7) on device 0
+======    code in :0 (serialNo:983040)
+
+====== WARNING: out of bounds of size 1016
+======    at 0x12c042c3c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(7) on device 0
+======    code in :0 (serialNo:983047)
+
+====== WARNING: out of bounds of size 8
+======    at 0x12c042c3c800 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(7) on device 0
+======    code in :0 (serialNo:983048)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c40000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(8) on device 0
+======    code in :0 (serialNo:994108)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c44000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(8) on device 0
+======    code in :0 (serialNo:994116)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c48000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(9) on device 0
+======    code in :0 (serialNo:1005633)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c4c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(9) on device 0
+======    code in :0 (serialNo:1005641)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c50000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(10) on device 0
+======    code in :0 (serialNo:1017238)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c54000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(10) on device 0
+======    code in :0 (serialNo:1017246)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c58000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(11) on device 0
+======    code in :0 (serialNo:1028791)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c5c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(11) on device 0
+======    code in :0 (serialNo:1028799)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c60000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(12) on device 0
+======    code in :0 (serialNo:1040328)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c64000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(12) on device 0
+======    code in :0 (serialNo:1040336)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c68000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(13) on device 0
+======    code in :0 (serialNo:1051977)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c6c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(13) on device 0
+======    code in :0 (serialNo:1051985)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c70000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(14) on device 0
+======    code in :0 (serialNo:1062958)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c74000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(14) on device 0
+======    code in :0 (serialNo:1062966)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c78000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(15) on device 0
+======    code in :0 (serialNo:1074527)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c7c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(15) on device 0
+======    code in :0 (serialNo:1074535)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c80000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(16) on device 0
+======    code in :0 (serialNo:1085452)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c84000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(16) on device 0
+======    code in :0 (serialNo:1085460)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c88000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(17) on device 0
+======    code in :0 (serialNo:1097117)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c8c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(17) on device 0
+======    code in :0 (serialNo:1097125)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c90000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(18) on device 0
+======    code in :0 (serialNo:1108798)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c94000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(18) on device 0
+======    code in :0 (serialNo:1108806)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c98000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(19) on device 0
+======    code in :0 (serialNo:1119435)
+
+====== WARNING: out of bounds of size 768
+======    at 0x12c042c9c000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(19) on device 0
+======    code in :0 (serialNo:1119443)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(8) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(9) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(10) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(11) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(12) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(13) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(14) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(15) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(16) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(17) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(18) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(19) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(39) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(2) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(3) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(4) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(5) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(6) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(7) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(8) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(9) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(10) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(11) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(12) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(13) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(14) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(15) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(16) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(17) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(18) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(19) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(20) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(21) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(22) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(23) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(24) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(25) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(26) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(27) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(28) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(29) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(30) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(31) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(32) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(33) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(34) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(35) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(36) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(37) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(38) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c044e04000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(0) on device 0
+======    code in :0 (serialNo:1449142)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c046604000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(0) on device 0
+======    code in :0 (serialNo:1489214)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+====== ERROR: LeakCheck: detected memory leaks
+
+======    Direct leak of 2097152 byte(s)
+======      at 0x12c041200000 on GM
+======      allocated in :0 (serialNo:1)
+
+====== SUMMARY: 2097152 byte(s) leaked in 1 allocation(s)
