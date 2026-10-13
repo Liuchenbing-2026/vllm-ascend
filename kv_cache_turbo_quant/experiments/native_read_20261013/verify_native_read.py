@@ -1,5 +1,6 @@
 """Strict read equality and isolated latency, outside formal model cohorts."""
 
+import argparse
 import importlib.util
 import json
 import sys
@@ -19,8 +20,15 @@ def load(name, path):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output-dir", default="/ws/native_read_20261013")
+    parser.add_argument("--precision-only", action="store_true")
+    args = parser.parse_args()
     root = Path("/ws/native_read_20261013")
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     sys.path.insert(0, str(root / "code/integration"))
+    sys.path.insert(0, "/ws/opt_20261012/verify")
     from kvtq_native_read import NativePagedReader
 
     reference = load(
@@ -72,20 +80,27 @@ def main():
             print(json.dumps(record), flush=True)
             assert mismatch == 0, record
             table.copy_(old_table)
-            for name, function in [
-                (
-                    "triton",
-                    partial(
-                        reference._dequant_dense,
-                        None,
-                        cache.view(torch.bfloat16),
-                        table,
-                        lengths,
-                        metadata,
+            for name, function in (
+                []
+                if args.precision_only
+                else [
+                    (
+                        "triton",
+                        partial(
+                            reference._dequant_dense,
+                            None,
+                            cache.view(torch.bfloat16),
+                            table,
+                            lengths,
+                            metadata,
+                        ),
                     ),
-                ),
-                ("native", partial(reader, cache, table, lengths, lookup, metadata)),
-            ]:
+                    (
+                        "native",
+                        partial(reader, cache, table, lengths, lookup, metadata),
+                    ),
+                ]
+            ):
                 for _ in range(5):
                     function()
                 torch.npu.synchronize()
@@ -135,20 +150,24 @@ def main():
         records.append(record)
         print(json.dumps(record), flush=True)
         assert mismatch == 0, record
-        for name, function in [
-            (
-                "triton",
-                partial(
-                    reference._dequant_dense,
-                    None,
-                    cache.view(torch.bfloat16),
-                    table,
-                    lengths,
-                    metadata,
+        for name, function in (
+            []
+            if args.precision_only
+            else [
+                (
+                    "triton",
+                    partial(
+                        reference._dequant_dense,
+                        None,
+                        cache.view(torch.bfloat16),
+                        table,
+                        lengths,
+                        metadata,
+                    ),
                 ),
-            ),
-            ("native", partial(reader, cache, table, lengths, lookup, metadata)),
-        ]:
+                ("native", partial(reader, cache, table, lengths, lookup, metadata)),
+            ]
+        ):
             for _ in range(5):
                 function()
             torch.npu.synchronize()
@@ -169,7 +188,8 @@ def main():
             }
             timings.append(row)
             print(json.dumps(row), flush=True)
-    (root / "verify-native-read.json").write_text(
+    assert len(records) == 15
+    (output_dir / "verify-native-read.json").write_text(
         json.dumps(
             {
                 "passed": len(records),
