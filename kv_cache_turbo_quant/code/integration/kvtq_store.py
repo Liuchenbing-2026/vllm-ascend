@@ -31,7 +31,7 @@ _HEAD_DIM = 128
 _IDX_BYTES = {2: 32, 3: 48, 4: 64}[_MSE_BITS]
 _ROW_BYTES = _IDX_BYTES + 2  # + bf16 norm; qjl/gamma not stored in v1
 _MIN_FUSED_WRITE_TOKENS = 1024
-_MIN_NATIVE_READ_TOKENS = 65536
+_MIN_NATIVE_READ_TOKENS = 1
 
 CENTROIDS = {
     2: [-0.1335033178, -0.04002048075, 0.04002048075, 0.1335033178],
@@ -141,6 +141,22 @@ def _get_quant_matrices(device):
     return rot, _cache[key]
 
 
+def _write_cache_pair(self, key, value, slots):
+    from kvtq_write import PackedCacheWriter
+
+    vectors = torch.cat((key, value), dim=1)
+    rot, qjl = _get_quant_matrices(vectors.device)
+    idx, _qjlb, norm, _gamma = torch.ops.turboquant.kv_cache_turbo_quant(
+        vectors, rot, qjl, _MSE_BITS)
+    writer = getattr(self, '_kvtq_packed_writer', None)
+    if writer is None:
+        writer = PackedCacheWriter()
+        self._kvtq_packed_writer = writer
+    writer.write_pair(idx, norm, slots, self.key_cache, self.value_cache)
+    stats['quant_calls'] += 1
+    stats['quant_tokens'] += 2 * key.shape[0]
+
+
 def _tq_reshape_and_cache(self, query, key, value, kv_cache, attn_metadata, output):
     if len(kv_cache) > 1:
         if self.key_cache is None:
@@ -152,8 +168,11 @@ def _tq_reshape_and_cache(self, query, key, value, kv_cache, attn_metadata, outp
         num = min(attn_metadata.num_actual_tokens, key.shape[0])
         if num > 0:
             slots = attn_metadata.slot_mapping[:num].long()
-            _write_cache(self, key[:num], self.key_cache, slots)
-            _write_cache(self, value[:num], self.value_cache, slots)
+            if _MSE_BITS == 4:
+                _write_cache_pair(self, key[:num], value[:num], slots)
+            else:
+                _write_cache(self, key[:num], self.key_cache, slots)
+                _write_cache(self, value[:num], self.value_cache, slots)
             from vllm_ascend.attention.attention_v1 import notify_kv_cache_written
             notify_kv_cache_written()
     return query, key, value, output

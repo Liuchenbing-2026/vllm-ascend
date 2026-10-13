@@ -36,3 +36,9 @@ nohup python3 -I -u /data02/tq-opt-20261011/native_model_20261013/scripts/host.p
 构建失败保留：首次unset PYTHONPATH导致msopgen导入失败；第二次uint32 API scalar用有符号字面量导致模板冲突；第三次msopgen重复生成非空目录失败；修后复用模板、unsigned常量、保留CANN Python path，attempt4编译安装成功。这不等于NPU精度或性能通过。
 
 未创建上游PR；没有放宽golden/容差，独立对照固定原read bit结果。图模式仍不支持（store本来要求eager），Meta只提供输出形状，不宣称支持capture。小/长分流阈值、实际model收益与mssanitizer等验收尚待补齐，不作为生产采用版本。
+
+## Combined candidate after strict reader verification
+
+The reader has passed all 15 original BF16 bit-equality cases, including physical-page reuse. The measured read path improved for every nonempty fixture; activate the native path for all positive token counts. Combine the already verified paired K/V quantizer/writer, preserving the original 66-byte layout and native quantizer. This combination requires fresh writer gates and matched model measurements; no ON/OFF gain is claimed yet.
+
+Retain failed gate attempts 1 and 2 (missing reference/read module paths). Attempt 3 precision and microcases passed. The first memcheck CLI parsed Python flags as tool flags and returned zero without executing cases; it was rejected. Use the explicit argument separator and require all 15 cases plus all 14 native invocations to finish with the SDK positive no-error line. The unfiltered memory attempt was interrupted because it instrumented unrelated reference operators; preserve its partial log. A filtered attempt checks the exact native kernel.
