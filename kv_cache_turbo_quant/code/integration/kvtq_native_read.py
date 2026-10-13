@@ -4,13 +4,13 @@ import torch
 import torch_npu  # noqa: F401
 
 NATIVE_EXTENSION = (
-    "/ws/native_read_20261013/torch-extensions/tq_native_read/tq_native_read.so"
+    "/ws/read_tiles_20261014/torch-extensions/tq_read_tiles/tq_read_tiles.so"
 )
 
 
 class NativePagedReader:
     def __init__(self):
-        if not hasattr(torch.ops.turboquant, "tq_paged_read"):
+        if not hasattr(torch.ops.turboquant, "tq_paged_read_v2"):
             torch.ops.load_library(NATIVE_EXTENSION)
 
     def __call__(self, cache, table, lengths, lookup, metadata=None, segment="decode"):
@@ -57,6 +57,6 @@ class NativePagedReader:
                 plans[segment] = (fingerprint, jobs)
         # Physical pages are deliberately read from the current table on every
         # call. A reused metadata object with changed page IDs cannot use stale KV.
-        return torch.ops.turboquant.tq_paged_read(
+        return torch.ops.turboquant.tq_paged_read_v2(
             cache, table.contiguous(), jobs, lookup, total
         )

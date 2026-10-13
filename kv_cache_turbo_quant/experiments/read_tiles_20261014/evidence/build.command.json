@@ -1,0 +1,1 @@
+["docker", "exec", "tq-opt-20261011-model", "bash", "/ws/read_tiles_20261014/scripts/build_read_tiles.sh"]

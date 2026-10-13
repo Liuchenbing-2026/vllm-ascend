@@ -1,0 +1,10 @@
+{
+  "code/op/TqPagedReadV2.json": "5245a91e722faea3c5c1954d2a94100a8eca27aac93762ae304875c2fd3b38f2",
+  "code/op/op_host/tq_paged_read_v2.cpp": "93e980e704a227adad0037dba47b60545d20b4714f19755b28d8800377c45b56",
+  "code/op/op_kernel/tq_paged_read_v2.cpp": "445f3063aaff5dca4f6c5fa32c83008cf44c834e09b7741f42ec2b3cab15714f",
+  "code/op/op_kernel/tq_paged_read_v2_tiling.h": "41f8236c8a757ad50601ea975c8a9f9193982b6a9758008bb2a5978150dc9ed0",
+  "code/integration/torch_ext/tq_read_tiles.cpp": "89891d8b94ecbd66c2a08d60b7c7c3d87d93ca36fa6f4579b055a2ecc6aa744a",
+  "code/integration/torch_ext/build_read_tiles.py": "42fb70ed9d29f9d6d6fa8e4b011360984e07a5ddc54942887ec1721b454e820a",
+  "code/integration/kvtq_native_read.py": "4440bdfb27cd285402c31aa43f5c5d3838c83e356f7a81fd69aa8e41516cf7af",
+  "scripts/build_read_tiles.sh": "03cb77b85e251d4215a181bf2ec7009d1353b9febeb8b6db083a38dfeec40c28"
+}

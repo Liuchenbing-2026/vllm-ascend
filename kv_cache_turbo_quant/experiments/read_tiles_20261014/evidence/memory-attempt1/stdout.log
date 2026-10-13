@@ -1,0 +1,26 @@
+=================================================================
+                   >>>>>   MindStudio   <<<<<
+    THE END-TO-END TOOLCHAIN TO UNLEASH HUAWEI ASCEND COMPUTE
+=================================================================
+
+[mssanitizer] logging to file: ./mindstudio_sanitizer_log/mssanitizer_20261013195248_48314.log
+[mssanitizer] WARNING: Current file or dir permission is 0755, which poses a security risk. It's recommended to chmod /ws/read_tiles_20261014/memory-attempt1 permission to the 0750.
+[W1013 19:52:51.808376962 FunctionLoader.cpp:48] Warning: LD_PRELOAD detected, FunctionLoader prefers RTLD_DEFAULT for symbol resolution. (function operator())
+[W1013 19:52:58.949180546 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/ws/c128_20261012/candidate/integration/kvtq_store.py:98: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  bits = (lo.to(torch.int64) | (hi.to(torch.int64) << 8)) << 16
+{"case": 0, "total_tokens": 1, "lengths": [1], "shape": [1, 1, 128], "mismatched_bf16_bits": 0}
+{"case": 0, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+{"case": 1, "total_tokens": 432, "lengths": [15, 16, 17, 127, 128, 129], "shape": [432, 2, 128], "mismatched_bf16_bits": 0}
+{"case": 1, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+{"case": 2, "total_tokens": 290, "lengths": [0, 33, 0, 257], "shape": [290, 3, 128], "mismatched_bf16_bits": 0}
+{"case": 2, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+{"case": 3, "total_tokens": 320, "lengths": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], "shape": [320, 2, 128], "mismatched_bf16_bits": 0}
+{"case": 3, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+{"case": 4, "total_tokens": 120060, "lengths": [2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002], "shape": [120060, 2, 128], "mismatched_bf16_bits": 0}
+{"case": 4, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+{"case": 5, "total_tokens": 0, "lengths": [0, 0], "shape": [0, 2, 128], "mismatched_bf16_bits": 0}
+{"case": 6, "total_tokens": 799, "lengths": [31, 257, 511], "shape": [799, 4, 128], "mismatched_bf16_bits": 0}
+{"case": 6, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+{"variant": "long_c60", "total_tokens": 120000, "mismatched_bf16_bits": 0}
+{"variant": "long_c128", "total_tokens": 256000, "mismatched_bf16_bits": 0}

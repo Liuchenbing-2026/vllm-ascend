@@ -1,0 +1,15 @@
+[W1013 17:52:39.204599562 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/ws/c128_20261012/candidate/integration/kvtq_store.py:98: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  bits = (lo.to(torch.int64) | (hi.to(torch.int64) << 8)) << 16
+{"case": 0, "total_tokens": 1, "lengths": [1], "shape": [1, 1, 128], "mismatched_bf16_bits": 0}
+{"case": 0, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+Traceback (most recent call last):
+  File "/ws/read_tiles_20261014/gate-attempt1/verify_read_tiles.py", line 209, in <module>
+    main()
+  File "/ws/read_tiles_20261014/gate-attempt1/verify_read_tiles.py", line 107, in main
+    function()
+  File "/ws/native_combined_20261013/candidate_write/integration/kvtq_native_read.py", line 23, in __call__
+    cache.shape[-1] != 66
+    ^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'shape'
+[ERROR] 2026-10-13-17:52:42 (PID:41924, Device:0, RankID:-1) ERR99999 UNKNOWN applicaiton exception
