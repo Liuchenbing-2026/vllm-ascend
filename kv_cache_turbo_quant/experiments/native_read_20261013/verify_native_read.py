@@ -29,6 +29,7 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     sys.path.insert(0, str(root / "code/integration"))
     sys.path.insert(0, "/ws/opt_20261012/verify")
+    sys.path.append("/ws/c128_20261012/candidate/integration")
     from kvtq_native_read import NativePagedReader
 
     reference = load(

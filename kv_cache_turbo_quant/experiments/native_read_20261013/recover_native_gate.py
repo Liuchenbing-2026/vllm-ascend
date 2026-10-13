@@ -1,12 +1,16 @@
 """Preserve attempt1 and run corrected imports, strict gates, then memcheck."""
 
+import argparse
 import json
 from pathlib import Path
 import subprocess
 
 root = Path(__file__).resolve().parent
-target = "/data02/tq-opt-20261011/native_read_20261013/gate-attempt2"
-container_target = "/ws/native_read_20261013/gate-attempt2"
+parser = argparse.ArgumentParser()
+parser.add_argument("--attempt", type=int, default=2)
+args = parser.parse_args()
+target = f"/data02/tq-opt-20261011/native_read_20261013/gate-attempt{args.attempt}"
+container_target = f"/ws/native_read_20261013/gate-attempt{args.attempt}"
 queue = (root / "queue_native_gate.py").read_text()
 queue = queue.replace("ROOT = Path('/data02/tq-opt-20261011/native_read_20261013')", f"ROOT = Path('{target}')")
 queue = queue.replace("(ROOT / 'build.exit')", "(ROOT.parent / 'build.exit')")

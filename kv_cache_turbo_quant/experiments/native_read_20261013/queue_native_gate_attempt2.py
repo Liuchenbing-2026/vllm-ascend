@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import time
 
-ROOT = Path('/data02/tq-opt-20261011/native_read_20261013/gate-attempt2')
+ROOT = Path('/data02/tq-opt-20261011/native_read_20261013/gate-attempt3')
 PREVIOUS = Path('/data02/tq-opt-20261011/paired_write_20261013_attempt3')
 
 
@@ -23,7 +23,7 @@ def main():
         'tq-opt-20261011-model', 'bash', '-lc',
         'source /usr/local/Ascend/cann-9.1.0/set_env.sh && source /ws/native_read_20261013/opp/vendors/tqread/bin/set_env.bash && '
         'export PYTHONPATH=/ws/native_read_20261013/code/integration:/ws/source/vllm:/ws/source/vllm-ascend:$PYTHONPATH && '
-        'exec /ws/.venv/bin/python -u /ws/native_read_20261013/gate-attempt2/verify_native_read.py --output-dir /ws/native_read_20261013/gate-attempt2']
+        'exec /ws/.venv/bin/python -u /ws/native_read_20261013/gate-attempt3/verify_native_read.py --output-dir /ws/native_read_20261013/gate-attempt3']
     (ROOT / 'gate-status.json').write_text(json.dumps({'stage': 'native_precision_and_micro',
         'utc': datetime.now(timezone.utc).isoformat(), 'command': cmd}) + '\n')
     with (ROOT / 'logs/verify-native-read.log').open('w') as output:
@@ -32,8 +32,8 @@ def main():
         command = cmd.copy()
         command[-1] = command[-1].replace(
             'exec /ws/.venv/bin/python -u',
-            'exec mssanitizer --tool=memcheck --leak-check=yes --log-file=/ws/native_read_20261013/gate-attempt2/mssanitizer-memcheck.log /ws/.venv/bin/python -u')
-        command[-1] += ' --precision-only --output-dir /ws/native_read_20261013/gate-attempt2/memcheck'
+            'exec mssanitizer --tool=memcheck --leak-check=yes --log-file=/ws/native_read_20261013/gate-attempt3/mssanitizer-memcheck.log /ws/.venv/bin/python -u')
+        command[-1] += ' --precision-only --output-dir /ws/native_read_20261013/gate-attempt3/memcheck'
         (ROOT / 'memcheck.command.json').write_text(json.dumps(command) + '\n')
         with (ROOT / 'logs/memcheck.stdout.log').open('w') as output:
             memory = subprocess.run(command, stdout=output, stderr=subprocess.STDOUT, timeout=1800)
