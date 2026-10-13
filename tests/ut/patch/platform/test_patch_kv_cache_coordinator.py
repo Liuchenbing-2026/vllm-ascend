@@ -38,6 +38,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 from vllm.v1.core.kv_cache_coordinator import SpecGroup
+from vllm.v1.core.kv_cache_utils import make_block_hash_with_group_id
 from vllm.v1.core.single_type_kv_cache_manager import SlidingWindowManager
 from vllm.v1.kv_cache_interface import (
     FullAttentionSpec,
@@ -427,6 +428,129 @@ def test_per_group_lookup_matches_scheduler_call_convention():
     assert len(blocks) == 2
     assert _RecordingFA.calls[-1]["max_length"] == 4095
     assert hit_lengths == (4095, 4095)
+
+
+# A coarse full-attention page must not force every sliding-window checkpoint
+# onto that page size, but the sliding window still requires complete pages.
+def _make_window_coordinator(*, allow_partial_hash_hits=True, use_eagle=False, dcp_world_size=1):
+    full = FullAttentionSpec(block_size=32, num_kv_heads=1, head_size=8, dtype=torch.float32)
+    window = SlidingWindowSpec(block_size=8, num_kv_heads=1, head_size=8, dtype=torch.float32, sliding_window=8)
+    config = KVCacheConfig(
+        num_blocks=16,
+        kv_cache_tensors=[],
+        kv_cache_groups=[KVCacheGroupSpec(["full"], full, use_eagle), KVCacheGroupSpec(["window"], window)],
+    )
+    config.prefix_cache_retention_interval = 0
+    config.kv_transfer_config = SimpleNamespace(is_kv_producer=True, is_kv_consumer=True)
+    return AscendHybridKVCacheCoordinator(
+        kv_cache_config=config,
+        max_model_len=128,
+        use_eagle=use_eagle,
+        enable_caching=True,
+        enable_kv_cache_events=False,
+        dcp_world_size=dcp_world_size,
+        pcp_world_size=1,
+        hash_block_size=2,
+        scheduler_block_size=32,
+        allow_partial_hash_hits=allow_partial_hash_hits,
+    )
+
+
+@pytest.mark.parametrize("allow_partial_hash_hits", [False, True])
+def test_requested_partial_hits_preserve_window_page_alignment(allow_partial_hash_hits):
+    coordinator = _make_window_coordinator(allow_partial_hash_hits=allow_partial_hash_hits)
+    assert coordinator.enable_partial_hash_hits is allow_partial_hash_hits
+    expected_alignment = 2 if allow_partial_hash_hits else 32
+    assert coordinator._cache_hit_alignment_tokens == expected_alignment
+    assert coordinator.single_type_managers[0].cache_hit_alignment_tokens == expected_alignment
+    assert coordinator.single_type_managers[1].cache_hit_alignment_tokens == (8 if allow_partial_hash_hits else 32)
+    assert coordinator.retention_interval == 0
+
+
+def test_partial_window_hits_do_not_enable_dcp():
+    coordinator = _make_window_coordinator(dcp_world_size=2)
+    assert not coordinator.enable_partial_hash_hits
+
+
+@pytest.mark.parametrize("use_eagle", [False, True])
+def test_partial_window_hit_survives_two_reuses_and_cache_pressure(use_eagle):
+    coordinator = _make_window_coordinator(use_eagle=use_eagle)
+    pool = coordinator.block_pool
+    hashes = [i.to_bytes(32, "big") for i in range(1, 17)]
+    assert coordinator.find_longest_cache_hit(hashes, 19)[1] == 0
+    # One partial full-attention page and two complete sliding-window pages.
+    blocks = pool.get_new_blocks(3)
+    for block, group, tokens in zip(blocks, [0, 1, 1], [18 if use_eagle else 16, 8, 16]):
+        pool._insert_block_hash(make_block_hash_with_group_id(hashes[tokens // 2 - 1], group), block, tokens)
+    pool.free_blocks(blocks)
+    for _ in range(2):
+        hit_blocks, hit_tokens, _ = coordinator.find_longest_cache_hit(hashes, 19)
+        assert hit_tokens == 16
+        assert hit_tokens % 8 == 0
+        assert len(hit_blocks[0]) == 1
+        assert hit_blocks[1][-1] is blocks[-1]
+    # Force real LRU eviction: the coordinator must miss instead of using stale
+    # block IDs or inventing a boundary without its window checkpoint.
+    pressure = pool.get_new_blocks(pool.get_num_free_blocks())
+    assert coordinator.find_longest_cache_hit(hashes, 19)[1] == 0
+    pool.free_blocks(pressure)
+
+
+def test_partial_window_replay_retention_includes_reachable_eagle_boundary():
+    coordinator = _make_window_coordinator(use_eagle=True)
+    boundaries = coordinator.get_replay_boundaries(SimpleNamespace(num_prompt_tokens=27))
+    # Full attention drops one hash unit; the window resumes on a full page.
+    assert 24 in boundaries
+    window = coordinator.single_type_managers[1]
+    mask = window.reachable_block_mask(
+        0,
+        8,
+        window.cache_hit_alignment_tokens,
+        window.kv_cache_spec,
+        False,
+        0,
+        boundaries,
+    )
+    assert mask is not None
+    assert mask[2]
+    assert not mask[-1]
+
+
+def test_partial_window_hits_reject_an_unadvertised_manager(monkeypatch):
+    monkeypatch.setattr(mod, "get_manager_for_kv_cache_spec", _fake_manager_factory)
+    coordinator = _make_window_coordinator()
+    assert not coordinator.enable_partial_hash_hits
+    assert coordinator._cache_hit_alignment_tokens == 32
+
+
+@pytest.mark.parametrize("standalone, expected", [(False, 16), (True, 24)])
+def test_partial_window_replay_respects_eagle_drop_role(standalone, expected):
+    coordinator = _make_window_coordinator(use_eagle=True)
+    coordinator.skips_eagle_block_drop = standalone
+    boundaries = coordinator.get_replay_boundaries(SimpleNamespace(num_prompt_tokens=25))
+    assert max(boundaries) == expected
+
+
+@pytest.mark.parametrize("retention_interval", [None, 0, 32])
+def test_partial_window_write_mask_keeps_configured_retention(retention_interval):
+    coordinator = _make_window_coordinator()
+    window = coordinator.single_type_managers[1]
+    mask = window.reachable_block_mask(
+        0,
+        8,
+        window.cache_hit_alignment_tokens,
+        window.kv_cache_spec,
+        False,
+        retention_interval,
+        (16,),
+    )
+    if retention_interval is None:
+        assert mask is None or all(mask)
+    else:
+        assert mask is not None
+        assert mask[1]
+        assert mask[-1] is (retention_interval == 32)
+        assert sum(mask) == (1 if retention_interval == 0 else 3)
 
 
 if __name__ == "__main__":

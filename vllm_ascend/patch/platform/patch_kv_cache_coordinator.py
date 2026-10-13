@@ -22,6 +22,7 @@ from vllm.v1.core.kv_cache_utils import (
 )
 from vllm.v1.core.single_type_kv_cache_manager import (
     MambaManager,
+    SlidingWindowManager,
     get_manager_for_kv_cache_spec,
 )
 from vllm.v1.kv_cache_interface import (
@@ -211,11 +212,23 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                 for g in kv_cache_config.kv_cache_groups
                 if is_prefix_cacheable(g.kv_cache_spec)
             ), "block_size must be divisible by hash_block_size"
-        self.enable_partial_hash_hits = dcp_world_size == 1 and any(
+        has_partial_mamba_group = any(
             isinstance(g.kv_cache_spec, MambaSpec)
             and g.kv_cache_spec.mamba_cache_mode == "align"
             and g.kv_cache_spec.block_size > hash_block_size
             for g in kv_cache_config.kv_cache_groups
+        )
+        # Full-attention partial pages can coexist with whole-window pages.
+        # Unknown managers must explicitly advertise fine-grained lookup.
+        compatible_partial_managers = all(
+            not is_prefix_cacheable(group.kv_cache_spec)
+            or getattr(manager, "supports_fine_grained_hash_lookup", False)
+            or manager.block_size == hash_block_size
+            or isinstance(manager, SlidingWindowManager)
+            for manager, group in zip(self.single_type_managers, kv_cache_config.kv_cache_groups)
+        )
+        self.enable_partial_hash_hits = dcp_world_size == 1 and (
+            has_partial_mamba_group or (allow_partial_hash_hits and compatible_partial_managers)
         )
         self.verify_and_split_kv_cache_groups()
 
@@ -228,6 +241,11 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
             # Both supported versions use a separate write-mask alignment.
             # Match the lookup boundary, including the raw-tail pool alignment.
             mgr.cache_hit_alignment_tokens = self._cache_hit_alignment_tokens
+            if self.enable_partial_hash_hits and isinstance(mgr, SlidingWindowManager):
+                # A sub-page mask falls back to dense retention upstream.
+                # Match the window's whole-page lookup without making full
+                # attention interpret raw hashes at a different granularity.
+                mgr.cache_hit_alignment_tokens = lcm(mgr.cache_hit_alignment_tokens, mgr.block_size)
 
         self.use_eagle = use_eagle
         # Roles are derived here, where they are used, from the kv-transfer
@@ -265,14 +283,30 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
 
     def get_replay_boundaries(self, request) -> tuple[int, ...]:
         boundaries = super().get_replay_boundaries(request)
-        if not self.eagle_group_ids or self.enable_partial_hash_hits:
+        if not self.eagle_group_ids:
             return boundaries
-        # The lookup drops one physical EAGLE page, which can be smaller
-        # than the joint hit alignment. Retain that reachable checkpoint too;
-        # subtracting an entire scheduler block loses it under sparse retention.
-        peek_size = max(self.group_block_sizes[gid] for gid in self.eagle_group_ids)
+        if self.enable_partial_hash_hits and not any(
+            isinstance(mgr, SlidingWindowManager) for mgr in self.single_type_managers
+        ):
+            return boundaries
+        # The EAGLE verifier margin can be smaller than the joint hit
+        # alignment. Retain that reachable checkpoint too; subtracting an
+        # entire scheduler block loses it under sparse retention.
         alignment = self._cache_hit_alignment_tokens
-        if peek_size >= alignment:
+        peek_size = max(
+            min(self.hash_block_size, self.group_block_sizes[gid])
+            if self.enable_partial_hash_hits
+            and getattr(self.single_type_managers[gid], "supports_fine_grained_hash_lookup", False)
+            else self.group_block_sizes[gid]
+            for gid in self.eagle_group_ids
+        )
+        if self.enable_partial_hash_hits:
+            # A fine-grained full-attention hit still needs every window's
+            # checkpoint at a common, whole-page resume boundary.
+            alignment = lcm(alignment, *(mgr.cache_hit_alignment_tokens for mgr in self.single_type_managers))
+            if self.skips_eagle_block_drop:
+                peek_size = 0
+        elif peek_size >= alignment:
             return boundaries
         reachable = {
             max(0, (length - peek_size) // alignment * alignment)
