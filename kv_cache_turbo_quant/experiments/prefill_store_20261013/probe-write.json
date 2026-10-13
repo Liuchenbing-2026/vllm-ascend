@@ -1,0 +1,738 @@
+{
+  "records": [
+    {
+      "kind": "u8_index_copy",
+      "tokens": 1,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 1,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 1,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 1,
+      "heads": 1,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.633.502 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 16,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 16,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 16,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 16,
+      "heads": 1,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.644.428 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 17,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 17,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 17,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 17,
+      "heads": 1,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.648.129 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 63,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 63,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 63,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 63,
+      "heads": 1,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.651.851 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 64,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 64,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 64,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 64,
+      "heads": 1,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.655.557 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 129,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 129,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 129,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 129,
+      "heads": 1,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.659.320 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 4096,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 4096,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 4096,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 4096,
+      "heads": 1,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.691.270 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 8000,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 8000,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 8000,
+      "heads": 1,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 8000,
+      "heads": 1,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.726.351 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 1,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 1,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 1,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 1,
+      "heads": 2,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.731.437 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 16,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 16,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 16,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 16,
+      "heads": 2,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.736.375 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 17,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 17,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 17,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 17,
+      "heads": 2,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.741.220 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 63,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 63,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 63,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 63,
+      "heads": 2,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.746.199 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 64,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 64,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 64,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 64,
+      "heads": 2,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.751.145 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 129,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 129,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 129,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 129,
+      "heads": 2,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.756.235 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 4096,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 4096,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 4096,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 4096,
+      "heads": 2,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.788.454 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 8000,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 8000,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 8000,
+      "heads": 2,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 8000,
+      "heads": 2,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.893.234 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 1,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 1,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 1,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 1,
+      "heads": 4,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.901.369 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 16,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 16,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 16,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 16,
+      "heads": 4,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.909.335 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 17,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 17,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 17,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 17,
+      "heads": 4,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.917.466 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 63,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 63,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 63,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 63,
+      "heads": 4,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.925.531 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 64,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 64,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 64,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 64,
+      "heads": 4,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.935.376 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 129,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 129,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 129,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 129,
+      "heads": 4,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:54 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:54.944.711 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 4096,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 4096,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 4096,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 4096,
+      "heads": 4,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:55 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:55.012.545 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 8000,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 8000,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 8000,
+      "heads": 4,
+      "passed": true
+    },
+    {
+      "kind": "u8_scatter_nd",
+      "tokens": 8000,
+      "heads": 4,
+      "passed": false,
+      "error": "RuntimeError('npu_scatter_nd_update_:../third_party/op-plugin/op_plugin/ops/opapi/ScatterNdUpdateKernelNpuOpApi.cpp:38 NPU function error: call aclnnScatterNdUpdate failed, error code is 161002\\n[ERROR] 2026-10-13-11:08:55 (PID:59, Device:0, RankID:-1) ERR00100 PTA call acl api failed.\\n[PID: 59] 2026-10-13-11:08:55.190.089 AclNN_Parameter_Error(EZ1001): Tensor varRef not implemented for DT_UINT8, should be in dtype support list [DT_FLOAT,DT_FLOAT16,DT_BOOL,DT_INT16,DT_BFLOAT16,DT_INT64,DT_INT8,DT_INT32,].\\n')"
+    }
+  ],
+  "supported": [
+    "u8_index_copy",
+    "bf16_index_copy",
+    "bf16_scatter_nd"
+  ],
+  "timings": [
+    {
+      "kind": "u8_index_copy",
+      "tokens": 16,
+      "iterations": 100,
+      "device_event_mean_us": 35.26859998703003,
+      "host_and_device_mean_us": 48.50940778851509
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 16,
+      "iterations": 100,
+      "device_event_mean_us": 50.959200859069824,
+      "host_and_device_mean_us": 52.697928622365
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 16,
+      "iterations": 100,
+      "device_event_mean_us": 46.58780097961426,
+      "host_and_device_mean_us": 48.119304701685905
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 60,
+      "iterations": 100,
+      "device_event_mean_us": 37.65779972076416,
+      "host_and_device_mean_us": 39.25547003746033
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 60,
+      "iterations": 100,
+      "device_event_mean_us": 49.74299907684326,
+      "host_and_device_mean_us": 51.421914249658585
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 60,
+      "iterations": 100,
+      "device_event_mean_us": 47.535400390625,
+      "host_and_device_mean_us": 49.07391034066677
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 128,
+      "iterations": 100,
+      "device_event_mean_us": 37.071800231933594,
+      "host_and_device_mean_us": 38.461554795503616
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 128,
+      "iterations": 100,
+      "device_event_mean_us": 50.93299865722656,
+      "host_and_device_mean_us": 52.61773243546486
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 128,
+      "iterations": 100,
+      "device_event_mean_us": 47.15980052947998,
+      "host_and_device_mean_us": 48.7546157091856
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 256,
+      "iterations": 100,
+      "device_event_mean_us": 37.51300096511841,
+      "host_and_device_mean_us": 38.98945637047291
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 256,
+      "iterations": 100,
+      "device_event_mean_us": 51.21119976043701,
+      "host_and_device_mean_us": 52.58453078567982
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 256,
+      "iterations": 100,
+      "device_event_mean_us": 59.68480110168457,
+      "host_and_device_mean_us": 61.095571145415306
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 4096,
+      "iterations": 100,
+      "device_event_mean_us": 125.61920166015625,
+      "host_and_device_mean_us": 127.08763591945171
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 4096,
+      "iterations": 100,
+      "device_event_mean_us": 240.37099838256836,
+      "host_and_device_mean_us": 241.78043939173222
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 4096,
+      "iterations": 100,
+      "device_event_mean_us": 791.2763977050781,
+      "host_and_device_mean_us": 792.7714940160513
+    },
+    {
+      "kind": "u8_index_copy",
+      "tokens": 8000,
+      "iterations": 100,
+      "device_event_mean_us": 232.2092056274414,
+      "host_and_device_mean_us": 233.85640233755112
+    },
+    {
+      "kind": "bf16_index_copy",
+      "tokens": 8000,
+      "iterations": 100,
+      "device_event_mean_us": 406.41380310058594,
+      "host_and_device_mean_us": 407.83983655273914
+    },
+    {
+      "kind": "bf16_scatter_nd",
+      "tokens": 8000,
+      "iterations": 100,
+      "device_event_mean_us": 1535.6732177734375,
+      "host_and_device_mean_us": 1537.3908821493387
+    }
+  ],
+  "scope": "byte equality including untouched cache slots; writer microbenchmark excludes quantization and does not measure model throughput"
+}

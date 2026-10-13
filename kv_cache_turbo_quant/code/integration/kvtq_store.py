@@ -105,10 +105,19 @@ def _write_cache(self, tensor, cache_bf16, slots):
     rot32, qjl32 = _get_quant_matrices(x.device)
     idx, _qjlb, norm, _gamma = torch.ops.turboquant.kv_cache_turbo_quant(
         x, rot32, qjl32, _MSE_BITS)
-    packed = _pack_rows(idx, norm)
-    num_kv_heads = cache_bf16.shape[2]
-    flat = cache_bf16.view(torch.uint8).view(-1, num_kv_heads, _ROW_BYTES)
-    flat.index_copy_(0, slots, packed)
+    if _MSE_BITS == 4:
+        from kvtq_write import PackedCacheWriter
+
+        writer = getattr(self, '_kvtq_packed_writer', None)
+        if writer is None:
+            writer = PackedCacheWriter()
+            self._kvtq_packed_writer = writer
+        writer(idx, norm, slots, cache_bf16)
+    else:
+        packed = _pack_rows(idx, norm)
+        num_kv_heads = cache_bf16.shape[2]
+        flat = cache_bf16.view(torch.uint8).view(-1, num_kv_heads, _ROW_BYTES)
+        flat.index_copy_(0, slots, packed)
     stats["quant_calls"] += 1
     stats["quant_tokens"] += x.shape[0]
     if stats["quant_calls"] == 1 or stats["quant_calls"] % 1000 == 0:

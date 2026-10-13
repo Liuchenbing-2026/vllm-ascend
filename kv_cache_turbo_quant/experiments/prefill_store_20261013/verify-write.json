@@ -1,0 +1,546 @@
+{
+  "passed": 78,
+  "records": [
+    {
+      "heads": 1,
+      "tokens": 1,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 1,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 1,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 16,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 16,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 16,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 17,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 17,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 17,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 63,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 63,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 63,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 64,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 64,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 64,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 129,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 129,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 129,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 4096,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 4096,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 4096,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 8000,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 8000,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 1,
+      "tokens": 8000,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 1,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 1,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 1,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 16,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 16,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 16,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 17,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 17,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 17,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 63,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 63,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 63,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 64,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 64,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 64,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 129,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 129,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 129,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 4096,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 4096,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 4096,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 8000,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 8000,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 2,
+      "tokens": 8000,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 1,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 1,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 1,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 16,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 16,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 16,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 17,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 17,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 17,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 63,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 63,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 63,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 64,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 64,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 64,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 129,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 129,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 129,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 4096,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 4096,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 4096,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 8000,
+      "order": "adjacent",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 8000,
+      "order": "reverse",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "heads": 4,
+      "tokens": 8000,
+      "order": "random",
+      "repeats": 10,
+      "mismatched_bytes": 0
+    },
+    {
+      "kind": "real_quantizer_full_cache_state",
+      "tokens": 1,
+      "heads": 2,
+      "mismatched_bytes": 0
+    },
+    {
+      "kind": "real_quantizer_full_cache_state",
+      "tokens": 17,
+      "heads": 2,
+      "mismatched_bytes": 0
+    },
+    {
+      "kind": "real_quantizer_full_cache_state",
+      "tokens": 60,
+      "heads": 2,
+      "mismatched_bytes": 0
+    },
+    {
+      "kind": "real_quantizer_full_cache_state",
+      "tokens": 128,
+      "heads": 2,
+      "mismatched_bytes": 0
+    },
+    {
+      "kind": "real_quantizer_full_cache_state",
+      "tokens": 256,
+      "heads": 2,
+      "mismatched_bytes": 0
+    },
+    {
+      "kind": "real_quantizer_full_cache_state",
+      "tokens": 4096,
+      "heads": 2,
+      "mismatched_bytes": 0
+    }
+  ],
+  "scope": "all cache bytes and untouched slots, arbitrary BF16 bit patterns, tail tiles and physical-slot reuse"
+}
