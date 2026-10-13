@@ -348,14 +348,21 @@ class TestAscendConfig(TestBase):
     @_clean_up_ascend_config
     @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
     def test_init_ascend_config_tokenizer_cache_gb(self, mock_fix_incompatible_config):
-        """The tokenizer cache is a typed additional_config option, not an env var."""
+        """The tokenizer cache is a typed additional_config option, not an env var.
+
+        The value is forwarded to the upstream `ModelConfig.tokenizer_cache_gb`
+        that the vLLM renderers actually read.
+        """
         test_vllm_config = VllmConfig()
         self.assertEqual(init_ascend_config(test_vllm_config).tokenizer_cache_gb, 0)
+        # 0 leaves the upstream option untouched.
+        self.assertEqual(getattr(test_vllm_config.model_config, "tokenizer_cache_gb", 0), 0)
 
         clear_ascend_config()
         test_vllm_config = VllmConfig()
         test_vllm_config.additional_config = {"tokenizer_cache_gb": 4}
         self.assertEqual(init_ascend_config(test_vllm_config).tokenizer_cache_gb, 4)
+        self.assertEqual(getattr(test_vllm_config.model_config, "tokenizer_cache_gb", None), 4)
 
         clear_ascend_config()
         test_vllm_config = VllmConfig()

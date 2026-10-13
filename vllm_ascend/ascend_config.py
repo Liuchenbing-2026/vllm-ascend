@@ -533,6 +533,8 @@ class AscendConfig:
     # O(full prompt) on every turn - dominates the frontend cost. This sizes a
     # host-memory LRU, so it never consumes NPU memory; with
     # ``--api-server-count N`` the footprint is N times this value.
+    # The cache itself lives in vLLM (`--tokenizer-cache-gb`); this field only
+    # carries the value there, so that Ascend users keep a single switch.
     tokenizer_cache_gb: int = 0
 
     # ---- sub-configs (no vllm_config dep): pydantic dict→dataclass coercion ----
@@ -1771,6 +1773,15 @@ def init_ascend_config(vllm_config: VllmConfig) -> AscendConfig:
         clear_enable_sp()
     else:
         logger.warning("Ascend config instance is not fully initialized. action: skip singleton cache update. ")
+
+    # `tokenizer_cache_gb` is implemented by upstream vLLM as
+    # `ModelConfig.tokenizer_cache_gb` (`--tokenizer-cache-gb`); this field only
+    # carries the value there so that Ascend users keep a single switch in
+    # additional_config. Set before the renderer is built, which is where the
+    # cache is created.
+    if vllm_config.model_config is not None and new_config.tokenizer_cache_gb > 0:
+        vllm_config.model_config.tokenizer_cache_gb = new_config.tokenizer_cache_gb
+
     return new_config
 
 

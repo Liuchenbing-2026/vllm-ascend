@@ -29,11 +29,11 @@ already disagree on the sampled tokens. Comparing text would be flaky.
 
 Why this needs an e2e test on top of the unit tests: the unit tests drive
 ``IncrementalTokenizerCache`` directly, so they stay green no matter how the
-patch is wired in. Only a served endpoint can show that
+upstream cache is wired in. Only a served endpoint can show that
 ``BaseRenderer._tokenize_prompt`` and ``safe_apply_chat_template`` are still the
-symbols this vLLM revision calls, that the cache actually reaches them (it is
-published on the renderer's tokenizer), and that ``make_async`` binds the
-patched function rather than the original one. Getting any of that wrong leaves
+symbols this vLLM revision calls, that a renderer built with
+``tokenizer_cache_gb > 0`` really arms the cache, and that ``make_async`` binds
+the cache-aware entry point rather than the original one. Getting any of that wrong leaves
 the feature dead with no failing unit test - and for a tokenizer cache, token
 ids are also the only currency in which correctness can be stated at all.
 """
@@ -44,10 +44,10 @@ import os
 import pytest
 import requests
 from transformers import AutoTokenizer
+from vllm.renderers.tokenizer_cache import IncrementalTokenizerCache
 from vllm.utils.network_utils import get_open_port
 
 from tests.e2e.conftest import RemoteOpenAIServer, wait_until_npu_memory_free
-from vllm_ascend.patch.platform.patch_tokenizer_cache import IncrementalTokenizerCache
 
 # Mirrors the other e2e tests: the CI runners serve this from the local HF
 # cache, and a local checkout can point it at an on-disk copy instead.
