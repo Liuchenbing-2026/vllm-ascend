@@ -97,18 +97,6 @@ class KVPPConfig:
                 raise ValueError("KVPP supports eager execution or PIECEWISE only.")
         if not model_config.use_mla or model_config.is_hybrid:
             raise ValueError("KVPP currently supports only non-hybrid MLA models.")
-        speculative_config = vllm_config.speculative_config
-        if speculative_config is not None:
-            if speculative_config.method not in ("mtp", "dspark"):
-                raise ValueError("KVPP supports speculative decoding only with method='mtp' or method='dspark'.")
-            if speculative_config.num_speculative_tokens_per_batch_size:
-                raise ValueError("KVPP currently supports only a fixed number of speculative tokens.")
-            if speculative_config.method == "dspark":
-                if getattr(speculative_config, "enable_adaptive_verification", False):
-                    raise ValueError("KVPP does not support DSpark adaptive verification.")
-                dynamic_spec = (vllm_config.additional_config or {}).get("dynamic_spec_config") or {}
-                if dynamic_spec.get("method") is not None:
-                    raise ValueError("KVPP does not support dynamic speculative lengths.")
 
 
 @config
@@ -609,6 +597,10 @@ class AscendConfig:
         default_factory=lambda: os.path.join(os.path.expanduser("~"), "ascend", "log", "vllm_ascend")
     )
     dump_config_path: str | None = None
+    runtime_config_path: str | None = None
+    runtime_config_hot_reload: bool = False
+    # Runtime object constructed in init_ascend_config (not from additional_config dict).
+    runtime_config: Any = None
     mc2_comm_alg: Literal["", "fullmesh", "hierarchy", "fullmesh_v2"] = ""
 
     # ---- A-family (envs fallback): default = envs module value, before-validator injects ----
@@ -1831,6 +1823,15 @@ def init_ascend_config(vllm_config: VllmConfig) -> AscendConfig:
     # pre-step; the resolved path is passed as the dump_config_path field.
     dump_config_path = AscendConfig._resolve_dump_config_path(additional_config)
 
+    from vllm_ascend.observability.runtime_config import (
+        ADDITIONAL_CONFIG_STRIP_KEYS as _RUNTIME_CONFIG_STRIP_KEYS,
+    )
+    from vllm_ascend.observability.runtime_config import (
+        build_runtime_config_from_additional,
+    )
+
+    runtime_boot = build_runtime_config_from_additional(additional_config)
+
     # Keys that must NOT flow from additional_config into AscendConfig.
     # These are stripped so that only user-configurable keys reach pydantic,
     # where extra="forbid" can reject unknown options.
@@ -1857,6 +1858,7 @@ def init_ascend_config(vllm_config: VllmConfig) -> AscendConfig:
         # replaced with the validated dump_config_path field below.
         "dump_config",
         "dump_config_path",
+        *_RUNTIME_CONFIG_STRIP_KEYS,
         # pure-derived fields (derive_and_validate computes them; user input would residualize)
         # enable_sparse_li_c4 is selected by attention_config.indexer_kv_dtype
         # and the model's sparse-attention support,not additional config.
@@ -1898,6 +1900,9 @@ def init_ascend_config(vllm_config: VllmConfig) -> AscendConfig:
         sparse_kv_offload_config=sparse_kv,
         kvpp_config=kvpp_config,
         dump_config_path=dump_config_path,
+        runtime_config_path=runtime_boot.path,
+        runtime_config_hot_reload=runtime_boot.hot_reload,
+        runtime_config=runtime_boot.runtime_config,
         **kwargs,
     )
     # Business validation (Plan B): pydantic did type/range/enum checks during
