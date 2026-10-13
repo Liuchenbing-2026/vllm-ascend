@@ -55,6 +55,23 @@ def is_circular_kv_cache_spec(kv_cache_spec: KVCacheSpec) -> bool:
     return isinstance(kv_cache_spec, CircularBufferSpec) or getattr(kv_cache_spec, "is_circular", False)
 
 
+def is_circular_buffer_kv_cache_spec(kv_cache_spec: KVCacheSpec) -> bool:
+    """Resolve the ring-buffer slot-ownership capability through grouped specs.
+
+    ``is_circular_kv_cache_spec`` is intentionally broad: it is true for every
+    group that uses circular addressing, including the GLM-5-Next KPool tail
+    (``AscendIndexerKPoolTailSpec.is_circular``). That tail's writer still
+    consumes the generic block-table slot mapping, so it must keep the ring
+    math on the per-group and draft paths. Only ``CircularBufferSpec`` groups
+    own their addressing and therefore want the all-PAD slot mapping that the
+    generic writers install.
+    """
+    if isinstance(kv_cache_spec, UniformTypeKVCacheSpecs):
+        specs = tuple(kv_cache_spec.kv_cache_specs.values())
+        return bool(specs) and all(is_circular_buffer_kv_cache_spec(spec) for spec in specs)
+    return isinstance(kv_cache_spec, CircularBufferSpec)
+
+
 def is_prefix_cacheable(kv_cache_spec: KVCacheSpec) -> bool:
     """Resolve cacheability through uniform wrappers.
 

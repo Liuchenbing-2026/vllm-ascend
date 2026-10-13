@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
+import numpy as np
 import pytest
 import torch
 from vllm.v1.core.block_pool import BlockPool
@@ -16,7 +17,13 @@ from vllm.v1.kv_cache_interface import (
     UniformTypeKVCacheSpecs,
 )
 
-from vllm_ascend.core.kv_cache_interface import is_circular_kv_cache_spec, is_prefix_cacheable
+from vllm_ascend.core.kv_cache_interface import (
+    AscendCircularBufferSpec,
+    AscendIndexerKPoolTailSpec,
+    is_circular_buffer_kv_cache_spec,
+    is_circular_kv_cache_spec,
+    is_prefix_cacheable,
+)
 from vllm_ascend.patch.platform.patch_kv_cache_coordinator import AscendHybridKVCacheCoordinator
 from vllm_ascend.utils import vllm_version_is
 from vllm_ascend.worker.block_table import BlockTable
@@ -30,6 +37,35 @@ def ring_spec():
         head_size_v=0,
         dtype=torch.float32,
     )
+
+
+def kpool_tail_spec():
+    return AscendIndexerKPoolTailSpec(
+        block_size=128,
+        num_kv_heads=1,
+        head_size=64,
+        dtype=torch.float32,
+        compress_ratio=16,
+        sliding_window=16,
+    )
+
+
+def real_block_table(kv_cache_spec, block_size, kernel_sizes=None):
+    """Build a BlockTable off-device by stubbing the distributed DCP lookup."""
+    with patch(
+        "vllm_ascend.worker.block_table.get_dcp_group",
+        return_value=SimpleNamespace(world_size=1, rank_in_group=0),
+    ):
+        return BlockTable(
+            block_size=block_size,
+            max_num_reqs=4,
+            max_num_blocks_per_req=8,
+            max_num_batched_tokens=256,
+            pin_memory=False,
+            device=torch.device("cpu"),
+            kernel_sizes=kernel_sizes,
+            kv_cache_group=KVCacheGroupSpec(["g"], kv_cache_spec),
+        )
 
 
 def test_ring_lifetime_reuse_and_external_tokens():
@@ -123,3 +159,45 @@ def test_ring_bypasses_position_to_page_mapping(draft):
     else:
         BlockTable.compute_slot_mapping(table, 1, Mock(), Mock())
     assert mapping.tolist() == [-1] * 8
+
+
+def test_ring_ownership_predicate_excludes_kpool_tail():
+    """Only ``CircularBufferSpec`` groups own their addressing (#17532)."""
+    ring = ring_spec()
+    tail = kpool_tail_spec()
+    # Both report circular addressing, so both keep the ring math.
+    assert is_circular_kv_cache_spec(ring) and is_circular_kv_cache_spec(tail)
+    # Only the ring buffer wants the all-PAD slot mapping from generic writers.
+    assert is_circular_buffer_kv_cache_spec(ring)
+    assert not is_circular_buffer_kv_cache_spec(tail)
+    assert is_circular_buffer_kv_cache_spec(
+        AscendCircularBufferSpec(block_size=32, num_kv_heads=1, head_size=1024, head_size_v=0, dtype=torch.float32)
+    )
+    # Uniform wrappers resolve recursively, mirroring ``is_circular_kv_cache_spec``.
+    assert is_circular_buffer_kv_cache_spec(UniformTypeKVCacheSpecs(block_size=32, kv_cache_specs={"s": ring}))
+    assert not is_circular_buffer_kv_cache_spec(UniformTypeKVCacheSpecs(block_size=128, kv_cache_specs={"t": tail}))
+    assert not is_circular_buffer_kv_cache_spec(
+        UniformTypeKVCacheSpecs(block_size=32, kv_cache_specs={"r": ring, "t": tail})
+    )
+    assert not is_circular_buffer_kv_cache_spec(SimpleNamespace())
+
+
+def test_kpool_tail_group_keeps_ring_slot_mapping():
+    """The KPool tail still consumes the slot mapping, so it must not pad."""
+    table = real_block_table(kpool_tail_spec(), block_size=128, kernel_sizes=[128])
+    # Circular addressing is retained for the writer...
+    assert table.is_circular
+    # ...but the PAD short-circuit must not swallow its slot mapping.
+    assert not table.is_circular_group
+
+    table.add_row([7], row_idx=0)
+    table.slot_mapping.np[:] = -1
+    table.compute_slot_mapping_draft(np.array([0, 0]), np.array([0, 1]))
+    # Ring math resolves real slots instead of PAD-ing the tail cache dry.
+    assert table.slot_mapping.np[:2].tolist() == [7 * 128, 7 * 128 + 1]
+
+
+def test_circular_buffer_group_still_pads():
+    """Genuine ring buffers keep the #16925 all-PAD short-circuit."""
+    table = real_block_table(ring_spec(), block_size=32)
+    assert table.is_circular and table.is_circular_group
