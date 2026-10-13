@@ -1,0 +1,210 @@
+{
+  "code/integration/run_shadow.py": {
+    "sha256": "37d48271349383b351a2e5d646261e1d5e00d27b2abd576a00363e21821ee80f",
+    "bytes": 1634
+  },
+  "code/integration/kvtq_queued_quant.py": {
+    "sha256": "6dfbf2f0de37908f2cc3210f108602c40296161bb8d38dae024085a4c4cd3e28",
+    "bytes": 543
+  },
+  "code/integration/kvtq_store.py": {
+    "sha256": "a8bf9d758ae2a8e4616f35de18b042090fb0f622d7cfb17e2949cc7007e8b572",
+    "bytes": 20146
+  },
+  "code/integration/kvtq_shadow.py": {
+    "sha256": "0b36310ac6f42cdb7443d4a928a836bc473359a6277275e38b1520f044f043f8",
+    "bytes": 6098
+  },
+  "code/integration/METADATA": {
+    "sha256": "821f356160023fc3ddb7b5067351a5708f27af61e11b91be14f8889e2cc86c7f",
+    "bytes": 58
+  },
+  "code/integration/entry_points.txt": {
+    "sha256": "f612b15f6f114e5abc8655779cfd21e745233d112f6ec5c795f77ef2b20e8b8e",
+    "bytes": 79
+  },
+  "code/integration/kvtq_native_read.py": {
+    "sha256": "6f8d1c3ec931115a0e055c950c3bdc60aeef334f54f004a538097a5b833577c5",
+    "bytes": 2417
+  },
+  "code/integration/kvtq_vllm_plugin.py": {
+    "sha256": "c768b8f771bb64bf56a37e67c80d95979dc9d04cfb663d222304f9a8da18fd81",
+    "bytes": 1089
+  },
+  "code/integration/kvtq_write.py": {
+    "sha256": "bfc7849bbfe4f0aa5d78beeef0dd4b92d1eed07b19dbfb1e20215ebd3be73e77",
+    "bytes": 6167
+  },
+  "code/integration/kvtq_read.py": {
+    "sha256": "228ae934780c27591aff68ebe882535e5a9ce012ddc503a243585bdd5c8bf053",
+    "bytes": 9905
+  },
+  "code/integration/test_store_roundtrip.py": {
+    "sha256": "f4502d6452251544d34a2635753f8f9b01f92645214531efe865ebd54098bb57",
+    "bytes": 3427
+  },
+  "code/op/TqQuantWs.json": {
+    "sha256": "856d01abfe15261a8fb175d7991c2bb029aa571d6401e468906aeb681d8d4426",
+    "bytes": 1489
+  },
+  "code/op/KvCacheTurboQuant.json": {
+    "sha256": "e892f2f61e8d2c7794e9cc360edb52da21c9d4a345e16d07a1a70378664a8c6a",
+    "bytes": 906
+  },
+  "code/op/TqPagedRead.json": {
+    "sha256": "800fa29cb7611ebc91d2685fcc069f1ebb31666c3a844ea12b130b531e60b0c5",
+    "bytes": 517
+  },
+  "code/integration/torch_ext/tq_queued_read.cpp": {
+    "sha256": "165d45596be408186b9dc28a237aec86a2d645eea26a358ce6aa46bd115cbda8",
+    "bytes": 4954
+  },
+  "code/integration/torch_ext/build_ext.py": {
+    "sha256": "2d2902b151c65c8fa167fc6e193aad5ffc48b203cc4fba453754a2ebf5dd51a3",
+    "bytes": 1313
+  },
+  "code/integration/torch_ext/test_glue.py": {
+    "sha256": "99ffb56fcaa44ee2a1a6101f2341bcf3d81adc78483a20212318158851f10fa9",
+    "bytes": 2077
+  },
+  "code/integration/torch_ext/build_quant_ws.py": {
+    "sha256": "c30537edfb34912a64a0bef20d978b4c55cea6bd89c2ee3e509d1f8edfaf43e3",
+    "bytes": 920
+  },
+  "code/integration/torch_ext/build_queued_read.py": {
+    "sha256": "4dd5b1c4e2c3b9a6ae85642317da2a575cbb4a3beb92e446305aeb1a4615da44",
+    "bytes": 926
+  },
+  "code/integration/torch_ext/build_native_read.py": {
+    "sha256": "bcf4884d7e50691572977a777d4d9aaa97bcaa65ce9e6a2110eb109205cca05f",
+    "bytes": 926
+  },
+  "code/integration/torch_ext/tq_native_read.cpp": {
+    "sha256": "0420e52e1f5324996b44415ed7d45cedd75809633507f2182a153eb695fd8c58",
+    "bytes": 4230
+  },
+  "code/integration/torch_ext/tq_quant_ws.cpp": {
+    "sha256": "4e3254ab9093fa3fc3d3e9d29181a6e82e332b227e59fe135ca1e33f26d55ac6",
+    "bytes": 7097
+  },
+  "code/integration/torch_ext/turboquant_torch.cpp": {
+    "sha256": "51fdaeb74f26aa2c9aece180955651dab6e858de943cee9ab105a8022066d6b5",
+    "bytes": 5946
+  },
+  "code/op/op_kernel/tq_paged_read_tiling.h": {
+    "sha256": "6571a787c1f34f5d8560f83a67037d844b407f01025d767bab693eb0910bc9bd",
+    "bytes": 318
+  },
+  "code/op/op_kernel/tq_quant_ws_tiling.h": {
+    "sha256": "543a9bed7631a21f21be8e302ba216c7d97400ba4bad75f35cdf28bc23c662d3",
+    "bytes": 984
+  },
+  "code/op/op_kernel/tq_paged_read.cpp": {
+    "sha256": "7fad69d901ecf58bd312c408ea29cac7d742bc34ba94c5308aa1759cb46bcb2d",
+    "bytes": 8858
+  },
+  "code/op/op_kernel/tq_quant_ws.cpp": {
+    "sha256": "2e6c02e70e07e46a0da31cbc301fc31ab1b50be34c1ac0e88cf5e45b129ac104",
+    "bytes": 25744
+  },
+  "code/op/op_kernel/kv_cache_turbo_quant_tiling.h": {
+    "sha256": "dc218c9235c3481d5118b913a91c8c4562b4360866af8eab053f74e868595965",
+    "bytes": 992
+  },
+  "code/op/op_kernel/kv_cache_turbo_quant.cpp": {
+    "sha256": "174750a32cb619be6fb1cd7085ce3c4ef6bb598a007d366f4bf9e5fdc4b7dbb6",
+    "bytes": 25813
+  },
+  "code/op/op_host/tq_paged_read.cpp": {
+    "sha256": "74b773edc9a261e142bb82cdeaaa6ccb7029ab3788823f72d8533a1e2f19e390",
+    "bytes": 4337
+  },
+  "code/op/op_host/tq_quant_ws.cpp": {
+    "sha256": "f2e2f019b8d708a529af99b178cbd8813cd7b6c617ae52e11d9e6de69cdf3650",
+    "bytes": 9742
+  },
+  "code/op/op_host/kv_cache_turbo_quant.cpp": {
+    "sha256": "01140bd8e1865a331ba03b91c2c4ce7beaa6c63192f6b26016ab50d56829c37f",
+    "bytes": 9791
+  },
+  "opp/vendors/tqquantws/version.info": {
+    "sha256": "fdd4d0d83c19ab6cd3f874c61c773a54a29e64ac85cd7783f409c4fc4d06c311",
+    "bytes": 34
+  },
+  "opp/vendors/tqquantws/scripts/uninstall.sh": {
+    "sha256": "1a47362bd4e0100da2ba94c3e021fd2cf3972c84d821d91bc04fcbf0c3e20dea",
+    "bytes": 2481
+  },
+  "opp/vendors/tqquantws/bin/set_env.bash": {
+    "sha256": "fec53b58c0f4651a361e0309dd536a4dbe13d3983cbddb9c88b5a406fbf70bc1",
+    "bytes": 210
+  },
+  "opp/vendors/tqquantws/op_proto/inc/op_proto.h": {
+    "sha256": "dad57d0a12af69efa033253480a86719b5befbbcb68bbc28f09488ff6f54e185",
+    "bytes": 558
+  },
+  "opp/vendors/tqquantws/op_proto/lib/linux/aarch64/libcust_opsproto_rt2.0.so": {
+    "sha256": "b6b0ff6377a402156daad339baddd90e36a0acf0a946160a15be76d67f03f5a5",
+    "bytes": 395216
+  },
+  "opp/vendors/tqquantws/op_api/lib/libcust_opapi.so": {
+    "sha256": "d802f11665005926e57cbf984d8fb170bf82f7ce1ef09ec08900b1808a92295b",
+    "bytes": 67680
+  },
+  "opp/vendors/tqquantws/op_api/include/aclnn_tq_quant_ws.h": {
+    "sha256": "4f2d1a9914b6454821cae169db3c4e2358e916e9e973e8cb4aeea52603d87c28",
+    "bytes": 1370
+  },
+  "opp/vendors/tqquantws/op_impl/ai_core/tbe/op_tiling/liboptiling.so": {
+    "sha256": "d046074b83675c0a87ba08562e47130f1683741c5fd6b87e698be3116d9901bf",
+    "bytes": 395216
+  },
+  "opp/vendors/tqquantws/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/libcust_opmaster_rt2.0.so": {
+    "sha256": "d046074b83675c0a87ba08562e47130f1683741c5fd6b87e698be3116d9901bf",
+    "bytes": 395216
+  },
+  "opp/vendors/tqquantws/op_impl/ai_core/tbe/config/ascend910b/aic-ascend910b-ops-info.json": {
+    "sha256": "34cbbcc520bd8c8ccae034bf8134a0a84c8158e4d7f6def3e5381d3230d05e00",
+    "bytes": 2514
+  },
+  "opp/vendors/tqquantws/op_impl/ai_core/tbe/tqquantws_impl/dynamic/tq_quant_ws.py": {
+    "sha256": "3598eab5be7b80631f6f71a1f36c275e79b5bae0ad1a7f177f6f258fcd05f24e",
+    "bytes": 12284
+  },
+  "opp/vendors/tqquantws/op_impl/ai_core/tbe/tqquantws_impl/dynamic/tq_quant_ws_tiling.h": {
+    "sha256": "543a9bed7631a21f21be8e302ba216c7d97400ba4bad75f35cdf28bc23c662d3",
+    "bytes": 984
+  },
+  "opp/vendors/tqquantws/op_impl/ai_core/tbe/tqquantws_impl/dynamic/tq_quant_ws.cpp": {
+    "sha256": "2e6c02e70e07e46a0da31cbc301fc31ab1b50be34c1ac0e88cf5e45b129ac104",
+    "bytes": 25744
+  },
+  "opp/vendors/tqquantws/op_impl/ai_core/tbe/kernel/ascend910b/tq_quant_ws/TqQuantWs_6d6388447df401ded3acdcc39e5d8cf5.json": {
+    "sha256": "cb75d38055473855083dc03a756f707d66153709f0eacf07fd2f0774ce417c77",
+    "bytes": 3103
+  },
+  "opp/vendors/tqquantws/op_impl/ai_core/tbe/kernel/ascend910b/tq_quant_ws/TqQuantWs_6d6388447df401ded3acdcc39e5d8cf5.o": {
+    "sha256": "e393a941f46e06342b4155864b0897e61046bf86f9dac6de341b7308fd05d389",
+    "bytes": 52112
+  },
+  "opp/vendors/tqquantws/op_impl/ai_core/tbe/kernel/config/ascend910b/tq_quant_ws.json": {
+    "sha256": "a6e8729f016909ec1c085edadb5fd8b48d3726212118ac8e37e45dc3565fc669",
+    "bytes": 2850
+  },
+  "opp/vendors/tqquantws/op_impl/ai_core/tbe/kernel/config/ascend910b/binary_info_config.json": {
+    "sha256": "6a0ed093971e2f46048411d6b72cbb481a7dff781a67cbb6ea035502b272884c",
+    "bytes": 1975
+  },
+  "opp/vendors/tqquantws/framework/tensorflow/libcust_tf_parsers.so": {
+    "sha256": "7de3fa57c471ee722dd1cb64ff2a291bda08738384fbb2d4e07c508c6a0f1e0e",
+    "bytes": 67504
+  },
+  "opp/vendors/tqquantws/framework/tensorflow/npu_supported_ops.json": {
+    "sha256": "32530b86352979a00474b771cf694d7874af519e3274a5ceae69329a054829ed",
+    "bytes": 190
+  },
+  "torch-extensions/tq_quant_ws/tq_quant_ws.so": {
+    "sha256": "52e5185473bdec1f6c4072749fd0362c7d1e7045e171c4862ee4e2b3ed09168a",
+    "bytes": 335240
+  }
+}

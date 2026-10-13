@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/data02/tq-opt-20261011/quant_ws_20261014/host.py", line 104, in <module>
+    run()
+  File "/data02/tq-opt-20261011/quant_ws_20261014/host.py", line 95, in run
+    memory = review(ROOT / "memory-attempt1/memcheck.log", kernel, 35)
+  File "/data02/tq-opt-20261011/quant_ws_20261014/host.py", line 45, in review
+    assert starts == clean == invocations, (starts, clean, invocations)
+AssertionError: (35, 0, 35)
