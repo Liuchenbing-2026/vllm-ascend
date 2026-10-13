@@ -73,18 +73,26 @@ def _pack_scatter_pair4(
     for tile in range(tl.program_id(0), tiles, programs):
         row = tile * tile_rows + row_lane
         valid = row < rows
-        slot = tl.load(Slots + row // (2 * heads), mask=valid, other=0).to(tl.int64)
+        slot = tl.load(Slots + row // heads, mask=valid, other=0).to(tl.int64)
         target = (slot * heads + row % heads) * row_bytes
+        key_row = row // heads * (2 * heads) + row % heads
         index = tl.load(
-            Indices + row[:, None] * index_bytes + lane[None, :],
+            Indices + key_row[:, None] * index_bytes + lane[None, :],
             mask=valid[:, None],
             other=0,
         )
-        norm = tl.load(Norms + row, mask=valid, other=0).to(tl.uint16, bitcast=True)
-        is_key = row % (2 * heads) < heads
-        _scatter_packed_rows(KeyCache, target, index, norm, valid & is_key, index_bytes)
+        value_index = tl.load(
+            Indices + (key_row + heads)[:, None] * index_bytes + lane[None, :],
+            mask=valid[:, None],
+            other=0,
+        )
+        norm = tl.load(Norms + key_row, mask=valid, other=0).to(tl.uint16, bitcast=True)
+        value_norm = tl.load(Norms + key_row + heads, mask=valid, other=0).to(
+            tl.uint16, bitcast=True
+        )
+        _scatter_packed_rows(KeyCache, target, index, norm, valid, index_bytes)
         _scatter_packed_rows(
-            ValueCache, target, index, norm, valid & ~is_key, index_bytes
+            ValueCache, target, value_index, value_norm, valid, index_bytes
         )
 
 
@@ -146,7 +154,7 @@ class PackedCacheWriter:
             raise ValueError("paired cache writer shape mismatch")
         if slots.numel() != indices.shape[0]:
             raise ValueError("paired cache writer slot count mismatch")
-        rows = norms.numel()
+        rows = norms.numel() // 2
         if rows == 0:
             return
         tiles = triton.cdiv(rows, TILE_ROWS)
