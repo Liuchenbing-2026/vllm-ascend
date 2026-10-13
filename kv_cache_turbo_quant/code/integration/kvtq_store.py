@@ -146,8 +146,13 @@ def _write_cache_pair(self, key, value, slots):
 
     vectors = torch.cat((key, value), dim=1)
     rot, qjl = _get_quant_matrices(vectors.device)
-    idx, _qjlb, norm, _gamma = torch.ops.turboquant.kv_cache_turbo_quant(
-        vectors, rot, qjl, _MSE_BITS)
+    from kvtq_queued_quant import QueuedQuantizer
+
+    quantizer = getattr(self, '_kvtq_queued_quantizer', None)
+    if quantizer is None:
+        quantizer = QueuedQuantizer()
+        self._kvtq_queued_quantizer = quantizer
+    idx, _qjlb, norm, _gamma = quantizer(vectors, rot, qjl, _MSE_BITS)
     writer = getattr(self, '_kvtq_packed_writer', None)
     if writer is None:
         writer = PackedCacheWriter()

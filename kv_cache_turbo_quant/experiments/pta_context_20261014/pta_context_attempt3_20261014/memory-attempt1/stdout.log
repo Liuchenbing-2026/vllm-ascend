@@ -1,0 +1,100 @@
+=================================================================
+                   >>>>>   MindStudio   <<<<<
+    THE END-TO-END TOOLCHAIN TO UNLEASH HUAWEI ASCEND COMPUTE
+=================================================================
+
+[mssanitizer] logging to file: ./mindstudio_sanitizer_log/mssanitizer_20261013201942_52030.log
+[mssanitizer] WARNING: Current file or dir permission is 0755, which poses a security risk. It's recommended to chmod /ws/pta_context_attempt3_20261014/memory-attempt1 permission to the 0750.
+[W1013 20:19:45.315573585 FunctionLoader.cpp:48] Warning: LD_PRELOAD detected, FunctionLoader prefers RTLD_DEFAULT for symbol resolution. (function operator())
+[W1013 20:19:52.572589464 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/ws/c128_20261012/candidate/integration/kvtq_store.py:54: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  rot = q.to(torch.float32).to(device).contiguous()
+{"heads": 1, "tokens": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 1, "tokens": 17, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 1, "tokens": 60, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 1, "tokens": 128, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 1, "tokens": 4096, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 2, "tokens": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 2, "tokens": 17, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 2, "tokens": 60, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 2, "tokens": 128, "mismatched_output_bytes": [0, 0, 0, 0]}
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack displ{"heads": 2, "tokens": 4096, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 4, "tokens": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 4, "tokens": 17, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 4, "tokens": 60, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 4, "tokens": 128, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 4, "tokens": 4096, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 17, "repeat": 0, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 17, "repeat": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 17, "repeat": 2, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 17, "repeat": 3, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 17, "repeat": 4, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 60, "repeat": 0, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 60, "repeat": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+ay.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack d{"nondefault_stream": false, "tokens": 60, "repeat": 2, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 60, "repeat": 3, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 60, "repeat": 4, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 17, "repeat": 0, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 17, "repeat": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 17, "repeat": 2, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 17, "repeat": 3, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 17, "repeat": 4, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 60, "repeat": 0, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 60, "repeat": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 60, "repeat": 2, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 60, "repeat": 3, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 60, "repeat": 4, "mismatched_output_bytes": [0, 0, 0, 0]}
+isplay.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.
+[mssanitizer] WARN: Kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0 missed debug_line information. Please recompile kernel with `-g' or `-gline-tables-only' option to enable callstack display.

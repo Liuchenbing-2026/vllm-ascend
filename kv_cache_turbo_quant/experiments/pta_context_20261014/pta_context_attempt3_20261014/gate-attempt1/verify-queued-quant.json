@@ -1,0 +1,382 @@
+{
+  "passed": 15,
+  "async_passed": 20,
+  "records": [
+    {
+      "heads": 1,
+      "tokens": 1,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 1,
+      "tokens": 17,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 1,
+      "tokens": 60,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 1,
+      "tokens": 128,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 1,
+      "tokens": 4096,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 2,
+      "tokens": 1,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 2,
+      "tokens": 17,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 2,
+      "tokens": 60,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 2,
+      "tokens": 128,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 2,
+      "tokens": 4096,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 4,
+      "tokens": 1,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 4,
+      "tokens": 17,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 4,
+      "tokens": 60,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 4,
+      "tokens": 128,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "heads": 4,
+      "tokens": 4096,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "async_records": [
+    {
+      "nondefault_stream": false,
+      "tokens": 17,
+      "repeat": 0,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "tokens": 17,
+      "repeat": 1,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "tokens": 17,
+      "repeat": 2,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "tokens": 17,
+      "repeat": 3,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "tokens": 17,
+      "repeat": 4,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "tokens": 60,
+      "repeat": 0,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "tokens": 60,
+      "repeat": 1,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "tokens": 60,
+      "repeat": 2,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "tokens": 60,
+      "repeat": 3,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "tokens": 60,
+      "repeat": 4,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "tokens": 17,
+      "repeat": 0,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "tokens": 17,
+      "repeat": 1,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "tokens": 17,
+      "repeat": 2,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "tokens": 17,
+      "repeat": 3,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "tokens": 17,
+      "repeat": 4,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "tokens": 60,
+      "repeat": 0,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "tokens": 60,
+      "repeat": 1,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "tokens": 60,
+      "repeat": 2,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "tokens": 60,
+      "repeat": 3,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "tokens": 60,
+      "repeat": 4,
+      "mismatched_output_bytes": [
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "candidate_quantizer_invocations": 35,
+  "original_reference_invocations": 19,
+  "expected_filtered_kernel_invocations": 54,
+  "scope": "Exact idx/QJL/norm/gamma bytes; BF16 vectors, FP32 matrices, bits4; original device kernel unchanged"
+}

@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/data02/tq-opt-20261011/pta_context_attempt2_20261014/host.py", line 96, in <module>
+    run()
+  File "/data02/tq-opt-20261011/pta_context_attempt2_20261014/host.py", line 70, in run
+    command("build", "export TORCH_EXTENSIONS_DIR=/ws/pta_context_attempt2_20261014/torch-extensions MAX_JOBS=1 && "
+  File "/data02/tq-opt-20261011/pta_context_attempt2_20261014/host.py", line 37, in command
+    result.check_returncode()
+  File "/usr/lib/python3.10/subprocess.py", line 457, in check_returncode
+    raise CalledProcessError(self.returncode, self.args, self.stdout,
+subprocess.CalledProcessError: Command '['docker', 'exec', '-e', 'ASCEND_RT_VISIBLE_DEVICES=2,5', '-e', 'VLLM_ASCEND_KVTQ_BITS=4', 'tq-opt-20261011-model', 'bash', '-lc', 'source /usr/local/Ascend/cann-9.1.0/set_env.sh && export TORCH_EXTENSIONS_DIR=/ws/pta_context_attempt2_20261014/torch-extensions MAX_JOBS=1 && exec /ws/.venv/bin/python /ws/pta_context_attempt2_20261014/code/integration/torch_ext/build_pta_quant.py']' returned non-zero exit status 1.

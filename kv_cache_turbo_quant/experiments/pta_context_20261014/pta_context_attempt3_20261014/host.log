@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/data02/tq-opt-20261011/pta_context_attempt3_20261014/host.py", line 96, in <module>
+    run()
+  File "/data02/tq-opt-20261011/pta_context_attempt3_20261014/host.py", line 87, in run
+    memory = review(ROOT / "memory-attempt1/memcheck.log", QUANT_KERNEL, 54)
+  File "/data02/tq-opt-20261011/pta_context_attempt3_20261014/host.py", line 46, in review
+    assert starts == clean == invocations, (starts, clean, invocations)
+AssertionError: (54, 0, 54)
