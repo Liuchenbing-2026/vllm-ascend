@@ -1,0 +1,67 @@
+[
+  {
+    "op": "TqPagedReadConst",
+    "language": "cpp",
+    "input_desc": [
+      {
+        "name": "cache",
+        "param_type": "required",
+        "format": [
+          "ND"
+        ],
+        "type": [
+          "uint8"
+        ]
+      },
+      {
+        "name": "table",
+        "param_type": "required",
+        "format": [
+          "ND"
+        ],
+        "type": [
+          "int32"
+        ]
+      },
+      {
+        "name": "jobs",
+        "param_type": "required",
+        "format": [
+          "ND"
+        ],
+        "type": [
+          "int32"
+        ]
+      },
+      {
+        "name": "lookup",
+        "param_type": "required",
+        "format": [
+          "ND"
+        ],
+        "type": [
+          "bfloat16"
+        ]
+      }
+    ],
+    "output_desc": [
+      {
+        "name": "dense",
+        "param_type": "required",
+        "format": [
+          "ND"
+        ],
+        "type": [
+          "bfloat16"
+        ]
+      }
+    ],
+    "attr": [
+      {
+        "name": "tokens",
+        "type": "int",
+        "param_type": "required"
+      }
+    ]
+  }
+]

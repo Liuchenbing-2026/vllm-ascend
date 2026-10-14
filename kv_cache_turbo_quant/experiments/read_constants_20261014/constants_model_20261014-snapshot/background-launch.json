@@ -1,0 +1,8 @@
+{
+  "launched_utc": "2026-10-14T00:28:37.973546+00:00",
+  "root": "/data02/tq-opt-20261011/constants_model_20261014",
+  "background_pids": {
+    "host": 981128,
+    "monitor": 981129
+  }
+}

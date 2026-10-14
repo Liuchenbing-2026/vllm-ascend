@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/data02/tq-opt-20261011/constants_model_20261014/scripts/host.py", line 105, in <module>
+    main()
+  File "/data02/tq-opt-20261011/constants_model_20261014/scripts/host.py", line 53, in main
+    assert all(x['reduction_percent'] >= 3 for x in paired), 'no sufficient same-shape reader micro benefit; preserve candidate without model launch'
+AssertionError: no sufficient same-shape reader micro benefit; preserve candidate without model launch

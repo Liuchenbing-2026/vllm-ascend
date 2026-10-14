@@ -1,0 +1,54 @@
+[W1014 00:28:43.205562814 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/ws/c128_20261012/candidate/integration/kvtq_store.py:98: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  bits = (lo.to(torch.int64) | (hi.to(torch.int64) << 8)) << 16
+{"case": 0, "total_tokens": 1, "lengths": [1], "shape": [1, 1, 128], "mismatched_bf16_bits": 0}
+{"case": 0, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+{"case": 0, "tokens": 1, "reader": "native_old", "device_event_mean_us": 84.64699983596802, "iterations": 20}
+{"case": 0, "tokens": 1, "reader": "native", "device_event_mean_us": 95.39700150489807, "iterations": 20}
+{"case": 1, "total_tokens": 432, "lengths": [15, 16, 17, 127, 128, 129], "shape": [432, 2, 128], "mismatched_bf16_bits": 0}
+{"case": 1, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+{"case": 1, "tokens": 432, "reader": "native_old", "device_event_mean_us": 83.364999294281, "iterations": 20}
+{"case": 1, "tokens": 432, "reader": "native", "device_event_mean_us": 89.81800079345703, "iterations": 20}
+{"case": 2, "total_tokens": 290, "lengths": [0, 33, 0, 257], "shape": [290, 3, 128], "mismatched_bf16_bits": 0}
+{"case": 2, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+{"case": 2, "tokens": 290, "reader": "native_old", "device_event_mean_us": 142.00700521469116, "iterations": 20}
+{"case": 2, "tokens": 290, "reader": "native", "device_event_mean_us": 164.14799690246582, "iterations": 20}
+{"case": 3, "total_tokens": 320, "lengths": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], "shape": [320, 2, 128], "mismatched_bf16_bits": 0}
+{"case": 3, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+{"case": 3, "tokens": 320, "reader": "native_old", "device_event_mean_us": 82.7180027961731, "iterations": 20}
+{"case": 3, "tokens": 320, "reader": "native", "device_event_mean_us": 95.16100287437439, "iterations": 20}
+{"case": 4, "total_tokens": 120060, "lengths": [2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002, 2000, 2001, 2002], "shape": [120060, 2, 128], "mismatched_bf16_bits": 0}
+{"case": 4, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+{"case": 4, "tokens": 120060, "reader": "native_old", "device_event_mean_us": 362.79499530792236, "iterations": 20}
+{"case": 4, "tokens": 120060, "reader": "native", "device_event_mean_us": 348.09699058532715, "iterations": 20}
+{"case": 5, "total_tokens": 0, "lengths": [0, 0], "shape": [0, 2, 128], "mismatched_bf16_bits": 0}
+{"case": 6, "total_tokens": 799, "lengths": [31, 257, 511], "shape": [799, 4, 128], "mismatched_bf16_bits": 0}
+{"case": 6, "variant": "same_lengths_changed_physical_pages", "mismatched_bf16_bits": 0}
+{"case": 6, "tokens": 799, "reader": "native_old", "device_event_mean_us": 141.75000190734863, "iterations": 20}
+{"case": 6, "tokens": 799, "reader": "native", "device_event_mean_us": 162.97500133514404, "iterations": 20}
+{"variant": "long_c60", "total_tokens": 120000, "mismatched_bf16_bits": 0}
+{"tokens": 120000, "reader": "native_old", "device_event_mean_us": 362.9539966583252, "iterations": 20}
+{"tokens": 120000, "reader": "native", "device_event_mean_us": 348.48198890686035, "iterations": 20}
+{"variant": "long_c128", "total_tokens": 256000, "mismatched_bf16_bits": 0}
+{"tokens": 256000, "reader": "native_old", "device_event_mean_us": 753.1030178070068, "iterations": 20}
+{"tokens": 256000, "reader": "native", "device_event_mean_us": 738.3989810943604, "iterations": 20}
+{"variant": "async_producer_reader_consumer", "lengths": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], "heads": 2, "nondefault_stream": false, "repeat": 0, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], "heads": 2, "nondefault_stream": false, "repeat": 1, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], "heads": 2, "nondefault_stream": false, "repeat": 2, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], "heads": 2, "nondefault_stream": false, "repeat": 3, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], "heads": 2, "nondefault_stream": false, "repeat": 4, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], "heads": 2, "nondefault_stream": true, "repeat": 0, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], "heads": 2, "nondefault_stream": true, "repeat": 1, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], "heads": 2, "nondefault_stream": true, "repeat": 2, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], "heads": 2, "nondefault_stream": true, "repeat": 3, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], "heads": 2, "nondefault_stream": true, "repeat": 4, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [0, 33, 0, 257], "heads": 3, "nondefault_stream": false, "repeat": 0, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [0, 33, 0, 257], "heads": 3, "nondefault_stream": false, "repeat": 1, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [0, 33, 0, 257], "heads": 3, "nondefault_stream": false, "repeat": 2, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [0, 33, 0, 257], "heads": 3, "nondefault_stream": false, "repeat": 3, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [0, 33, 0, 257], "heads": 3, "nondefault_stream": false, "repeat": 4, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [0, 33, 0, 257], "heads": 3, "nondefault_stream": true, "repeat": 0, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [0, 33, 0, 257], "heads": 3, "nondefault_stream": true, "repeat": 1, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [0, 33, 0, 257], "heads": 3, "nondefault_stream": true, "repeat": 2, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [0, 33, 0, 257], "heads": 3, "nondefault_stream": true, "repeat": 3, "mismatched_bf16_bits": 0}
+{"variant": "async_producer_reader_consumer", "lengths": [0, 33, 0, 257], "heads": 3, "nondefault_stream": true, "repeat": 4, "mismatched_bf16_bits": 0}

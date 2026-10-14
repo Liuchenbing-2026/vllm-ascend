@@ -4,14 +4,29 @@ import torch
 import torch_npu  # noqa: F401
 
 NATIVE_EXTENSION = (
-    "/ws/queued_read_20261014/torch-extensions/tq_queued_read/tq_queued_read.so"
+    "/ws/read_direct_constants_20261014/torch-extensions/tq_direct_constants/tq_direct_constants.so"
 )
 
 
 class NativePagedReader:
     def __init__(self):
-        if not hasattr(torch.ops.turboquant, "tq_paged_read_queued"):
+        if not hasattr(torch.ops.turboquant, "tq_paged_read_const_direct"):
             torch.ops.load_library(NATIVE_EXTENSION)
+
+    def _prepare_lookup(self, lookup):
+        source = getattr(self, "_lookup_source", None)
+        if source is lookup and self._lookup_version == lookup._version:
+            return self._prepared_lookup
+        code = torch.arange(512, dtype=torch.int32)
+        code = (code // 16) * 96 + (code % 16) * 4
+        norm = torch.arange(32, dtype=torch.int32) * 96 + 64
+        join = torch.arange(2048, dtype=torch.int32)
+        join = ((join % 4) * 512 + join // 4) * 4
+        indices = torch.cat([code, norm, join]).view(torch.bfloat16).to(lookup.device)
+        self._prepared_lookup = torch.cat([lookup.flatten(), indices])
+        self._lookup_source = lookup
+        self._lookup_version = lookup._version
+        return self._prepared_lookup
 
     def __call__(self, cache, table, lengths, lookup, metadata=None, segment="decode"):
         total = sum(lengths)
@@ -57,6 +72,6 @@ class NativePagedReader:
                 plans[segment] = (fingerprint, jobs)
         # Physical pages are deliberately read from the current table on every
         # call. A reused metadata object with changed page IDs cannot use stale KV.
-        return torch.ops.turboquant.tq_paged_read_queued(
-            cache, table.contiguous(), jobs, lookup, total
+        return torch.ops.turboquant.tq_paged_read_const_direct(
+            cache, table.contiguous(), jobs, self._prepare_lookup(lookup), total
         )

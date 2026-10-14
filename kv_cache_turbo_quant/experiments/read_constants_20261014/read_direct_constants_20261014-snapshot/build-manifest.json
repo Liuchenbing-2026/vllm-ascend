@@ -1,0 +1,82 @@
+{
+  "../read_constants_20261014/opp/vendors/tqreadconst/version.info": {
+    "sha256": "fdd4d0d83c19ab6cd3f874c61c773a54a29e64ac85cd7783f409c4fc4d06c311",
+    "bytes": 34
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_proto/lib/linux/aarch64/libcust_opsproto_rt2.0.so": {
+    "sha256": "0a6372f334aacfbf2d2eed0a4bc5ecd1cea1b6919a07af7bc9323bc47cebd09d",
+    "bytes": 264144
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_proto/inc/op_proto.h": {
+    "sha256": "82203427334a42add87fd4fedca938f17055159275e79ebd9da6c2c950fd7711",
+    "bytes": 446
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/scripts/uninstall.sh": {
+    "sha256": "cb7cd90c7e56a3edfae5cd8497aacf4bb428990d6e558046527d650cc1d765d8",
+    "bytes": 2483
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_api/lib/libcust_opapi.so": {
+    "sha256": "b77b8843bff89fcf51972f7af17226cd2f6b64ebf71a833ab0b849432c5ca1c3",
+    "bytes": 67656
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_api/include/aclnn_tq_paged_read_const.h": {
+    "sha256": "1da755d364528b2deda200c0d8087bc18f8ace63819c751df2f0e8d4e7b7d525",
+    "bytes": 1224
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_impl/ai_core/tbe/op_tiling/liboptiling.so": {
+    "sha256": "d8ada0050d12c1851c99c3548c2989e774786114b087fe9d07f3dc9114547511",
+    "bytes": 264144
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/libcust_opmaster_rt2.0.so": {
+    "sha256": "d8ada0050d12c1851c99c3548c2989e774786114b087fe9d07f3dc9114547511",
+    "bytes": 264144
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_impl/ai_core/tbe/config/ascend910b/aic-ascend910b-ops-info.json": {
+    "sha256": "7ac4245317f60a907204cfbd09f51163a1b249de5caedf60816cfa924585b661",
+    "bytes": 2053
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_impl/ai_core/tbe/tqreadconst_impl/dynamic/tq_paged_read_const.cpp": {
+    "sha256": "2128b2930056275632041c9502926906f00cb6dd51917506a90fd23240dca081",
+    "bytes": 9117
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_impl/ai_core/tbe/tqreadconst_impl/dynamic/tq_paged_read_const_tiling.h": {
+    "sha256": "c57c497c4e93789a8bfedf6a4e93da48fe649cc56515b378ce1f934cb8daca73",
+    "bytes": 323
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_impl/ai_core/tbe/tqreadconst_impl/dynamic/tq_paged_read_const.py": {
+    "sha256": "d5350277d0e0dad4a02e655e1218a09877342748c871cff3db6a0b8b221d1d60",
+    "bytes": 11624
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_impl/ai_core/tbe/kernel/ascend910b/tq_paged_read_const/TqPagedReadConst_006ff0c286696aa22de51e7569d6eb2b.json": {
+    "sha256": "5241133dba39a46076c8c1c6efa786582668981308cd9a33e85d8d15de564c10",
+    "bytes": 2596
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_impl/ai_core/tbe/kernel/ascend910b/tq_paged_read_const/TqPagedReadConst_006ff0c286696aa22de51e7569d6eb2b.o": {
+    "sha256": "eb0a77f54cdec8644172adae4e5178b5e4d7ca627f5f9ea01987bc0700087ec3",
+    "bytes": 14080
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_impl/ai_core/tbe/kernel/config/ascend910b/tq_paged_read_const.json": {
+    "sha256": "5baf84aeaa140b6dec505b2669294a5bfe9c10a2e861697a2be3386f9293ff01",
+    "bytes": 2297
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/op_impl/ai_core/tbe/kernel/config/ascend910b/binary_info_config.json": {
+    "sha256": "0085fbe73ff4427d80c8392eefdc9abc6605fc0f32de8e3f80f497ebbd19788c",
+    "bytes": 1633
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/bin/set_env.bash": {
+    "sha256": "9919176510acac40583bd6b7959a0fd34c884573f4e926d48d53ea2d5848dc75",
+    "bytes": 226
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/framework/tensorflow/libcust_tf_parsers.so": {
+    "sha256": "9a7f0bdca342d13a0c42274ee6c71bfb7410154d9144e2286d4d8b85d2de1417",
+    "bytes": 67504
+  },
+  "../read_constants_20261014/opp/vendors/tqreadconst/framework/tensorflow/npu_supported_ops.json": {
+    "sha256": "73a6d098e4f1843627af2cebde5c3f3dd6cad6b2f97bf833028bc532e8415bb0",
+    "bytes": 197
+  },
+  "torch-extensions/tq_direct_constants/tq_direct_constants.so": {
+    "sha256": "6077287afd96a2d5106820bb8fb5e914def4af9c83c48585d83ba05d57f0d62c",
+    "bytes": 265840
+  }
+}

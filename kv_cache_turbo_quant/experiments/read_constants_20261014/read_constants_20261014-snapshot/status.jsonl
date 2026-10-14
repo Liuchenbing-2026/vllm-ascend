@@ -1,0 +1,8 @@
+{"stage": "waiting_quant_diagnostic", "updated_utc": "2026-10-14T00:23:41.243266+00:00"}
+{"stage": "build", "updated_utc": "2026-10-14T00:23:52.350626+00:00"}
+{"stage": "functional", "updated_utc": "2026-10-14T00:25:05.412179+00:00"}
+{"stage": "failed", "updated_utc": "2026-10-14T00:25:21.447993+00:00"}
+{"stage": "functional", "updated_utc": "2026-10-14T00:27:09.517734+00:00"}
+{"stage": "memory", "updated_utc": "2026-10-14T00:27:25.552423+00:00"}
+{"stage": "micro", "updated_utc": "2026-10-14T00:28:33.851832+00:00"}
+{"stage": "gates_and_micro_complete", "updated_utc": "2026-10-14T00:28:50.236761+00:00", "kernel": "TqPagedReadConst_006ff0c286696aa22de51e7569d6eb2b_0"}

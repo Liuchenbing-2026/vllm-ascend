@@ -1,0 +1,50 @@
+[
+  {
+    "variant": "queued",
+    "tokens": 320,
+    "old_us": 82.7180027961731,
+    "new_us": 95.16100287437439,
+    "latency_change_percent": 15.042674699076475,
+    "is_model_gain": false
+  },
+  {
+    "variant": "queued",
+    "tokens": 120000,
+    "old_us": 362.9539966583252,
+    "new_us": 348.48198890686035,
+    "latency_change_percent": -3.9872843072970454,
+    "is_model_gain": false
+  },
+  {
+    "variant": "queued",
+    "tokens": 256000,
+    "old_us": 753.1030178070068,
+    "new_us": 738.3989810943604,
+    "latency_change_percent": -1.952460203315054,
+    "is_model_gain": false
+  },
+  {
+    "variant": "direct",
+    "tokens": 320,
+    "old_us": 78.7339985370636,
+    "new_us": 82.73500204086304,
+    "latency_change_percent": 5.081671930984166,
+    "is_model_gain": false
+  },
+  {
+    "variant": "direct",
+    "tokens": 120000,
+    "old_us": 361.8769884109497,
+    "new_us": 346.33500576019287,
+    "latency_change_percent": -4.294824801931663,
+    "is_model_gain": false
+  },
+  {
+    "variant": "direct",
+    "tokens": 256000,
+    "old_us": 751.8889904022217,
+    "new_us": 736.0429763793945,
+    "latency_change_percent": -2.107493822239681,
+    "is_model_gain": false
+  }
+]

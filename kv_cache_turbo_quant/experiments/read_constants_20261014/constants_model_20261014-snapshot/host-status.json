@@ -1,0 +1,1 @@
+{"stage": "host_failed", "error": "AssertionError('no sufficient same-shape reader micro benefit; preserve candidate without model launch')", "utc": "2026-10-14T00:28:58.031461+00:00"}
