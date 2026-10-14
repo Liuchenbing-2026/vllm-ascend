@@ -173,7 +173,6 @@ Common Issues Tip: If you encounter issues, Refer to [Public FAQs](../../faqs.md
         --safetensors-load-strategy prefetch \
         --api-server-count 1 \
         --data-parallel-size 8 \
-        --data-parallel-start-rank 0 \
         --data-parallel-size-local 4 \
         --data-parallel-address $node0_ip \
         --data-parallel-rpc-port 12980 \
@@ -296,7 +295,6 @@ Common Issues Tip: If you encounter issues, Refer to [Public FAQs](../../faqs.md
         --max-model-len 135000 \
         --data-parallel-size 4 \
         --data-parallel-size-local 1 \
-        --data-parallel-start-rank 0 \
         --data-parallel-address "${node0_ip}" \
         --data-parallel-rpc-port 12980 \
         --tensor-parallel-size 8 \
@@ -391,7 +389,7 @@ Only the key parameters specific to this model/scenario are described below. max
 - `HCCL_IF_IP`, `GLOO_SOCKET_IFNAME`, `TP_SOCKET_IFNAME`, `HCCL_SOCKET_IFNAME`: Network interface configuration for multi-node communication. Set `nic_name` to the network interface name (obtained via `ifconfig`) and `local_ip` to the current node's IP address. These must be correctly configured on each node for successful multi-node communication.
 - `--data-parallel-size 8`: Total number of data parallel ranks across all nodes (4 ranks per node in this scenario).
 - `--data-parallel-size-local 4`: Number of data parallel ranks on the current node.
-- `--data-parallel-start-rank`: Starting rank offset for data parallel ranks on this node. Node 0 uses `0`, node 1 uses `4`.
+- `--data-parallel-start-rank`: Starting rank offset for data parallel ranks on this node. Set a unique value on each headless node (e.g., node 1 uses `4`). On node 0, omit `--data-parallel-start-rank` even when the start rank is 0, to avoid enabling hybrid load balancing with headless remote engines.
 - `--data-parallel-address`: IP address of the data parallel master node (node 0). Must match the `local_ip` of the master node.
 - `--data-parallel-rpc-port 12980`: RPC port for data parallel master communication. Must be the same across all nodes.
 - `--headless`: Indicates a non-master node (used on node 1-3). Do not use on node 0.
