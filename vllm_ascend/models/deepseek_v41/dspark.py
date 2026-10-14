@@ -477,6 +477,22 @@ class DSparkDeepseekV41ForCausalLM(torch.nn.Module, DeepseekV41MixtureOfExperts,
 
         params_dict = dict(self.named_parameters())
         loaded_params: set[str] = set()
+        # The standalone target-checkpoint embed/head/HC weights below are
+        # fallbacks for the draft model. A checkpoint may ship both an
+        # ``mtp.*`` draft weight and its target-model fallback for the same
+        # destination parameter, and shards complete in arbitrary order, so a
+        # fallback arriving later would silently overwrite the trained draft
+        # weight. Track the destinations already filled from an ``mtp.*`` shard
+        # and skip later fallbacks. The DeepSeek V4 drafter carries the same
+        # defect (see vllm-project/vllm-ascend#17094).
+        draft_head_params: set[str] = set()
+        head_params = {
+            "model.embed_tokens.weight",
+            "lm_head.weight",
+            "model.hc_head_fn",
+            "model.hc_head_base",
+            "model.hc_head_scale",
+        }
 
         tp_size = get_tensor_model_parallel_world_size()
         tp_rank = get_tensor_model_parallel_rank()
@@ -485,6 +501,7 @@ class DSparkDeepseekV41ForCausalLM(torch.nn.Module, DeepseekV41MixtureOfExperts,
         head_end = n_local_head * (tp_rank + 1)
 
         for name, loaded_weight in weights:
+            is_draft_weight = name.startswith("mtp.")
             if name == "embed.weight" and not self.rotation_path:
                 name = "model.embed_tokens.weight"
             elif name == "head.weight" and not self.rotation_path:
@@ -496,6 +513,12 @@ class DSparkDeepseekV41ForCausalLM(torch.nn.Module, DeepseekV41MixtureOfExperts,
                 if mapped_name is None:
                     continue
                 name = mapped_name
+
+            if name in head_params:
+                if is_draft_weight:
+                    draft_head_params.add(name)
+                elif name in draft_head_params:
+                    continue
 
             # Detect whether the checkpoint ships its own embed_tokens / lm_head
             # for the draft model.
