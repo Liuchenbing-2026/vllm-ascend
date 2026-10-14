@@ -79,10 +79,12 @@ def _get_byte_lut(device):
     """
     key = ("lut", str(device))
     if key not in _cache:
-        cent = torch.tensor(CENTROIDS[4], dtype=torch.bfloat16, device=device)
-        b = torch.arange(256, dtype=torch.int32, device=device).to(torch.uint8)
-        lut = torch.stack([cent[(b & 15).long()], cent[(b >> 4).long()]], dim=-1)
-        _cache[key] = lut.contiguous()
+        # Keep the shared constant LUT versioned even in vLLM inference mode.
+        with torch.inference_mode(False):
+            cent = torch.tensor(CENTROIDS[4], dtype=torch.bfloat16, device=device)
+            b = torch.arange(256, dtype=torch.int32, device=device).to(torch.uint8)
+            lut = torch.stack([cent[(b & 15).long()], cent[(b >> 4).long()]], dim=-1)
+            _cache[key] = lut.contiguous()
     return _cache[key]
 
 

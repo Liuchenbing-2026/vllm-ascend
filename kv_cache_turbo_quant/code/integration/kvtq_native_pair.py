@@ -14,18 +14,23 @@ class NativePagedPairReader:
             torch.ops.load_library(NATIVE_EXTENSION)
 
     def _prepare_lookup(self, lookup):
+        # Inference tensors have no version counter. Repack their LUT prefix
+        # on each call so untracked in-place edits cannot return stale values.
+        version = None if torch.is_inference(lookup) else lookup._version
         source = getattr(self, "_lookup_source", None)
-        if source is lookup and self._lookup_version == lookup._version:
+        if version is not None and source is lookup and self._lookup_version == version:
             return self._prepared_lookup
-        code = torch.arange(512, dtype=torch.int32)
-        code = (code // 16) * 96 + (code % 16) * 4
-        norm = torch.arange(32, dtype=torch.int32) * 96 + 64
-        join = torch.arange(2048, dtype=torch.int32)
-        join = ((join % 4) * 512 + join // 4) * 4
-        indices = torch.cat([code, norm, join]).view(torch.bfloat16).to(lookup.device)
-        self._prepared_lookup = torch.cat([lookup.flatten(), indices])
+        if getattr(self, "_lookup_offsets_device", None) != lookup.device:
+            code = torch.arange(512, dtype=torch.int32, device="cpu")
+            code = (code // 16) * 96 + (code % 16) * 4
+            norm = torch.arange(32, dtype=torch.int32, device="cpu") * 96 + 64
+            join = torch.arange(2048, dtype=torch.int32, device="cpu")
+            join = ((join % 4) * 512 + join // 4) * 4
+            self._lookup_offsets = torch.cat([code, norm, join]).view(torch.bfloat16).to(lookup.device)
+            self._lookup_offsets_device = lookup.device
+        self._prepared_lookup = torch.cat([lookup.flatten(), self._lookup_offsets])
         self._lookup_source = lookup
-        self._lookup_version = lookup._version
+        self._lookup_version = version
         return self._prepared_lookup
 
     def __call__(self, cache, value, table, lengths, lookup, metadata=None, segment="decode"):
