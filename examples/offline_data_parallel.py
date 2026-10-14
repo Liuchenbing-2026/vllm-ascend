@@ -125,7 +125,13 @@ def main(
 
     import torch
 
-    _dp_device_ids = [str(i) for i in range(torch.npu.device_count())]
+    # ``device_ids`` entries are resolved as *indices into the visible device
+    # set* when they are integers (and ``ASCEND_RT_VISIBLE_DEVICES`` is set),
+    # but as *physical* device IDs when they are strings. Building the list
+    # from 0-based strings therefore targets physical cards 0..N-1, which are
+    # not necessarily the ones visible to this process and makes worker
+    # ``init_device`` fail when the visible set does not start at 0.
+    _dp_device_ids = list(range(torch.npu.device_count()))
 
     # Sample prompts.
     prompts = [
