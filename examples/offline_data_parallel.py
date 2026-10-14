@@ -125,7 +125,13 @@ def main(
 
     import torch
 
-    _dp_device_ids = [str(i) for i in range(torch.npu.device_count())]
+    # Pass integer device ordinals, not strings. vLLM's EngineArgs resolves
+    # string entries as physical device IDs (the CUDA-UUID path) but integer
+    # entries as indices into the ASCEND_RT_VISIBLE_DEVICES-visible set. Using
+    # strings here breaks any node whose visible devices are not 0-based (e.g.
+    # ASCEND_RT_VISIBLE_DEVICES=4,5,6,7), because the string form resolves to
+    # physical 0..N-1, which is not visible and crashes worker init_device().
+    _dp_device_ids = list(range(torch.npu.device_count()))
 
     # Sample prompts.
     prompts = [
