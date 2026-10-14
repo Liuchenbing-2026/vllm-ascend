@@ -1,0 +1,19 @@
+[W1014 00:45:07.893827012 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/ws/c128_20261012/candidate/integration/kvtq_store.py:82: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  lut = torch.stack([cent[(b & 15).long()], cent[(b >> 4).long()]], dim=-1)
+{"tokens": 1, "reader": "native_old", "device_event_mean_us": 172.36100435256958, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 1, "reader": "native", "device_event_mean_us": 114.50300216674805, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 432, "reader": "native_old", "device_event_mean_us": 172.23600149154663, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 432, "reader": "native", "device_event_mean_us": 113.48299980163574, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 290, "reader": "native_old", "device_event_mean_us": 278.95898818969727, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 290, "reader": "native", "device_event_mean_us": 166.1489963531494, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 320, "reader": "native_old", "device_event_mean_us": 170.56299448013306, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 320, "reader": "native", "device_event_mean_us": 114.74900245666504, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 120060, "reader": "native_old", "device_event_mean_us": 719.8430061340332, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 120060, "reader": "native", "device_event_mean_us": 684.2909812927246, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 799, "reader": "native_old", "device_event_mean_us": 276.321005821228, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 799, "reader": "native", "device_event_mean_us": 164.69299793243408, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 120000, "reader": "native_old", "device_event_mean_us": 719.1500186920166, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 120000, "reader": "native", "device_event_mean_us": 684.6909999847412, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 256000, "reader": "native_old", "device_event_mean_us": 1499.903964996338, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}
+{"tokens": 256000, "reader": "native", "device_event_mean_us": 1455.6520462036133, "iterations": 20, "scope": "two K/V outputs; event interval includes host submission gaps"}

@@ -1,0 +1,11 @@
+=================================================================
+                   >>>>>   MindStudio   <<<<<
+    THE END-TO-END TOOLCHAIN TO UNLEASH HUAWEI ASCEND COMPUTE
+=================================================================
+
+[mssanitizer] logging to file: ./mindstudio_sanitizer_log/mssanitizer_20261014004310_63059.log
+[mssanitizer] WARNING: Current file or dir permission is 0755, which poses a security risk. It's recommended to chmod /ws/paired_read_20261014/attempt2/memory permission to the 0750.
+[W1014 00:43:13.689721756 FunctionLoader.cpp:48] Warning: LD_PRELOAD detected, FunctionLoader prefers RTLD_DEFAULT for symbol resolution. (function operator())
+[W1014 00:43:21.561376760 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/ws/c128_20261012/candidate/integration/kvtq_store.py:82: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  lut = torch.stack([cent[(b & 15).long()], cent[(b >> 4).long()]], dim=-1)

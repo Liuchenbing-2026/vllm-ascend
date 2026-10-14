@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/data02/tq-opt-20261011/paired_model_20261014/scripts/host.py", line 105, in <module>
+    main()
+  File "/data02/tq-opt-20261011/paired_model_20261014/scripts/host.py", line 44, in main
+    assert (previous / required).read_text().strip() == '0', required
+AssertionError: gates.exit

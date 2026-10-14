@@ -1,0 +1,9 @@
+{
+  "native_invocations": 36,
+  "invocations_without_access_error": 36,
+  "exit_leak_bytes": [
+    2097152
+  ],
+  "all_memory_issues_closed": false,
+  "scope": "Changed reader has positive access coverage; original quantizer warnings and baseline exit leak remain open"
+}

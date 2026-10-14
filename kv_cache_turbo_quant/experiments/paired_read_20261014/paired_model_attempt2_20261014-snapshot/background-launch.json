@@ -1,0 +1,8 @@
+{
+  "launched_utc": "2026-10-14T00:42:53.971515+00:00",
+  "root": "/data02/tq-opt-20261011/paired_model_attempt2_20261014",
+  "background_pids": {
+    "host": 1016404,
+    "monitor": 1016405
+  }
+}

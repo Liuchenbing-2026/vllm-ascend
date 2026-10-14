@@ -249,6 +249,19 @@ def _dequant_dense(self, cache_bf16, block_table, seq_lens_list,
                        seq_lens_list).view(torch.bfloat16)
 
 
+def _dequant_dense_pair(self, table, lengths, metadata=None, segment='decode'):
+    if _MSE_BITS != 4:
+        return (_dequant_dense(self, self.key_cache, table, lengths, metadata, segment),
+                _dequant_dense(self, self.value_cache, table, lengths, metadata, segment))
+    reader = getattr(self, '_kvtq_pair_reader', None)
+    if reader is None:
+        from kvtq_native_pair import NativePagedPairReader
+        reader = NativePagedPairReader()
+        self._kvtq_pair_reader = reader
+    return reader(self.key_cache.view(torch.uint8), self.value_cache.view(torch.uint8),
+                  table, lengths, _get_byte_lut(self.key_cache.device), metadata, segment)
+
+
 def _tq_decode(self, query, attn_metadata, output, num_decodes=None):
     if self.key_cache is None:
         _warn_once("nocache", "decode called without kv cache (dummy run?), returning zeros")
@@ -259,8 +272,7 @@ def _tq_decode(self, query, attn_metadata, output, num_decodes=None):
     block_table = attn_metadata.block_tables[:batch]
     rot, rot_t, _ = _get_consts(query.device)
     q_rot = torch.matmul(query[:batch].float(), rot_t).to(torch.bfloat16)
-    k_dense = _dequant_dense(self, self.key_cache, block_table, seq_lens_list, attn_metadata)
-    v_dense = _dequant_dense(self, self.value_cache, block_table, seq_lens_list, attn_metadata)
+    k_dense, v_dense = _dequant_dense_pair(self, block_table, seq_lens_list, attn_metadata)
     # FIA accepts host cumulative lengths. They are already known by the
     # scheduler, so tensor creation/cumsum and a later D2H read are unnecessary.
     kv_cum = list(accumulate(seq_lens_list))
@@ -371,10 +383,7 @@ def _prefill_from_cache(self, query, attn_metadata, output,
     q_rot = torch.matmul(prefill_q.float(), rot_t).to(torch.bfloat16)
     prefill_bt = attn_metadata.block_tables[num_decodes:]
     prefill_sl = list(attn_metadata.seq_lens_list[num_decodes:])
-    k_dense = _dequant_dense(self, self.key_cache, prefill_bt, prefill_sl,
-                             attn_metadata, 'prefill')
-    v_dense = _dequant_dense(self, self.value_cache, prefill_bt, prefill_sl,
-                             attn_metadata, 'prefill')
+    k_dense, v_dense = _dequant_dense_pair(self, prefill_bt, prefill_sl, attn_metadata, 'prefill')
     kv_cum = list(accumulate(prefill_sl))
     q_cum = list(attn_metadata.actual_seq_lengths_q)
     prefill_q_cum = [q_cum[i] - num_decode_tokens for i in range(num_decodes, len(q_cum))]

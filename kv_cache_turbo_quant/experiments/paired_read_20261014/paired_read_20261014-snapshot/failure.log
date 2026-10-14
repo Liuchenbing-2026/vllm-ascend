@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/data02/tq-opt-20261011/paired_read_20261014/host.py", line 62, in main
+    command("functional", common + "exec " + entry + " --precision-only --output-dir /ws/paired_read_20261014/functional")
+  File "/data02/tq-opt-20261011/paired_read_20261014/host.py", line 32, in command
+    result.check_returncode()
+  File "/usr/lib/python3.10/subprocess.py", line 457, in check_returncode
+    raise CalledProcessError(self.returncode, self.args, self.stdout,
+subprocess.CalledProcessError: Command '['docker', 'exec', '-e', 'ASCEND_RT_VISIBLE_DEVICES=2,5', '-e', 'VLLM_ASCEND_KVTQ_BITS=4', 'tq-opt-20261011-model', 'bash', '-lc', 'source /usr/local/Ascend/cann-9.1.0/set_env.sh && source /ws/native_read_20261013/opp/vendors/tqread/bin/set_env.bash && source /ws/paired_read_20261014/opp/vendors/tqreadpair/bin/set_env.bash && exec /ws/.venv/bin/python -u /ws/paired_read_20261014/scripts/verify.py --precision-only --output-dir /ws/paired_read_20261014/functional']' returned non-zero exit status 1.

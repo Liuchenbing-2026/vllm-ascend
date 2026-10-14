@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "/ws/paired_read_20261014/scripts/verify.py", line 137, in <module>
+    main()
+  File "/ws/paired_read_20261014/scripts/verify.py", line 33, in main
+    groups = load("groups", "/ws/opt_20261012/verify/paged_read_torch.py").get_input_groups()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/ws/paired_read_20261014/scripts/verify.py", line 17, in load
+    spec.loader.exec_module(module)
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/ws/opt_20261012/verify/paged_read_torch.py", line 10, in <module>
+    from kvtq_store_reference import CENTROIDS, _dequant_dense
+ModuleNotFoundError: No module named 'kvtq_store_reference'
+[ERROR] 2026-10-14-00:41:10 (PID:62534, Device:-1, RankID:-1) ERR99999 UNKNOWN applicaiton exception
