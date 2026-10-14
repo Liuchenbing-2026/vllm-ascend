@@ -1,0 +1,14 @@
+[
+  "docker",
+  "exec",
+  "-e",
+  "ASCEND_RT_VISIBLE_DEVICES=3",
+  "-e",
+  "OMP_NUM_THREADS=1",
+  "-e",
+  "TORCH_DEVICE_BACKEND_AUTOLOAD=0",
+  "tq-profile-20261014-host18",
+  "bash",
+  "-lc",
+  "source /usr/local/Ascend/cann-9.1.0/set_env.sh && exec /ws/.venv/bin/python -u /ws/output_copy_gate_20261014/verify.py --baseline /ws/paired_model_inference_20261014/candidate_write/integration/kvtq_store.py --candidate /ws/output_copy_gate_20261014/candidate.py --device cpu --output /ws/output_copy_gate_20261014/cpu.json"
+]

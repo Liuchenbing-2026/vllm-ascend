@@ -1,0 +1,201 @@
+{
+  "device": "cpu",
+  "passed": 24,
+  "cases": [
+    {
+      "function": "_tq_decode",
+      "rows": 1,
+      "strided": false,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_tq_decode",
+      "rows": 1,
+      "strided": true,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_tq_decode",
+      "rows": 16,
+      "strided": false,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_tq_decode",
+      "rows": 16,
+      "strided": true,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_tq_decode",
+      "rows": 60,
+      "strided": false,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_tq_decode",
+      "rows": 60,
+      "strided": true,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_tq_decode",
+      "rows": 320,
+      "strided": false,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_tq_decode",
+      "rows": 320,
+      "strided": true,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_tq_decode",
+      "rows": 2000,
+      "strided": false,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_tq_decode",
+      "rows": 2000,
+      "strided": true,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_tq_decode",
+      "rows": 4096,
+      "strided": false,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_tq_decode",
+      "rows": 4096,
+      "strided": true,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_prefill_from_cache",
+      "rows": 1,
+      "strided": false,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_prefill_from_cache",
+      "rows": 1,
+      "strided": true,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_prefill_from_cache",
+      "rows": 16,
+      "strided": false,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_prefill_from_cache",
+      "rows": 16,
+      "strided": true,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_prefill_from_cache",
+      "rows": 60,
+      "strided": false,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_prefill_from_cache",
+      "rows": 60,
+      "strided": true,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_prefill_from_cache",
+      "rows": 320,
+      "strided": false,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_prefill_from_cache",
+      "rows": 320,
+      "strided": true,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_prefill_from_cache",
+      "rows": 2000,
+      "strided": false,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_prefill_from_cache",
+      "rows": 2000,
+      "strided": true,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_prefill_from_cache",
+      "rows": 4096,
+      "strided": false,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    },
+    {
+      "function": "_prefill_from_cache",
+      "rows": 4096,
+      "strided": true,
+      "mismatch": 0,
+      "tail_changed": 0,
+      "prefix_changed": 0
+    }
+  ],
+  "async_passed": 0,
+  "timings": [],
+  "timing_scope": "actual rotation+caller-buffer write; device events include host submission gaps; not whole-model gain"
+}

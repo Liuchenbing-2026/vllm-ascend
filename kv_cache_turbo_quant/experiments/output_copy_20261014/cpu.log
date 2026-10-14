@@ -1,0 +1,1 @@
+{"device": "cpu", "passed": 24, "async_passed": 0, "timing_scope": "actual rotation+caller-buffer write; device events include host submission gaps; not whole-model gain"}

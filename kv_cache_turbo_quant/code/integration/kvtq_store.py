@@ -294,7 +294,8 @@ def _tq_decode(self, query, attn_metadata, output, num_decodes=None):
         sparse_mode=0,
     )
     out = torch.matmul(attn_out.view(batch, self.num_heads, _HEAD_DIM).float(), rot)
-    output[:batch] = out.to(output.dtype)
+    # Convert while writing the caller's buffer, avoiding a BF16 temporary.
+    output[:batch].copy_(out)
     stats["decode_calls"] += 1
     return output
 
@@ -399,7 +400,7 @@ def _prefill_from_cache(self, query, attn_metadata, output,
     )
     n_prefill = num_tokens - num_decode_tokens
     out = torch.matmul(attn_out.view(n_prefill, self.num_heads, _HEAD_DIM).float(), rot)
-    output[num_decode_tokens:num_tokens] = out.to(output.dtype)
+    output[num_decode_tokens:num_tokens].copy_(out)
     return output
 
 _installed = False
