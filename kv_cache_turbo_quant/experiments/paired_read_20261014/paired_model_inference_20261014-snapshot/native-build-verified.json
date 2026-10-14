@@ -1,0 +1,130 @@
+{
+  "utc": "2026-10-13T13:21:39.345657+00:00",
+  "build_exit": 0,
+  "files": {
+    "code/integration/kvtq_native_read.py": {
+      "sha256": "08cb509d21244942459ddea7d16ae474ddc4fcf8c6e431cf88a623e2c1d0607e",
+      "bytes": 2403
+    },
+    "code/integration/torch_ext/build_native_read.py": {
+      "sha256": "bcf4884d7e50691572977a777d4d9aaa97bcaa65ce9e6a2110eb109205cca05f",
+      "bytes": 926
+    },
+    "code/integration/torch_ext/tq_native_read.cpp": {
+      "sha256": "0420e52e1f5324996b44415ed7d45cedd75809633507f2182a153eb695fd8c58",
+      "bytes": 4230
+    },
+    "code/op/TqPagedRead.json": {
+      "sha256": "800fa29cb7611ebc91d2685fcc069f1ebb31666c3a844ea12b130b531e60b0c5",
+      "bytes": 517
+    },
+    "code/op/op_kernel/tq_paged_read_tiling.h": {
+      "sha256": "6571a787c1f34f5d8560f83a67037d844b407f01025d767bab693eb0910bc9bd",
+      "bytes": 318
+    },
+    "code/op/op_kernel/tq_paged_read.cpp": {
+      "sha256": "7fad69d901ecf58bd312c408ea29cac7d742bc34ba94c5308aa1759cb46bcb2d",
+      "bytes": 8858
+    },
+    "code/op/op_host/tq_paged_read.cpp": {
+      "sha256": "74b773edc9a261e142bb82cdeaaa6ccb7029ab3788823f72d8533a1e2f19e390",
+      "bytes": 4337
+    },
+    "opp/vendors/tqread/version.info": {
+      "sha256": "fdd4d0d83c19ab6cd3f874c61c773a54a29e64ac85cd7783f409c4fc4d06c311",
+      "bytes": 34
+    },
+    "opp/vendors/tqread/op_proto/lib/linux/aarch64/libcust_opsproto_rt2.0.so": {
+      "sha256": "0e20f1140d8fc883799d7d6293caa7ff75d3c240ee96ae9dbb748a082809828b",
+      "bytes": 264144
+    },
+    "opp/vendors/tqread/op_proto/inc/op_proto.h": {
+      "sha256": "2a858cd22b32e4efdeed563f23503c3b78695a4f5f13e80eca8cdb980645d7eb",
+      "bytes": 436
+    },
+    "opp/vendors/tqread/scripts/uninstall.sh": {
+      "sha256": "028b05a58a2e465408deeae1c458c539b6d2764be93fdff09d8ce4bec7e1be70",
+      "bytes": 2478
+    },
+    "opp/vendors/tqread/op_api/lib/libcust_opapi.so": {
+      "sha256": "cd660245f4495d41e4329f1713f8e689925f24b73fc2ce0e4cc6ba3f77db707d",
+      "bytes": 67656
+    },
+    "opp/vendors/tqread/op_api/include/aclnn_tq_paged_read.h": {
+      "sha256": "998bec42bd9e84b2a7e125cd86ba91e84efe0cc6fbbdbce5c99cad66d001b2c5",
+      "bytes": 1192
+    },
+    "opp/vendors/tqread/op_impl/ai_core/tbe/op_tiling/liboptiling.so": {
+      "sha256": "a0622ed67db2bf33e9cc38c56b7078993842fa642e5f744186b38e830ea3bd9f",
+      "bytes": 264144
+    },
+    "opp/vendors/tqread/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/libcust_opmaster_rt2.0.so": {
+      "sha256": "a0622ed67db2bf33e9cc38c56b7078993842fa642e5f744186b38e830ea3bd9f",
+      "bytes": 264144
+    },
+    "opp/vendors/tqread/op_impl/ai_core/tbe/config/ascend910b/aic-ascend910b-ops-info.json": {
+      "sha256": "e67844d945915f53f610cc908d772ec89992d144bbf14dc924450c0d4022c65d",
+      "bytes": 2036
+    },
+    "opp/vendors/tqread/op_impl/ai_core/tbe/tqread_impl/dynamic/tq_paged_read_tiling.h": {
+      "sha256": "6571a787c1f34f5d8560f83a67037d844b407f01025d767bab693eb0910bc9bd",
+      "bytes": 318
+    },
+    "opp/vendors/tqread/op_impl/ai_core/tbe/tqread_impl/dynamic/tq_paged_read.cpp": {
+      "sha256": "7fad69d901ecf58bd312c408ea29cac7d742bc34ba94c5308aa1759cb46bcb2d",
+      "bytes": 8858
+    },
+    "opp/vendors/tqread/op_impl/ai_core/tbe/tqread_impl/dynamic/tq_paged_read.py": {
+      "sha256": "437f459c056cb8c02ef992a621a369274481cbbe62455575bd045a8eadec71ef",
+      "bytes": 11563
+    },
+    "opp/vendors/tqread/op_impl/ai_core/tbe/kernel/ascend910b/tq_paged_read/TqPagedRead_dc907b552f63b34c0dcc1d2434a41daf.o": {
+      "sha256": "b7921bfb24c44119bb65027dfbad79ee1fc22f65564373499763b59303823b76",
+      "bytes": 14088
+    },
+    "opp/vendors/tqread/op_impl/ai_core/tbe/kernel/ascend910b/tq_paged_read/TqPagedRead_dc907b552f63b34c0dcc1d2434a41daf.json": {
+      "sha256": "ad6cf5edb190dd8d8afcc470ce6df4f24d018e1756a230c5096562c58ff6d976",
+      "bytes": 2550
+    },
+    "opp/vendors/tqread/op_impl/ai_core/tbe/kernel/config/ascend910b/tq_paged_read.json": {
+      "sha256": "e8704b367181c1d0a59b5b5b3bc7c91f98cc9645e164de5505fddf34261c82e5",
+      "bytes": 2266
+    },
+    "opp/vendors/tqread/op_impl/ai_core/tbe/kernel/config/ascend910b/binary_info_config.json": {
+      "sha256": "812bfcad8524a9c8d1ecf5c51e1622e91ad0c6135da8943a3020e25ddb038d0a",
+      "bytes": 1586
+    },
+    "opp/vendors/tqread/bin/set_env.bash": {
+      "sha256": "e5828c6c2b364e1fd54315f8eb5b22d7af8c4ec5a1a78976a69d7d62d30baf61",
+      "bytes": 210
+    },
+    "opp/vendors/tqread/framework/tensorflow/libcust_tf_parsers.so": {
+      "sha256": "1c26417c3da66b635dcf61cd064753e0220d5080f7c4992ab87fc1915503b0ed",
+      "bytes": 67504
+    },
+    "opp/vendors/tqread/framework/tensorflow/npu_supported_ops.json": {
+      "sha256": "dd4ec7c56c53b0c6f74e50297414bb295250978181e405f9b834d02826b605df",
+      "bytes": 192
+    },
+    "torch-extensions/tq_native_read/.ninja_deps": {
+      "sha256": "9f03d1c01fbfcaf8fd72e72bc69103a2008f25e51dea00d28af010720c7899c7",
+      "bytes": 3404
+    },
+    "torch-extensions/tq_native_read/.ninja_log": {
+      "sha256": "eac321b82d6fe9d45b7ebf0309b4683ba38e9fa4921a8ded85ec0e8f998a0ecb",
+      "bytes": 144
+    },
+    "torch-extensions/tq_native_read/build.ninja": {
+      "sha256": "71dc6b703154fd0fe47cceedd1b72504f6e91c0236b98f17b58a140f087aedea",
+      "bytes": 1308
+    },
+    "torch-extensions/tq_native_read/tq_native_read.so": {
+      "sha256": "9dfa59a0f5ca6cfac7798a46536259d4dae0ac3b401cf7761b90be6a88d629f0",
+      "bytes": 265808
+    },
+    "torch-extensions/tq_native_read/tq_native_read.o": {
+      "sha256": "79c84274317aba06b3afb1b012afbf0ea1deda1be7caf67747ab794575fdddca",
+      "bytes": 492536
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "prior_root": "/ws/opt_20261012",
+  "code_hashes_verified": true,
+  "kernel_cases": 7,
+  "real_integration_cases": 15,
+  "limitation": "prior unchanged implementation verification; new8K single-request usage smoke, not semantic quality benchmark"
+}

@@ -1,0 +1,82 @@
+{
+  "../paired_read_20261014/opp/vendors/tqreadpair/version.info": {
+    "sha256": "fdd4d0d83c19ab6cd3f874c61c773a54a29e64ac85cd7783f409c4fc4d06c311",
+    "bytes": 34
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_proto/lib/linux/aarch64/libcust_opsproto_rt2.0.so": {
+    "sha256": "c764405de730cbe6433d2768608cc19c790dc71935465b21e92d6e769d85ffa6",
+    "bytes": 264144
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_proto/inc/op_proto.h": {
+    "sha256": "1023878f303604acd67473a3b3ef926b83285de7aaad71c5b15c5a0a46b7b925",
+    "bytes": 539
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/scripts/uninstall.sh": {
+    "sha256": "68a0aefa1d8f6292f05dc8643623fd4198a2e41a39ba7e885186ae6db1e0c06e",
+    "bytes": 2482
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_api/lib/libcust_opapi.so": {
+    "sha256": "c6157b29ec07a63ee5f35228ef56ca9ad3b2fa61c33fed265b7097bfc35776d6",
+    "bytes": 67680
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_api/include/aclnn_tq_paged_read_pair.h": {
+    "sha256": "82eb56f9cbb106d1c210ddceabd785b05fca02eb4d43718d799b0da36c31226d",
+    "bytes": 1350
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_impl/ai_core/tbe/op_tiling/liboptiling.so": {
+    "sha256": "3622c7eb261bb0ed5906e245a8e01147d1f41ec43ff740b4b2ba12da0d76497b",
+    "bytes": 264144
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64/libcust_opmaster_rt2.0.so": {
+    "sha256": "3622c7eb261bb0ed5906e245a8e01147d1f41ec43ff740b4b2ba12da0d76497b",
+    "bytes": 264144
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_impl/ai_core/tbe/config/ascend910b/aic-ascend910b-ops-info.json": {
+    "sha256": "2732c8a66ba701b78691db5ca23f83776cccd17c6c4bc213328fcc0dd3539d4e",
+    "bytes": 2498
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_impl/ai_core/tbe/tqreadpair_impl/dynamic/tq_paged_read_pair.cpp": {
+    "sha256": "a8dfd2efd99644d0c79da7708539ca5757bb775c5a703bf6f99e46a53c27e36a",
+    "bytes": 9622
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_impl/ai_core/tbe/tqreadpair_impl/dynamic/tq_paged_read_pair.py": {
+    "sha256": "250977d36d8133c8e8de719f6de346b9383255eac670a828418686ab42497294",
+    "bytes": 12052
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_impl/ai_core/tbe/tqreadpair_impl/dynamic/tq_paged_read_pair_tiling.h": {
+    "sha256": "79b893e307d6ba67e82a5cd1dfdb0361636638eb21a7bed3326bf328724fe980",
+    "bytes": 322
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_impl/ai_core/tbe/kernel/ascend910b/tq_paged_read_pair/TqPagedReadPair_72c838622af4acda25fb276090e6f4aa.o": {
+    "sha256": "ee67186fec9abb160422552083bddf4a8e009d78d2abdfa737963bbd93bf390f",
+    "bytes": 14112
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_impl/ai_core/tbe/kernel/ascend910b/tq_paged_read_pair/TqPagedReadPair_72c838622af4acda25fb276090e6f4aa.json": {
+    "sha256": "0ea5ba118c0bc7fa3dede9596cbb2558ef84f1c816b0f6e0350aadabed9a73f5",
+    "bytes": 3036
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_impl/ai_core/tbe/kernel/config/ascend910b/tq_paged_read_pair.json": {
+    "sha256": "e883f4bc2ad1c889d2b5ffa1c56d68248b2b5fa6cb5b36f4ea3716d344ecfa1b",
+    "bytes": 2854
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/op_impl/ai_core/tbe/kernel/config/ascend910b/binary_info_config.json": {
+    "sha256": "ab2212f30ea48fcf7b1a96670bf1fd6d0e9c901ed24bf68366c7aa9faf5927c7",
+    "bytes": 1972
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/bin/set_env.bash": {
+    "sha256": "c3cad3a48a7d12fc5d382cc5c99526db71f3649cd5fa81df2bd59a595b19db1e",
+    "bytes": 218
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/framework/tensorflow/libcust_tf_parsers.so": {
+    "sha256": "637ce1c936d4557493cce9b0d7ffd58bb79329786525a9579614d47d32a24a5e",
+    "bytes": 67504
+  },
+  "../paired_read_20261014/opp/vendors/tqreadpair/framework/tensorflow/npu_supported_ops.json": {
+    "sha256": "35630ab2978c56fcdaa944e72f2f5dd1cdf7b2e8566ad1fba5009378c6deb0c8",
+    "bytes": 196
+  },
+  "../paired_read_20261014/torch-extensions/tq_paired_read/tq_paired_read.so": {
+    "sha256": "a4a439ad124863bacfa21696a42de191dfc0a6ab2a770fbc9947aeab69cba2ee",
+    "bytes": 332176
+  }
+}

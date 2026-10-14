@@ -1,0 +1,5 @@
+{"stage": "cpu", "updated_utc": "2026-10-14T00:56:05.123340+00:00"}
+{"stage": "functional", "updated_utc": "2026-10-14T00:56:16.410352+00:00"}
+{"stage": "memory", "updated_utc": "2026-10-14T00:56:32.798337+00:00"}
+{"stage": "micro", "updated_utc": "2026-10-14T00:58:20.369199+00:00"}
+{"stage": "gates_and_micro_complete", "updated_utc": "2026-10-14T00:58:37.955147+00:00", "kernel": "TqPagedReadPair_72c838622af4acda25fb276090e6f4aa_0"}

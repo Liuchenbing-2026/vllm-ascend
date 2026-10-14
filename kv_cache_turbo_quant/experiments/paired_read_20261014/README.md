@@ -64,3 +64,13 @@ exec /ws/.venv/bin/python -m vllm.entrypoints.openai.api_server \
 ## 未解决项
 
 原量化器的工具GM/FFTS告警、2MiB进程退出泄漏和本地磁盘/旧checkout问题仍保留；当前原生读的正覆盖不等于整条TQ路径所有问题已关闭。源码分支用于保留实验与复现，不代表已合入、已达到BF16收益或上游CI通过。
+
+## 推理模式兼容修复与重新验收
+
+首轮整网8K冒烟失败：Inference tensors do not track version counter。错误在新LUT缓存的版本检查，失败run `write_ab_20261014T004515Z`全部保留，未进入正式cohort。
+
+修复将生产常量LUT创建为普通、可追踪版本的tensor；对任意inference LUT每次重建前缀以正确处理未追踪的原位修改，固定索引表仍按设备复用。CPU原版明确失败/修复通过，原15组逐位+20异步+2LUT更新保留，另增4组真实NPU inference-mode/原位更新，40次访存正覆盖通过。复用原72c838...设备kernel和Torch二进制，未更改舍入或容差。
+
+修复后两路读取微测：320token161.433→114.375us（-29.15%），120000token718.718→684.862us（-4.71%），均事件区间含Host间隙，不能作为TTFT/TPOT或整网收益。新run `write_ab_20261014T005839Z`已重新启动；实际新脚本在actual-inference-model-scripts，完整BF16对照待完成。原2MiB退出泄漏及量化器告警仍未关闭。
+
+修复依据：[PyTorch inference_mode文档](https://docs.pytorch.org/docs/stable/generated/torch.autograd.grad_mode.inference_mode.html)及本机torch2.10.0 CPU/NPU反例；没有通过捕获异常复用旧LUT。

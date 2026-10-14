@@ -1,0 +1,41 @@
+{
+  "captured_utc": "2026-10-14T00:49:08.800193+00:00",
+  "mode": "candidate",
+  "concurrency": 1,
+  "num_prompts": 1,
+  "input_len": 8000,
+  "output_len": 1,
+  "seed": 20261010,
+  "timeout_s": 300.0,
+  "payload_sha256": [
+    "293ed01e992ceec8aa4176b1d1156b93570845abc3ae64fb770c1f4cf58b141f"
+  ],
+  "successful": 0,
+  "failed": 1,
+  "duration_s": 0.6403641980141401,
+  "complete_cohort": false,
+  "output_throughput_tps": null,
+  "input_throughput_tps": null,
+  "request_throughput_rps": null,
+  "tpot_applicable": false,
+  "total_throughput_tps": null,
+  "mean_ttft_s": null,
+  "p99_ttft_s": null,
+  "mean_tpot_ms": null,
+  "p99_tpot_ms": null,
+  "mean_latency_s": null,
+  "requests": [
+    {
+      "id": 0,
+      "status": "failed",
+      "events": 0,
+      "text": "",
+      "started_s": 0.0005480023100972176,
+      "http_status": 200,
+      "error_type": "RuntimeError",
+      "error": "{'message': 'EngineCore encountered an issue. See stack trace (above) for the root cause.', 'type': 'InternalServerError', 'param': None, 'code': 500}",
+      "latency_s": 0.6393639137968421
+    }
+  ],
+  "timing_boundary": "cohort HTTP send to last SSE/usage response; payload generation excluded"
+}

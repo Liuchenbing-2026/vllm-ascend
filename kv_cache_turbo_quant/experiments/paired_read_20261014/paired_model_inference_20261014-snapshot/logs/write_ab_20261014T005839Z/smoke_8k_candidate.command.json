@@ -1,0 +1,16 @@
+[
+  "/ws/.venv/bin/python",
+  "/ws/paired_model_inference_20261014/scripts/bench_client.py",
+  "--mode",
+  "candidate",
+  "--concurrency",
+  "1",
+  "--input-len",
+  "8000",
+  "--output-len",
+  "1",
+  "--timeout",
+  "300",
+  "--output",
+  "/ws/paired_model_inference_20261014/results/write_ab_20261014T005839Z/smoke_8k_candidate.json"
+]

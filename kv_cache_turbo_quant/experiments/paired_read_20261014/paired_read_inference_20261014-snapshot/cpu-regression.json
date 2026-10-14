@@ -1,0 +1,6 @@
+{
+  "original_failure": "Inference tensors do not track version counter.",
+  "untracked_mutations_passed": 3,
+  "tracked_reuse_and_mutation_passed": true,
+  "precision_unchanged": true
+}

@@ -1,2 +1,13 @@
 {"stage": "environment_before", "run_id": "write_ab_20261014T004515Z"}
 {"stage": "paired_precision", "run_id": "write_ab_20261014T004515Z"}
+{"stage": "server_starting", "mode": "candidate", "budget": 4096, "profiling": false, "pid": 64131, "run_id": "write_ab_20261014T004515Z"}
+{"stage": "benchmark_running", "run_id": "write_ab_20261014T004515Z", "mode": "candidate", "concurrency": 1, "input_len": 8000, "output_len": 1, "result": "/ws/paired_model_attempt2_20261014/results/write_ab_20261014T004515Z/smoke_8k_candidate.json", "started_utc": "2026-10-14T00:49:07.736053+00:00"}
+{"stage": "controller_failed", "error": "RuntimeError('smoke_8k_candidate failed: 2')", "run_id": "write_ab_20261014T004515Z"}
+Traceback (most recent call last):
+  File "/ws/paired_model_attempt2_20261014/scripts/run_write_ab.py", line 87, in <module>
+    runner.run()
+  File "/ws/paired_model_attempt2_20261014/scripts/run_write_ab.py", line 60, in run
+    self.run_client(mode, 1, 8000, 1, f'smoke_8k_{mode}', timeout=300)
+  File "/ws/paired_model_attempt2_20261014/scripts/run_8k1.py", line 174, in run_client
+    raise RuntimeError(f'{name} failed: {code}')
+RuntimeError: smoke_8k_candidate failed: 2

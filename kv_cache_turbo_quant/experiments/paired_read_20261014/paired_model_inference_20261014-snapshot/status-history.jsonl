@@ -1,0 +1,4 @@
+{"updated_utc": "2026-10-14T00:58:43.077038+00:00", "stage": "environment_before", "run_id": "write_ab_20261014T005839Z"}
+{"updated_utc": "2026-10-14T00:58:53.416609+00:00", "stage": "paired_precision", "run_id": "write_ab_20261014T005839Z"}
+{"updated_utc": "2026-10-14T00:59:10.511622+00:00", "stage": "server_starting", "mode": "candidate", "budget": 4096, "profiling": false, "pid": 66382, "run_id": "write_ab_20261014T005839Z"}
+{"updated_utc": "2026-10-14T01:02:40.583765+00:00", "stage": "benchmark_running", "run_id": "write_ab_20261014T005839Z", "mode": "candidate", "concurrency": 1, "input_len": 8000, "output_len": 1, "result": "/ws/paired_model_inference_20261014/results/write_ab_20261014T005839Z/smoke_8k_candidate.json", "started_utc": "2026-10-14T01:02:40.583744+00:00"}

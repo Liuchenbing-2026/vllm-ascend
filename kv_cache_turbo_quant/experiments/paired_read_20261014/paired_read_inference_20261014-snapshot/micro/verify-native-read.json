@@ -1,0 +1,453 @@
+{
+  "passed": 15,
+  "async_passed": 20,
+  "lookup_records": [
+    {
+      "inplace_mutation": false,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "inplace_mutation": true,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    }
+  ],
+  "records": [
+    {
+      "case": 0,
+      "tokens": 1,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": 0,
+      "variant": "changed_physical_pages",
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": 1,
+      "tokens": 432,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": 1,
+      "variant": "changed_physical_pages",
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": 2,
+      "tokens": 290,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": 2,
+      "variant": "changed_physical_pages",
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": 3,
+      "tokens": 320,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": 3,
+      "variant": "changed_physical_pages",
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": 4,
+      "tokens": 120060,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": 4,
+      "variant": "changed_physical_pages",
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": 5,
+      "tokens": 0,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": 6,
+      "tokens": 799,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": 6,
+      "variant": "changed_physical_pages",
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "variant": "long_c60",
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "variant": "long_c128",
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    }
+  ],
+  "async_records": [
+    {
+      "nondefault_stream": false,
+      "repeat": 0,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "repeat": 1,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "repeat": 2,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "repeat": 3,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "repeat": 4,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "repeat": 0,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "repeat": 1,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "repeat": 2,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "repeat": 3,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "repeat": 4,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "repeat": 0,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "repeat": 1,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "repeat": 2,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "repeat": 3,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": false,
+      "repeat": 4,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "repeat": 0,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "repeat": 1,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "repeat": 2,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "repeat": 3,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "nondefault_stream": true,
+      "repeat": 4,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    }
+  ],
+  "timings": [
+    {
+      "tokens": 1,
+      "reader": "native_old",
+      "device_event_mean_us": 157.78000354766846,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 1,
+      "reader": "native",
+      "device_event_mean_us": 111.34699583053589,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 432,
+      "reader": "native_old",
+      "device_event_mean_us": 158.81500244140625,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 432,
+      "reader": "native",
+      "device_event_mean_us": 111.03899478912354,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 290,
+      "reader": "native_old",
+      "device_event_mean_us": 267.7769899368286,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 290,
+      "reader": "native",
+      "device_event_mean_us": 165.92700481414795,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 320,
+      "reader": "native_old",
+      "device_event_mean_us": 161.43300533294678,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 320,
+      "reader": "native",
+      "device_event_mean_us": 114.37499523162842,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 120060,
+      "reader": "native_old",
+      "device_event_mean_us": 719.8939800262451,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 120060,
+      "reader": "native",
+      "device_event_mean_us": 685.8009815216064,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 799,
+      "reader": "native_old",
+      "device_event_mean_us": 272.11101055145264,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 799,
+      "reader": "native",
+      "device_event_mean_us": 166.22400283813477,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 120000,
+      "reader": "native_old",
+      "device_event_mean_us": 718.7180042266846,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 120000,
+      "reader": "native",
+      "device_event_mean_us": 684.8619937896729,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 256000,
+      "reader": "native_old",
+      "device_event_mean_us": 1499.9360084533691,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    },
+    {
+      "tokens": 256000,
+      "reader": "native",
+      "device_event_mean_us": 1455.7479858398438,
+      "iterations": 20,
+      "scope": "two K/V outputs; event interval includes host submission gaps"
+    }
+  ],
+  "inference_passed": 4,
+  "inference_records": [
+    {
+      "source": "production_tracked",
+      "inplace_mutation": false,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "source": "production_tracked",
+      "inplace_mutation": true,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "source": "untracked_input",
+      "inplace_mutation": false,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    },
+    {
+      "source": "untracked_input",
+      "inplace_mutation": true,
+      "mismatched_bf16_bits": [
+        0,
+        0
+      ]
+    }
+  ],
+  "expected_filtered_kernel_invocations": 40,
+  "scope": "both K/V outputs exactly equal original BF16 decode; no semantic-model or throughput acceptance"
+}

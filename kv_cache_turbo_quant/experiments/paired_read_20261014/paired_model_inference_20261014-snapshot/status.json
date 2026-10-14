@@ -1,0 +1,11 @@
+{
+  "updated_utc": "2026-10-14T01:02:40.583765+00:00",
+  "stage": "benchmark_running",
+  "run_id": "write_ab_20261014T005839Z",
+  "mode": "candidate",
+  "concurrency": 1,
+  "input_len": 8000,
+  "output_len": 1,
+  "result": "/ws/paired_model_inference_20261014/results/write_ab_20261014T005839Z/smoke_8k_candidate.json",
+  "started_utc": "2026-10-14T01:02:40.583744+00:00"
+}

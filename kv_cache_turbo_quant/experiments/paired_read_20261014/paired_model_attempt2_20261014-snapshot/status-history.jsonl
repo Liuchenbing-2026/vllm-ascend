@@ -1,2 +1,5 @@
 {"updated_utc": "2026-10-14T00:45:18.881941+00:00", "stage": "environment_before", "run_id": "write_ab_20261014T004515Z"}
 {"updated_utc": "2026-10-14T00:45:29.371076+00:00", "stage": "paired_precision", "run_id": "write_ab_20261014T004515Z"}
+{"updated_utc": "2026-10-14T00:45:47.666658+00:00", "stage": "server_starting", "mode": "candidate", "budget": 4096, "profiling": false, "pid": 64131, "run_id": "write_ab_20261014T004515Z"}
+{"updated_utc": "2026-10-14T00:49:07.736081+00:00", "stage": "benchmark_running", "run_id": "write_ab_20261014T004515Z", "mode": "candidate", "concurrency": 1, "input_len": 8000, "output_len": 1, "result": "/ws/paired_model_attempt2_20261014/results/write_ab_20261014T004515Z/smoke_8k_candidate.json", "started_utc": "2026-10-14T00:49:07.736053+00:00"}
+{"updated_utc": "2026-10-14T00:49:08.861238+00:00", "stage": "controller_failed", "error": "RuntimeError('smoke_8k_candidate failed: 2')", "run_id": "write_ab_20261014T004515Z"}

@@ -1,5 +1,6 @@
 {
-  "updated_utc": "2026-10-14T00:45:29.371076+00:00",
-  "stage": "paired_precision",
+  "updated_utc": "2026-10-14T00:49:08.861238+00:00",
+  "stage": "controller_failed",
+  "error": "RuntimeError('smoke_8k_candidate failed: 2')",
   "run_id": "write_ab_20261014T004515Z"
 }

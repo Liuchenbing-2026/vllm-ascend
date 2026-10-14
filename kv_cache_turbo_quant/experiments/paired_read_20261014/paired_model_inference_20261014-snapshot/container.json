@@ -1,0 +1,65 @@
+{
+  "id": "55238dba5d6c2c84f296446b4eeacfe4fd952a156e839abfe6486771a8f25186",
+  "name": "tq-opt-20261011-model",
+  "image_tag": "vllm-ascend:dspark-a2-028",
+  "image_id": "sha256:3d74258bb4aba4d7ba1d972f886b78d25b7459346bcce4933f27ce8e6bdd4e14",
+  "image_repo_digests": [],
+  "mounts": [
+    {
+      "Type": "bind",
+      "Source": "/root/tq-opt-20261011",
+      "Destination": "/ws/opt_20261011",
+      "Mode": "",
+      "RW": true,
+      "Propagation": "rprivate"
+    },
+    {
+      "Type": "bind",
+      "Source": "/data01/models/Qwen3-30B-A3B",
+      "Destination": "/models/Qwen3-30B-A3B",
+      "Mode": "ro",
+      "RW": false,
+      "Propagation": "rprivate"
+    },
+    {
+      "Type": "bind",
+      "Source": "/usr/local/Ascend/driver",
+      "Destination": "/usr/local/Ascend/driver",
+      "Mode": "ro",
+      "RW": false,
+      "Propagation": "rprivate"
+    },
+    {
+      "Type": "bind",
+      "Source": "/usr/local/Ascend/add-ons",
+      "Destination": "/usr/local/Ascend/add-ons",
+      "Mode": "ro",
+      "RW": false,
+      "Propagation": "rprivate"
+    },
+    {
+      "Type": "bind",
+      "Source": "/usr/local/bin/npu-smi",
+      "Destination": "/usr/local/bin/npu-smi",
+      "Mode": "ro",
+      "RW": false,
+      "Propagation": "rprivate"
+    },
+    {
+      "Type": "bind",
+      "Source": "/data02/tq-opt-20261011",
+      "Destination": "/ws",
+      "Mode": "",
+      "RW": true,
+      "Propagation": "rprivate"
+    }
+  ],
+  "devices": [],
+  "ipc_mode": "host",
+  "network_mode": "host",
+  "privileged": true,
+  "physical_cards": [
+    2,
+    5
+  ]
+}

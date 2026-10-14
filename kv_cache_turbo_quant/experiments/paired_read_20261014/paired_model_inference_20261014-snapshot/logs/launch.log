@@ -1,0 +1,4 @@
+{"stage": "environment_before", "run_id": "write_ab_20261014T005839Z"}
+{"stage": "paired_precision", "run_id": "write_ab_20261014T005839Z"}
+{"stage": "server_starting", "mode": "candidate", "budget": 4096, "profiling": false, "pid": 66382, "run_id": "write_ab_20261014T005839Z"}
+{"stage": "benchmark_running", "run_id": "write_ab_20261014T005839Z", "mode": "candidate", "concurrency": 1, "input_len": 8000, "output_len": 1, "result": "/ws/paired_model_inference_20261014/results/write_ab_20261014T005839Z/smoke_8k_candidate.json", "started_utc": "2026-10-14T01:02:40.583744+00:00"}

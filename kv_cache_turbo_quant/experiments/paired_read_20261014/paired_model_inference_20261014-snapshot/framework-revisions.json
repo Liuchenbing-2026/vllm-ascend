@@ -1,0 +1,16 @@
+{
+  "vllm": {
+    "commit_provenance": "2cf0a6915ce544dc493a0990f2ea38d81601128a",
+    "verification_method": "original fixed export archive SHA256 plus file-by-file comparison; no .git in runtime",
+    "archive_sha256": "99aab0577b2c3449ff5dea919b4f44dbd9d1abba85b9f195eb2e2f93a1330233",
+    "matched_source_files": 6596,
+    "changed_source_files": []
+  },
+  "vllm-ascend": {
+    "commit_provenance": "96df623103f921df1a4488170d106f36689acb59",
+    "verification_method": "original fixed export archive SHA256 plus file-by-file comparison; no .git in runtime",
+    "archive_sha256": "6e3087b350f80ed514b27ffe3ae71aab7f85837ed3606f2f4872a16f80834ec9",
+    "matched_source_files": 4137,
+    "changed_source_files": []
+  }
+}
