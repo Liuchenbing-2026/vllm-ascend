@@ -1,0 +1,38 @@
+[W1014 00:22:42.422444328 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/ws/c128_20261012/candidate/integration/kvtq_store.py:54: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  rot = q.to(torch.float32).to(device).contiguous()
+{"heads": 1, "tokens": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 1, "tokens": 17, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 1, "tokens": 60, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 1, "tokens": 128, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 1, "tokens": 4096, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 2, "tokens": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 2, "tokens": 17, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 2, "tokens": 60, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 2, "tokens": 128, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 2, "tokens": 4096, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 4, "tokens": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 4, "tokens": 17, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 4, "tokens": 60, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 4, "tokens": 128, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"heads": 4, "tokens": 4096, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 17, "repeat": 0, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 17, "repeat": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 17, "repeat": 2, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 17, "repeat": 3, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 17, "repeat": 4, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 60, "repeat": 0, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 60, "repeat": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 60, "repeat": 2, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 60, "repeat": 3, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": false, "tokens": 60, "repeat": 4, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 17, "repeat": 0, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 17, "repeat": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 17, "repeat": 2, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 17, "repeat": 3, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 17, "repeat": 4, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 60, "repeat": 0, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 60, "repeat": 1, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 60, "repeat": 2, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 60, "repeat": 3, "mismatched_output_bytes": [0, 0, 0, 0]}
+{"nondefault_stream": true, "tokens": 60, "repeat": 4, "mismatched_output_bytes": [0, 0, 0, 0]}

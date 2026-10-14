@@ -1,0 +1,20 @@
+[mssanitizer] Start memcheck sanitizer on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c041604000 on GM when writing data in KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0
+======    in block aic(0) on device 0
+======    code in :0 (serialNo:5104)
+
+[mssanitizer] Sanitizer finished on kernel KvCacheTurboQuant_0bce30e4690f2b43628265dfd3b6214f_0. See all detected errors above.
+====== ERROR: LeakCheck: detected memory leaks
+
+======    Direct leak of 2097152 byte(s)
+======      at 0x12c041200000 on GM
+======      allocated in :0 (serialNo:1)
+
+====== SUMMARY: 2097152 byte(s) leaked in 1 allocation(s)

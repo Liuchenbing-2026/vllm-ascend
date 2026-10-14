@@ -1,0 +1,12 @@
+{
+  "host.py": "3799ef455c1cc25bdd76ca92cabb3baff54811c7d4dc7431cd3ce0521e57a637",
+  "code/op/TqQuantDebug.json": "d563d62d644a544989a45a4fcbc08927ea1d6b5c42e984f7e27609e368fbfadf",
+  "code/op/op_host/tq_quant_debug.cpp": "52b8dad122acf067ceac04c996dac1c68397c1d26536502508e626550736248b",
+  "code/op/op_kernel/tq_quant_debug.cpp": "60b024b4043867de3eec1e9f664b3c2e322ef3c6747da5040ce4d11bf3a6c727",
+  "code/op/op_kernel/tq_quant_debug_tiling.h": "3f0a6ae8164bbe63a884a3b247e9f3bf12e2d460a15f87be9068e6e18af528b9",
+  "code/integration/torch_ext/build_quant_debug.py": "6a8797e5ececadcfe348499d036da362f32cab1b7babce006b605184e0c519b0",
+  "code/integration/torch_ext/tq_quant_debug.cpp": "0a146f617626c3adb7e4c24ad4ce75eb4005f0b18579eff71f424f5ec317d1bb",
+  "scripts/single.py": "4cc7d525d3b5653769de2475f56578b285c0d944748838334740349d119d65dd",
+  "scripts/build_quant_debug.sh": "f7fd972b46b13746fd053269fe9265644730956b56d6bf266d5645376ab29d06",
+  "scripts/verify.py": "425dc1d989b17bdae4367838619e0c20919bf6e91d8778b6608f1e2925be4b08"
+}

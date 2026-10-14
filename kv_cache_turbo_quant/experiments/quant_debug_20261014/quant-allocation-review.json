@@ -1,0 +1,12 @@
+{
+  "workspace_begin": "0x12c041600000",
+  "workspace_bytes": 18350080,
+  "workspace_end_exclusive": "0x12c042780000",
+  "reported_address": "0x12c041604000",
+  "reported_access_bytes": 520,
+  "offset_bytes": 16384,
+  "entire_reported_access_inside_allocated_tensor": true,
+  "exact_four_output_sha256_equal": true,
+  "root_cause_closed": false,
+  "status": "Warning persists; single invocation address is within the raw allocated workspace. Does not prove all shapes safe or identify sanitizer/DFX reason."
+}

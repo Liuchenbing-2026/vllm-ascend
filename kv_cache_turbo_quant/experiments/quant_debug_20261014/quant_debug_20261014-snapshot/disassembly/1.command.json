@@ -1,0 +1,1 @@
+["/usr/local/Ascend/cann-9.1.0/bin/llvm-objdump", "-dl", "--no-show-raw-insn", "/ws/quant_debug_20261014/opp/vendors/tqquantdebug/op_impl/ai_core/tbe/kernel/ascend910b/tq_quant_debug/TqQuantDebug_ea037d55979b407c5d1246855d9dec18.o"]

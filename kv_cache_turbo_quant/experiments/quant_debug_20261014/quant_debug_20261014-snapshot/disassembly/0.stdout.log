@@ -1,0 +1,35 @@
+
+/ws/quant_debug_20261014/opp/vendors/tqquantdebug/op_impl/ai_core/tbe/kernel/ascend910b/tq_quant_debug/TqQuantDebug_ea037d55979b407c5d1246855d9dec18.o:	file format elf64-hiipu
+
+Sections:
+Idx Name                                                                 Size     VMA              Type
+  0                                                                      00000000 0000000000000000 
+  1 .text                                                                0000af74 0000000000000000 TEXT
+  2 .ascendc_tiling.TqQuantDebugTilingData                               00000010 000000000000af78 DATA
+  3 .rodata                                                              00000074 000000000000af88 DATA
+  4 .data                                                                00000008 000000000000b000 DATA
+  5 .rela.text                                                           00000168 0000000000000000 
+  6 .ascend.stack.size.record                                            00000010 0000000000000000 
+  7 .ascend.meta.TqQuantDebug_ea037d55979b407c5d1246855d9dec18_0_mix_aic 000000cc 0000000000000000 
+  8 __CCE_KernelArgSize                                                  00000008 0000000000000000 
+  9 .debug_loclists                                                      000195a8 0000000000000000 DEBUG
+ 10 .debug_abbrev                                                        000015b1 0000000000000000 DEBUG
+ 11 .debug_info                                                          0003f984 0000000000000000 DEBUG
+ 12 .rela.debug_info                                                     00000120 0000000000000000 
+ 13 .debug_rnglists                                                      00008ae7 0000000000000000 DEBUG
+ 14 .debug_str_offsets                                                   000058c0 0000000000000000 DEBUG
+ 15 .rela.debug_str_offsets                                              00021420 0000000000000000 
+ 16 .debug_str                                                           00059841 0000000000000000 DEBUG
+ 17 .debug_addr                                                          00001cd8 0000000000000000 DEBUG
+ 18 .rela.debug_addr                                                     00005658 0000000000000000 
+ 19 .comment                                                             0000006b 0000000000000000 
+ 20 .debug_frame                                                         00000070 0000000000000000 DEBUG
+ 21 .rela.debug_frame                                                    00000060 0000000000000000 
+ 22 .debug_line                                                          00010e37 0000000000000000 DEBUG
+ 23 .rela.debug_line                                                     00056a30 0000000000000000 
+ 24 .debug_line_str                                                      000036c4 0000000000000000 DEBUG
+ 25 .ascend.meta.TqQuantDebug_ea037d55979b407c5d1246855d9dec18_0_mix_aiv 000000cc 0000000000000000 
+ 26 .bl_uninit                                                           00000020 0000000000000000 
+ 27 .symtab                                                              00051888 0000000000000000 
+ 28 .shstrtab                                                            00000217 0000000000000000 
+ 29 .strtab                                                              000005ac 0000000000000000 

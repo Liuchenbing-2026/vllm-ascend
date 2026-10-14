@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/data02/tq-opt-20261011/quant_debug_20261014/host_attempt2.py", line 48, in main
+    assert len(names) == 1, names
+AssertionError: set()

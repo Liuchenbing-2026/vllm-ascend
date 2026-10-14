@@ -1,0 +1,22 @@
+[mssanitizer] Start memcheck sanitizer on kernel TqQuantDebug_ea037d55979b407c5d1246855d9dec18_0
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aic(0) on kernel TqQuantDebug_ea037d55979b407c5d1246855d9dec18_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(0) on kernel TqQuantDebug_ea037d55979b407c5d1246855d9dec18_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+[mssanitizer] Warning:Register FFTS_BASE_ADDR was not reset to default in block aiv(1) on kernel TqQuantDebug_ea037d55979b407c5d1246855d9dec18_0_mix_aic. Expected default value is (0), but current value is (17514876633088)
+
+====== WARNING: out of bounds of size 520
+======    at 0x12c041604000 on GM when writing data in TqQuantDebug_ea037d55979b407c5d1246855d9dec18_0
+======    in block aic(0) on device 0
+======    code in pc current 0x124 (serialNo:5106)
+======    #0 /ws/quant_debug_20261014/op-build/gen/build_out/op_kernel/TqQuantDebug_ascend910b/kernel_0/kernel_meta_TqQuantDebug_ea037d55979b407c5d1246855d9dec18/kernel_meta/TqQuantDebug_ea037d55979b407c5d1246855d9dec18_54399_kernel.cpp:39:9
+======    #1 /ws/quant_debug_20261014/op-build/gen/build_out/op_kernel/TqQuantDebug_ascend910b/kernel_0/kernel_meta_TqQuantDebug_ea037d55979b407c5d1246855d9dec18/kernel_meta/TqQuantDebug_ea037d55979b407c5d1246855d9dec18_54399_kernel.cpp:57:5
+
+[mssanitizer] Sanitizer finished on kernel TqQuantDebug_ea037d55979b407c5d1246855d9dec18_0. See all detected errors above.
+====== ERROR: LeakCheck: detected memory leaks
+
+======    Direct leak of 2097152 byte(s)
+======      at 0x12c041200000 on GM
+======      allocated in :0 (serialNo:1)
+
+====== SUMMARY: 2097152 byte(s) leaked in 1 allocation(s)
