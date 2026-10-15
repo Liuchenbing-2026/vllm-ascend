@@ -1,0 +1,85 @@
+{
+  "run_id": "write_ab_20261015T093432Z",
+  "matrix_complete": true,
+  "successful": 684,
+  "failed": 0,
+  "rows": [
+    {
+      "scene": "20_20_c16",
+      "mode": "candidate",
+      "rounds": 3,
+      "successful": 48,
+      "failed": 0,
+      "ttft_s": 0.46123242743002874,
+      "tpot_ms": 225.72460176378254,
+      "output_tps": 67.08568403995224,
+      "input_tps": 67.08568403995224,
+      "gain_vs_bf16_percent": -10.738778081340817,
+      "gain_vs_optimized_percent": 2.3829760494334495
+    },
+    {
+      "scene": "20_20_c16",
+      "mode": "bf16",
+      "rounds": 3,
+      "successful": 48,
+      "failed": 0,
+      "ttft_s": 0.41402417615366477,
+      "tpot_ms": 201.34787801796116,
+      "output_tps": 75.15658266597025,
+      "input_tps": 75.15658266597025
+    },
+    {
+      "scene": "20_20_c16",
+      "mode": "optimized",
+      "rounds": 3,
+      "successful": 48,
+      "failed": 0,
+      "ttft_s": 0.47413864083743346,
+      "tpot_ms": 231.01482008739063,
+      "output_tps": 65.52425669630988,
+      "input_tps": 65.52425669630988
+    },
+    {
+      "scene": "2k200_c60",
+      "mode": "candidate",
+      "rounds": 3,
+      "successful": 180,
+      "failed": 0,
+      "ttft_s": 4.684860045938856,
+      "tpot_ms": 245.64104243738055,
+      "output_tps": 210.30685385419505,
+      "input_tps": 2103.0685385419506,
+      "gain_vs_bf16_percent": -13.589595599119143,
+      "gain_vs_optimized_percent": 0.21724691664279927
+    },
+    {
+      "scene": "2k200_c60",
+      "mode": "bf16",
+      "rounds": 3,
+      "successful": 180,
+      "failed": 0,
+      "ttft_s": 4.122677152681475,
+      "tpot_ms": 211.7296090111134,
+      "output_tps": 243.38140217296703,
+      "input_tps": 2433.8140217296705
+    },
+    {
+      "scene": "2k200_c60",
+      "mode": "optimized",
+      "rounds": 3,
+      "successful": 180,
+      "failed": 0,
+      "ttft_s": 4.7240559504522635,
+      "tpot_ms": 246.18704784705736,
+      "output_tps": 209.85095911597026,
+      "input_tps": 2098.5095911597027
+    }
+  ],
+  "token_equality": {
+    "samples": 4,
+    "equal_token_ids": 440,
+    "scope": "candidate TQ vs prior TQ, not BF16 semantic quality"
+  },
+  "no_retries_or_exclusions": true,
+  "timing": "whole HTTP cohort, payload generation excluded, warmup/profile excluded"
+}

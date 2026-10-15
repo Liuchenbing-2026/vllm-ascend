@@ -1,0 +1,65 @@
+{
+  "complete": true,
+  "goal_achieved": false,
+  "criteria": "same-run BF16; short throughput/TTFT/TPOT no regression and long positive throughput with latency no regression",
+  "checks": [
+    {
+      "scene": "20_20_c16",
+      "throughput_no_regression": false,
+      "ttft_no_regression": false,
+      "tpot_no_regression": false,
+      "output_gain_percent": -10.738778081340817
+    },
+    {
+      "scene": "2k200_c60",
+      "throughput_no_regression": false,
+      "ttft_no_regression": false,
+      "tpot_no_regression": false,
+      "output_gain_percent": -13.589595599119143
+    }
+  ],
+  "checked_utc": "2026-10-15T10:02:06.222530+00:00",
+  "source": {
+    "branch": "perf/tq-byte-read-20261015",
+    "base": "cbe337489df9e5f5e4e1fc2762b85875463bb4c3",
+    "sha": "abbe29ef0520d8210457338da13d101d89edb92c",
+    "verified_files": {
+      "kv_cache_turbo_quant/code/integration/kvtq_native_pair.py": "cf4ccd2e4f3b24b983d94af723f92254790a6ce17f17680304996e87ccaed60b",
+      "kv_cache_turbo_quant/code/integration/kvtq_store.py": "f418001535a44c9bbd90ae1be7aa322a28fcd34a7671a3625d967e57b6c23b60",
+      "kv_cache_turbo_quant/code/integration/torch_ext/build_byte_read.py": "416d5023aee630cdf2e0667930b81f6fff5242b5fa28bb926d42c36f9de597a4",
+      "kv_cache_turbo_quant/code/integration/torch_ext/tq_byte_read.cpp": "822bdd3c1942c848fec0301cac856efd88d16d89732f6ce9978332dd7c23b276",
+      "kv_cache_turbo_quant/code/op/TqPagedReadByte.json": "7a333ea6312ca1364f91e16489557bea7fe9ac9f9508ca0a5dba74e07b774d01",
+      "kv_cache_turbo_quant/code/op/op_host/tq_paged_read_byte.cpp": "b9b68d51676fe415bcd272f5168ae7c63e01cf0468b4e286f64d96a002a65ca6",
+      "kv_cache_turbo_quant/code/op/op_kernel/tq_paged_read_byte.cpp": "8dc066795184db4412f1909ee319f68f1e609b44b571e52e4a711df00b28e523",
+      "kv_cache_turbo_quant/code/op/op_kernel/tq_paged_read_byte_tiling.h": "1a39c732da2399aa2bcfdaaafc4ce03059f966c3512164b0b1186e664159aca4",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/README.md": "6c0d726e2b3095fd4bc1c82294b4cd6d9b0dfbffe1df8bb0032ff44fdf3c0db8",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/build_byte_read.sh": "7311072680d9a0bbf7b62c2663ff9900f1950690922d408ce6c2e2e848beeac6",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/byte-layout-cpu.json": "29688d5879dd1315ce24e356f93bcbdc5b6a434177c1f7d6ce4c543c382bb1b9",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/byte-read-attempt2-current.json": "bbf1a2e35b51918484d062bab2e746b7c38b7fbe618e5aab29ecf904d30b725c",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/byte-read-micro-current.json": "f6a65ac0a6ae5ad5606a1d9b8716dfe0a13dba930af4f2ae9de23f17ee6dde0b",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/cast-api-target-evidence-attempt2.json": "33350b7d7e662e36e5674b3c55a5b00fd6598cb4950499ce1255e31a10b2445c",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/compiled-binaries.json": "a71fabbac8df880efc497a3f1c45b054aca002b1ba372b8714e2dda75fd4e1d2",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/deploy_byte_reader.py": "dd9153c8a1595364a44280f2cfcaca42f947a7d82f3db3265e70837ec95d9b7e",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/host_byte_attempt2.py": "de4d7880cb12930e2432be7a5f587f56dae45bed618ef8c4ba19ff841c69b81b",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/host_byte_reader.py": "050bb3e83ab46859fa67f64ce55091b7a7ab41917867b855a98df1f850577c2e",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/original-fixtures/kvtq_store_reference.py": "101bc5440d1053384981b0182d1cd76be78cd08e513c0f00672b40c81abfda81",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/original-fixtures/paged_read_torch.py": "671e1a7ca1b0f96e4ee11e5886120ab42a1cd86ab21ea87ec676db25b42166ee",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/prepare_byte_reader.py": "904d4a98320832fb3fdeb4fc16bcc305828cc7465fee715c8caab344e83d265b",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/pull_byte_evidence.py": "9c2bd8f5c320c7b9a869fb9d540ed4b7b0dfd0fb58fbed4bd030bc79794b2e4c",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/release_byte_attempt2.py": "adc33246646009e792921dc42866ec8b6e02abb6402c99357a9c93db3404f78b",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/release_byte_micro.py": "b5f035d753039efbdaa028ea038f68f9d2d9ed07a9354184209af54c47e29e30",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/verify_byte_attempt2.py": "8f13893b89e6a4a89bbf30b9386676015c1c6b2e197fdacf74bead9c5b8b2811",
+      "kv_cache_turbo_quant/experiments/byte_read_20261015/verify_byte_read.py": "8e61dd6e7ecaa571ea9d95c42dd0cf28464a32abf2bb7912e2c9265f4097221e"
+    },
+    "precision": {
+      "bitwise": 15,
+      "async": 20,
+      "lut_updates": 2,
+      "inference": 4
+    },
+    "memory_positive_clean_calls": 40,
+    "exit_leak_open_bytes": 2097152,
+    "whole_model_gain_verified": false
+  },
+  "scope": "phase only20/20C16 and2000/200C60; no new8kC256,128K or semantic quality benchmark; device micro gain not whole-model gain"
+}

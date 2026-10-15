@@ -35,3 +35,18 @@ ASCEND_RT_VISIBLE_DEVICES=4 VLLM_ASCEND_KVTQ_BITS=4 /ws/.venv/bin/python /ws/byt
 服务整网沿用TP2/eager、BF16权重、24GiB KV/card、len8192、budget4096、max_num_seqs512、prefix/async关闭；TQ/BF16同配置。源码需挂载到独立integration并使用新byte vendor及Torch扩展，原量化customize必须先初始化；完整新整网后台启动、压测和验收命令由任务23保存。尚未实跑的模板不作为实测。
 
 UB tile保持32行，删除shift/mask/plane/join buffer，新增byteHalf及扩大index后总静态UB小于原读核，未提高队列深度；不是MC2或核间同步算子。当前CANN dav_c220头文件确认两段Cast支持；CPU整数布局检查5组通过，不代替NPU精度。原量化GM/FFTS告警、原退出泄漏、外部资源抢占均未根治。
+
+## 后续真实整网验证：已完成684请求，目标未达成
+
+实际执行的算子代码SHA `abbe29ef0520d8210457338da13d101d89edb92c`，以下为之后的纯报告补充，不更改算子代码。新容器`tq-byte-model-20261015-host3`、同2/5卡、相同模型/配置，`write_ab_20261015T093432Z`三模式×两个场景×三正式轮全部完成，684成功/0失败、440个新旧TQ IDs一致。host.exit与background.exit均0。独立验收complete=true、goal_achieved=false；8kC256/128K新正式轮与BF16语义质量不在本次范围。
+
+| 场景 | BF16输出tok/s | 之前CBE TQ | 新byte TQ | 新TQ/旧TQ | 新TQ/BF16 |
+|---|---:|---:|---:|---:|---:|
+| 20/20 C16 | 75.157 | 65.524 | 67.086 | +2.38% | -10.74% |
+| 2000/200 C60 | 243.381 | 209.851 | 210.307 | +0.22% | -13.59% |
+
+旧版reference确为CBE输出写回版本，不是更早的Triton实现。完整TTFT/TPOT及请求计时口径见model-summary.final.json；新byte TTFT/TPOT也高于BF16。局部读核-29%没有转化为长期输出正收益，不能将对旧TQ的2.38%/0.22%写成超越BF16。host18相同源码另外456请求出现慢轮(-35.35%/-12.84%)，在任务23原样保留，不剔除或与本环境拼收益。
+
+本轮driver26.0.rc1；原host18门禁/micro driver25.5.1，二者性能单独比较。新容器量化7golden与读核15/20/2/4实际复验通过，40memcheck来自此前host18，并非在本机重测。原权重16分片本轮重核size/mtime与配置SHA，使用历史完整权重SHA，未重新全量hash60GB。框架SHA和镜像ID保持前述固定版本，复用已有venv与源码，不声称重新编译框架/干净镜像从头复现。原量化告警和2MiB退出泄漏仍未根治。
+
+完整实际服务、压测、模型token检查及独立验收脚本保存在actual-model-scripts。三模式由run_copy_matrix.py运行，服务完整CLI在serve.sh；精度由check_model_output.py，汇总由summarize_short_long.py，最终标准由finalize_byte_model.py。需要先按任务23准备挂载源码、模型、vendor与固定框架，不能只执行CLI就声称干净机器复现。
