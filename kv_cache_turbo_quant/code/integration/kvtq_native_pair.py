@@ -9,9 +9,10 @@ NATIVE_EXTENSION = (
 
 
 class NativePagedPairReader:
-    def __init__(self):
-        if not hasattr(torch.ops.turboquant, "tq_paged_read_pair"):
-            torch.ops.load_library(NATIVE_EXTENSION)
+    def __init__(self, operator_name="tq_paged_read_pair", extension_path=NATIVE_EXTENSION):
+        if not hasattr(torch.ops.turboquant, operator_name):
+            torch.ops.load_library(extension_path)
+        self._operator = getattr(torch.ops.turboquant, operator_name)
 
     def _prepare_lookup(self, lookup):
         # Inference tensors have no version counter. Repack their LUT prefix
@@ -76,6 +77,6 @@ class NativePagedPairReader:
                 plans[segment] = (fingerprint, jobs)
         # Physical pages are deliberately read from the current table on every
         # call. A reused metadata object with changed page IDs cannot use stale KV.
-        return torch.ops.turboquant.tq_paged_read_pair(
+        return self._operator(
             cache, value, table.contiguous(), jobs, self._prepare_lookup(lookup), total
         )

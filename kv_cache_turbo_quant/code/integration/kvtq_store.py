@@ -258,7 +258,10 @@ def _dequant_dense_pair(self, table, lengths, metadata=None, segment='decode'):
     reader = getattr(self, '_kvtq_pair_reader', None)
     if reader is None:
         from kvtq_native_pair import NativePagedPairReader
-        reader = NativePagedPairReader()
+        reader = NativePagedPairReader(
+            operator_name="tq_paged_read_byte",
+            extension_path="/ws/byte_read_20261015/torch-extensions/tq_byte_read/tq_byte_read.so",
+        )
         self._kvtq_pair_reader = reader
     return reader(self.key_cache.view(torch.uint8), self.value_cache.view(torch.uint8),
                   table, lengths, _get_byte_lut(self.key_cache.device), metadata, segment)

@@ -1,0 +1,1 @@
+{"torch-extensions/tq_byte_read/tq_byte_read.so": {"sha256": "cb9156cf81a87ca574742100ec4359b96d2a2c5383c0fc30b655e8371f44b462", "bytes": 332168}, "opp/vendors/tqreadbyte/op_impl/ai_core/tbe/kernel/ascend910b/tq_paged_read_byte/TqPagedReadByte_85b34c13b2a1e76b7a16bfe98a6e3a5d.o": {"sha256": "398a52ac7a8e2220875561e89fceb3288cb1e7bbe94a4e7fc5aefadb1bea3b98", "bytes": 14112}}
