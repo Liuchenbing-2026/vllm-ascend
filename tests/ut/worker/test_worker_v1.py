@@ -1,5 +1,7 @@
+import gc
 import importlib
 import unittest
+import weakref
 from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock, patch
 
@@ -2180,10 +2182,40 @@ class TestNPUWorkerWeightUpdate(TestBase):
         worker.weight_transfer_engine = engine
         worker._weight_update_active = False
         worker.device = torch.device("cpu")
+        worker.vllm_config = SimpleNamespace(load_config=SimpleNamespace(load_format="auto"))
         worker.model_runner = MagicMock()
         worker.model_runner.model = MagicMock()
         worker.model_config = MagicMock()
         return worker
+
+    def test_ipc_shutdown_collects_model_cycles_after_runner_shutdown(self):
+        class Model:
+            def __init__(self):
+                self.cycle = self
+
+        class Runner:
+            def __init__(self):
+                self.model = Model()
+
+            def shutdown(self):
+                self.model = None
+
+        was_enabled = gc.isenabled()
+        gc.disable()
+        try:
+            for load_format in ("ipc_cache", "auto"):
+                worker = self._make_worker()
+                worker.profiler = None
+                worker.vllm_config.load_config.load_format = load_format
+                worker.model_runner = Runner()
+                model = weakref.ref(worker.model_runner.model)
+                worker.shutdown()
+                self.assertEqual(model() is None, load_format == "ipc_cache")
+                gc.collect()
+        finally:
+            if was_enabled:
+                gc.enable()
+            gc.collect()
 
     def test_check_engine_raises_when_unconfigured(self):
         worker = self._make_worker(engine=None)

@@ -226,7 +226,60 @@ class NPUPlatform(Platform):
         device_props = torch.npu.get_device_properties(device_id)
         if not hasattr(device_props, "uuid") or device_props.uuid is None:
             raise RuntimeError(f"Device {device_id} does not have a valid UUID.")
-        return device_props.uuid
+        return str(device_props.uuid)
+
+    def supports_weight_cache(self) -> bool:
+        return True
+
+    @classmethod
+    def initialize_weight_cache(cls, vllm_config: VllmConfig) -> None:
+        from vllm_ascend import ops
+        from vllm_ascend.distributed.parallel_state import init_ascend_model_parallel
+        from vllm_ascend.utils import adapt_patch, register_ascend_customop
+
+        init_ascend_config(vllm_config)
+        cls._validate_weight_cache_config(vllm_config)
+        adapt_patch()
+        ops.register_dummy_fusion_op()
+        register_ascend_customop(vllm_config)
+        init_ascend_model_parallel(vllm_config.parallel_config, vllm_config.engram_config)
+
+    @classmethod
+    def _validate_weight_cache_config(cls, vllm_config: VllmConfig) -> None:
+        if vllm_config.load_config.load_format == "ipc_cache" and vllm_config.shutdown_timeout == 0:
+            raise ValueError("NPU weight cache requires a positive --shutdown-timeout to release shared storage")
+        if vllm_config.model_config.enable_sleep_mode:
+            raise ValueError("NPU weight cache does not support sleep mode")
+        if vllm_config.model_config.quantization is not None:
+            raise ValueError("NPU weight cache currently requires unquantized weights")
+        if get_ascend_config().weight_nz_mode != 0:
+            raise ValueError("NPU weight cache requires additional_config.weight_nz_mode=0")
+
+    @classmethod
+    def reduce_weight_cache_tensor(cls, tensor: torch.Tensor) -> tuple:
+        import torch_npu
+        from torch.multiprocessing.reductions import reduce_tensor
+        from torch_npu.multiprocessing.reductions import rebuild_npu_tensor
+
+        if tensor.device.type != "npu":
+            raise ValueError(f"Unsupported weight cache device: {tensor.device}")
+        # Native storage IPC does not encode the Ascend storage descriptor.
+        # Reject NZ and other internal layouts rather than reinterpret them as ND.
+        if torch_npu.get_npu_format(tensor) != torch_npu.Format.ND:
+            raise ValueError("NPU weight cache requires ND tensors; set additional_config.weight_nz_mode=0")
+        rebuild, args = reduce_tensor(tensor)
+        if rebuild is not rebuild_npu_tensor:
+            raise RuntimeError("torch_npu did not export an NPU IPC handle")
+        return args
+
+    @classmethod
+    def rebuild_weight_cache_tensor(cls, args: tuple, device_index: int) -> torch.Tensor:
+        from torch_npu.multiprocessing.reductions import rebuild_npu_tensor
+
+        local_args = list(args)
+        # Native NPU reductions use the same storage-device slot as PyTorch.
+        local_args[6] = device_index
+        return rebuild_npu_tensor(*local_args)
 
     @classmethod
     def get_device_total_memory(cls, device_id: int = 0) -> int:
@@ -518,6 +571,8 @@ class NPUPlatform(Platform):
         # (fused MC2 exclusivity + scheduler extension policies)
         # ascend_config is only used for verification, this object must NOT be modified here
         ascend_config = init_ascend_config(vllm_config)
+        if vllm_config.load_config.load_format == "ipc_cache":
+            cls._validate_weight_cache_config(vllm_config)
         _check_ascend_config(vllm_config, ascend_config)
 
         # 6.Update compilation / cudagraph modes (ascend_config -> vllm_config).

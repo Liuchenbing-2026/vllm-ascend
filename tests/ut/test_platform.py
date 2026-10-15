@@ -999,6 +999,57 @@ class TestNPUPlatform(TestBase):
         self.assertIsNone(self.platform.inference_mode())
         mock_inference_mode.assert_called_once()
 
+    def test_weight_cache_uuid_is_serializable(self):
+        uuid = MagicMock()
+        uuid.__str__.return_value = "device-uuid"
+        with patch("torch.npu.get_device_properties", return_value=SimpleNamespace(uuid=uuid)):
+            assert self.platform.get_device_uuid(0) == "device-uuid"
+
+    def test_weight_cache_rejects_non_nd_or_quantized_config(self):
+        config = SimpleNamespace(
+            model_config=SimpleNamespace(quantization=None, enable_sleep_mode=False),
+            load_config=SimpleNamespace(load_format="auto"),
+            shutdown_timeout=0,
+        )
+        with (
+            patch("vllm_ascend.platform.get_ascend_config", return_value=SimpleNamespace(weight_nz_mode=2)),
+            pytest.raises(ValueError, match="weight_nz_mode=0"),
+        ):
+            self.platform._validate_weight_cache_config(config)
+        config.model_config.quantization = "ascend"
+        with pytest.raises(ValueError, match="unquantized"):
+            self.platform._validate_weight_cache_config(config)
+
+    def test_weight_cache_accepts_unquantized_nd_config(self):
+        config = SimpleNamespace(
+            model_config=SimpleNamespace(quantization=None, enable_sleep_mode=False),
+            load_config=SimpleNamespace(load_format="auto"),
+            shutdown_timeout=0,
+        )
+        with patch("vllm_ascend.platform.get_ascend_config", return_value=SimpleNamespace(weight_nz_mode=0)):
+            self.platform._validate_weight_cache_config(config)
+
+    def test_weight_cache_requires_graceful_consumer_shutdown(self):
+        config = SimpleNamespace(
+            model_config=SimpleNamespace(quantization=None, enable_sleep_mode=False),
+            load_config=SimpleNamespace(load_format="ipc_cache"),
+            shutdown_timeout=0,
+        )
+        with pytest.raises(ValueError, match="positive --shutdown-timeout"):
+            self.platform._validate_weight_cache_config(config)
+        config.shutdown_timeout = 30
+        with patch("vllm_ascend.platform.get_ascend_config", return_value=SimpleNamespace(weight_nz_mode=0)):
+            self.platform._validate_weight_cache_config(config)
+
+    def test_weight_cache_rejects_sleep_mode(self):
+        config = SimpleNamespace(
+            model_config=SimpleNamespace(quantization=None, enable_sleep_mode=True),
+            load_config=SimpleNamespace(load_format="auto"),
+            shutdown_timeout=0,
+        )
+        with pytest.raises(ValueError, match="sleep mode"):
+            self.platform._validate_weight_cache_config(config)
+
     def test_set_additional_forward_context_v2_includes_required_moe_fields(self):
         from vllm_ascend.ops.fused_moe.moe_comm_method import FusedMC2CommImpl
         from vllm_ascend.ops.fused_moe.token_dispatcher import TokenDispatcherWithMC2

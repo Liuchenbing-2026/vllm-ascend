@@ -376,6 +376,11 @@ class NPUWorker(WorkerBase):
             shutdown_fn = getattr(model_runner, "shutdown", None)
             if callable(shutdown_fn):
                 shutdown_fn()
+            if self.vllm_config.load_config.load_format == "ipc_cache":
+                # The runner drops model owners after its last GC pass. Collect
+                # cycles now so imported storage releases its IPC reference
+                # before NPU runtime finalization.
+                gc.collect()
 
     def initialize_cache(self, num_gpu_blocks: int, num_cpu_blocks: int) -> None:
         self.cache_config.num_gpu_blocks = num_gpu_blocks
