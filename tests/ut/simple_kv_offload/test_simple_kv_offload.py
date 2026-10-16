@@ -198,6 +198,10 @@ def test_get_finished_records_store_barrier_on_npu(
         def launch_copy(self, *args, **kwargs) -> None:
             self.calls.append(kwargs)
 
+        @property
+        def failed_event_indices(self) -> set[int]:
+            return set()
+
     current_stream = object()
     monkeypatch.setattr(
         torch,

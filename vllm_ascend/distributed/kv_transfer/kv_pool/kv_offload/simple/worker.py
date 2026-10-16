@@ -198,6 +198,13 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
                     wait_event=store_compute_done,
                 )
 
+        failed_event_indices = self._backend.failed_event_indices
+        if failed_event_indices:
+            # A copy job that raised never appended to the ordered event list,
+            # so polling would either stall forever or skip over the gap and
+            # report an unperformed transfer as complete. Fail loudly instead.
+            raise RuntimeError(f"NPU KV-offload copy failed for event indices {sorted(failed_event_indices)}")
+
         finished_recving: set[str] = set()
         if self._pending_load_event_indices:
             load_watermark = self._poll_stream_events(is_store=False)

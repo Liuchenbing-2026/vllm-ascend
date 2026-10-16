@@ -11,6 +11,7 @@ import queue
 import threading
 
 import torch
+from vllm.logger import logger
 
 from vllm_ascend.distributed.kv_transfer.kv_pool.kv_offload.simple.npu_mem_ops import (
     DIRECTION_D2H,
@@ -40,6 +41,17 @@ class NPUDmaCopyBackend:
         self._queue: queue.SimpleQueue | None = None
         self._thread: threading.Thread | None = None
         self._shutdown: bool = False
+        self._failed_event_indices: set[int] = set()
+
+    @property
+    def failed_event_indices(self) -> set[int]:
+        """Event indices whose copy job raised before it recorded its event.
+
+        Such a job never appended to the worker's ordered event list, so the
+        high-water mark cannot describe it. The worker must not release the
+        requests behind these indices as completed.
+        """
+        return set(self._failed_event_indices)
 
     def init(
         self,
@@ -85,6 +97,8 @@ class NPUDmaCopyBackend:
             self._queue.put(None)
         if self._thread is not None:
             self._thread.join(timeout=5.0)
+            if self._thread.is_alive():
+                logger.warning("NPU KV-offload copy thread did not stop within the shutdown timeout.")
 
     # ------------------------------------------------------------------
     # Worker thread main loop
@@ -114,11 +128,21 @@ class NPUDmaCopyBackend:
                 wait_event,
             ) = item
 
-            stream = self._store_stream if is_store else self._load_stream
-            with torch.npu.stream(stream):
-                if wait_event is not None:
-                    stream.wait_event(wait_event)
-                copy_blocks(src_blocks, dst_blocks, params)
-                event = torch.npu.Event()
-                event.record(stream)
+            try:
+                stream = self._store_stream if is_store else self._load_stream
+                with torch.npu.stream(stream):
+                    if wait_event is not None:
+                        stream.wait_event(wait_event)
+                    copy_blocks(src_blocks, dst_blocks, params)
+                    event = torch.npu.Event()
+                    event.record(stream)
+            except Exception:
+                # Letting the exception escape kills this thread, and every
+                # later transfer is then stranded behind a queue nobody
+                # drains, with no log line and no error surfaced. Keep the
+                # loop alive and remember the index so the worker can fail
+                # loudly instead of releasing a transfer that never happened.
+                logger.exception("NPU KV-offload copy job %d failed", event_idx)
+                self._failed_event_indices.add(event_idx)
+                continue
             events_list.append((event_idx, event))
