@@ -39,9 +39,13 @@ import tests.ut.distributed.ascend_store._mock_deps  # noqa: F401, E402
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.coordinator import AscendStoreCoordinator
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.dspark_prefix_cache import DSparkPrefixKeys
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
+    KeyMetadata,
+    LayerPoolKey,
     LoadSpec,
+    PoolKey,
     ReqMeta,
     RequestTracker,
+    get_group_cache_family,
 )
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.pool_scheduler import (
     KVPoolScheduler,
@@ -1127,6 +1131,54 @@ class TestKVPoolSchedulerStoreQueryKeys(unittest.TestCase):
     def _make_scheduler(self, mock_client_cls):
         return KVPoolScheduler(make_config(), use_layerwise=False)
 
+    @staticmethod
+    def _configure(scheduler, kv_cache_group_families=None, **attributes):
+        for name, value in attributes.items():
+            setattr(scheduler, name, value)
+        if kv_cache_group_families is not None:
+            scheduler.kv_cache_group_families = list(kv_cache_group_families)
+        return scheduler
+
+    @staticmethod
+    def _reference_keys(scheduler, block_hashes, include_layers, kv_cache_group_id=0):
+        """Render the expected keys through metadata.PoolKey / LayerPoolKey.
+
+        This is the pre-#14146 code path: one KeyMetadata + PoolKey per
+        (block x dcp x head_or_tp x pp) combination, plus one LayerPoolKey per
+        layer in layerwise mode. It is kept here as the byte-for-byte oracle
+        for the string-building implementation.
+        """
+        cache_family = get_group_cache_family(scheduler.kv_cache_group_families, kv_cache_group_id)
+        head_or_tp_ranks = scheduler.tp_size // scheduler.put_step
+        pp_ranks = [scheduler.pp_rank] if include_layers else range(scheduler.pp_size)
+        keys_by_block = []
+        for block_hash in block_hashes:
+            chunk_hash = block_hash if isinstance(block_hash, str) else block_hash.hex()
+            block_keys: list[str] = []
+            for dcp_rank in range(scheduler.dcp_size):
+                for head_or_tp_rank in range(head_or_tp_ranks):
+                    for pp_rank in pp_ranks:
+                        pool_key = PoolKey(
+                            KeyMetadata(
+                                scheduler.model_name,
+                                head_or_tp_rank,
+                                dcp_rank,
+                                pp_rank,
+                                kv_cache_group_id=kv_cache_group_id,
+                                cache_family=cache_family,
+                            ),
+                            chunk_hash,
+                        )
+                        if include_layers:
+                            block_keys.extend(
+                                layer_key.to_string()
+                                for layer_key in pool_key.split_layers(scheduler.num_layers, scheduler.pp_layer_offset)
+                            )
+                        else:
+                            block_keys.append(pool_key.to_string())
+            keys_by_block.append(block_keys)
+        return keys_by_block
+
     def test_generate_store_query_keys(self):
         cases = [
             ({}, False, 1),
@@ -1141,6 +1193,112 @@ class TestKVPoolSchedulerStoreQueryKeys(unittest.TestCase):
                 result = scheduler._generate_store_query_keys([b"\xaa\xbb"], include_layers=include_layers)
                 self.assertEqual(len(result), 1)
                 self.assertEqual(len(result[0]), expected_count)
+
+    def test_generate_store_query_keys_matches_metadata_reference(self):
+        """Every emitted key must equal the metadata.PoolKey rendering."""
+        layouts = [
+            dict(tp_size=1, put_step=1, dcp_size=1, pp_size=1, pp_rank=0, num_layers=2, pp_layer_offset=0),
+            dict(tp_size=8, put_step=1, dcp_size=2, pp_size=1, pp_rank=0, num_layers=4, pp_layer_offset=0),
+            dict(tp_size=16, put_step=2, dcp_size=1, pp_size=4, pp_rank=3, num_layers=3, pp_layer_offset=61),
+            dict(tp_size=4, put_step=1, dcp_size=2, pp_size=2, pp_rank=1, num_layers=1, pp_layer_offset=0),
+        ]
+        families = ["default", "c4"]
+        block_sets = [
+            [b"\xaa\xbb"],
+            [bytes([i, i + 1]) * 8 for i in range(5)],
+            ["deadbeef"],
+        ]
+        seen_keys = 0
+        for layout in layouts:
+            for include_layers in (False, True):
+                for group_id in (0, 1):
+                    for block_hashes in block_sets:
+                        with self.subTest(layout=layout, include_layers=include_layers, group_id=group_id):
+                            scheduler = self._configure(
+                                self._make_scheduler(), kv_cache_group_families=families, **layout
+                            )
+                            expected = self._reference_keys(
+                                scheduler, block_hashes, include_layers, kv_cache_group_id=group_id
+                            )
+                            result = scheduler._generate_store_query_keys(
+                                block_hashes, include_layers=include_layers, kv_cache_group_id=group_id
+                            )
+                            # exact list equality: same values, same order
+                            self.assertEqual(result, expected)
+                            # order-independent equality (acceptance criterion)
+                            self.assertEqual([sorted(keys) for keys in result], [sorted(keys) for keys in expected])
+                            seen_keys += sum(len(keys) for keys in expected)
+        self.assertGreater(seen_keys, 0)
+
+    def test_generate_store_query_keys_layerwise_layout(self):
+        """Layerwise keys carry layer_id, the group cache family and no pp_rank."""
+        scheduler = self._configure(
+            self._make_scheduler(),
+            kv_cache_group_families=["default", "c4"],
+            tp_size=2,
+            put_step=1,
+            dcp_size=1,
+            pp_size=2,
+            pp_rank=1,
+            num_layers=3,
+            pp_layer_offset=61,
+        )
+        keys = scheduler._generate_store_query_keys([b"\x01\x02"], include_layers=True, kv_cache_group_id=1)[0]
+        self.assertEqual(
+            keys,
+            [
+                "llama-7b@dcp:0@head_or_tp_rank:0@group:1@cache_role:kv@cache_family:c4@layer_id:61@0102",
+                "llama-7b@dcp:0@head_or_tp_rank:0@group:1@cache_role:kv@cache_family:c4@layer_id:62@0102",
+                "llama-7b@dcp:0@head_or_tp_rank:0@group:1@cache_role:kv@cache_family:c4@layer_id:63@0102",
+                "llama-7b@dcp:0@head_or_tp_rank:1@group:1@cache_role:kv@cache_family:c4@layer_id:61@0102",
+                "llama-7b@dcp:0@head_or_tp_rank:1@group:1@cache_role:kv@cache_family:c4@layer_id:62@0102",
+                "llama-7b@dcp:0@head_or_tp_rank:1@group:1@cache_role:kv@cache_family:c4@layer_id:63@0102",
+            ],
+        )
+        # the rendered layout must stay identical to the metadata oracle
+        self.assertEqual(
+            keys,
+            self._reference_keys(scheduler, [b"\x01\x02"], True, kv_cache_group_id=1)[0],
+        )
+
+    def test_generate_store_query_keys_layerwise_ignores_pp_rank(self):
+        """LayerPoolKey has no pp_rank field, so pp_rank cannot change the keys."""
+        rendered = []
+        for pp_rank, pp_layer_offset in ((0, 0), (1, 61), (3, 183)):
+            scheduler = self._configure(
+                self._make_scheduler(),
+                kv_cache_group_families=["default"],
+                tp_size=2,
+                put_step=1,
+                dcp_size=2,
+                pp_size=4,
+                pp_rank=pp_rank,
+                num_layers=2,
+                pp_layer_offset=pp_layer_offset,
+            )
+            block_keys = scheduler._generate_store_query_keys([b"\x0a\x0b"], include_layers=True)[0]
+            layer_ids = [int(key.rsplit("@layer_id:", 1)[1].split("@", 1)[0]) for key in block_keys]
+            rendered.append((pp_layer_offset, layer_ids, len(block_keys)))
+        for pp_layer_offset, layer_ids, num_keys in rendered:
+            self.assertEqual(num_keys, 8)  # 2 dcp * 2 head_or_tp * 2 layers
+            self.assertEqual(sorted(set(layer_ids)), [pp_layer_offset, pp_layer_offset + 1])
+
+    def test_generate_store_query_keys_accepts_str_and_bytes_hashes(self):
+        scheduler = self._configure(
+            self._make_scheduler(),
+            kv_cache_group_families=["default"],
+            tp_size=2,
+            put_step=1,
+            dcp_size=1,
+            pp_size=1,
+            pp_rank=0,
+            num_layers=2,
+            pp_layer_offset=0,
+        )
+        bytes_keys = scheduler._generate_store_query_keys([b"\xaa\xbb"], include_layers=False)[0]
+        str_keys = scheduler._generate_store_query_keys(["aabb"], include_layers=False)[0]
+        self.assertEqual(bytes_keys, str_keys)
+        self.assertTrue(all(key.endswith("@aabb") for key in bytes_keys))
 
 
 class TestKVPoolSchedulerGetStoreLookupHitTokens(unittest.TestCase):

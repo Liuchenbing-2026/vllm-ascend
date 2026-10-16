@@ -41,9 +41,7 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise_cache_la
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     AscendConnectorMetadata,
     AscendStoreKVConnectorWorkerMetadata,
-    KeyMetadata,
     LoadSpec,
-    PoolKey,
     ReqMeta,
     RequestTracker,
     block_hash_to_str,
@@ -305,34 +303,36 @@ class KVPoolScheduler:
     ) -> list[list[str]]:
         head_or_tp_ranks = self.tp_size // self.put_step
         cache_family = get_group_cache_family(self.kv_cache_group_families, kv_cache_group_id)
-        keys_by_block = []
-        for block_hash in block_hashes:
-            block_keys: list[str] = []
-            chunk_hash = block_hash if isinstance(block_hash, str) else block_hash.hex()
-            pp_ranks = [self.pp_rank] if include_layers else range(self.pp_size)
-            for dcp_rank in range(self.dcp_size):
-                for head_or_tp_rank in range(head_or_tp_ranks):
-                    for pp_rank in pp_ranks:
-                        pool_key = PoolKey(
-                            KeyMetadata(
-                                self.model_name,
-                                head_or_tp_rank,
-                                dcp_rank,
-                                pp_rank,
-                                kv_cache_group_id=kv_cache_group_id,
-                                cache_family=cache_family,
-                            ),
-                            chunk_hash,
-                        )
-                        if include_layers:
-                            block_keys.extend(
-                                layer_key.to_string()
-                                for layer_key in pool_key.split_layers(self.num_layers, self.pp_layer_offset)
-                            )
-                        else:
-                            block_keys.append(pool_key.to_string())
-            keys_by_block.append(block_keys)
-        return keys_by_block
+        # PERF(#14146): render the query key strings directly instead of building one
+        # KeyMetadata + PoolKey (plus one LayerPoolKey per layer in layerwise mode)
+        # for every (block x dcp x head_or_tp x pp) combination and calling
+        # to_string() on each of them. The part of the key that does not depend on the
+        # block hash is built once per call and reused by all blocks. The rendered
+        # layout is byte-for-byte identical to PoolKey.to_string() /
+        # LayerPoolKey.to_string() in ascend_store/metadata.py, as is the ordering.
+        if include_layers:
+            # LayerPoolKey.to_string() carries no pp_rank field, and the reference
+            # implementation only ever iterated over pp_rank == self.pp_rank, so the
+            # pp dimension cannot influence the emitted keys.
+            prefixes = [
+                f"{self.model_name}@dcp:{dcp_rank}@head_or_tp_rank:{head_or_tp_rank}"
+                f"@group:{kv_cache_group_id}@cache_role:kv@cache_family:{cache_family}@layer_id:{layer_id}@"
+                for dcp_rank in range(self.dcp_size)
+                for head_or_tp_rank in range(head_or_tp_ranks)
+                for layer_id in range(self.pp_layer_offset, self.pp_layer_offset + self.num_layers)
+            ]
+        else:
+            prefixes = [
+                f"{self.model_name}@dcp:{dcp_rank}@head_or_tp_rank:{head_or_tp_rank}"
+                f"@pp_rank:{pp_rank}@group:{kv_cache_group_id}@cache_role:kv@cache_family:{cache_family}@"
+                for dcp_rank in range(self.dcp_size)
+                for head_or_tp_rank in range(head_or_tp_ranks)
+                for pp_rank in range(self.pp_size)
+            ]
+        return [
+            [prefix + (block_hash if isinstance(block_hash, str) else block_hash.hex()) for prefix in prefixes]
+            for block_hash in block_hashes
+        ]
 
     def _get_store_lookup_hit_tokens(
         self,
