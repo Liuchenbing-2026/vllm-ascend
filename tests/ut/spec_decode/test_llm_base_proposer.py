@@ -635,3 +635,56 @@ def test_mla_dcp_draft_dummy_metadata_preserves_existing_layout(draft_index):
         assert getattr(common, key) is value
     for key, value in tensor_values.items():
         torch.testing.assert_close(getattr(common, key), value)
+
+
+@pytest.mark.parametrize(
+    "num_speculative_tokens,max_num_reqs,num_tokens,expected",
+    [
+        # batch_size derived from tokens (8192 // 4 == 2048) is clamped to the
+        # runtime request capacity, exactly like the profile path.
+        (3, 4, 8192, 4),
+        (3, 256, 8192, 256),
+        # Fewer tokens than requests: the token-derived size is already below
+        # the capacity and stays untouched.
+        (3, 64, 40, 10),
+        # Degenerate tiny input still yields at least one sampling row.
+        (3, 64, 1, 1),
+        # num_speculative_tokens == 0 -> divisor is 1, no ZeroDivisionError.
+        (0, 4, 8192, 4),
+    ],
+)
+def test_dummy_sampling_batch_size_is_bounded_by_max_num_reqs(
+    num_speculative_tokens, max_num_reqs, num_tokens, expected
+):
+    proposer = AscendSpecDecodeBaseProposer.__new__(AscendSpecDecodeBaseProposer)
+    proposer.num_speculative_tokens = num_speculative_tokens
+    proposer.runner = SimpleNamespace(max_num_reqs=max_num_reqs)
+
+    result = proposer._dummy_sampling_batch_size(num_tokens)
+
+    assert result == expected
+    # Non-negotiable invariant: the sampling/logits rows never exceed the
+    # request capacity that startup memory profiling accounted for.
+    assert result <= max_num_reqs
+    assert result >= 1
+
+
+def test_dummy_run_sampling_batch_not_bounded_without_profile_fix():
+    """Guard: the runtime (is_profile=False) dummy path must use the same
+    ``max_num_reqs`` clamp the profile path already used.
+
+    Before the fix the bound only applied when ``is_profile`` was True, so a
+    runtime dummy step could ask for 2048 sampling rows while profiling only
+    accounted for ``max_num_reqs`` (=4) rows. This test pins the shared helper
+    that both paths now call.
+    """
+    proposer = AscendSpecDecodeBaseProposer.__new__(AscendSpecDecodeBaseProposer)
+    proposer.num_speculative_tokens = 3
+    proposer.runner = SimpleNamespace(max_num_reqs=4)
+
+    raw = max(8192 // (proposer.num_speculative_tokens + 1), 1)
+    assert raw == 2048  # what the pre-fix runtime path would have produced
+
+    bounded = proposer._dummy_sampling_batch_size(8192)
+    assert bounded == 4
+    assert bounded < raw

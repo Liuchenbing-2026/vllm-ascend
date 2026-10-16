@@ -774,6 +774,18 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
     def _get_attn_metadata_layer_names(self, attn_group):
         return self.attn_layer_names
 
+    def _dummy_sampling_batch_size(self, num_tokens: int) -> int:
+        """Sampling/logits rows for the synthetic draft batch of ``dummy_run``.
+
+        The synthetic batch is derived from the (padded) forward token count,
+        but the rows it drives are bounded by the runtime request capacity.
+        Memory profiling already applies that bound; the runtime dummy path
+        must use the same one, otherwise it can allocate sampling/logits rows
+        that the profile never accounted for.
+        """
+        batch_size = max(num_tokens // (self.num_speculative_tokens + 1), 1)
+        return min(batch_size, self.runner.max_num_reqs)
+
     @torch.inference_mode()
     def dummy_run(
         self,
@@ -938,10 +950,10 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
 
         model_positions = self._get_positions(num_tokens)
 
-        batch_size = max(num_tokens // (self.num_speculative_tokens + 1), 1)
-        # TODO: temporarily hack here, we should find out batch_size for profile_run
-        if is_profile:
-            batch_size = min(batch_size, self.runner.max_num_reqs)
+        # The profile and runtime dummy paths must agree on the sampling batch
+        # bound, otherwise a runtime dummy step can size its sampling/logits
+        # rows beyond what startup memory profiling accounted for.
+        batch_size = self._dummy_sampling_batch_size(num_tokens)
 
         if self.supports_mm_inputs:
             mm_embeds, is_mm_embed = (None, None)
