@@ -137,6 +137,8 @@ struct OpParam {
     uint64_t kvCacheBlockSize{128};
     uint64_t kvCacheStride0{0};
     uint64_t kvCacheRopeStride0{0};
+    // RMSNorm epsilon of the Q/KV normalization, from the model config.
+    float rmsNormEps{1e-6f};
 };
 
 class PpMatmulTilingApi
@@ -635,6 +637,7 @@ void MlaPreprocessTiling::Init()
     tilingData->hiddenStrideRope = opParam.qkNopeHeadDim + opParam.qkRopeHeadDim;
     tilingData->qkNopeHeadDim = opParam.qkNopeHeadDim;
     tilingData->avgFactor = 1.0f / static_cast<float>(opParam.qLoraRank);
+    tilingData->rmsNormEps = opParam.rmsNormEps;
     tilingData->kvCacheBlockSize = opParam.kvCacheBlockSize == 0 ? 128ULL : opParam.kvCacheBlockSize;
     tilingData->kvCacheStride0 = opParam.kvCacheStride0;
     tilingData->kvCacheRopeStride0 = opParam.kvCacheRopeStride0;

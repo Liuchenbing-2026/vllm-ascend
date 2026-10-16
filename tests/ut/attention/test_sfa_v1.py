@@ -1835,3 +1835,89 @@ class TestAscendSFATurboQuantLatentCache(TestBase):
 
         impl.turboquant._initialize.assert_called_once_with(hidden_states.device)
         self.assertTrue(torch.equal(result, torch.zeros(2, 4)))
+
+
+class TestAscendSFAMLAPORMSNormEps(TestBase):
+    """The fused MLAPO op must normalize with the model's ``rms_norm_eps``.
+
+    The kernel used to hardcode ``1e-6``; models such as GLM-5.2 W8A8 configure
+    ``rms_norm_eps=1e-5``, so the launch must forward the layer norm epsilon.
+    """
+
+    NUM_HEADS = 4
+
+    def _make_impl(self, q_eps=1e-5, kv_eps=1e-5, drop_q_eps=False, drop_kv_eps=False):
+        impl = AscendSFAImpl.__new__(AscendSFAImpl)
+        impl.q_a_layernorm = SimpleNamespace()
+        impl.kv_a_layernorm = SimpleNamespace()
+        if not drop_q_eps:
+            impl.q_a_layernorm.variance_epsilon = q_eps
+        if not drop_kv_eps:
+            impl.kv_a_layernorm.variance_epsilon = kv_eps
+        impl.W_UK_T = torch.empty(self.NUM_HEADS, 16)
+        impl.q_lora_rank = 8
+        for name in (
+            "wd_qkv",
+            "deq_scale_qkv",
+            "gamma1",
+            "beta1",
+            "wu_q",
+            "qb_deq_scl",
+            "gamma2",
+            "quant_scale0",
+            "quant_offset0",
+            "quant_bias_qkv",
+            "quant_scale1",
+            "quant_offset1",
+            "qb_qt_bias",
+            "ctkv_scale",
+            "q_nope_scale",
+        ):
+            setattr(impl, name, torch.empty(1))
+        return impl
+
+    def _call_mlapo(self, impl):
+        k_nope = torch.empty(4, 16, 32, dtype=torch.bfloat16)
+        k_pe = torch.empty(4, 16, 32, dtype=torch.bfloat16)
+        hidden_states = torch.randn(2, 8, dtype=torch.bfloat16)
+        with patch.object(torch.ops._C_ascend, "mla_preprocess", create=True) as mock_op:
+            impl._sfa_preprocess_mlapo(
+                hidden_states,
+                (k_nope, k_pe),
+                torch.randn(2, 1, 1, 16),
+                torch.randn(2, 1, 1, 16),
+                torch.arange(2),
+                num_input_tokens=2,
+            )
+        return mock_op
+
+    def test_mlapo_forwards_model_rms_norm_eps(self):
+        impl = self._make_impl(q_eps=1e-5, kv_eps=1e-5)
+
+        mock_op = self._call_mlapo(impl)
+
+        mock_op.assert_called_once()
+        self.assertEqual(mock_op.call_args.kwargs["rms_norm_eps"], 1e-5)
+
+    def test_mlapo_forwards_non_default_eps_verbatim(self):
+        impl = self._make_impl(q_eps=1e-6, kv_eps=1e-6)
+
+        mock_op = self._call_mlapo(impl)
+
+        self.assertEqual(mock_op.call_args.kwargs["rms_norm_eps"], 1e-6)
+
+    def test_mlapo_warns_and_uses_q_eps_when_q_and_kv_differ(self):
+        impl = self._make_impl(q_eps=1e-5, kv_eps=1e-6)
+
+        with patch("vllm_ascend.attention.sfa_v1.logger") as mock_logger:
+            mock_op = self._call_mlapo(impl)
+
+        mock_logger.warning_once.assert_called_once()
+        self.assertEqual(mock_op.call_args.kwargs["rms_norm_eps"], 1e-5)
+
+    def test_mlapo_falls_back_to_kernel_default_without_norm_eps(self):
+        impl = self._make_impl(drop_q_eps=True, drop_kv_eps=True)
+
+        mock_op = self._call_mlapo(impl)
+
+        self.assertEqual(mock_op.call_args.kwargs["rms_norm_eps"], 1e-6)

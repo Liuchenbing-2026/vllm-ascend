@@ -39,6 +39,7 @@ constexpr size_t ATTR_ENABLE_INNER_OUT = 2;
 constexpr size_t ATTR_ENABLE_ROPE = 3;
 constexpr size_t ATTR_KV_CACHE_STRIDE0 = 4;
 constexpr size_t ATTR_KV_CACHE_ROPE_STRIDE0 = 5;
+constexpr size_t ATTR_RMS_NORM_EPS = 6;
 
 constexpr int64_t CACHE_MODE_MIN = 0;
 constexpr int64_t CACHE_MODE_MAX = 3;
@@ -101,12 +102,14 @@ ge::graphStatus ParseShapesAndAttrs(gert::TilingContext *context, mlapo::OpParam
     const bool *enableRopePtr = attrs->GetBool(ATTR_ENABLE_ROPE);
     const int64_t *kvCacheStride0Ptr = attrs->GetInt(ATTR_KV_CACHE_STRIDE0);
     const int64_t *kvCacheRopeStride0Ptr = attrs->GetInt(ATTR_KV_CACHE_ROPE_STRIDE0);
+    const float *rmsNormEpsPtr = attrs->GetFloat(ATTR_RMS_NORM_EPS);
     OP_CHECK_NULL_WITH_CONTEXT(context, cacheModePtr);
     OP_CHECK_NULL_WITH_CONTEXT(context, quantModePtr);
     OP_CHECK_NULL_WITH_CONTEXT(context, enableInnerOutPtr);
     OP_CHECK_NULL_WITH_CONTEXT(context, enableRopePtr);
     OP_CHECK_NULL_WITH_CONTEXT(context, kvCacheStride0Ptr);
     OP_CHECK_NULL_WITH_CONTEXT(context, kvCacheRopeStride0Ptr);
+    OP_CHECK_NULL_WITH_CONTEXT(context, rmsNormEpsPtr);
 
     const int64_t cacheMode = *cacheModePtr;
     const int64_t quantMode = *quantModePtr;
@@ -118,6 +121,9 @@ ge::graphStatus ParseShapesAndAttrs(gert::TilingContext *context, mlapo::OpParam
                 return ge::GRAPH_FAILED);
     OP_CHECK_IF(*kvCacheStride0Ptr <= 0 || *kvCacheRopeStride0Ptr <= 0,
                 OP_LOGE(context, "cache dim0 strides must be positive."), return ge::GRAPH_FAILED);
+    OP_CHECK_IF(!(*rmsNormEpsPtr > 0.0f),
+                OP_LOGE(context, "rmsNormEps must be positive, got %f.", *rmsNormEpsPtr),
+                return ge::GRAPH_FAILED);
 
     const int64_t tokenNum = hiddenShape.GetDim(0);
     const int64_t hiddenStateDim = hiddenShape.GetDim(1);
@@ -173,6 +179,7 @@ ge::graphStatus ParseShapesAndAttrs(gert::TilingContext *context, mlapo::OpParam
     opParam.kvCacheBlockSize = static_cast<uint64_t>(kvCacheBlockSize);
     opParam.kvCacheStride0 = static_cast<uint64_t>(*kvCacheStride0Ptr);
     opParam.kvCacheRopeStride0 = static_cast<uint64_t>(*kvCacheRopeStride0Ptr);
+    opParam.rmsNormEps = *rmsNormEpsPtr;
     const ge::DataType weightDtype = wdqkvDesc->GetDataType();
     opParam.isWeightQuantized = weightDtype == ge::DT_FLOAT16 || weightDtype == ge::DT_BF16 ? 0U : 1U;
     return ge::GRAPH_SUCCESS;

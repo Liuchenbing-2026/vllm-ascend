@@ -108,6 +108,10 @@ struct MlaTilingData {
     uint32_t hiddenStrideRope{192};    // qk_nope_head_dim + qk_rope_head_dim
     uint32_t qkNopeHeadDim{128};       // for RoPE offset calc
     float avgFactor{0.000651041666f};  // 1/splitSizeTwo (1/qLoraRank), for RmsNorm avg
+    // RMSNorm epsilon for the fused Q/KV normalization. Fed from the model
+    // config (`rms_norm_eps`); GLM-5.2 W8A8 uses 1e-5, not the 1e-6 that the
+    // kernels used to hardcode.
+    float rmsNormEps{1e-6f};
 
     // KV cache dim0 (blockNum) stride support.
     // Use uint64_t for all three so host/device ABI padding matches.

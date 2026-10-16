@@ -2912,7 +2912,8 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "               Tensor kv_cache_rope, Tensor slotmapping, Tensor? quant_scale0,"
         "               Tensor? quant_offset0, Tensor? bias0, Tensor? quant_scale1, Tensor? quant_offset1,"
         "               Tensor? bias1, Tensor? ctkv_scale, Tensor? q_nope_scale, str? cache_mode,"
-        "               str? quant_mode, bool? enable_inner_out, Tensor! q_out0, Tensor! kv_cache_out0, Tensor! q_out1,"
+        "               str? quant_mode, bool? enable_inner_out, float? rms_norm_eps, Tensor! q_out0,"
+        "               Tensor! kv_cache_out0, Tensor! q_out1,"
         "               Tensor! kv_cache_out1, Tensor! inner_out) -> (Tensor q_out0, Tensor kv_cache_out0,"
         "                                          Tensor q_out1, Tensor kv_cache_out1, Tensor inner_out)"
     );

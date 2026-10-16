@@ -1522,6 +1522,19 @@ class AscendSFAImpl(MLAAttentionImpl):
     ]:
         """A3 MLAPO via ``torch.ops._C_ascend.mla_preprocess`` (W8A8, ≤ 1024 tokens)."""
         k_nope, k_pe = kv_cache[0], kv_cache[1]
+        # The fused kernel normalizes both the Q and the KV latent with a single
+        # epsilon, so it must receive the model's `rms_norm_eps` instead of the
+        # 1e-6 that used to be hardcoded in the kernel (e.g. GLM-5.2 W8A8 uses
+        # 1e-5). A mismatch between the two norms is not representable here.
+        q_norm_eps = float(getattr(self.q_a_layernorm, "variance_epsilon", 1e-6))
+        kv_norm_eps = float(getattr(self.kv_a_layernorm, "variance_epsilon", 1e-6))
+        if q_norm_eps != kv_norm_eps:
+            logger.warning_once(
+                "MLAPO fuses the Q and KV RMSNorm with one epsilon; using the Q value "
+                "%s while the KV norm is configured with %s.",
+                q_norm_eps,
+                kv_norm_eps,
+            )
         ql_nope = torch.empty(
             (num_input_tokens, self.W_UK_T.shape[0], k_nope.shape[-1]),
             dtype=hidden_states.dtype,
@@ -1563,6 +1576,7 @@ class AscendSFAImpl(MLAAttentionImpl):
             cache_mode="krope_ctkv",
             quant_mode="per_tensor_quant_asymm",
             enable_inner_out=True,
+            rms_norm_eps=q_norm_eps,
             q_out0=ql_nope,
             kv_cache_out0=k_nope,
             q_out1=q_pe,

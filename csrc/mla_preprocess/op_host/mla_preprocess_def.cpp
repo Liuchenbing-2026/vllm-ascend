@@ -166,6 +166,7 @@ public:
         this->Attr("enableRope").AttrType(OPTIONAL).Bool(true);
         this->Attr("kvCacheStride0").AttrType(REQUIRED).Int(0);
         this->Attr("kvCacheRopeStride0").AttrType(REQUIRED).Int(0);
+        this->Attr("rmsNormEps").AttrType(OPTIONAL).Float(1e-6);
 
         OpAICoreConfig aicoreConfig;
         aicoreConfig.DynamicCompileStaticFlag(true)
