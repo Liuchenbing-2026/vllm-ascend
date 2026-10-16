@@ -22,6 +22,11 @@ from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_
 if HAS_TRITON:
     import vllm_ascend.patch.worker.patch_triton
     import vllm_ascend.patch.worker.patch_v2.patch_triton  # noqa
+else:
+    # Platforms without an active Triton backend (e.g. 310P) still run GDN
+    # models. patch_triton cannot be imported there, so the pure-PyTorch
+    # fused_post_conv_prep / packed-decode fallbacks live in this module.
+    import vllm_ascend.patch.worker.patch_triton_fallback  # noqa
 
 
 # Flip STR_DTYPE_TO_TORCH_DTYPE["fp8"] -> torch.float8_e4m3fn on vllm builds
