@@ -1,7 +1,8 @@
 """Independent complete-cohort validation; early host failures terminate too."""
-import argparse,json,os,time
+import argparse,json,os,time,sys
 from datetime import datetime,timezone
 from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parent))
 from summarize_matrix import summarize
 
 def main():
