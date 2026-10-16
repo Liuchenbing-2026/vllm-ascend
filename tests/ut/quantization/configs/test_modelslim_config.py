@@ -1,10 +1,13 @@
+import gc
 import json
 import os
 import tempfile
+import weakref
 from pathlib import Path
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 import torch
 from vllm.model_executor.layers.attention import Attention
 from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
@@ -1184,3 +1187,65 @@ class TestGetQuantTypeForLayer(TestBase):
         }
         result = get_quant_type_for_layer(quant_desc, "model.layers.0.mlp.gate_proj", None)
         self.assertEqual(result, "W8A8_DYNAMIC")
+
+
+class TestModelslimMoEWeightLoaderLayerRetention(TestBase):
+    """Regression tests for #18679.
+
+    The ModelSlim MoE weight-loader wrapper must not keep a discarded layer (and
+    its weights) alive through vLLM's layerwise reload metadata.
+    """
+
+    class _MoEExpert(torch.nn.Module):
+        def __init__(self, wrap_loader: bool):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.empty(8, 8, dtype=torch.int8), requires_grad=False)
+            if wrap_loader:
+                self.weight_loader = _make_modelslim_moe_weight_loader(self.weight_loader)
+            self.weight.weight_loader = self.weight_loader
+
+        def weight_loader(
+            self,
+            param: torch.nn.Parameter,
+            loaded_weight: torch.Tensor,
+            weight_name: str,
+            shard_id: str,
+            expert_id: int,
+            return_success: bool = False,
+        ) -> str:
+            return weight_name
+
+    def test_wrapper_is_bound_method_owned_by_the_layer(self):
+        layer = self._MoEExpert(wrap_loader=True)
+
+        self.assertIsInstance(layer.weight_loader, MethodType)
+        self.assertIs(layer.weight_loader.__self__, layer)
+
+    def test_bound_wrapper_preserves_scale_bias_rewrite_and_self_binding(self):
+        layer = self._MoEExpert(wrap_loader=True)
+
+        mapped = layer.weight_loader(
+            param=layer.weight,
+            loaded_weight=torch.empty(1),
+            weight_name="model.layers.0.mlp.experts.w2_scale_bias",
+            shard_id="w2",
+            expert_id=0,
+            return_success=True,
+        )
+
+        self.assertEqual(mapped, "model.layers.0.mlp.experts.w2_scale")
+
+    def test_reload_metadata_does_not_retain_wrapped_layer(self):
+        layerwise = pytest.importorskip("vllm.model_executor.model_loader.reload.layerwise")
+
+        for wrap_loader in (False, True):
+            layer = self._MoEExpert(wrap_loader=wrap_loader)
+            layer_ref = weakref.ref(layer)
+            weight_ref = weakref.ref(layer.weight)
+
+            layerwise.record_metadata_for_reloading(layer)
+            del layer
+            gc.collect()
+
+            self.assertIsNone(layer_ref(), f"layer retained by reload metadata (wrap_loader={wrap_loader})")
+            self.assertIsNone(weight_ref(), f"weight retained by reload metadata (wrap_loader={wrap_loader})")

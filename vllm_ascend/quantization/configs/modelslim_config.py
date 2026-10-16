@@ -26,7 +26,8 @@ import json
 import os
 from collections.abc import Callable
 from copy import deepcopy
-from functools import wraps
+from functools import update_wrapper, wraps
+from types import MethodType
 from typing import Any, Optional
 
 import regex as re
@@ -79,7 +80,45 @@ _MXFP_C8_UNUSED_FA_SUFFIXES = (
 def _make_modelslim_moe_weight_loader(
     weight_loader: Callable[..., bool | None],
 ) -> Callable[..., bool | None]:
-    """Map ModelSlim MoE scale-bias names to the upstream scale path."""
+    """Map ModelSlim MoE scale-bias names to the upstream scale path.
+
+    When ``weight_loader`` is a bound method the wrapper is returned as a bound
+    method as well, and its closure only captures the unbound function. That
+    keeps the wrapper free of any reference to the owning layer, so vLLM's
+    ``sanitize_layer_refs`` can strip it from reload metadata (see #18679).
+    A plain function wrapper would be invisible to that sanitizer and would keep
+    discarded layers and their weights alive through ``LAYERWISE_INFO``.
+    """
+    if isinstance(weight_loader, MethodType):
+        owner = weight_loader.__self__
+        upstream = weight_loader.__func__
+
+        def _map_weight_name(weight_name: str) -> str:
+            prefix, separator, param_name = weight_name.rpartition(".")
+            mapped_name = _MOE_WEIGHT_LOADER_NAME_MAP.get(param_name, param_name)
+            return f"{prefix}{separator}{mapped_name}"
+
+        def modelslim_moe_weight_loader(
+            self: Any,
+            param: torch.nn.Parameter,
+            loaded_weight: torch.Tensor,
+            weight_name: str,
+            shard_id: str,
+            expert_id: int,
+            return_success: bool = False,
+        ) -> bool | None:
+            return upstream(
+                self,
+                param=param,
+                loaded_weight=loaded_weight,
+                weight_name=_map_weight_name(weight_name),
+                shard_id=shard_id,
+                expert_id=expert_id,
+                return_success=return_success,
+            )
+
+        update_wrapper(modelslim_moe_weight_loader, upstream)
+        return MethodType(modelslim_moe_weight_loader, owner)
 
     @wraps(weight_loader)
     def modelslim_moe_weight_loader(
