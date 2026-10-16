@@ -20,10 +20,11 @@ speculative verifier window before Mamba alignment is applied. If the window
 starts mid-block, the alignment split can shorten its physical width while the
 request still advertises all ``K`` speculative placeholders.
 
-Decode consumers preserve the complete verifier window. Sparse index-kpool
-producers align against the resolved common cache-group boundary because their
-physical indexer-state block is smaller than the Mamba checkpoint interval.
-Other models retain the upstream behavior.
+Decode consumers preserve the complete verifier window, and so does the last
+step of a prefill whose remaining prompt is a single padded token. Sparse
+index-kpool producers align against the resolved common cache-group boundary
+because their physical indexer-state block is smaller than the Mamba checkpoint
+interval. Other models retain the upstream behavior.
 
 On a pure PD prefill producer or a standalone instance the EAGLE one-block
 backoff of the last cacheable position is suppressed: matched content-hash
@@ -67,6 +68,10 @@ def _mamba_block_aligned_split(
 ) -> int:
     """Preserve PD windows and align sparse index-kpool cache groups.
 
+    The KV-consumer verifier-window bypass is limited to the final prefill
+    step and to decoding, so intermediate chunked-prefill chunks still end on
+    a cacheable Mamba boundary.
+
     On a pure PD prefill producer or a standalone instance the EAGLE
     one-block backoff of the last cacheable position is suppressed.
     ``Scheduler._mamba_block_aligned_split`` backs the last cacheable
@@ -100,13 +105,25 @@ def _mamba_block_aligned_split(
     the split off would only erase cacheable hit length.
     """
     kv_transfer_config = self.vllm_config.kv_transfer_config
-    # A consumer only needs the unsplit verifier window after some prefix has
-    # already been computed locally or loaded from the connector.  ``kv_both``
-    # also handles cold prefills; bypassing alignment for those requests means
-    # no reusable Mamba state is ever materialized, so neither HBM nor the KV
-    # pool can cache the prefix.
-    has_computed_prefix = request.num_computed_tokens + num_new_local_computed_tokens + num_external_computed_tokens > 0
-    if kv_transfer_config is not None and kv_transfer_config.is_kv_consumer and has_computed_prefix:
+    num_computed_tokens = request.num_computed_tokens + num_new_local_computed_tokens + num_external_computed_tokens
+    # A consumer only needs the unsplit verifier window once its prompt is
+    # (nearly) fully in place: the waiting scheduler pads the last outstanding
+    # prompt token to a ``1 + K`` speculative window, and a mid-block split
+    # would shorten that window's physical width while the request still
+    # advertises all ``K`` placeholders.  ``kv_both`` also handles cold
+    # prefills, so gating on "some prefix is computed" alone made every chunk
+    # after the first one bypass the alignment; in mamba "align" mode those
+    # chunks then materialize no reusable state at a chunk boundary and
+    # neither HBM nor the KV pool can cache the prefix.  Mirror the upstream
+    # ``prefill_end`` guard so only the final prefill step and decoding keep
+    # the complete window.
+    prefill_end = max(request.num_prompt_tokens, request.num_tokens - 1)
+    if (
+        kv_transfer_config is not None
+        and kv_transfer_config.is_kv_consumer
+        and num_computed_tokens > 0
+        and num_computed_tokens >= prefill_end - 1
+    ):
         return num_new_tokens
 
     # Pure PD prefill producer or standalone instance: suppress the EAGLE
@@ -114,11 +131,7 @@ def _mamba_block_aligned_split(
     # early-return path below must observe it too (it previously ran under
     # a temporary bit clear from the outer producer wrapper).
     if _get_sparse_index_kpool(self.vllm_config.model_config) is not None:
-        num_computed_tokens = request.num_computed_tokens + num_new_local_computed_tokens + num_external_computed_tokens
-        if num_computed_tokens < max(
-            request.num_prompt_tokens,
-            request.num_tokens - 1,
-        ):
+        if num_computed_tokens < prefill_end:
             block_size = self.block_size
             last_cache_position = request.num_tokens - request.num_tokens % block_size
             if self.use_eagle and not _skips_eagle_block_drop(kv_transfer_config):

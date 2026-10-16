@@ -142,6 +142,72 @@ def test_producer_splits_window_after_external_cache_hit():
     assert result == 5
 
 
+def test_kv_both_mid_prefill_chunk_keeps_mamba_alignment():
+    # Second chunk of a chunked prefill on a ``kv_both`` instance: the request
+    # is a KV consumer and already has computed tokens, but its prompt is far
+    # from complete. Bypassing the alignment here (the pre-fix behavior) would
+    # return the full 1024-token chunk and materialize no saveable Mamba state.
+    result = _mamba_block_aligned_split(
+        _scheduler(is_kv_consumer=True, is_kv_producer=True),
+        _request(
+            num_computed_tokens=4608,
+            num_prompt_tokens=9600,
+            num_tokens=9600,
+        ),
+        num_new_tokens=1024,
+    )
+
+    assert result == 768
+
+
+def test_consumer_partial_external_hit_mid_prefill_keeps_mamba_alignment():
+    # Same narrowing for a pure consumer whose external hit covers only part of
+    # the prompt: the remaining prompt is still chunked, so the chunk must end
+    # on a cacheable boundary.
+    result = _mamba_block_aligned_split(
+        _scheduler(is_kv_consumer=True),
+        _request(
+            num_computed_tokens=0,
+            num_prompt_tokens=9600,
+            num_tokens=9600,
+        ),
+        num_new_tokens=1024,
+        num_external_computed_tokens=4608,
+    )
+
+    assert result == 768
+
+
+def test_kv_both_final_prefill_chunk_keeps_full_verifier_window():
+    # One prompt token left: the scheduler pads it to a ``1 + K`` verifier
+    # window, which must stay unsplit.
+    result = _mamba_block_aligned_split(
+        _scheduler(is_kv_consumer=True, is_kv_producer=True),
+        _request(
+            num_computed_tokens=9599,
+            num_prompt_tokens=9600,
+            num_tokens=9600,
+        ),
+        num_new_tokens=8,
+    )
+
+    assert result == 8
+
+
+def test_kv_both_decode_keeps_full_verifier_window():
+    result = _mamba_block_aligned_split(
+        _scheduler(is_kv_consumer=True, is_kv_producer=True),
+        _request(
+            num_computed_tokens=12000,
+            num_prompt_tokens=9600,
+            num_tokens=12001,
+        ),
+        num_new_tokens=8,
+    )
+
+    assert result == 8
+
+
 def test_producer_decode_fast_path_remains_unsplit():
     result = _mamba_block_aligned_split(
         _scheduler(is_kv_consumer=False),
