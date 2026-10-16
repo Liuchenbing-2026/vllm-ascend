@@ -46,6 +46,7 @@ from vllm.v1.structured_output import StructuredOutputManager
 from vllm.v1.utils import record_function_or_nullcontext
 
 from vllm_ascend.core.profiling_chunk_predictor import ProfilingChunkManager
+from vllm_ascend.core.scheduler_utils import effective_long_prefill_token_threshold
 from vllm_ascend.utils import vllm_version_is
 
 
@@ -314,6 +315,14 @@ class ProfilingChunkScheduler(Scheduler):
             not r.is_prefill_chunk for r in self.running
         )
 
+        # Upstream v0.31: a long prefill is only capped when it can starve
+        # another request, and `--long-prefill-token-threshold-adaptive` floors
+        # the cap at an equal share of the input budget.
+        num_running, num_waiting = self.get_request_counts()
+        long_prefill_token_threshold = effective_long_prefill_token_threshold(
+            self.scheduler_config, num_running + num_waiting
+        )
+
         # First, schedule the RUNNING requests.
         req_index = 0
         # >>> PROFILING CHUNK >>>
@@ -365,8 +374,8 @@ class ProfilingChunkScheduler(Scheduler):
             num_new_tokens = (
                 request.num_tokens_with_spec + request.num_output_placeholders - request.num_computed_tokens
             )
-            if 0 < self.scheduler_config.long_prefill_token_threshold < num_new_tokens:
-                num_new_tokens = self.scheduler_config.long_prefill_token_threshold
+            if 0 < long_prefill_token_threshold < num_new_tokens:
+                num_new_tokens = long_prefill_token_threshold
             num_new_tokens = min(num_new_tokens, token_budget, input_budget - draft_slots)
 
             # Make sure the input position does not exceed the max model len.
@@ -779,9 +788,8 @@ class ProfilingChunkScheduler(Scheduler):
                             num_new_tokens = padded_num_tokens
                             pad_spec_decode = True
 
-                    threshold = self.scheduler_config.long_prefill_token_threshold
-                    if 0 < threshold < num_new_tokens:
-                        num_new_tokens = threshold
+                    if 0 < long_prefill_token_threshold < num_new_tokens:
+                        num_new_tokens = long_prefill_token_threshold
 
                     # >>> PROFILING CHUNK: dynamic chunk sizing >>>
                     if (

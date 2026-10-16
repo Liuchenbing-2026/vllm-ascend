@@ -30,6 +30,7 @@ from vllm.v1.request import Request, RequestStatus
 from vllm.v1.utils import record_function_or_nullcontext
 
 from vllm_ascend.ascend_config import DyntraLBConfig
+from vllm_ascend.core.scheduler_utils import effective_long_prefill_token_threshold
 from vllm_ascend.utils import vllm_version_is
 
 if TYPE_CHECKING:
@@ -445,6 +446,14 @@ class DyntraLBScheduler(DyntraLBPolicyMixin, Scheduler):
             not r.is_prefill_chunk for r in self.running
         )
 
+        # Upstream v0.31: a long prefill is only capped when it can starve
+        # another request, and `--long-prefill-token-threshold-adaptive` floors
+        # the cap at an equal share of the input budget.
+        num_running, num_waiting = self.get_request_counts()
+        long_prefill_token_threshold = effective_long_prefill_token_threshold(
+            self.scheduler_config, num_running + num_waiting
+        )
+
         # First, schedule the RUNNING requests.
         req_index = 0
         while req_index < len(self.running) and token_budget > 0:
@@ -481,8 +490,8 @@ class DyntraLBScheduler(DyntraLBPolicyMixin, Scheduler):
             num_new_tokens = (
                 request.num_tokens_with_spec + request.num_output_placeholders - request.num_computed_tokens
             )
-            if 0 < self.scheduler_config.long_prefill_token_threshold < num_new_tokens:
-                num_new_tokens = self.scheduler_config.long_prefill_token_threshold
+            if 0 < long_prefill_token_threshold < num_new_tokens:
+                num_new_tokens = long_prefill_token_threshold
             num_new_tokens = min(num_new_tokens, token_budget)
 
             # Make sure the input position does not exceed the max model len.
@@ -851,9 +860,8 @@ class DyntraLBScheduler(DyntraLBPolicyMixin, Scheduler):
                             break
                         pad_spec_decode = True
 
-                    threshold = self.scheduler_config.long_prefill_token_threshold
-                    if 0 < threshold < num_new_tokens:
-                        num_new_tokens = threshold
+                    if 0 < long_prefill_token_threshold < num_new_tokens:
+                        num_new_tokens = long_prefill_token_threshold
 
                     # chunked prefill has to be enabled explicitly to allow
                     # pooling requests to be chunked
