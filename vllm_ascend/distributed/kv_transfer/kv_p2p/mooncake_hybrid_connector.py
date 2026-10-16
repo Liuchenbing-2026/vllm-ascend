@@ -1042,6 +1042,10 @@ class MooncakeConnectorMetadata(KVConnectorMetadata):
         self.requests: dict[str, ReqMeta] = {}
         self.requests_to_send: dict[str, float] = {}
         self.reqs_in_batch: set[str] = set()
+        # Subset of reqs_in_batch for which this engine acts as the KV producer
+        # (do_remote_decode). The rest are consumer requests (do_remote_prefill).
+        # Only used to route tracking in kv_both mode; empty for pure roles.
+        self.reqs_in_batch_send: set[str] = set()
 
     def add_new_req(
         self,
@@ -1198,6 +1202,7 @@ class MooncakeConnectorScheduler:
         self._reqs_need_recv: dict[str, tuple[Request, BlockIds, int]] = {}
         self._reqs_need_send: dict[str, float] = {}
         self._reqs_in_batch: set[str] = set()
+        self._reqs_in_batch_send: set[str] = set()
 
         # master-slave meta information for cross-nodes
         self.multi_nodes_meta_mapping: dict[str, dict[str, Any]] = {}
@@ -1362,6 +1367,8 @@ class MooncakeConnectorScheduler:
 
         if params is not None and (params.get("do_remote_prefill", False) or params.get("do_remote_decode", False)):
             self._reqs_in_batch.add(request.request_id)
+            if params.get("do_remote_decode", False):
+                self._reqs_in_batch_send.add(request.request_id)
         if params is not None and params.get("do_remote_prefill"):
             if params.get("remote_block_ids"):
                 if all(p in params for p in ("remote_engine_id", "remote_host", "remote_port", "remote_request_id")):
@@ -1400,6 +1407,8 @@ class MooncakeConnectorScheduler:
         self._reqs_need_send = {}
         meta.reqs_in_batch = self._reqs_in_batch
         self._reqs_in_batch = set()
+        meta.reqs_in_batch_send = self._reqs_in_batch_send
+        self._reqs_in_batch_send = set()
 
         return meta
 
@@ -1685,8 +1694,13 @@ class MooncakeConnectorWorker:
         )
         self.xfer_handshake_metadata = metadata
 
-        ready_event = threading.Event()
-        if self.kv_role == "kv_producer":
+        # After KV Caches registered, start the sending and/or receiving thread.
+        # In kv_both mode both threads run: the sending thread serves metadata
+        # and done signals for peers pulling from this engine, while the
+        # receiving thread pulls KV from peers.
+        threads_to_wait: list[threading.Thread] = []
+        if self.kv_role in ("kv_producer", "kv_both"):
+            send_ready_event = threading.Event()
             self.kv_send_thread = KVCacheSendingThread(
                 self.vllm_config,
                 self.tp_rank,
@@ -1695,11 +1709,13 @@ class MooncakeConnectorWorker:
                 self.side_channel_host,
                 self.side_channel_port,
                 metadata,
-                ready_event,
+                send_ready_event,
                 self.kv_caches,
             )
             self.kv_send_thread.start()
-        else:
+            threads_to_wait.append(self.kv_send_thread)
+        if self.kv_role in ("kv_consumer", "kv_both"):
+            recv_ready_event = threading.Event()
             self.kv_recv_thread = KVCacheRecvingThread(
                 self.tp_rank,
                 self.tp_size,
@@ -1716,36 +1732,31 @@ class MooncakeConnectorWorker:
                 self.use_hybrid,
                 self.use_mamba,
                 self.hma_group_size,
-                ready_event,
+                recv_ready_event,
                 self.vllm_config,
                 self.kv_cache_config,
                 self.kv_caches,
                 self._prefill_pp_layer_partition,
             )
             self.kv_recv_thread.start()
+            threads_to_wait.append(self.kv_recv_thread)
 
+        assert threads_to_wait
         start_wait_time = time.time()
-        thread = self.kv_send_thread if self.kv_role == "kv_producer" else self.kv_recv_thread
-        assert thread is not None
-        while not ready_event.is_set():
-            if not thread.is_alive():
-                raise RuntimeError("KV Cache sending/receiving thread failed to start.")
-            if time.time() - start_wait_time > 5 * 60:
-                raise RuntimeError("Timeout waiting for KV Cache thread to be ready.")
-            time.sleep(3)
+        for thread in threads_to_wait:
+            while not thread.ready_event.is_set():
+                if not thread.is_alive():
+                    raise RuntimeError("KV Cache sending/receiving thread failed to start.")
+                if time.time() - start_wait_time > 5 * 60:
+                    raise RuntimeError("Timeout waiting for KV Cache thread to be ready.")
+                time.sleep(3)
 
     def get_finished(self) -> tuple[set[str], set[str]]:
         done_sending = (
-            self.kv_send_thread.get_and_clear_finished_requests(  # type: ignore[union-attr]
-            )
-            if self.kv_role == "kv_producer"
-            else set()
+            self.kv_send_thread.get_and_clear_finished_requests() if self.kv_send_thread is not None else set()
         )
         done_recving = (
-            self.kv_recv_thread.get_and_clear_finished_requests(  # type: ignore[union-attr]
-            )
-            if self.kv_role == "kv_consumer"
-            else set()
+            self.kv_recv_thread.get_and_clear_finished_requests() if self.kv_recv_thread is not None else set()
         )
         if self.tp_rank == 0:
             logger.debug(
@@ -1819,10 +1830,14 @@ class MooncakeConnectorWorker:
                         all_task_done=(i == tp_num_need_pulls * self._prefill_pp_size - 1),
                     )
 
+        # Route each in-batch request to the tracker of its own direction, so
+        # that in kv_both mode neither tracker accumulates requests that the
+        # other direction will complete.
         for req_id in metadata.reqs_in_batch:
-            if self.kv_send_thread is not None:
-                self.kv_send_thread.task_tracker.add_req_to_process(req_id)
-            if self.kv_recv_thread is not None:
+            if req_id in metadata.reqs_in_batch_send:
+                if self.kv_send_thread is not None:
+                    self.kv_send_thread.task_tracker.add_req_to_process(req_id)
+            elif self.kv_recv_thread is not None:
                 self.kv_recv_thread.task_tracker.add_req_to_process(req_id)
 
         if self.kv_send_thread is not None:

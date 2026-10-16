@@ -1201,6 +1201,106 @@ class TestMooncakeConnectorSchedulerMatchedTokens(unittest.TestCase):
         self.assertEqual(len(self.scheduler._reqs_need_recv), 0)
 
 
+class TestMooncakeConnectorKvBothDirectionTracking(unittest.TestCase):
+    """kv_both mode: in-batch requests must be routed to the tracker of their
+    own transfer direction, so neither tracker leaks the other side's reqs."""
+
+    def setUp(self):
+        config = MockVllmConfig()
+        config.kv_transfer_config.kv_role = "kv_both"
+        self.p1 = patch(
+            "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_connector.init_ascend_config", new=MagicMock()
+        )
+        self.p2 = patch(
+            "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_connector.get_ascend_config",
+            new=MagicMock(return_value=MagicMock()),
+        )
+        self.p1.start()
+        self.p2.start()
+        self.addCleanup(self.p1.stop)
+        self.addCleanup(self.p2.stop)
+        self.scheduler = MooncakeConnectorScheduler(config, "test_engine", MockKVCacheConfig())
+
+    def test_update_state_after_alloc_marks_send_subset(self):
+        blocks_mock = MagicMock()
+        blocks_mock.get_unhashed_block_ids_all_groups.return_value = [4, 5, 6]
+
+        send_req = MockRequest("req_send", kv_transfer_params={"do_remote_decode": True})
+        self.scheduler.update_state_after_alloc(send_req, blocks_mock, 0)
+
+        recv_req = MockRequest(
+            "req_recv",
+            kv_transfer_params={
+                "do_remote_prefill": True,
+                "remote_block_ids": [1, 2, 3],
+                "remote_engine_id": "remote",
+                "remote_request_id": "remote_req1",
+                "remote_host": "localhost",
+                "remote_port": 5000,
+            },
+        )
+        self.scheduler.update_state_after_alloc(recv_req, blocks_mock, 48)
+
+        self.assertEqual(self.scheduler._reqs_in_batch, {"req_send", "req_recv"})
+        self.assertEqual(self.scheduler._reqs_in_batch_send, {"req_send"})
+
+        meta = self.scheduler.build_connector_meta(MagicMock())
+        self.assertEqual(meta.reqs_in_batch, {"req_send", "req_recv"})
+        self.assertEqual(meta.reqs_in_batch_send, {"req_send"})
+        # Sets are handed over and cleared, not shared.
+        self.assertEqual(self.scheduler._reqs_in_batch, set())
+        self.assertEqual(self.scheduler._reqs_in_batch_send, set())
+
+    def _make_both_worker(self):
+        worker = object.__new__(MooncakeConnectorWorker)
+        worker.tp_rank = 0
+        worker.pcp_size = 1
+        worker.dcp_size = 1
+        worker.kv_send_thread = MagicMock()
+        worker.kv_recv_thread = MagicMock()
+        return worker
+
+    def test_start_load_kv_routes_trackers_by_direction(self):
+        worker = self._make_both_worker()
+        metadata = MooncakeConnectorMetadata()
+        metadata.reqs_in_batch = {"req_send", "req_recv"}
+        metadata.reqs_in_batch_send = {"req_send"}
+
+        MooncakeConnectorWorker.start_load_kv(worker, metadata)
+
+        worker.kv_send_thread.task_tracker.add_req_to_process.assert_called_once_with("req_send")
+        worker.kv_recv_thread.task_tracker.add_req_to_process.assert_called_once_with("req_recv")
+
+    def test_get_finished_polls_both_threads_in_kv_both(self):
+        worker = self._make_both_worker()
+        worker.kv_send_thread.get_and_clear_finished_requests.return_value = {"req_send"}
+        worker.kv_recv_thread.get_and_clear_finished_requests.return_value = {"req_recv"}
+
+        done_sending, done_recving = MooncakeConnectorWorker.get_finished(worker)
+
+        self.assertEqual(done_sending, {"req_send"})
+        self.assertEqual(done_recving, {"req_recv"})
+
+    def test_get_finished_single_role_unchanged(self):
+        worker = self._make_both_worker()
+        worker.kv_send_thread = None
+        worker.kv_recv_thread.get_and_clear_finished_requests.return_value = {"req_recv"}
+
+        done_sending, done_recving = MooncakeConnectorWorker.get_finished(worker)
+
+        self.assertEqual(done_sending, set())
+        self.assertEqual(done_recving, {"req_recv"})
+
+    def test_get_block_ids_with_load_errors_follows_recv_thread(self):
+        worker = self._make_both_worker()
+        worker.kv_recv_thread.get_and_clear_invalid_block_ids.return_value = {7}
+
+        self.assertEqual(MooncakeConnectorWorker.get_block_ids_with_load_errors(worker), {7})
+
+        worker.kv_recv_thread = None
+        self.assertEqual(MooncakeConnectorWorker.get_block_ids_with_load_errors(worker), set())
+
+
 class TestHelperFunctions(unittest.TestCase):
     def test_group_concurrent_contiguous(self):
         src: list[int] = [1, 2, 3, 5, 6]
