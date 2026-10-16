@@ -32,6 +32,18 @@ else:
 
 
 def _npu_causal_conv1d_update(*args, **kwargs):
+    # This wrapping is the effective implementation for every consumer that
+    # imports vLLM's causal_conv1d_update; models that live in vLLM-Ascend call
+    # the AscendC kernels directly. State it once instead of leaving the
+    # fallback implicit: the implementation resolves the conv-state row and the
+    # accepted-token count with a host .item() per request, so a decode ACL
+    # graph that contains it cannot be captured.
+    logger.warning_once(
+        "causal_conv1d_update is served by the PyTorch Ascend implementation,"
+        " which synchronises per request and therefore cannot be captured into a"
+        " decode ACL graph; use --enforce-eager or"
+        " VLLM_USE_BREAKABLE_CUDAGRAPH=1 for the models that reach this rebind."
+    )
     for key in (
         "null_block_id",
         "block_idx_first_scheduled_token",
@@ -333,20 +345,7 @@ try:
 except ImportError:
     pass
 
-# npu_kda_causal_conv1d_triton: the PyTorch fallback calls .item() per
-# request, which aborts ACL graph capture. The upstream NPU Triton kernel has
-# no host sync and accepts the spec-decode kwargs the fallback had to drop.
-try:
-    from vllm_ascend.ops.triton.mamba.causal_conv1d import (  # type: ignore[attr-defined]
-        causal_conv1d_update_npu as _cc1d_update_npu,
-    )
-
-    _cc1d.causal_conv1d_update = _cc1d_update_npu
-    logger.debug("Bound the NPU Triton causal_conv1d_update for the KDA layers.")
-except Exception as _cc1d_err:
-    logger.warning(
-        "NPU Triton causal_conv1d_update is unavailable (%s); falling back to the"
-        " PyTorch implementation, which syncs per request and therefore stalls ACL"
-        " graph capture at decode-FULL.",
-        _cc1d_err,
-    )
+# The host-sync-free Triton causal_conv1d_update_npu kernel that used to be
+# rebound here was removed by #14620 and has no replacement, so no name is bound
+# on top of the wrapper installed above. Do not blindly re-add one: the symbol no
+# longer exists, and vLLM-Ascend models do not read this rebind anyway.
