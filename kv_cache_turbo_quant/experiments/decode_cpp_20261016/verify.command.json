@@ -1,0 +1,10 @@
+[
+  "docker",
+  "exec",
+  "-e",
+  "ASCEND_RT_VISIBLE_DEVICES=2",
+  "tq-byte-model-20261015-host3",
+  "bash",
+  "-lc",
+  "source /usr/local/Ascend/cann-9.1.0/set_env.sh; /ws/.venv/bin/python /ws/decode_cpp_20261016/verify_decode_cpp.py"
+]

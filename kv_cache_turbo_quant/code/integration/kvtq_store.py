@@ -276,29 +276,21 @@ def _tq_decode(self, query, attn_metadata, output, num_decodes=None):
     seq_lens_list = list(attn_metadata.seq_lens_list[:batch])
     block_table = attn_metadata.block_tables[:batch]
     rot, rot_t, _ = _get_consts(query.device)
-    q_rot = torch.matmul(query[:batch].float(), rot_t).to(torch.bfloat16)
     k_dense, v_dense = _dequant_dense_pair(self, block_table, seq_lens_list, attn_metadata)
     # FIA accepts host cumulative lengths. They are already known by the
     # scheduler, so tensor creation/cumsum and a later D2H read are unnecessary.
     kv_cum = list(accumulate(seq_lens_list))
     q_cum = list(range(1, batch + 1))
-    attn_out, _ = torch_npu.npu_fused_infer_attention_score(
-        query=q_rot,
-        key=k_dense,
-        value=v_dense,
-        block_table=None,
-        input_layout="TND",
-        block_size=self.key_cache.shape[1],
-        actual_seq_lengths=q_cum,
-        actual_seq_lengths_kv=kv_cum,
-        num_key_value_heads=self.num_kv_heads,
-        num_heads=self.num_heads,
-        scale=self.scale,
-        sparse_mode=0,
-    )
-    out = torch.matmul(attn_out.view(batch, self.num_heads, _HEAD_DIM).float(), rot)
-    # Convert while writing the caller's buffer, avoiding a BF16 temporary.
-    output[:batch].copy_(out)
+    decode = getattr(self, '_kvtq_native_decode', None)
+    if decode is None:
+        from kvtq_decode import NativeDecode
+        decode = NativeDecode(
+            "/ws/decode_cpp_20261016/torch-extensions/tq_decode/tq_decode.so"
+        )
+        self._kvtq_native_decode = decode
+    decode(query[:batch], k_dense, v_dense, rot, rot_t, q_cum, kv_cum,
+           self.num_heads, self.num_kv_heads, self.key_cache.shape[1], self.scale,
+           output[:batch])
     stats["decode_calls"] += 1
     return output
 

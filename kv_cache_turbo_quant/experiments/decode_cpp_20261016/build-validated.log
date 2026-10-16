@@ -1,0 +1,3 @@
+[1/2] c++ -MMD -MF tq_decode.o.d -DTORCH_EXTENSION_NAME=tq_decode -DTORCH_API_INCLUDE_EXTENSION_H -isystem /usr/local/python3.12.13/lib/python3.12/site-packages/torch/include -isystem /usr/local/python3.12.13/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -isystem /usr/local/python3.12.13/include/python3.12 -fPIC -std=c++17 -O2 -std=c++17 -c /ws/decode_cpp_20261016/integration/torch_ext/tq_decode.cpp -o tq_decode.o 
+[2/2] c++ tq_decode.o -shared -L/usr/local/python3.12.13/lib/python3.12/site-packages/torch/lib -lc10 -ltorch_cpu -ltorch -ltorch_python -o tq_decode.so
+/ws/decode_cpp_20261016/torch-extensions/tq_decode/tq_decode.so

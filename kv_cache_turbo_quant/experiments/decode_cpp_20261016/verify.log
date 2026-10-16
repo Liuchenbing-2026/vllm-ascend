@@ -1,0 +1,14 @@
+[W1016 04:40:32.671810434 NPUCachingAllocator.cpp:202] Warning: The current CANN and HDK(driver) versions require processing for 32 padding size, with memory allocation. (function operator())
+/ws/decode_cpp_20261016/verify_decode_cpp.py:11: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:423.)
+  rot=torch.linalg.qr(torch.randn(128,128,dtype=torch.float64))[0].float().to(device)
+{"inference": false, "batch": 1, "kv_tokens": 1, "bitwise_equal": true, "noncontiguous_query_output": true, "sentinels_preserved": true, "timing_screen_only": {}}
+{"inference": false, "batch": 3, "kv_tokens": 49, "bitwise_equal": true, "noncontiguous_query_output": true, "sentinels_preserved": true, "timing_screen_only": {}}
+{"inference": false, "batch": 16, "kv_tokens": 320, "bitwise_equal": true, "noncontiguous_query_output": true, "sentinels_preserved": true, "timing_screen_only": {"python": {"device_plus_submission_us": 368.6239878336589, "wall_us": 411.72777613004047, "repeats": 30}, "cpp": {"device_plus_submission_us": 274.3346532185872, "wall_us": 280.18585095802945, "repeats": 30}}}
+{"inference": false, "batch": 60, "kv_tokens": 120000, "bitwise_equal": true, "noncontiguous_query_output": true, "sentinels_preserved": true, "timing_screen_only": {"python": {"device_plus_submission_us": 420.5879847208659, "wall_us": 426.2188449501991, "repeats": 30}, "cpp": {"device_plus_submission_us": 283.0780029296875, "wall_us": 288.1659505267938, "repeats": 30}}}
+{"inference": false, "batch": 60, "kv_tokens": 130170, "bitwise_equal": true, "noncontiguous_query_output": true, "sentinels_preserved": true, "timing_screen_only": {}}
+{"inference": true, "batch": 1, "kv_tokens": 1, "bitwise_equal": true, "noncontiguous_query_output": true, "sentinels_preserved": true, "timing_screen_only": {}}
+{"inference": true, "batch": 3, "kv_tokens": 49, "bitwise_equal": true, "noncontiguous_query_output": true, "sentinels_preserved": true, "timing_screen_only": {}}
+{"inference": true, "batch": 16, "kv_tokens": 320, "bitwise_equal": true, "noncontiguous_query_output": true, "sentinels_preserved": true, "timing_screen_only": {}}
+{"inference": true, "batch": 60, "kv_tokens": 120000, "bitwise_equal": true, "noncontiguous_query_output": true, "sentinels_preserved": true, "timing_screen_only": {}}
+{"inference": true, "batch": 60, "kv_tokens": 130170, "bitwise_equal": true, "noncontiguous_query_output": true, "sentinels_preserved": true, "timing_screen_only": {}}
+PASS 10 functional and 20 nondefault-stream cases

@@ -1,0 +1,10 @@
+{
+  "files": {
+    "kvtq_store.py": "9e80293023796907c35d369c1b7a578d33a781c98c9dd1eec1307fd3e02bf031",
+    "kvtq_decode.py": "1e1c5df43e376105bf98639d0f13e24ab555be8cb7412d66c772505e9fb26000",
+    "torch_ext/tq_decode.cpp": "0a9fc5263199d066d47631a621e30693efe0e5427ca1481d8d0d38c42c3bcc8c",
+    "torch_ext/build_decode.py": "6d121dde068df58fa6ba093f70953c687810d55064ac1f0b079d0297b1010494"
+  },
+  "binary_sha256": "95ec977204a4f55432b0037ba0fd0d71dc281ea18d0efb9211f1826a607f3317",
+  "compiled_cpp_sha256": "0a9fc5263199d066d47631a621e30693efe0e5427ca1481d8d0d38c42c3bcc8c"
+}

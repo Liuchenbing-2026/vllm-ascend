@@ -1,0 +1,11 @@
+[
+  "docker",
+  "exec",
+  "-e",
+  "TORCH_EXTENSIONS_DIR=/ws/decode_cpp_20261016/torch-extensions",
+  "-e",
+  "MAX_JOBS=4",
+  "tq-byte-model-20261015-host3",
+  "/ws/.venv/bin/python",
+  "/ws/decode_cpp_20261016/integration/torch_ext/build_decode.py"
+]

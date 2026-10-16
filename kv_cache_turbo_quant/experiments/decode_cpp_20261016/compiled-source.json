@@ -1,0 +1,23 @@
+{
+  "integration/run_shadow.py": "37d48271349383b351a2e5d646261e1d5e00d27b2abd576a00363e21821ee80f",
+  "integration/kvtq_store.py": "2d2a12d69aef68aaeb1572f84165e3c1e8c7ead8800925c69da7b8cf9992133c",
+  "integration/kvtq_decode.py": "3293860771141b0497183c9f447ab779f6a0604ff36681795420e828fa980310",
+  "integration/kvtq_shadow.py": "0b36310ac6f42cdb7443d4a928a836bc473359a6277275e38b1520f044f043f8",
+  "integration/kvtq_native_pair.py": "cf4ccd2e4f3b24b983d94af723f92254790a6ce17f17680304996e87ccaed60b",
+  "integration/kvtq_native_read.py": "6f8d1c3ec931115a0e055c950c3bdc60aeef334f54f004a538097a5b833577c5",
+  "integration/kvtq_vllm_plugin.py": "c768b8f771bb64bf56a37e67c80d95979dc9d04cfb663d222304f9a8da18fd81",
+  "integration/kvtq_write.py": "bfc7849bbfe4f0aa5d78beeef0dd4b92d1eed07b19dbfb1e20215ebd3be73e77",
+  "integration/kvtq_read.py": "228ae934780c27591aff68ebe882535e5a9ce012ddc503a243585bdd5c8bf053",
+  "integration/test_store_roundtrip.py": "f4502d6452251544d34a2635753f8f9b01f92645214531efe865ebd54098bb57",
+  "integration/torch_ext/build_paired_read.py": "2e6df0270f6c607940914f1a10cfba814129dd38a631e60b41c2b9b881a61208",
+  "integration/torch_ext/tq_decode.cpp": "0a9fc5263199d066d47631a621e30693efe0e5427ca1481d8d0d38c42c3bcc8c",
+  "integration/torch_ext/tq_queued_read.cpp": "165d45596be408186b9dc28a237aec86a2d645eea26a358ce6aa46bd115cbda8",
+  "integration/torch_ext/build_ext.py": "2d2902b151c65c8fa167fc6e193aad5ffc48b203cc4fba453754a2ebf5dd51a3",
+  "integration/torch_ext/build_decode.py": "6d121dde068df58fa6ba093f70953c687810d55064ac1f0b079d0297b1010494",
+  "integration/torch_ext/test_glue.py": "99ffb56fcaa44ee2a1a6101f2341bcf3d81adc78483a20212318158851f10fa9",
+  "integration/torch_ext/build_queued_read.py": "4dd5b1c4e2c3b9a6ae85642317da2a575cbb4a3beb92e446305aeb1a4615da44",
+  "integration/torch_ext/build_native_read.py": "bcf4884d7e50691572977a777d4d9aaa97bcaa65ce9e6a2110eb109205cca05f",
+  "integration/torch_ext/tq_native_read.cpp": "0420e52e1f5324996b44415ed7d45cedd75809633507f2182a153eb695fd8c58",
+  "integration/torch_ext/tq_paired_read.cpp": "0f65a8d4a899329f5b63619389e9b493ea2fbfa5d91f6cb065bc408ee012c82e",
+  "integration/torch_ext/turboquant_torch.cpp": "51fdaeb74f26aa2c9aece180955651dab6e858de943cee9ab105a8022066d6b5"
+}

@@ -1,0 +1,119 @@
+{
+  "functional_cases": [
+    {
+      "inference": false,
+      "batch": 1,
+      "kv_tokens": 1,
+      "bitwise_equal": true,
+      "noncontiguous_query_output": true,
+      "sentinels_preserved": true,
+      "timing_screen_only": {}
+    },
+    {
+      "inference": false,
+      "batch": 3,
+      "kv_tokens": 49,
+      "bitwise_equal": true,
+      "noncontiguous_query_output": true,
+      "sentinels_preserved": true,
+      "timing_screen_only": {}
+    },
+    {
+      "inference": false,
+      "batch": 16,
+      "kv_tokens": 320,
+      "bitwise_equal": true,
+      "noncontiguous_query_output": true,
+      "sentinels_preserved": true,
+      "timing_screen_only": {
+        "python": {
+          "device_plus_submission_us": 368.6239878336589,
+          "wall_us": 411.72777613004047,
+          "repeats": 30
+        },
+        "cpp": {
+          "device_plus_submission_us": 274.3346532185872,
+          "wall_us": 280.18585095802945,
+          "repeats": 30
+        }
+      }
+    },
+    {
+      "inference": false,
+      "batch": 60,
+      "kv_tokens": 120000,
+      "bitwise_equal": true,
+      "noncontiguous_query_output": true,
+      "sentinels_preserved": true,
+      "timing_screen_only": {
+        "python": {
+          "device_plus_submission_us": 420.5879847208659,
+          "wall_us": 426.2188449501991,
+          "repeats": 30
+        },
+        "cpp": {
+          "device_plus_submission_us": 283.0780029296875,
+          "wall_us": 288.1659505267938,
+          "repeats": 30
+        }
+      }
+    },
+    {
+      "inference": false,
+      "batch": 60,
+      "kv_tokens": 130170,
+      "bitwise_equal": true,
+      "noncontiguous_query_output": true,
+      "sentinels_preserved": true,
+      "timing_screen_only": {}
+    },
+    {
+      "inference": true,
+      "batch": 1,
+      "kv_tokens": 1,
+      "bitwise_equal": true,
+      "noncontiguous_query_output": true,
+      "sentinels_preserved": true,
+      "timing_screen_only": {}
+    },
+    {
+      "inference": true,
+      "batch": 3,
+      "kv_tokens": 49,
+      "bitwise_equal": true,
+      "noncontiguous_query_output": true,
+      "sentinels_preserved": true,
+      "timing_screen_only": {}
+    },
+    {
+      "inference": true,
+      "batch": 16,
+      "kv_tokens": 320,
+      "bitwise_equal": true,
+      "noncontiguous_query_output": true,
+      "sentinels_preserved": true,
+      "timing_screen_only": {}
+    },
+    {
+      "inference": true,
+      "batch": 60,
+      "kv_tokens": 120000,
+      "bitwise_equal": true,
+      "noncontiguous_query_output": true,
+      "sentinels_preserved": true,
+      "timing_screen_only": {}
+    },
+    {
+      "inference": true,
+      "batch": 60,
+      "kv_tokens": 130170,
+      "bitwise_equal": true,
+      "noncontiguous_query_output": true,
+      "sentinels_preserved": true,
+      "timing_screen_only": {}
+    }
+  ],
+  "async_cases": 20,
+  "async_bitwise_equal": true,
+  "scope": "rotation/FIA/output only; original BF16 FIA reference, FP32 rotation, zero tolerance; no packed cache/write/model coverage claimed"
+}
