@@ -1,6 +1,5 @@
-from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import torch
 from vllm.v1.sample.ops.topk_topp_sampler import TopKTopPSampler
@@ -14,17 +13,6 @@ from vllm_ascend.sample.sampler import (
     _apply_top_k_top_p_torch_npu,
     random_sample,
 )
-
-
-@contextmanager
-def _cpu_safe_npu_sample():
-    with (
-        patch("vllm_ascend.sample.sampler.npu_stream_switch", return_value=nullcontext()),
-        patch("vllm_ascend.sample.sampler.global_stream", return_value=MagicMock()),
-        patch("vllm_ascend.sample.sampler.torch.npu.current_stream", return_value=MagicMock()),
-        patch.object(torch.Tensor, "record_stream", lambda self, _stream: None),
-    ):
-        yield
 
 
 class TestAscendSampler(TestBase):
@@ -69,14 +57,31 @@ def test_penalties_greedy_prepare_and_random_sample():
 
     probs = torch.tensor([[0.2, 0.8], [0.7, 0.3]], dtype=torch.float32)
     generators = {0: torch.Generator().manual_seed(0)}
-    with _cpu_safe_npu_sample():
-        partial = random_sample(probs.clone(), generators)
-        full = random_sample(
-            probs.clone(),
-            {0: torch.Generator().manual_seed(1), 1: torch.Generator().manual_seed(2)},
-        )
-        empty = random_sample(probs.clone(), {})
+    partial = random_sample(probs.clone(), generators)
+    full = random_sample(
+        probs.clone(),
+        {0: torch.Generator().manual_seed(1), 1: torch.Generator().manual_seed(2)},
+    )
+    empty = random_sample(probs.clone(), {})
     assert partial.shape == full.shape == empty.shape == (2,)
+
+
+def test_random_sample_fills_q_on_the_calling_stream():
+    """The random divisor ``q`` must be produced on the stream that consumes it.
+
+    Regression guard for #18659 / #18754: the previous implementation filled
+    ``q`` on ``global_stream()`` and only ordered the two streams with
+    ``wait_stream``. That cross-stream dependency is not replayed by ACL graph
+    capture, so ``div_(q)`` could read an uninitialized/zero ``q`` (-> inf/NaN
+    -> token id 0 = ``<pad>``) or a partially stale one (garbage tokens).
+    """
+    probs = torch.tensor([[0.0, 1.0], [1.0, 0.0]], dtype=torch.float32)
+    with patch("vllm_ascend.sample.sampler.torch.npu.current_stream") as current_stream:
+        tokens = random_sample(probs.clone(), {})
+    # No side-stream hop and no cross-stream sync are issued any more.
+    current_stream.assert_not_called()
+    # A zero-probability token can never win, whatever values ``q`` holds.
+    assert tokens.tolist() == [1, 0]
 
 
 def test_topk_topp_forward_and_apply_helpers():
@@ -96,15 +101,14 @@ def test_topk_topp_forward_and_apply_helpers():
         return values
 
     sampler.apply_top_k_top_p = identity_apply
-    with _cpu_safe_npu_sample():
-        for mode in ("processed_logits", "processed_logprobs", "raw_logprobs"):
-            sampler.logprobs_mode = mode
-            tokens, processed = sampler.forward_native(logits, {}, k, p)
-            assert tokens.shape == (2,)
-            if mode == "raw_logprobs":
-                assert processed is None
-            else:
-                assert processed.shape == logits.shape
+    for mode in ("processed_logits", "processed_logprobs", "raw_logprobs"):
+        sampler.logprobs_mode = mode
+        tokens, processed = sampler.forward_native(logits, {}, k, p)
+        assert tokens.shape == (2,)
+        if mode == "raw_logprobs":
+            assert processed is None
+        else:
+            assert processed.shape == logits.shape
 
     unchanged = _apply_top_k_top_p_pytorch(logits.clone(), None, None)
     assert unchanged.shape == logits.shape

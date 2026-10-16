@@ -8,7 +8,6 @@ from vllm.v1.sample.sampler import Sampler
 
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.sample.penalties import apply_all_penalties
-from vllm_ascend.utils import global_stream, npu_stream_switch
 
 DEFAULT_LOGPROBS_MODE = "raw_logprobs"
 
@@ -28,17 +27,22 @@ def random_sample(
     # which is the common case, we first assume that every request does
     # not have its own seed. Then, we overwrite the values for the requests
     # that have their own seeds.
-    with npu_stream_switch(global_stream()):
-        q = torch.empty_like(probs)
-        if len(generators) != probs.shape[0]:
-            q.exponential_()
-        if generators:
-            # TODO(woosuk): This can be slow because we handle each request
-            # one by one. Optimize this.
-            for i, generator in generators.items():
-                q[i].exponential_(generator=generator)
-    torch.npu.current_stream().wait_stream(global_stream())
-    q.record_stream(torch.npu.current_stream())
+    # NOTE: `q` is filled on the calling stream on purpose. Filling it on a
+    # side stream (`global_stream()`) and only ordering the two streams with
+    # `wait_stream` is not enough under ACL graph + async scheduling: the
+    # cross-stream dependency is not part of the captured graph, so `div_(q)`
+    # can read `q` before `exponential_()` filled it. Uninitialized/zero `q`
+    # yields inf/NaN and `argmax` then returns token id 0 (`<pad>`), while a
+    # partially stale `q` produces garbage or repeated tokens. See #18659 and
+    # #18754.
+    q = torch.empty_like(probs)
+    if len(generators) != probs.shape[0]:
+        q.exponential_()
+    if generators:
+        # TODO(woosuk): This can be slow because we handle each request
+        # one by one. Optimize this.
+        for i, generator in generators.items():
+            q[i].exponential_(generator=generator)
     return probs.div_(q).argmax(dim=-1).view(-1)
 
 
