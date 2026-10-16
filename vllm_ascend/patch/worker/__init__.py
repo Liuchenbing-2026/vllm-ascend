@@ -23,6 +23,12 @@ if HAS_TRITON:
     import vllm_ascend.patch.worker.patch_triton
     import vllm_ascend.patch.worker.patch_v2.patch_triton  # noqa
 
+# Pure-PyTorch GDN fallbacks for NPU platforms without an active Triton
+# backend (e.g. 310P). Imported on an unguarded path on purpose: the module
+# self-guards on HAS_TRITON, so the fallback can never be starved by a
+# mismatched outer import condition (#18743).
+import vllm_ascend.patch.worker.patch_triton_fallback  # noqa
+
 
 # Flip STR_DTYPE_TO_TORCH_DTYPE["fp8"] -> torch.float8_e4m3fn on vllm builds
 # that lack register_kv_cache_dtype (e.g. releases/v0.27.1). Must run in every
