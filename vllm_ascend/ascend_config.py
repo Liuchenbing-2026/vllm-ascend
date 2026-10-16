@@ -1341,6 +1341,23 @@ class FinegrainedTPConfig:
         from vllm.config.compilation import CUDAGraphMode
 
         vc = vllm_config
+        if vc.parallel_config.pipeline_parallel_size > 1:
+            # The fine-grained TP groups are built per pipeline stage from the
+            # DP axis; o_proj / MLP weight sharding is untested with PP, so a
+            # PP config would build cross-stage groups and hang on the first
+            # exchange. Reject it here instead of failing silently at runtime.
+            finegrained_sizes = (
+                self.oproj_tensor_parallel_size,
+                self.lmhead_tensor_parallel_size,
+                self.embedding_tensor_parallel_size,
+                self.mlp_tensor_parallel_size,
+            )
+            if any(size > 0 for size in finegrained_sizes):
+                raise AssertionError(
+                    "finegrained_tp_config is not supported with pipeline_parallel_size > 1, got "
+                    f"{vc.parallel_config.pipeline_parallel_size}. Set all finegrained_tp_config sizes to 0 or run "
+                    "with pipeline_parallel_size == 1."
+                )
         enabled_configs = []
         if self.oproj_tensor_parallel_size > 1 or self.mlp_tensor_parallel_size > 1:
             # o_proj's _forward_o_proj reshape misaligns under tp > 1; mlp is untested there.

@@ -259,3 +259,60 @@ def test_engram_dp_pcp_group_reuses_upstream_node_partition(monkeypatch, shared,
         assert upstream.get_engram_dp_group() is not group
     parallel_state.destroy_ascend_model_parallel()
     upstream.destroy_model_parallel()
+
+
+@pytest.mark.parametrize(
+    ("world_size", "pcp_size", "expected"),
+    [
+        (4, 1, [[0, 2], [1, 3]]),
+        (8, 2, [[0, 4], [1, 5], [2, 6], [3, 7]]),
+    ],
+)
+def test_finegrained_tp_groups_follow_dp_axis_under_pipeline_parallelism(monkeypatch, world_size, pcp_size, expected):
+    """The rank plane for fine-grained TP must be (DP, TP) *within* a PP stage.
+
+    all_ranks is laid out as ExternalDP x DP x PP x PCP x TP, so DP precedes PP.
+    With dp=2, pp=2, tp=1 the real DP-axis groups are {0, 2} / {1, 3}; a plain
+    ``arange(world).reshape(pp, dp, tp)`` would instead yield {0, 1} / {2, 3},
+    mixing pipeline stages and hanging on the first cross-DP exchange.
+    """
+    from vllm_ascend.distributed import parallel_state
+
+    for name in ("_KVPP", "_MC2", "_P_TP", "_OTP", "_LMTP", "_EMBED_TP", "_MLP_TP", "_DYNAMIC_EPLB"):
+        monkeypatch.setattr(parallel_state, name, None)
+    config = SimpleNamespace(
+        kvpp_config=SimpleNamespace(size=1),
+        pd_tp_ratio=1,
+        pd_head_ratio=1,
+        eplb_config=SimpleNamespace(dynamic_eplb=False),
+        finegrained_tp_config=SimpleNamespace(
+            oproj_tensor_parallel_size=0,
+            lmhead_tensor_parallel_size=2,
+            embedding_tensor_parallel_size=0,
+            mlp_tensor_parallel_size=0,
+        ),
+    )
+    calls = {}
+
+    def init_group(ranks, local_rank, backend, *, group_name):
+        calls[group_name] = ranks
+        return MagicMock()
+
+    monkeypatch.setattr(parallel_state.torch.distributed, "is_initialized", lambda: True)
+    monkeypatch.setattr(parallel_state.torch.distributed, "get_world_size", lambda: world_size)
+    monkeypatch.setattr(parallel_state.torch.distributed, "get_backend", lambda _: "hccl")
+    monkeypatch.setattr(parallel_state, "get_world_group", lambda: SimpleNamespace(local_rank=0, device_group=object()))
+    monkeypatch.setattr(parallel_state, "get_ascend_config", lambda: config)
+    monkeypatch.setattr(parallel_state, "init_model_parallel_group", init_group)
+    parallel_state.init_ascend_model_parallel(
+        SimpleNamespace(
+            tensor_parallel_size=1,
+            pipeline_parallel_size=2,
+            data_parallel_size=2,
+            prefill_context_parallel_size=pcp_size,
+        )
+    )
+    try:
+        assert calls["lmheadtp"] == expected
+    finally:
+        parallel_state.destroy_ascend_model_parallel()

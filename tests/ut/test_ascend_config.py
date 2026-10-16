@@ -1234,6 +1234,7 @@ class TestSubconfigPydanticTypeValidation(TestBase):
         cudagraph_capture_sizes=None,
         cudagraph_mode=CUDAGraphMode.FULL_DECODE_ONLY,
         prefill_context_parallel_size=1,
+        pipeline_parallel_size=1,
     ):
         speculative_config = None
         if num_speculative_tokens:
@@ -1243,6 +1244,7 @@ class TestSubconfigPydanticTypeValidation(TestBase):
                 tensor_parallel_size=1,
                 data_parallel_size=8,
                 prefill_context_parallel_size=prefill_context_parallel_size,
+                pipeline_parallel_size=pipeline_parallel_size,
             ),
             compilation_config=SimpleNamespace(
                 cudagraph_mode=cudagraph_mode,
@@ -1272,6 +1274,26 @@ class TestSubconfigPydanticTypeValidation(TestBase):
         config = FinegrainedTPConfig(oproj_tensor_parallel_size=1)
         config._validate_preconditions(self._oproj_tp_vllm_config(cudagraph_mode=CUDAGraphMode.NONE))
         self.assertEqual(config.oproj_tensor_parallel_size, 1)
+
+    def test_finegrained_tp_rejects_pipeline_parallelism(self):
+        # Fine-grained TP builds its groups per pipeline stage from the DP axis;
+        # with PP > 1 the (pp, dp, tp) reshape would mix stages and hang on the
+        # first exchange, so any enabled knob must fail fast at config load.
+        for knob in (
+            "oproj_tensor_parallel_size",
+            "lmhead_tensor_parallel_size",
+            "embedding_tensor_parallel_size",
+            "mlp_tensor_parallel_size",
+        ):
+            config = FinegrainedTPConfig(**{knob: 2})
+            with self.assertRaisesRegex(AssertionError, "not supported with pipeline_parallel_size > 1"):
+                config._validate_preconditions(self._oproj_tp_vllm_config(pipeline_parallel_size=2))
+
+    def test_finegrained_tp_allows_pipeline_parallelism_when_disabled(self):
+        # All knobs off: no groups are built, so PP is fine.
+        config = FinegrainedTPConfig()
+        config._validate_preconditions(self._oproj_tp_vllm_config(pipeline_parallel_size=2))
+        self.assertEqual(config.oproj_tensor_parallel_size, 0)
 
     def test_oproj_tp_capture_bound_check(self):
         config = FinegrainedTPConfig(oproj_tensor_parallel_size=2)

@@ -181,11 +181,15 @@ def init_ascend_model_parallel(
         if group_size is None:
             return None
         if group_size not in _group_cache:
-            rank_grid = torch.arange(world_size).reshape(global_pp_size, global_dp_size, global_tp_size)
+            # all_ranks is laid out as ExternalDP x DP x PP x PCP x TP, so the
+            # DP axis sits *before* PP. Permute PP (and the PCP/ExternalDP
+            # replicas) to the front, then fold them into the iteration dim so
+            # each row of rank_grid is a (DP, TP) plane of one pipeline stage.
+            # A plain arange(...).reshape(pp, dp, tp) would mix pipeline stages.
+            rank_grid = all_ranks.permute(0, 2, 3, 1, 4).reshape(-1, global_dp_size, global_tp_size)
             num_chunks = global_dp_size // group_size
             group_ranks = []
-            for pp_idx in range(global_pp_size):
-                stage_ranks = rank_grid[pp_idx]  # (dp, tp)
+            for stage_ranks in rank_grid:  # (dp, tp)
                 for chunk in range(num_chunks):
                     for tp_idx in range(global_tp_size):
                         group = stage_ranks[chunk * group_size : (chunk + 1) * group_size, tp_idx].tolist()
