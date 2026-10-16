@@ -119,6 +119,7 @@ std::tuple<at::Tensor &, at::Tensor &, at::Tensor &, at::Tensor &, at::Tensor &>
     const c10::optional<at::Tensor> &bias1, const c10::optional<at::Tensor> &ctkv_scale,
     const c10::optional<at::Tensor> &q_nope_scale, c10::optional<c10::string_view> cache_mode,
     c10::optional<c10::string_view> quant_mode, c10::optional<bool> enable_inner_out,
+    c10::optional<double> epsilon,
     at::Tensor &q_out0, at::Tensor &kv_cache_out0, at::Tensor &q_out1,
     at::Tensor &kv_cache_out1, at::Tensor &inner_out)
 {
@@ -128,6 +129,7 @@ std::tuple<at::Tensor &, at::Tensor &, at::Tensor &, at::Tensor &, at::Tensor &>
     const int64_t cacheMode = mla_preprocess_detail::ParseCacheMode(cache_mode);
     const int64_t quantMode = mla_preprocess_detail::ParseQuantMode(quant_mode);
     const bool enableInnerOut = enable_inner_out.value_or(false);
+    const double epsilonValue = epsilon.value_or(1e-6);
     const bool enableRope = cos.has_value();
     const at::Tensor slotMapping =
         slotmapping.scalar_type() == at::kLong ? slotmapping.to(at::kInt) : slotmapping;
@@ -183,6 +185,7 @@ std::tuple<at::Tensor &, at::Tensor &, at::Tensor &, at::Tensor &, at::Tensor &>
         enableRope,
         kvCacheStride0,
         kvCacheRopeStride0,
+        epsilonValue,
         q_out0,
         kv_cache_out0,
         q_out1,

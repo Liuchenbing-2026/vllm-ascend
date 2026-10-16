@@ -1563,6 +1563,7 @@ class AscendSFAImpl(MLAAttentionImpl):
             cache_mode="krope_ctkv",
             quant_mode="per_tensor_quant_asymm",
             enable_inner_out=True,
+            epsilon=self.q_a_layernorm.variance_epsilon,  # type: ignore[union-attr]
             q_out0=ql_nope,
             kv_cache_out0=k_nope,
             q_out1=q_pe,

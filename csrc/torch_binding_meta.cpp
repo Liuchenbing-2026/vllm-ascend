@@ -85,6 +85,7 @@ std::tuple<at::Tensor &, at::Tensor &, at::Tensor &, at::Tensor &, at::Tensor &>
     c10::optional<c10::string_view> cache_mode,
     c10::optional<c10::string_view> quant_mode,
     c10::optional<bool> enable_inner_out,
+    c10::optional<double> epsilon,
     at::Tensor &q_out0,
     at::Tensor &kv_cache_out0,
     at::Tensor &q_out1,

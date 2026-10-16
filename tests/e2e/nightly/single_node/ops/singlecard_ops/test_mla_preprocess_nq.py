@@ -96,6 +96,7 @@ def test_mla_preprocess_kernel(enable_rope: bool):
         cache_mode="krope_ctkv",
         quant_mode="no_quant",
         enable_inner_out=False,
+        epsilon=1e-6,
         q_out0=q_nope_out,
         kv_cache_out0=kv_cache,
         q_out1=q_rope_out,

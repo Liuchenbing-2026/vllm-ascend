@@ -1504,6 +1504,53 @@ class TestAscendSFAImpl(TestBase):
         path = self.impl._resolve_preprocess_type(torch.bfloat16)
         self.assertEqual(path, PreprocessType.MLAPO)
 
+    def test_mlapo_forwards_model_rms_norm_eps(self):
+        """MLAPO must receive the model's rms_norm_eps, not the kernel's 1e-6.
+
+        The GLM-5.2 W8A8 checkpoint configures ``rms_norm_eps=1e-5``; the fused
+        kernel used to hardcode 1e-6 for both Q and KV RMSNorm. The Python side
+        has to forward the configured epsilon so the fused path matches the
+        native ``q_a_layernorm``/``kv_a_layernorm`` normalization.
+        """
+        self.impl.W_UK_T = torch.randn(4, 1, 8)
+        # The fused op itself is mocked below, so the pre-packed MLAPO weights
+        # only have to exist; _process_weights_for_fused_mlapo is not exercised.
+        for attr in (
+            "wd_qkv",
+            "deq_scale_qkv",
+            "gamma1",
+            "beta1",
+            "wu_q",
+            "qb_deq_scl",
+            "gamma2",
+            "quant_scale0",
+            "quant_offset0",
+            "quant_bias_qkv",
+            "quant_scale1",
+            "quant_offset1",
+            "qb_qt_bias",
+            "ctkv_scale",
+            "q_nope_scale",
+        ):
+            setattr(self.impl, attr, None)
+        hidden_states = torch.randn(3, 16)
+        kv_cache = (torch.empty(1, 1, 1, 8), torch.empty(1, 1, 1, 2))
+
+        for rms_norm_eps in (1e-5, 1e-6):
+            with self.subTest(rms_norm_eps=rms_norm_eps):
+                self.impl.q_a_layernorm.variance_epsilon = rms_norm_eps
+                with patch.object(torch.ops._C_ascend, "mla_preprocess", create=True, return_value=()) as mock_mlapo:
+                    self.impl._sfa_preprocess_mlapo(
+                        hidden_states,
+                        kv_cache,
+                        torch.randn(3, 2),
+                        torch.randn(3, 2),
+                        torch.zeros(3, dtype=torch.int32),
+                        num_input_tokens=3,
+                    )
+
+                self.assertEqual(mock_mlapo.call_args.kwargs["epsilon"], rms_norm_eps)
+
     def test_resolve_path_mxfp_c8_goes_prolog_v3(self):
         """MXFP + is_kv_consumer + C8 → PROLOG_V3."""
         self._set_quant(AscendW8A8MXFP8DynamicLinearMethod)

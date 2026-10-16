@@ -128,6 +128,7 @@ struct OpParam {
     InputDtype inDtype;
     bool enableInnerOut;
     bool enableRope;
+    float epsilon{1e-6f};
     // MLA dimensions derived from tensor shapes
     uint32_t qLoraRank;
     uint32_t qkNopeHeadDim;
@@ -635,6 +636,7 @@ void MlaPreprocessTiling::Init()
     tilingData->hiddenStrideRope = opParam.qkNopeHeadDim + opParam.qkRopeHeadDim;
     tilingData->qkNopeHeadDim = opParam.qkNopeHeadDim;
     tilingData->avgFactor = 1.0f / static_cast<float>(opParam.qLoraRank);
+    tilingData->epsilon = opParam.epsilon;
     tilingData->kvCacheBlockSize = opParam.kvCacheBlockSize == 0 ? 128ULL : opParam.kvCacheBlockSize;
     tilingData->kvCacheStride0 = opParam.kvCacheStride0;
     tilingData->kvCacheRopeStride0 = opParam.kvCacheRopeStride0;
