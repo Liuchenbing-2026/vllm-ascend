@@ -319,10 +319,9 @@ class TestAscendAttentionMetadataBuilder(TestBase):
 
     def test_mainline_full_graph_padding_preserves_exact_cpu_lengths(self):
         self.mock_vllm_config.use_v2_model_runner = True
-        with patch.object(attn_module, "vllm_version_is", return_value=False):
-            metadata, sources, device_lens, _ = self._build_parallel_drafting_metadata(
-                seq_lens_cpu_is_exact=True, num_input_tokens=16
-            )
+        metadata, sources, device_lens, _ = self._build_parallel_drafting_metadata(
+            seq_lens_cpu_is_exact=True, num_input_tokens=16
+        )
 
         self.assertEqual(metadata.actual_seq_lengths_q, [4, 8, 12, 16])
         self.assertEqual(metadata.seq_lens_list, [4, 5, 6, 1])
