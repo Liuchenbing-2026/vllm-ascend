@@ -25,6 +25,7 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.pull_worker import (
     MooncakePullConnectorWorker,
     MooncakePullRecvingThread,
 )
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.stats import MooncakeKVConnectorStats
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
     SizedDict,
     group_concurrent_contiguous,
@@ -68,6 +69,8 @@ def make_thread(**overrides: object) -> MooncakePullRecvingThread:
     thread.invalid_block_ids = set()
     thread.invalid_block_ids_lock = threading.Lock()
     thread.finished_requests = queue.SimpleQueue()
+    thread.xfer_stats = MooncakeKVConnectorStats()
+    thread.xfer_stats_lock = threading.Lock()
     thread.request_queue = queue.Queue()
     for name, value in overrides.items():
         setattr(thread, name, value)
@@ -951,6 +954,19 @@ def test_execute_bucket_calls_mooncake_and_raises_on_negative_return() -> None:
     thread.engine.batch_transfer_sync_read.return_value = -1
     with pytest.raises(RuntimeError, match="transfer failed"):
         thread._execute_tp_transfer_bucket(0, 0, 0, 1, 1, 1, remote, entries)
+
+    thread.engine.batch_transfer_sync_read.side_effect = RuntimeError("SDK read error")
+    with pytest.raises(RuntimeError, match="SDK read error"):
+        thread._execute_tp_transfer_bucket(0, 0, 0, 1, 1, 1, remote, entries)
+    worker = MooncakePullConnectorWorker.__new__(MooncakePullConnectorWorker)
+    worker._recving_thread = thread
+    worker.xfer_stats = MooncakeKVConnectorStats()
+    stats = worker.get_kv_connector_stats()
+    assert stats is not None
+    assert stats.data["bytes_transferred"] == [128]
+    assert len(stats.data["transfer_duration"]) == 1
+    assert stats.data["num_failed_transfers"] == [1, 1]
+    assert worker.get_kv_connector_stats() is None
 
 
 def test_execute_bucket_uses_selected_pcp_endpoint_and_addresses() -> None:

@@ -9,6 +9,7 @@ hashes; it does not store KV tensors. This path does not use a Mooncake Store.
 | --- | --- |
 | Ascend base | `v0.30.0rc2`, `8fde6d4e335fe300e2b949aab0e31659cce0811d` |
 | Core base used by the rc2 Dockerfile | vLLM `v0.30.0`, `ced6857afa0ea7b2e3f0846a62e1394e90f15607` |
+| Required core streaming companion | [6c48dce1beb16000ebffd937402608fdd86bde82](https://github.com/Liuchenbing-2026/vllm/commit/6c48dce1beb16000ebffd937402608fdd86bde82) |
 | Base image tag | `quay.nju.edu.cn/ascend/vllm-ascend:v0.30.0rc2` |
 | Transfer connector | `MooncakeConnectorV2` |
 | Router | Native Rust binary with `--kv-connector mooncake-pull` |
@@ -22,6 +23,14 @@ The tested image digest was
 `sha256:6348403a0ebb19f52bc1b7497de1daeb6df0e4650f9051c169e47a011527a6c3`,
 with core `0.30.0+empty`, Ascend `0.30.0rc2`, Torch `2.10.0+cpu`,
 Torch-NPU `2.10.0.post7`, and Mooncake `0.3.11.post1` on 910B4-1.
+
+The fixed core base omits `kv_transfer_params` from streaming chat and completion
+responses. A real-model run completed with identical output IDs but missed reuse
+on every turn. Apply the separate core companion above to both OFF and ON:
+its four runtime files add terminal-chunk metadata without changing model or
+runner code. Eight focused CPU stream cases and a 13-case compatibility subset
+passed. This dependency is required in addition to this Ascend adaptation and
+the native Router; successful ordinary streaming alone does not prove reuse.
 
 The standalone diagnostic byte-checked P→D and updated D→P on shared NPUs.
 Its initial implementation imported Mooncake before selecting the NPU device,

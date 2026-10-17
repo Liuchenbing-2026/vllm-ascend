@@ -13,6 +13,7 @@ import torch
 import zmq
 from vllm.config import VllmConfig
 from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorTransferResults
+from vllm.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorStats
 from vllm.logger import logger
 from vllm.utils.network_utils import make_zmq_path
 from vllm.v1.attention.backends.registry import MambaAttentionBackendEnum
@@ -41,6 +42,7 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.metadata import (
     MooncakeTransferMetadataGroups,
     ReqMeta,
 )
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.stats import MooncakeKVConnectorStats
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
     SizedDict,
     ensure_zmq_recv,
@@ -140,6 +142,8 @@ class MooncakePullRecvingThread(threading.Thread):
         self.remote_layer_index_pairs: SizedDict[str, dict[int, list[tuple[int, int]]]] = SizedDict()
         self.request_queue: queue.Queue[tuple[str, dict[str, ReqMeta]]] = queue.Queue()
         self.finished_requests: queue.SimpleQueue[tuple[str, bool]] = queue.SimpleQueue()
+        self.xfer_stats = MooncakeKVConnectorStats()
+        self.xfer_stats_lock = threading.Lock()
         self.invalid_block_ids: set[int] = set()
         self.invalid_block_ids_lock = threading.Lock()
         assert self.local_metadata is not None
@@ -171,6 +175,11 @@ class MooncakePullRecvingThread(threading.Thread):
             invalid_block_ids = self.invalid_block_ids
             self.invalid_block_ids = set()
         return invalid_block_ids
+
+    def get_kv_connector_stats(self) -> MooncakeKVConnectorStats:
+        """Drain completed READ statistics without racing concurrent transfers."""
+        with self.xfer_stats_lock:
+            return self.xfer_stats.clone_and_reset()
 
     def run(self) -> None:
         """Consume queued requests and invoke the transfer implementation."""
@@ -1414,18 +1423,25 @@ class MooncakePullRecvingThread(threading.Thread):
             }
         )
         transfer_start_time = time.perf_counter()
-        ret = self.engine.batch_transfer_sync_read(session_id, src_list, dst_list, length_list)
-        if ret < 0:
-            raise RuntimeError(
-                "Mooncake KV transfer failed for remote "
-                f"PP/PCP/TP rank {remote_pp_rank}/{remote_pcp_rank}/{remote_tp_rank}, ret={ret}"
-            )
-        transfer_elapsed_ms = (time.perf_counter() - transfer_start_time) * 1000
+        try:
+            ret = self.engine.batch_transfer_sync_read(session_id, src_list, dst_list, length_list)
+            if ret < 0:
+                raise RuntimeError(
+                    "Mooncake KV transfer failed for remote "
+                    f"PP/PCP/TP rank {remote_pp_rank}/{remote_pcp_rank}/{remote_tp_rank}, ret={ret}"
+                )
+        except Exception:
+            with self.xfer_stats_lock:
+                self.xfer_stats.record_failed_transfer()
+            raise
+        transfer_duration = time.perf_counter() - transfer_start_time
+        with self.xfer_stats_lock:
+            self.xfer_stats.record_transfer(transfer_duration, sum(length_list))
         logger.info(
             "KV cache transfer for requests %s took %.2f ms (%d ranges, %d bytes). "
             "local_ip %s local_device_id %s remote_session_id %s",
             request_ids,
-            transfer_elapsed_ms,
+            transfer_duration * 1000,
             len(length_list),
             sum(length_list),
             self.local_metadata.local_ip,
@@ -1619,6 +1635,11 @@ class MooncakePullConnectorWorker(MooncakeBaseConnectorWorker):
             if self._recving_thread is not None
             else KVConnectorTransferResults()
         )
+
+    def get_kv_connector_stats(self) -> KVConnectorStats | None:
+        if self._recving_thread is not None:
+            self.xfer_stats.aggregate(self._recving_thread.get_kv_connector_stats())
+        return super().get_kv_connector_stats()
 
     def get_block_ids_with_load_errors(self) -> set[int]:
         """Return local block IDs whose pull operations failed."""
