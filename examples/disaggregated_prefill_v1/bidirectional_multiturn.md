@@ -10,12 +10,14 @@ hashes; it does not store KV tensors. This path does not use a Mooncake Store.
 | Ascend base | `v0.30.0rc2`, `8fde6d4e335fe300e2b949aab0e31659cce0811d` |
 | Core base used by the rc2 Dockerfile | vLLM `v0.30.0`, `ced6857afa0ea7b2e3f0846a62e1394e90f15607` |
 | Required core streaming companion | [6c48dce1beb16000ebffd937402608fdd86bde82](https://github.com/Liuchenbing-2026/vllm/commit/6c48dce1beb16000ebffd937402608fdd86bde82) |
-| Base image tag | `quay.nju.edu.cn/ascend/vllm-ascend:v0.30.0rc2` |
+| Base image tag | `quay.io/ascend/vllm-ascend:v0.30.0rc2` |
 | Transfer connector | `MooncakeConnectorV2` |
 | Router | Native Rust binary with `--kv-connector mooncake-pull` |
 | Software checks | 217 Mooncake CPU tests; 780 companion Router tests |
 | Device data plane | Both 4 MiB directions match; corrected diagnostic exits normally |
-| Model/TTFT | Not measured |
+| Model correctness | Real Qwen3-8B, two turns, all 512 output IDs match OFF |
+| Warmed TTFT | All three fresh AB/BA/AB pairs passed the per-length gain gate |
+| P prefix caching enabled | Generated-page partial READ and local-hit zero-READ cases passed |
 
 Keep an exact image digest and the installed package versions from the actual
 run. A tag and the Dockerfile's defaults do not establish the image's contents.
@@ -41,9 +43,29 @@ workers returning zero. Restoring only the old order reproduced both aborts.
 The internal native heap failure is not otherwise diagnosed. Preserve those
 failed runs and keep nonzero worker exits as `success=false`.
 
-This device-buffer result does not exercise the new engine KV lifecycle or
-a complete model. Integrated model correctness and TTFT remain unmeasured.
+The standalone device-buffer result does not exercise a complete model.
+A separate real Qwen3-8B BF16 run on two 910B4-1 devices completed two turns
+with identical inputs and all 512 output IDs matching OFF. Native P-side READ
+logs and transfer metrics agree and cover a complete generated-token KV page,
+in addition to the previous prompt. That run uses TP1, eager execution, a
+16 GiB KV pool per endpoint and P prefix caching disabled. It establishes
+targeted model reuse. Separate warmed performance validation completed all
+three AB/BA/AB pairs with fresh engines, identical model/package hashes and
+the same immutable image in all six arms. Each arm had equal warmup, followed
+by two conversations of three turns at each initial prompt length. Every
+pair passed the unchanged per-length gain gate, exact input/output-ID checks
+and physical READ accounting. This is a serial, prefix-eviction workload;
+general task accuracy and production goodput were not evaluated.
+The host uses driver `26.0.rc1` and CANN `9.2.0` (`V100R001C25B114`).
 The source uses no changed model runner.
+
+A separate fresh deployment enabled P prefix caching with all other model and
+connector settings unchanged. Its long-output case matched all output IDs and
+read only the complete generated-token page missing from P. A second case
+matched an ordinary-Prefill reference while forwarding a remote candidate and
+performing no reverse READ, because P already had the required prefix. Both
+endpoints reported no failed SDK transfers. These are correctness checks;
+they are excluded from the prefix-eviction TTFT results.
 
 ## Supported configuration
 
@@ -160,7 +182,9 @@ The strict gate checks identical input/output token IDs, later-turn router
 candidate receipts, P-side `vllm:mooncake_bytes_transferred_sum` OFF=0/ON>0,
 and at least 1.05× median later-turn TTFT improvement at every tested length.
 Repeat AB/BA/AB with fresh engines. Preserve failed arms and all raw evidence.
-P prefix caching is disabled here to model eviction; also test it enabled before
-making a broader operating claim. Exact generated IDs are a regression check,
-not a complete task-quality benchmark. The commands are prepared, not a claim
-that model, physical KV transfer or performance acceptance has passed.
+P prefix caching is disabled here to model eviction. Exact generated IDs are a
+regression check, not a complete task-quality benchmark. The launcher and
+benchmark commands above are templates: the recorded run used physical P2/D3,
+`MODEL=/models/Qwen3-8B`, `KV_MEMORY_BYTES=17179869184`, and the fixed core
+companion in both arms. Preserve the actual Docker command, image identity, model hashes,
+warmup and formal-request records when reproducing the acceptance result.
