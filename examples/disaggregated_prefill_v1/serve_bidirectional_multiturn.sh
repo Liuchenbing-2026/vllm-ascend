@@ -20,7 +20,7 @@ if [[ "$P_DEVICE" == "$D_DEVICE" || ( "$LEG" != on && "$LEG" != off ) ]]; then
 fi
 mkdir "$RUN_DIR"
 python3 - "$RUN_DIR" "$MODEL" "$P_DEVICE" "$D_DEVICE" "$P_PORT" "$D_PORT" "$ROUTER_PORT" "$P_KV_PORT" "$D_KV_PORT" <<'PY'
-import hashlib, importlib.metadata, json, pathlib, re, socket, subprocess, sys
+import errno, hashlib, importlib.metadata, json, pathlib, re, socket, subprocess, sys
 devices = subprocess.check_output(['npu-smi', 'info'], text=True)
 if any(not pathlib.Path('/dev/davinci'+device).exists() for device in sys.argv[3:5]):
     raise SystemExit('Selected NPU device nodes are not mapped into this container')
@@ -30,8 +30,14 @@ busy = {m.group(1) for m in re.finditer(r'^\|\s+(\d+)\s+\d+\s*\|\s*\d+\s*\|', de
 if busy.intersection(sys.argv[3:5]):
     raise SystemExit('Selected NPUs have existing processes; nothing was started')
 for port in [*map(int, sys.argv[5:8]), int(sys.argv[8]), int(sys.argv[8])+1, int(sys.argv[9]), int(sys.argv[9])+1]:
+    with socket.socket() as connection:
+        connection.settimeout(0.2)
+        if connection.connect_ex(('127.0.0.1', port)) == 0:
+            raise OSError(errno.EADDRINUSE, f'Port {port} already has a listener')
     with socket.socket() as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind(('0.0.0.0', port))
+        probe.listen(1)
 model = pathlib.Path(sys.argv[2])
 if not model.is_dir():
     raise SystemExit('Use a fixed local model snapshot')
