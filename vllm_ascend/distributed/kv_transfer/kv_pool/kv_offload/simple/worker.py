@@ -170,9 +170,9 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
             logger.warning("Pinned memory not available; CPU offload throughput may be degraded on this host.")
 
         self.gpu_kv_caches = unique_caches
-        from vllm_ascend.task4_host_capture import HostCapture
+        from vllm_ascend.task4_host_capture import HostCapture, load_probe_lease
 
-        capture = HostCapture("/ws/lease_20261018/host_snapshots")
+        capture = HostCapture(load_probe_lease()["output_dir"])
         capture.capture("register_geometry", num_cpu_blocks=self.num_cpu_blocks,
                         pool_bytes_per_block=total_bytes_per_block,
                         cpu_capacity_bytes=self.cpu_capacity_bytes,

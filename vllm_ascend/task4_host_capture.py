@@ -108,7 +108,7 @@ class HostCapture:
             os.fsync(handle.fileno())
         return path
 
-    def allocate_mirrors(self, caches, cpu_blocks, pin_memory, zeros):
+    def allocate_mirrors(self, caches, cpu_blocks, pin_memory, zeros, pre_allocate=None):
         # Preserve original order, shapes, dtype, device and allocator. No retry,
         # empty-cache, synchronization, fallback, block reduction or NPU calls.
         geometry = {name:self.tensor_geometry(t,cpu_blocks) for name,t in caches.items()}
@@ -117,6 +117,8 @@ class HostCapture:
         for ordinal, (name, tensor) in enumerate(caches.items()):
             self.capture('before_pin', ordinal=ordinal, name=name, geometry=geometry[name])
             try:
+                if pre_allocate is not None:
+                    pre_allocate()
                 result[name] = zeros((cpu_blocks,)+tuple(tensor.shape[1:]),
                                      dtype=tensor.dtype, device='cpu', pin_memory=pin_memory)
             except BaseException as error:
@@ -146,29 +148,53 @@ def validate_minimal_geometry(caches, blocks, rank, world_size, capacity_bytes):
     return requested,rounded
 
 
-def before_model_guard(config):
+def load_probe_lease(path="/ws/task4_minpin/active_lease.json", now=None):
+    lease = json.loads(Path(path).read_text())
+    stamp = datetime.datetime.now(datetime.timezone.utc).timestamp() if now is None else now
+    if lease.get("status") != "APPROVED" or not lease.get("lease_id"):
+        raise ValueError("No explicitly approved new reservation")
+    if lease["lease_id"] == "lease_aa1a6ca9-0c57-4c7c-ace4-1b7d6d027344":
+        raise ValueError("Previous reservation was revoked")
+    start, end = lease["start_epoch"], lease["end_epoch"]
+    if end-start < 20*60 or not start <= stamp < end-120:
+        raise ValueError("Reservation inactive, too short, or in cleanup interval")
+    if lease.get("physical_devices") != list(range(8)):
+        raise ValueError("Requires explicit eight-card reservation")
+    if lease.get("rank_limit_bytes") != 4*1024**2 or lease.get("total_limit_bytes") != 32*1024**2:
+        raise ValueError("Cannot alter diagnostic capacity ceilings")
+    output = Path(lease["output_dir"])
+    if output.parent != Path("/ws/task4_minpin/attempts") or output.name in ("", ".", ".."):
+        raise ValueError("Require a unique attempt under /ws/task4_minpin/attempts")
+    return lease
+
+
+def before_model_guard(config, lease_path="/ws/task4_minpin/active_lease.json"):
     if config.parallel_config.world_size != 8 or config.cache_config.kv_offloading_size != 0.03125:
         raise ValueError('DIAGNOSTIC GUARD: only 32MiB aggregate offload budget allowed')
-    if datetime.datetime.now(datetime.timezone.utc).timestamp() >= 1792258080:
-        raise RuntimeError('DIAGNOSTIC GUARD: lease launch deadline expired')
+    return load_probe_lease(lease_path)
+
+
+def capture_model_phase(phase, **details):
+    lease = load_probe_lease()
+    HostCapture(lease["output_dir"]).capture(phase, lease_id=lease["lease_id"], **details)
 
 
 def run_minimal_probe(caches, blocks, pin_memory, zeros, capacity_bytes, rank, world_size):
-    import fcntl
     import time
-    capture=HostCapture('/ws/lease_20261018/host_snapshots')
+    lease=load_probe_lease()
+    capture=HostCapture(lease["output_dir"])
     try:
         if not pin_memory:
             raise ValueError('Probe requires pinned allocation; no pageable fallback')
         requested,rounded=validate_minimal_geometry(caches,blocks,rank,world_size,capacity_bytes)
         reserve_quota(capture.directory,rank,requested,rounded)
         capture.capture('probe_guard_passed',requested=requested,rounded=rounded)
-        mirrors=capture.allocate_mirrors(caches,1,True,zeros)
+        mirrors=capture.allocate_mirrors(caches,1,True,zeros,pre_allocate=load_probe_lease)
         capture.capture('probe_complete',successful_regions=len(mirrors))
         (capture.directory/('rank-%s.complete'%rank)).write_text(str(os.getpid()))
         # Intentionally never return to connector stream/backend initialization.
         # Controller collects all 8 markers then stops ONLY this container.
-        while datetime.datetime.now(datetime.timezone.utc).timestamp() < 1792258080:
+        while datetime.datetime.now(datetime.timezone.utc).timestamp() < lease["end_epoch"]-120:
             time.sleep(1)
         raise RuntimeError('Probe lease deadline reached; no serving permitted')
     except BaseException as error:
@@ -179,7 +205,11 @@ def run_minimal_probe(caches, blocks, pin_memory, zeros, capacity_bytes, rank, w
 
 def reserve_quota(directory, rank, requested, rounded):
     import fcntl
-    quota=Path(directory)/'quota.json'
+    if type(rank) is not int or rank not in range(8):
+        raise ValueError("Invalid rank")
+    if not 0 < requested <= rounded <= 4*1024**2:
+        raise ValueError("Invalid per-rank quota")
+    quota=Path(directory)/'quota.json' 
     with (Path(directory)/'quota.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
         state=json.loads(quota.read_text()) if quota.exists() else {}
