@@ -181,59 +181,6 @@ def test_register_kv_caches_keeps_separate_kv_and_initializes_backend(
     )
 
 
-def test_get_finished_records_store_barrier_on_npu(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class FakeEvent:
-        def __init__(self) -> None:
-            self.recorded_stream = None
-
-        def record(self, stream) -> None:
-            self.recorded_stream = stream
-
-    class RecordingBackend:
-        def __init__(self) -> None:
-            self.calls: list[dict[str, object]] = []
-
-        def launch_copy(self, *args, **kwargs) -> None:
-            self.calls.append(kwargs)
-
-    current_stream = object()
-    monkeypatch.setattr(
-        torch,
-        "npu",
-        SimpleNamespace(Event=FakeEvent, current_stream=lambda: current_stream),
-        raising=False,
-    )
-
-    worker = SimpleCPUOffloadNPUWorker.__new__(SimpleCPUOffloadNPUWorker)
-    worker._backend = RecordingBackend()
-    worker._connector_metadata = SimpleCPUOffloadMetadata(
-        load_event=1,
-        load_gpu_blocks=[2],
-        load_cpu_blocks=[3],
-        store_event=4,
-        store_gpu_blocks=[5],
-        store_cpu_blocks=[6],
-    )
-    worker._store_compute_done = None
-    worker._load_events = []
-    worker._store_events = []
-    worker._pending_load_event_indices = set()
-    worker._pending_store_event_indices = set()
-    worker._completed_store_events = {}
-
-    assert worker.get_finished(set()) == (None, None)
-
-    load_call, store_call = worker._backend.calls
-    assert load_call["is_store"] is False
-    assert "wait_event" not in load_call
-    assert store_call["is_store"] is True
-    store_event = store_call["wait_event"]
-    assert isinstance(store_event, FakeEvent)
-    assert store_event.recorded_stream is current_stream
-
-
 def test_register_kv_caches_keeps_kv_views_of_one_allocation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -409,3 +356,69 @@ def test_offload_rejects_fallback_larger_than_scheduler_budget():
     caches = (torch.zeros(4, 8, dtype=torch.uint8), torch.zeros(4, 8, dtype=torch.uint8))
     with pytest.raises(ValueError, match="scheduler block budget"):
         worker.register_kv_caches({"layer": caches})
+
+
+def test_transfer_hooks_record_store_barrier_once_on_npu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeEvent:
+        def __init__(self) -> None:
+            self.recorded_stream = None
+
+        def record(self, stream) -> None:
+            self.recorded_stream = stream
+
+    class RecordingBackend:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def launch_copy(self, *args, **kwargs) -> None:
+            self.calls.append(kwargs)
+
+    current_stream = object()
+    monkeypatch.setattr(
+        torch,
+        "npu",
+        SimpleNamespace(Event=FakeEvent, current_stream=lambda: current_stream),
+        raising=False,
+    )
+
+    worker = SimpleCPUOffloadNPUWorker.__new__(SimpleCPUOffloadNPUWorker)
+    worker._backend = RecordingBackend()
+    metadata = SimpleCPUOffloadMetadata(
+        load_event=1,
+        load_gpu_blocks=[2],
+        load_cpu_blocks=[3],
+        store_event=4,
+        store_gpu_blocks=[5],
+        store_cpu_blocks=[6],
+    )
+    worker._store_compute_done = None
+    worker._load_events = []
+    worker._store_events = []
+    worker._pending_load_event_indices = set()
+    worker._pending_store_event_indices = set()
+    worker._completed_store_events = {}
+
+    worker.bind_connector_metadata(metadata)
+    # Completion polling must not submit transfers. The engine invokes the
+    # load and store hooks separately from get_finished.
+    worker._pending_load_event_indices.clear()
+    worker._pending_store_event_indices.clear()
+    assert worker.get_finished(set()) == (None, None)
+    assert worker._backend.calls == []
+    worker.start_load_kv()
+    worker.wait_for_save()
+    worker.wait_for_save()
+    worker.clear_connector_metadata()
+
+    load_call, store_call = worker._backend.calls
+    assert load_call["is_store"] is False
+    assert "wait_event" not in load_call
+    assert store_call["is_store"] is True
+    store_event = store_call["wait_event"]
+    assert isinstance(store_event, FakeEvent)
+    assert store_event.recorded_stream is current_stream
+    worker.bind_connector_metadata(metadata)
+    worker.wait_for_save()
+    assert len(worker._backend.calls) == 3

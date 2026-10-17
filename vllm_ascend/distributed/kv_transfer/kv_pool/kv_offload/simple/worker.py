@@ -14,9 +14,11 @@ and only overrides what differs on NPU:
   ``torch.zeros(pin_memory=True)`` since ``cudaHostRegister`` is
   CUDA-only, and transfer streams drop the lowest-priority hint that
   ``torch.npu.Stream`` does not yet expose.
+* ``wait_for_save`` records the compute barrier on the NPU stream.
+  ``bind_connector_metadata`` resets the per-step submission guard.
 
-All other handler entry points — ``bind_connector_metadata``,
-``clear_connector_metadata``, ``start_load_kv``, ``wait_for_save``,
+All other handler entry points — ``clear_connector_metadata``,
+``start_load_kv``, ``get_finished``,
 ``build_connector_worker_meta``, ``handle_preemptions``,
 ``_flush_and_sync_all``, ``_poll_stream_events`` — are inherited
 verbatim.
@@ -36,6 +38,7 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.kv_offload.simple.copy_backend 
 
 if TYPE_CHECKING:
     from vllm.v1.kv_cache_interface import KVCacheConfig
+    from vllm.v1.simple_kv_offload.metadata import SimpleCPUOffloadMetadata
 
 
 def _flatten_kv_value(
@@ -77,6 +80,7 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
         # CUDA resource was allocated, so the transient instance is
         # just GC'd.
         self._backend = NPUDmaCopyBackend()
+        self._store_submitted = False
 
     def register_kv_caches(
         self,
@@ -197,61 +201,29 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
             self.store_stream,
         )
 
-    def get_finished(
-        self,
-        finished_req_ids: set[str],
-    ) -> tuple[set[str] | None, set[str] | None]:
-        """Submit NPU transfers and report completed events.
+    def bind_connector_metadata(self, metadata: "SimpleCPUOffloadMetadata") -> None:
+        super().bind_connector_metadata(metadata)
+        self._store_submitted = False
 
-        This mirrors vLLM's worker state machine. The only platform-specific
-        difference is recording the store barrier with ``torch.npu`` instead
-        of the CUDA stream used by the upstream implementation.
-        """
+    def wait_for_save(self) -> None:
+        """Order stores after NPU compute, including no-forward cleanup hooks."""
         metadata = self._connector_metadata
-        if metadata is not None:
-            if metadata.load_cpu_blocks:
-                self._backend.launch_copy(
-                    metadata.load_cpu_blocks,
-                    metadata.load_gpu_blocks,
-                    is_store=False,
-                    event_idx=metadata.load_event,
-                    events_list=self._load_events,
-                )
-            if metadata.store_gpu_blocks:
-                store_compute_done = self._store_compute_done
-                if store_compute_done is None:
-                    store_compute_done = torch.npu.Event()
-                    self._store_compute_done = store_compute_done
-                store_compute_done.record(torch.npu.current_stream())
-                self._backend.launch_copy(
-                    metadata.store_gpu_blocks,
-                    metadata.store_cpu_blocks,
-                    is_store=True,
-                    event_idx=metadata.store_event,
-                    events_list=self._store_events,
-                    wait_event=store_compute_done,
-                )
-
-        finished_recving: set[str] = set()
-        if self._pending_load_event_indices:
-            load_watermark = self._poll_stream_events(is_store=False)
-            for event_idx in [
-                event_idx for event_idx in self._pending_load_event_indices if event_idx <= load_watermark
-            ]:
-                self._pending_load_event_indices.discard(event_idx)
-                req_ids = metadata.load_event_to_reqs.get(event_idx) if metadata is not None else None
-                if req_ids:
-                    finished_recving.update(req_ids)
-
-        if self._pending_store_event_indices:
-            store_watermark = self._poll_stream_events(is_store=True)
-            for event_idx in [
-                event_idx for event_idx in self._pending_store_event_indices if event_idx <= store_watermark
-            ]:
-                self._pending_store_event_indices.discard(event_idx)
-                self._completed_store_events[event_idx] = 1
-
-        return None, finished_recving or None
+        if metadata is None or not metadata.store_gpu_blocks or self._store_submitted:
+            return
+        store_compute_done = self._store_compute_done
+        if store_compute_done is None:
+            store_compute_done = torch.npu.Event()
+            self._store_compute_done = store_compute_done
+        store_compute_done.record(torch.npu.current_stream())
+        self._backend.launch_copy(
+            metadata.store_gpu_blocks,
+            metadata.store_cpu_blocks,
+            is_store=True,
+            event_idx=metadata.store_event,
+            events_list=self._store_events,
+            wait_event=store_compute_done,
+        )
+        self._store_submitted = True
 
     def _descriptor_block_views(self, kv_caches: dict) -> dict[str, torch.Tensor] | None:
         """Recognize packed pages in one shared allocation from their geometry.
