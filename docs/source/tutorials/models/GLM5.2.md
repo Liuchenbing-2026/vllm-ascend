@@ -202,7 +202,6 @@ The parameters are explained as follows:
     --port 8000 \
     --api-server-count 1 \
     --data-parallel-size 4 \
-    --data-parallel-start-rank 0 \
     --data-parallel-size-local 2 \
     --data-parallel-address $node0_ip \
     --data-parallel-rpc-port 12980 \

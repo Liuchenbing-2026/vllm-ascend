@@ -278,7 +278,6 @@ interface associated with `LOCAL_IP`, and make sure Node 1 can reach Node 0 at
       --gpu-memory-utilization 0.9 \
       --data-parallel-size 4 \
       --data-parallel-size-local 2 \
-      --data-parallel-start-rank 0 \
       --data-parallel-address "$LOCAL_IP" \
       --data-parallel-rpc-port "$DP_RPC_PORT" \
       --tensor-parallel-size 4 \
@@ -339,8 +338,10 @@ following meanings:
 - `--data-parallel-size 4` is the global DP size across both servers.
 - `--data-parallel-size-local 2` creates two DP ranks on each server. Each DP
   rank uses four local dies through TP4, so each A2 server uses all eight dies.
-- `--data-parallel-start-rank 0` assigns DP ranks 0 and 1 to Node 0, while
-  `--data-parallel-start-rank 2` assigns ranks 2 and 3 to Node 1.
+- Node 0 omits `--data-parallel-start-rank`: it infers start rank `0` and owns
+  ranks 0 and 1, while `--data-parallel-start-rank 2` assigns ranks 2 and 3 to
+  Node 1. Passing `--data-parallel-start-rank 0` on the master would auto-enable
+  hybrid load balancing, which is incompatible with the headless Node 1.
 - `--data-parallel-address` points both servers to Node 0, and
   `--data-parallel-rpc-port` must have the same value on both servers.
 - `--headless` prevents Node 1 from starting another API server.

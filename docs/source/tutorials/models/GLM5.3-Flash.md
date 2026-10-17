@@ -292,7 +292,6 @@ Only the key parameters specific to this model/scenario are described below. `ma
         --max-model-len 133120 \
         --data-parallel-size 2 \
         --data-parallel-size-local 1 \
-        --data-parallel-start-rank 0 \
         --data-parallel-address $node0_ip \
         --data-parallel-rpc-port 12321 \
         --tensor-parallel-size 8 \
@@ -367,7 +366,7 @@ Only the key parameters specific to this model/scenario are described below. `ma
 
 - `HCCL_IF_IP`, `GLOO_SOCKET_IFNAME`, `TP_SOCKET_IFNAME`, `HCCL_SOCKET_IFNAME`: Network interface configuration for multi-node communication. Set `nic_name` to the network interface name (obtained via `ifconfig`) and `local_ip` to the current node's IP address. These must be correctly configured on each node for successful multi-node communication.
 - `--data-parallel-size 2 --data-parallel-size-local 1`: Runs two DP ranks across the two nodes, one rank per node; each rank uses TP8 within its node.
-- `--data-parallel-start-rank`: Starting DP rank offset of the current node. Node 0 uses `0`, node 1 uses `1`.
+- `--data-parallel-start-rank`: Starting DP rank offset of the current node. Omit it on node 0 (the master): its start rank is inferred as `0`, so the flag is redundant there, and passing it would auto-enable hybrid load balancing (external load balancing when the local DP size is `1`), which is incompatible with the headless node 1 and makes node 0 exit with `Remote engine 1 must not use --headless in external or hybrid dp lb mode`. Set it on each headless node, e.g. node 1 uses `1`.
 - `--data-parallel-address`: IP address of the data parallel master node (node 0). Must match the `local_ip` of the master node.
 - `--data-parallel-rpc-port 12321`: RPC port for data parallel master communication. Must be the same across all nodes.
 - `--headless`: Indicates a non-master node (used on node 1). Do not use on node 0.
