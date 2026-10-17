@@ -170,15 +170,28 @@ class SimpleCPUOffloadNPUWorker(SimpleCPUOffloadWorker):
             logger.warning("Pinned memory not available; CPU offload throughput may be degraded on this host.")
 
         self.gpu_kv_caches = unique_caches
-        self.cpu_kv_caches = {
-            name: torch.zeros(
-                (self.num_cpu_blocks,) + tuple(t.shape[1:]),
-                dtype=t.dtype,
-                device="cpu",
-                pin_memory=pin_memory,
-            )
-            for name, t in unique_caches.items()
-        }
+        from vllm_ascend.task4_host_capture import HostCapture
+
+        capture = HostCapture("/ws/lease_20261018/host_snapshots")
+        capture.capture("register_geometry", num_cpu_blocks=self.num_cpu_blocks,
+                        pool_bytes_per_block=total_bytes_per_block,
+                        cpu_capacity_bytes=self.cpu_capacity_bytes,
+                        gpu_blocks=num_blocks,
+                        raw_registered_views={
+                            name: [capture.tensor_geometry(t, self.num_cpu_blocks)
+                                   for t in _flatten_kv_value(value)]
+                            for name, value in kv_caches.items()},
+                        descriptors=[dict(size=d.size, offset=d.offset,
+                                          block_stride=d.block_stride,
+                                          layer_stride=d.layer_stride,
+                                          layers=list(d.layers))
+                                     for d in self.kv_cache_config.kv_cache_tensors])
+        from vllm_ascend.task4_host_capture import run_minimal_probe
+
+        run_minimal_probe(unique_caches, self.num_cpu_blocks, pin_memory,
+                          torch.zeros, self.cpu_capacity_bytes,
+                          torch.distributed.get_rank(), torch.distributed.get_world_size())
+        raise RuntimeError("Diagnostic probe must never initialize KV transfer")
 
         # Upstream creates these with the lowest CUDA priority so KV I/O
         # yields to compute on the default stream. ``torch.npu`` does

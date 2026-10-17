@@ -285,7 +285,14 @@ class NPUModelRunner(GPUModelRunner):
 
     def load_model(self, load_dummy_weights: bool = False, *args, **kwargs) -> None:
         aux_layers = get_pd_dspark_aux_layer_ids(self.vllm_config)
+        from vllm_ascend.task4_host_capture import HostCapture
+
+        from vllm_ascend.task4_host_capture import before_model_guard
+
+        before_model_guard(self.vllm_config)
+        HostCapture("/ws/lease_20261018/host_snapshots").capture("before_model_load")
         super().load_model(load_dummy_weights, *args, **kwargs)
+        HostCapture("/ws/lease_20261018/host_snapshots").capture("model_loaded")
         self.pd_dspark_aux_layer_ids = aux_layers
         # In cudagraph modes the dumper must be started before graph capture so
         # that aclgraph capture/replay is instrumented (v1 parity: v1 starts
