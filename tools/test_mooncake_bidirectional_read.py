@@ -29,9 +29,12 @@ def worker(connection, physical_device, local_ip, num_bytes):
     try:
         import torch
         import torch_npu  # noqa: F401
+
+        # Select the runtime device before loading Mooncake's native libraries.
+        # Importing them first can corrupt the heap during process teardown.
+        torch.npu.set_device(0)
         from mooncake.engine import TransferEngine
 
-        torch.npu.set_device(0)
         expected = torch.arange(num_bytes // 4, dtype=torch.int32) % 251
         source_allocation, source = aligned_buffer(torch, num_bytes)
         destination_allocation, destination = aligned_buffer(torch, num_bytes)

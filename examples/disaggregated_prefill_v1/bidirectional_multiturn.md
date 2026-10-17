@@ -13,7 +13,7 @@ hashes; it does not store KV tensors. This path does not use a Mooncake Store.
 | Transfer connector | `MooncakeConnectorV2` |
 | Router | Native Rust binary with `--kv-connector mooncake-pull` |
 | Software checks | 217 Mooncake CPU tests; 780 companion Router tests |
-| Device data plane | Both 4 MiB directions match; strict diagnostic fails native teardown |
+| Device data plane | Both 4 MiB directions match; corrected diagnostic exits normally |
 | Model/TTFT | Not measured |
 
 Keep an exact image digest and the installed package versions from the actual
@@ -23,12 +23,18 @@ The tested image digest was
 with core `0.30.0+empty`, Ascend `0.30.0rc2`, Torch `2.10.0+cpu`,
 Torch-NPU `2.10.0.post7`, and Mooncake `0.3.11.post1` on 910B4-1.
 
-The standalone diagnostic completed and byte-checked P→D and updated D→P on
-shared NPUs. Its workers then aborted during native teardown; explicit memory
-unregistration and releasing Torch storage did not resolve the failure. The
-root cause is pending. Nonzero worker exits keep `success=false`; this is not
-a fully passed device test. This diagnostic does not exercise the new engine
-KV lifecycle or a complete model. The source uses no changed model runner.
+The standalone diagnostic byte-checked P→D and updated D→P on shared NPUs.
+Its initial implementation imported Mooncake before selecting the NPU device,
+then aborted during native teardown. Memory unregistration and releasing
+Torch storage alone did not resolve it. Selecting the device **before importing
+`mooncake.engine`** fixed the diagnostic: two runs exited normally, with both
+workers returning zero. Restoring only the old order reproduced both aborts.
+The internal native heap failure is not otherwise diagnosed. Preserve those
+failed runs and keep nonzero worker exits as `success=false`.
+
+This device-buffer result does not exercise the new engine KV lifecycle or
+a complete model. Integrated model correctness and TTFT remain unmeasured.
+The source uses no changed model runner.
 
 ## Supported configuration
 
