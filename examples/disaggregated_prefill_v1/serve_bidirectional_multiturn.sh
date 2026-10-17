@@ -24,7 +24,9 @@ import hashlib, importlib.metadata, json, pathlib, re, socket, subprocess, sys
 devices = subprocess.check_output(['npu-smi', 'info'], text=True)
 if any(not pathlib.Path('/dev/davinci'+device).exists() for device in sys.argv[3:5]):
     raise SystemExit('Selected NPU device nodes are not mapped into this container')
-busy = {m.group(1) for m in re.finditer(r'^\|\s+(\d+)\s+\d+\s+\d+\s+\S+', devices, re.M)}
+if 'Process id' not in devices:
+    raise SystemExit('Cannot read the NPU process table; nothing was started')
+busy = {m.group(1) for m in re.finditer(r'^\|\s+(\d+)\s+\d+\s*\|\s*\d+\s*\|', devices, re.M)}
 if busy.intersection(sys.argv[3:5]):
     raise SystemExit('Selected NPUs have existing processes; nothing was started')
 for port in [*map(int, sys.argv[5:8]), int(sys.argv[8]), int(sys.argv[8])+1, int(sys.argv[9]), int(sys.argv[9])+1]:
