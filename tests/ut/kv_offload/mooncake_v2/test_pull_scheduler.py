@@ -17,6 +17,7 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake import pull_scheduler
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.base_scheduler import (
     MooncakeBaseConnectorScheduler,
 )
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.bidirectional import BidirectionalKVConfig
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.connector import MooncakePullConnector
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.metadata import (
     MooncakeTransferMetadataGroups,
@@ -63,6 +64,7 @@ def make_sending_thread(
 
 def make_pull_scheduler() -> MooncakePullConnectorScheduler:
     scheduler = MooncakePullConnectorScheduler.__new__(MooncakePullConnectorScheduler)
+    scheduler.bidirectional = BidirectionalKVConfig()
     scheduler.need_truncate = False
     scheduler.num_speculative_tokens = 0
     scheduler.pcp_size = 1
@@ -622,6 +624,7 @@ def test_set_worker_metadata_is_ignored_on_consumer() -> None:
 def prefix_connector():
     result = MooncakePullConnector.__new__(MooncakePullConnector)
     result.connector_scheduler = MooncakePullConnectorScheduler.__new__(MooncakePullConnectorScheduler)
+    result.connector_scheduler.bidirectional = BidirectionalKVConfig()
     result.connector_scheduler.need_truncate = True
     return result
 

@@ -33,6 +33,7 @@ from vllm_ascend.core.kv_cache_interface import (
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.base_worker import (
     MooncakeBaseConnectorWorker,
 )
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.bidirectional import BidirectionalKVConfig
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.metadata import (
     MooncakeConnectorMetadata,
     MooncakePPTransferMetadata,
@@ -532,6 +533,16 @@ class MooncakePullRecvingThread(threading.Thread):
     ) -> set[str]:
         """Build and execute transfer buckets for one producer engine."""
         remote_metadata = self._get_remote_metadata(remote_engine_id, remote_host, remote_port)
+        failed_claims: set[str] = set()
+        claimed_requests: dict[str, ReqMeta] = {}
+        for request_id, request in requests.items():
+            if request.remote_retained and not self._claim_retained_request(request_id, request):
+                failed_claims.add(request_id)
+            else:
+                claimed_requests[request_id] = request
+        requests = claimed_requests
+        if not requests:
+            return failed_claims
         tp_rank_groups_by_pp_rank = self.remote_tp_rank_groups[remote_engine_id]
         layer_pairs_by_pp_rank = self.remote_layer_index_pairs[remote_engine_id]
         # Cache block mappings for this producer-engine batch:
@@ -586,7 +597,7 @@ class MooncakePullRecvingThread(threading.Thread):
         except Exception as exc:
             submission_error = exc
 
-        failed_request_ids: set[str] = set()
+        failed_request_ids: set[str] = failed_claims
         for future in as_completed(future_to_task):
             remote_pp_rank, remote_pcp_rank, remote_tp_rank, request_ids = future_to_task[future]
             try:
@@ -1526,6 +1537,16 @@ class MooncakePullRecvingThread(threading.Thread):
         )
         return transfer_metadata
 
+    def _claim_retained_request(self, claim_id: str, request: ReqMeta) -> bool:
+        path = make_zmq_path("tcp", request.remote_host, request.remote_port)
+        with zmq_ctx(zmq.REQ, path) as sock:  # type: ignore[attr-defined]
+            sock.setsockopt(zmq.SNDTIMEO, 1000)  # type: ignore[attr-defined]
+            sock.setsockopt(zmq.RCVTIMEO, 1000)  # type: ignore[attr-defined]
+            ensure_zmq_send(
+                sock, self.encoder.encode((b"claim_retained_kv", request.remote_request_id, claim_id)), path
+            )
+            return ensure_zmq_recv(sock, path) == b"ACK"
+
 
 class MooncakePullConnectorWorker(MooncakeBaseConnectorWorker):
     """Worker-side framework for Mooncake pull transfers."""
@@ -1537,6 +1558,7 @@ class MooncakePullConnectorWorker(MooncakeBaseConnectorWorker):
         kv_cache_config: KVCacheConfig,
     ) -> None:
         super().__init__(vllm_config, engine_id, kv_cache_config)
+        self.bidirectional = BidirectionalKVConfig.from_config(vllm_config, kv_cache_config)
         self._recving_thread: MooncakePullRecvingThread | None = None
 
     def register_kv_caches(
@@ -1545,7 +1567,7 @@ class MooncakePullConnectorWorker(MooncakeBaseConnectorWorker):
     ) -> None:
         """Register caches and start the D-side pull execution thread."""
         super().register_kv_caches(kv_caches)
-        if self.kv_transfer_config.is_kv_consumer:
+        if self.kv_transfer_config.is_kv_consumer or self.bidirectional.enabled:
             if not isinstance(self.xfer_handshake_metadata, MooncakeTransferMetadata):
                 raise RuntimeError("Mooncake KV caches were registered without transfer metadata")
             ready_event = threading.Event()
@@ -1580,7 +1602,7 @@ class MooncakePullConnectorWorker(MooncakeBaseConnectorWorker):
         """Start the pull operations described by scheduler metadata."""
         if not metadata.requests:
             return
-        if self.kv_transfer_config.is_kv_consumer:
+        if self.kv_transfer_config.is_kv_consumer or self.bidirectional.enabled:
             assert self._recving_thread is not None
             request_groups: dict[str, dict[str, ReqMeta]] = {}
             for request_id, request_metadata in metadata.requests.items():

@@ -15,6 +15,7 @@ from vllm.v1.attention.backends.registry import MambaAttentionBackendEnum
 from vllm.v1.kv_cache_interface import KVCacheSpec, MLAAttentionSpec
 
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake import base_worker, pull_worker
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.bidirectional import BidirectionalKVConfig
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.metadata import (
     MooncakeConnectorMetadata,
     MooncakeTransferMetadataGroups,
@@ -1023,6 +1024,7 @@ def test_handle_requests_attributes_failed_tp_to_affected_requests(
 
 def test_connector_worker_groups_start_load_by_remote_engine() -> None:
     worker = MooncakePullConnectorWorker.__new__(MooncakePullConnectorWorker)
+    worker.bidirectional = BidirectionalKVConfig()
     worker.kv_transfer_config = SimpleNamespace(is_kv_consumer=True)
     worker._recving_thread = MagicMock()
     metadata = MooncakeConnectorMetadata()
@@ -1042,6 +1044,7 @@ def test_connector_worker_groups_start_load_by_remote_engine() -> None:
 
 def test_connector_worker_exposes_finished_and_invalid_blocks() -> None:
     worker = MooncakePullConnectorWorker.__new__(MooncakePullConnectorWorker)
+    worker.bidirectional = BidirectionalKVConfig()
     worker._recving_thread = make_thread()
     worker._recving_thread.finished_requests.put(("request", True))
     worker._recving_thread.invalid_block_ids = {10, 11}
@@ -1479,13 +1482,18 @@ def test_get_remote_metadata_propagates_network_error_without_caching(
     assert thread.remote_metadata.get("engine-p") is None
 
 
-@pytest.mark.parametrize(("is_consumer", "expected_thread_count"), [(True, 1), (False, 0)])
-def test_register_kv_caches_starts_receiving_thread_only_for_consumer(
+@pytest.mark.parametrize(
+    ("is_consumer", "bidirectional", "expected_thread_count"),
+    [(True, False, 1), (False, False, 0), (True, True, 1), (False, True, 1)],
+)
+def test_register_kv_caches_receives_on_consumer_or_bidirectional_prefill(
     monkeypatch: pytest.MonkeyPatch,
     is_consumer: bool,
+    bidirectional: bool,
     expected_thread_count: int,
 ) -> None:
     worker = MooncakePullConnectorWorker.__new__(MooncakePullConnectorWorker)
+    worker.bidirectional = BidirectionalKVConfig(enabled=bidirectional)
     worker.kv_transfer_config = SimpleNamespace(is_kv_consumer=is_consumer)
     worker.engine = MagicMock()
     worker.vllm_config = MagicMock()
@@ -1526,7 +1534,7 @@ def test_register_kv_caches_starts_receiving_thread_only_for_consumer(
     worker.register_kv_caches({})
 
     assert len(created_threads) == expected_thread_count
-    if is_consumer:
+    if expected_thread_count:
         created_threads[0].start.assert_called_once_with()
         assert worker._recving_thread is created_threads[0]
     else:

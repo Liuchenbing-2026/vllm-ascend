@@ -26,6 +26,7 @@ from vllm.v1.request import RequestStatus
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.base_scheduler import (
     MooncakeBaseConnectorScheduler,
 )
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.bidirectional import BidirectionalKVConfig
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.metadata import (
     MooncakeConnectorMetadata,
     MooncakePCPTransferMetadata,
@@ -113,6 +114,8 @@ class MooncakeSchedulerSendingThread(threading.Thread):
         self.early_finished_requests: set[str] = set()
         self.finished_request_ids: set[str] = set()
         self.state_lock = threading.Lock()
+        self.retained_ttl_secs: float | None = None
+        self.active_reads: dict[str, str] = {}
 
     def _merge_metadata_by_pp_rank(
         self,
@@ -358,16 +361,27 @@ class MooncakeSchedulerSendingThread(threading.Thread):
                 msg = decoder.decode(payload[0])
                 if msg and msg[0] == GET_META_MSG:
                     sock.send_multipart((identity, b"", self.encoded_metadata))
+                elif msg and msg[0] == b"claim_retained_kv" and len(msg) == 3:
+                    claimed = self._claim_retained_request(str(msg[1]), str(msg[2]))
+                    sock.send_multipart((identity, b"", ACK_MSG if claimed else b""))
                 elif msg[0] == DONE_RECVING_MSG and len(msg) == 2:
                     self._handle_finished_request(str(msg[1]))
+                    sock.send_multipart((identity, b"", ACK_MSG))
+                elif msg[0] == DONE_RECVING_MSG and len(msg) == 3:
+                    self._handle_finished_request(str(msg[1]), str(msg[2]))
                     sock.send_multipart((identity, b"", ACK_MSG))
                 else:
                     logger.warning("Unexpected Mooncake scheduler control message: %s", msg)
             except Exception:
                 logger.exception("Failed to handle Mooncake scheduler control message")
 
-    def _handle_finished_request(self, request_id: str) -> None:
+    def _handle_finished_request(self, request_id: str, claim_id: str | None = None) -> None:
         with self.state_lock:
+            owner = self.active_reads.get(request_id)
+            if owner is not None and owner != claim_id:
+                return
+            if claim_id is not None and request_id not in self.delayed_free_requests:
+                return
             if request_id in self.finished_request_ids:
                 return
             if request_id in self.delayed_free_requests:
@@ -380,21 +394,40 @@ class MooncakeSchedulerSendingThread(threading.Thread):
             return
         self.finished_request_ids.add(request_id)
         self.delayed_free_requests.pop(request_id, None)
+        self.active_reads.pop(request_id, None)
         self.finished_requests.put(request_id)
+
+    def _claim_retained_request(self, request_id: str, claim_id: str) -> bool:
+        # Claim before DMA. Once claimed, only the receive-completion ACK may
+        # release the blocks; a TTL timer must not recycle a DMA source page.
+        with self.state_lock:
+            self._retrieve_expired_requests_locked()
+            if (
+                self.retained_ttl_secs is None
+                or request_id not in self.delayed_free_requests
+                or request_id in self.active_reads
+            ):
+                return False
+            self.active_reads[request_id] = claim_id
+            return True
 
     def _retrieve_expired_requests_locked(self) -> None:
         current_time = time.time()
-        while self.delayed_free_requests:
-            request_id = next(iter(self.delayed_free_requests))
-            delay_start_time = self.delayed_free_requests[request_id]
-            if current_time - delay_start_time <= envs.VLLM_MOONCAKE_ABORT_REQUEST_TIMEOUT:
+        timeout = self.retained_ttl_secs or envs.VLLM_MOONCAKE_ABORT_REQUEST_TIMEOUT
+        expired = []
+        for request_id, delay_start_time in self.delayed_free_requests.items():
+            if request_id in self.active_reads:
+                continue
+            if current_time - delay_start_time <= timeout:
                 break
+            expired.append(request_id)
 
+        for request_id in expired:
             self._mark_finished_locked(request_id)
             logger.error(
                 "Force freed expired Mooncake request %s after %s seconds",
                 request_id,
-                envs.VLLM_MOONCAKE_ABORT_REQUEST_TIMEOUT,
+                timeout,
             )
 
 
@@ -404,14 +437,15 @@ class MooncakeSchedulerRecvingThread(threading.Thread):
     def __init__(self, ready_event: threading.Event) -> None:
         super().__init__(daemon=True, name="MooncakeSchedulerRecvingThread")
         self.ready_event = ready_event
-        self.request_queue: queue.Queue[tuple[str, int, str]] = queue.Queue()
+        self.request_queue: queue.Queue[tuple[str, int, str] | tuple[str, int, str, str]] = queue.Queue()
         self.encoder = msgspec.msgpack.Encoder()
         self.remote_sockets: dict[str, deque[Any]] = defaultdict(deque)
         self.remote_sockets_lock = threading.Lock()
         self.zmq_context: Any | None = None
 
-    def add_request(self, remote_host: str, remote_port: int, request_id: str) -> None:
-        self.request_queue.put((remote_host, remote_port, request_id))
+    def add_request(self, remote_host: str, remote_port: int, request_id: str, claim_id: str | None = None) -> None:
+        request = (remote_host, remote_port, request_id)
+        self.request_queue.put(request if claim_id is None else (*request, claim_id))
 
     def run(self) -> None:
         self.ready_event.set()
@@ -429,13 +463,17 @@ class MooncakeSchedulerRecvingThread(threading.Thread):
             finally:
                 self.request_queue.task_done()
 
-    def _send_done_recving(self, remote_host: str, remote_port: int, request_id: str) -> None:
+    def _send_done_recving(
+        self, remote_host: str, remote_port: int, request_id: str, claim_id: str | None = None
+    ) -> None:
         path = make_zmq_path("tcp", remote_host, remote_port)
         sock = self._get_remote_socket(path)
         try:
             ensure_zmq_send(
                 sock,
-                self.encoder.encode((DONE_RECVING_MSG, request_id)),
+                self.encoder.encode(
+                    (DONE_RECVING_MSG, request_id) if claim_id is None else (DONE_RECVING_MSG, request_id, claim_id)
+                ),
                 path,
             )
             response = ensure_zmq_recv(sock, path)
@@ -481,6 +519,7 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
         kv_cache_config: "KVCacheConfig",
     ) -> None:
         super().__init__(vllm_config, engine_id, kv_cache_config)
+        self.bidirectional = BidirectionalKVConfig.from_config(vllm_config, kv_cache_config)
 
         # Requests waiting for the worker to start a READ transfer.
         self._reqs_need_recv: dict[str, tuple[Request, BlockIds, BlockIds, int]] = {}
@@ -488,11 +527,11 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
         self._reqs_need_send: dict[str, float] = {}
         self._reqs_in_batch: set[str] = set()
         # D request -> (P scheduler host, port, P request id).
-        self._reqs_recv_info: dict[str, tuple[str, int, str]] = {}
+        self._reqs_recv_info: dict[str, tuple[str, int, str] | tuple[str, int, str, str]] = {}
         self._sending_thread: MooncakeSchedulerSendingThread | None = None
         self._recving_thread: MooncakeSchedulerRecvingThread | None = None
 
-        if self.kv_transfer_config.is_kv_consumer:
+        if self.kv_transfer_config.is_kv_consumer or self.bidirectional.enabled:
             recving_ready_event = threading.Event()
             self._recving_thread = MooncakeSchedulerRecvingThread(recving_ready_event)
             self._recving_thread.start()
@@ -502,7 +541,11 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
         self,
         metadata: Mapping[int | tuple[int, ...], KVConnectorHandshakeMetadata],
     ) -> None:
-        if not self.kv_transfer_config.is_kv_producer or not metadata or self._sending_thread is not None:
+        if (
+            not (self.kv_transfer_config.is_kv_producer or self.bidirectional.enabled)
+            or not metadata
+            or self._sending_thread is not None
+        ):
             return
 
         ready_event = threading.Event()
@@ -518,6 +561,8 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
             self.ascend_config.kvpp_config.size > 1,
             ready_event,
         )
+        if self.bidirectional.enabled and self.kv_transfer_config.is_kv_consumer:
+            self._sending_thread.retained_ttl_secs = self.bidirectional.decoder_ttl_secs
         self._sending_thread.start()
         if not ready_event.wait(timeout=10):
             raise RuntimeError("Timed out starting Mooncake scheduler sending thread")
@@ -533,6 +578,16 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
             params,
         )
 
+        reverse = self._is_reverse_read(params)
+        if reverse and params is not None:
+            remote_tokens = params.get("remote_num_tokens", 0)
+            if isinstance(remote_tokens, bool) or not isinstance(remote_tokens, int):
+                return 0, False
+            count = min(remote_tokens, request.num_prompt_tokens - 1) // self.block_size * self.block_size
+            count = max(count - num_computed_tokens, 0)
+            params["num_computed_tokens"] = num_computed_tokens
+            return (count, True) if count > 0 and count >= self.bidirectional.recompute_threshold else (0, False)
+
         if params is not None and params.get("do_remote_prefill"):
             token_ids = request.prompt_token_ids or []
             actual = self._state_prefill_token_count(len(token_ids))
@@ -542,6 +597,16 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
                 return count, True
 
         return 0, False
+
+    def _is_reverse_read(self, params: dict[str, Any] | None) -> bool:
+        return bool(
+            self.bidirectional.enabled
+            and self.kv_transfer_config.is_kv_producer
+            and params
+            and params.get("do_remote_decode")
+            and params.get("remote_retained") is True
+            and not params.get("_reverse_read_scheduled")
+        )
 
     def update_state_after_alloc(
         self,
@@ -559,7 +624,7 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
         if params is not None and (params.get("do_remote_prefill", False) or params.get("do_remote_decode", False)):
             self._reqs_in_batch.add(request.request_id)
 
-        if params is None or not params.get("do_remote_prefill"):
+        if params is None or not (params.get("do_remote_prefill") or self._is_reverse_read(params)):
             return
 
         if params.get("remote_block_ids"):
@@ -570,11 +635,13 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
                 "remote_request_id",
             )
             if all(field in params for field in required_remote_fields):
-                remote = (
+                remote: tuple[str, int, str] | tuple[str, int, str, str] = (
                     params["remote_host"],
                     params["remote_port"],
                     params["remote_request_id"],
                 )
+                if params.get("remote_retained") is True:
+                    remote = (*remote, request.request_id)
                 if num_external_tokens > 0:
                     self._reqs_need_recv[request.request_id] = (
                         request,
@@ -594,6 +661,8 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
 
         # Only trigger one transfer for a request.
         params["do_remote_prefill"] = False
+        if self._is_reverse_read(params):
+            params["_reverse_read_scheduled"] = True
 
     def build_connector_meta(self, scheduler_output: SchedulerOutput) -> KVConnectorMetadata:
         meta = MooncakeConnectorMetadata()
@@ -629,6 +698,33 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
             request.status,
             params,
         )
+
+        if self.bidirectional.enabled and self.kv_transfer_config.is_kv_consumer:
+            if request.status not in (RequestStatus.FINISHED_STOPPED, RequestStatus.FINISHED_LENGTH_CAPPED):
+                return False, None
+            computed = request.num_computed_tokens // self.block_size * self.block_size
+            if computed <= 0 or not request.output_token_ids:
+                return False, None
+            computed_blocks = self._get_transfer_block_ids(block_ids, computed)
+            if not computed_blocks or any(len(group) < computed // self.block_size for group in computed_blocks):
+                return False, None
+            if self._sending_thread is None:
+                raise RuntimeError("Mooncake decoder metadata has not been initialized")
+            started = time.time()
+            self._reqs_need_send[request.request_id] = started
+            self._sending_thread.add_delayed_request(request.request_id, started)
+            return True, {
+                "do_remote_prefill": False,
+                "do_remote_decode": True,
+                "remote_retained": True,
+                "remote_block_ids": computed_blocks,
+                "remote_num_tokens": computed,
+                "remote_num_prompt_tokens": computed,
+                "remote_engine_id": self.engine_id,
+                "remote_request_id": request.request_id,
+                "remote_host": self.side_channel_host,
+                "remote_port": self.side_channel_port,
+            }
 
         if (
             params is None
