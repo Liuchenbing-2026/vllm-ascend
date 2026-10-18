@@ -78,7 +78,9 @@ def main(mode):
     validate_lease(lease, time.time())
     if time.time() >= lease["start_epoch"] + 180:
         raise RuntimeError("Preflight exceeded deadline; do not load model")
-    (root / "output/preflight_complete.json").write_text(json.dumps({"time": time.time()}))
+    (root / "output/preflight_complete.json").write_text(
+        json.dumps({"time": time.time(), "monotonic": time.monotonic(), "lease_id": lease["lease_id"]})
+    )
 
 
 if __name__ == "__main__":

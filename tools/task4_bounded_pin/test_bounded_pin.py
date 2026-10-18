@@ -53,6 +53,14 @@ class TestBoundedPin(unittest.TestCase):
         return StageAProbe(self.path, self.root, rank, 8, snapshot=snapshot_fixture, clock=lambda: 1000, **kwargs)
 
     def test_all_eight_ranks_only_rank_zero_allocates_and_retains_four_buffers(self):
+        (self.root / "pin.permit.json").write_text(
+            json.dumps(
+                {
+                    "lease_id": self.lease["lease_id"],
+                    "deadline_monotonic": time.monotonic() + 30,
+                }
+            )
+        )
         probes = [self.probe(rank) for rank in range(8)]
         calls, errors = [], []
 

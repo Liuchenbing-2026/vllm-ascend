@@ -30,7 +30,7 @@ is reserved by preparing or packaging these files.
 | --- | --- |
 | Ascend base | `v0.30.0rc2`, `8fde6d4e335fe300e2b949aab0e31659cce0811d` |
 | vLLM, unchanged | `ced6857afa0ea7b2e3f0846a62e1394e90f15607`, the image's verified pairing |
-| Diagnostic branch | `task4-207001-rc2-bounded-pin-20261018`; exact clean HEAD is recorded by `prepare.py` |
+| Diagnostic branch | `task4-rc2-segmented-timing-20261018`; candidate HEAD is recorded by `prepare.py` |
 | Image ID | `sha256:0faf08fb90dd21807266cb719b4947b0111b3bd5f58c46424810a8ecabe82b98` |
 | Image digest | `quay.m.daocloud.io/ascend/vllm-ascend@sha256:8e375bf1cb4a98ecf7d487c7f98a28d1c3a7e24f7f8cfbadbb37914ed68b2a30` |
 | Installed torch_npu | `2.10.0.post7` |
@@ -99,13 +99,72 @@ no published port and no automatic restart. The model and driver are mounted
 read-only. Source checkout happens only inside the new owned container, with
 no changes to other users' containers or host repositories.
 
-The 25-minute budget is 3 minutes preflight, 10 loading, 5 probing, 3 cleanup
-and 4 audit. The controller conservatively counts its 10-minute load timer from
-container start, including in-container preflight. Both worker leases and a
-separate direct-process watchdog stop new work at minute 18, reserving cleanup
-and audit time. Late preflight, missing samples, missing peers, identity or
-quota mismatch, low headroom, allocation error or any timeout stops the attempt;
-there is no retry, restart, pool fallback, cache flush or NUMA/memlock change.
+## Segmented timing candidate: device execution requires new review
+
+This candidate is based on diagnostic commit
+`ae7bdad473059ef2794025fba2569f377a6dca48`. It does not replace or modify
+previous packages or failure records. No new device attempt is authorized.
+The original controller counted 600 seconds from `monitor()` entry, after
+container start and logger setup; that interval included preflight and engine
+initialization. It was not a 600-second measurement of `load_model`.
+
+| Boundary | Previous diagnostic | Candidate, measured from lease start unless stated |
+| --- | --- | --- |
+| Preflight | 3 minutes | Unchanged: before minute 3 |
+| All ranks enter complete model load | No separate bound | Before minute 8 |
+| Per-rank complete model load | Shared 600-second startup timer | Less than 7 minutes from that rank's entry |
+| All ranks return | Shared 600-second startup timer | Before minute 15, also subject to each rank's limit |
+| Pin | 5 minutes from controller observing all loaded | Less than 3 minutes from latest rank return |
+| Device stop / window | Minute 18 / 25 minutes | Unchanged |
+| New pin request | Rank 0 only, 1,509,949,440 bytes total | Unchanged |
+
+The controller anchors the lease's UTC start once to the host monotonic clock
+before any container operations. It persists this anchor and the monitor-entry
+clock pair; controller first errors now include both clocks. Wall-clock lease
+checks remain active, while wall-clock rollback cannot extend the monotonic
+watchdog deadline. The watchdog still targets the immutable owned container ID.
+Container stop invocation at the deadline can require additional Docker/driver
+cleanup time; this is not a guarantee of instantaneous device termination.
+
+Worker entry is marked after its before-load snapshot and before returning to
+the existing runner's complete-load call. Return is marked before the post-load
+snapshot. This outer interval includes target/draft loading and surrounding
+runner work; it does **not** measure target and DSpark separately. Their exact
+internal boundaries remain uninstrumented. No upstream class copy, monkey patch,
+new environment variable, vLLM edit or further modelrunner edit is introduced.
+Worker and host monotonic clocks must share the Linux time namespace; invalid
+or out-of-range timestamps stop the attempt rather than being normalized.
+
+The controller checks all eight immutable, lease-scoped entry/return markers
+before publishing pin permission. Workers wait for that permission and check
+its deadline before each allocation. Missing, changed, duplicated, nonfinite,
+wrong-rank or wrong-lease evidence cannot reset the deadline. Partial JSON is
+pending evidence, not success. This adds a host polling delay of up to one
+iteration before pin; it cannot be treated as a performance measurement.
+
+No retry, restart, pool fallback, cache flush, NUMA or memlock change is added.
+The original 224 GiB path remains prohibited. Launch scripts, image digest,
+vLLM pairing, geometry/quota checks and actual-source preflight stay fixed.
+Changed diagnostic timing is a review candidate, not an allocator root-cause fix.
+
+### CPU evidence and untested scope
+
+The CPU suite covers synthetic initialization at 360 seconds, model return at
+620 and probe completion at 650: the old 600-second startup rule times out,
+while the candidate accepts this schedule within the unchanged device window.
+This is a counterexample to conflated timing, not proof that a slow real rank
+will finish. Tests also reject missing/late entry, late return, malformed or
+changed markers, expired pin permission, wall rollback, missing peers and
+secondary errors overwriting the first failure. Existing fake-allocation and
+cleanup tests remain enabled. Fake allocation callbacks return small tokens,
+not the requested byte buffers.
+
+Reproduce CPU checks with the commands above. Record test and format results
+against the delivered SHA; local success is not upstream CI success. The
+candidate has not been run on NPU. Full-model loading, actual pin, KV transfer,
+precision, performance and stability remain unvalidated for this candidate.
+No benchmark or accuracy command applies to this diagnostic branch because it
+intentionally cannot serve; production evaluation remains a separate gate.
 
 ## Evidence and cleanup
 

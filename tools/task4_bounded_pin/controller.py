@@ -13,6 +13,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from task4_bounded_pin import StageALimits, exclusive_json, validate_lease
+from timing import PhaseTimer
 
 
 def command(args, timeout=30):
@@ -97,36 +98,37 @@ def docker_create_args(root, lease):
     return args + [lease["image_id"], "/task4/entrypoint.sh"]
 
 
-def monitor(root, lease, container, logger, watchdog):
+def monitor(root, lease, container, logger, watchdog, timer):
     output = root / "output"
-    started, loaded_at = time.time(), None
+    exclusive_json(output / "monitor.started.json", {"wall_epoch": time.time(), "monotonic": time.monotonic()})
     while True:
-        now = time.time()
-        validate_lease(lease, now)
-        if json.loads((root / "lease.json").read_text()) != lease:
-            raise RuntimeError("Lease changed")
+        # Preserve worker first failure before evaluating a secondary timeout.
         if (output / "FAILED.json").exists():
             raise RuntimeError("Worker first failure recorded")
+        validate_lease(lease, time.time())
+        if json.loads((root / "lease.json").read_text()) != lease:
+            raise RuntimeError("Lease changed")
+        complete = timer.check(output, time.monotonic())
         if logger.poll() is not None or watchdog.poll() is not None:
             raise RuntimeError("Logger or watchdog exited unexpectedly")
         if not inspect_owned(container, lease["lease_id"])["State"]["Running"]:
             raise RuntimeError("Container exited before complete evidence")
-        if not (output / "preflight_complete.json").exists() and now >= lease["start_epoch"] + 180:
-            raise TimeoutError("Deployment/preflight exceeded 3 minutes")
-        loaded = all((output / f"model_loaded.rank-{rank}.json").exists() for rank in range(8))
-        if loaded and loaded_at is None:
-            loaded_at = now
-        if not loaded and now - started >= 600:
-            raise TimeoutError("Full-model load exceeded 10 minutes including container preflight")
-        if loaded_at is not None and now - loaded_at >= 300:
-            raise TimeoutError("Pin diagnostics exceeded 5 minutes")
-        if all((output / f"probe_complete.rank-{rank}.json").exists() for rank in range(8)):
+        if timer.pin_deadline is not None and not (output / "pin.permit.json").exists():
+            exclusive_json(
+                output / "pin.permit.json",
+                {
+                    "lease_id": lease["lease_id"],
+                    "deadline_monotonic": timer.pin_deadline,
+                },
+            )
+        if complete:
             return
         time.sleep(1)
 
 
 def execute(root, lease):
     validate_lease(lease, time.time())
+    timer = PhaseTimer(lease, time.time(), time.monotonic())
     check_payload(root, lease)
     if time.time() >= lease["start_epoch"] + 60:
         raise RuntimeError("Too late to begin a fresh 25 minute attempt")
@@ -137,6 +139,7 @@ def execute(root, lease):
         raise ValueError("Image digest mismatch")
     output = root / "output"
     output.mkdir(exist_ok=False)
+    exclusive_json(output / "timing.anchor.json", timer.record())
     (output / "image.json").write_text(json.dumps(image))
     initial = command(["npu-smi", "info"])
     (output / "resources_before.log").write_text(initial)
@@ -158,23 +161,32 @@ def execute(root, lease):
                     "--watchdog",
                     container,
                     lease["lease_id"],
-                    str(lease["end_epoch"] - StageALimits().cleanup_and_audit_seconds),
+                    str(timer.hard_deadline),
                 ],
                 stdout=watchdog_log,
                 stderr=subprocess.STDOUT,
             )
             exclusive_json(output / "watchdog.identity.json", {"pid": watchdog.pid})
             validate_lease(lease, time.time())
+            timer.check(output, time.monotonic())
             command(["docker", "start", container])
             logger = subprocess.Popen(
                 ["docker", "logs", "--follow", container], stdout=server_log, stderr=subprocess.STDOUT
             )
             exclusive_json(output / "logger.identity.json", {"pid": logger.pid})
-            monitor(root, lease, container, logger, watchdog)
+            monitor(root, lease, container, logger, watchdog, timer)
             status = 0
         except BaseException as error:
             with suppress(FileExistsError):
-                exclusive_json(output / "FAILED.json", {"source": "controller", "error": repr(error)})
+                exclusive_json(
+                    output / "FAILED.json",
+                    {
+                        "source": "controller",
+                        "error": repr(error),
+                        "wall_epoch": time.time(),
+                        "monotonic": time.monotonic(),
+                    },
+                )
         finally:
             # Bounded kernel evidence, including allocation/driver failures.
             try:
@@ -216,7 +228,7 @@ def main():
         container, lease_id, deadline = args.watchdog
         if len(container) != 64 or any(char not in "0123456789abcdef" for char in container):
             raise ValueError("Watchdog requires immutable full container ID")
-        time.sleep(max(0, float(deadline) - time.time()))
+        time.sleep(max(0, float(deadline) - time.monotonic()))
         stop_owned(container, lease_id)
         return 0
     if args.lease is None:

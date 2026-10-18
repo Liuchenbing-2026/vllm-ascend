@@ -8,6 +8,7 @@ No KV pool, transfer, retry, cache flush or device initialization lives here.
 from __future__ import annotations
 
 import json
+import math
 import os
 import resource
 import sys
@@ -145,7 +146,17 @@ def check_headroom(snapshot, remaining):
 
 
 class StageAProbe:
-    def __init__(self, lease_path, output, rank, world_size, snapshot=host_snapshot, clock=time.time, sleep=time.sleep):
+    def __init__(
+        self,
+        lease_path,
+        output,
+        rank,
+        world_size,
+        snapshot=host_snapshot,
+        clock=time.time,
+        sleep=time.sleep,
+        monotonic=time.monotonic,
+    ):
         self.lease_path = Path(lease_path)
         self.lease_bytes = self.lease_path.read_bytes()
         self.lease = json.loads(self.lease_bytes)
@@ -154,6 +165,8 @@ class StageAProbe:
             raise ValueError("Invalid diagnostic rank/world")
         self.output, self.rank = Path(output), rank
         self.snapshot, self.clock, self.sleep = snapshot, clock, sleep
+        self.monotonic = monotonic
+        self.pin_deadline = None
         self.claimed, self.retained = [], []
         # The controller creates a fresh directory. Duplicate worker/restart fails.
         exclusive_json(
@@ -168,6 +181,7 @@ class StageAProbe:
 
         probe = cls("/task4/lease.json", "/task4/output", distributed.get_rank(), distributed.get_world_size())
         probe.capture("before_model_load")
+        probe.mark("model_entered")
         return probe
 
     def check(self):
@@ -176,6 +190,8 @@ class StageAProbe:
         validate_lease(self.lease, self.clock())
         if (self.output / "FAILED.json").exists():
             raise RuntimeError("Peer or controller failed; no further allocations")
+        if self.pin_deadline is not None and self.monotonic() >= self.pin_deadline:
+            raise TimeoutError("Controller pin permission expired")
 
     def capture(self, phase, **details):
         sample = self.snapshot()
@@ -186,7 +202,16 @@ class StageAProbe:
         return sample
 
     def mark(self, name):
-        exclusive_json(self.output / f"{name}.rank-{self.rank}.json", {"pid": os.getpid(), "time": self.clock()})
+        exclusive_json(
+            self.output / f"{name}.rank-{self.rank}.json",
+            {
+                "pid": os.getpid(),
+                "time": self.clock(),
+                "monotonic": self.monotonic(),
+                "rank": self.rank,
+                "lease_id": self.lease["lease_id"],
+            },
+        )
 
     def wait_all(self, name):
         while True:
@@ -220,9 +245,25 @@ class StageAProbe:
         self.retained.append(value)
 
     def run_steps(self, allocate):
-        self.capture("model_loaded")
         self.mark("model_loaded")
+        self.capture("model_loaded")
         self.wait_all("model_loaded")
+        # The controller validates every rank's loading deadline before pin.
+        while self.pin_deadline is None:
+            self.check()
+            try:
+                permit = json.loads((self.output / "pin.permit.json").read_text())
+            except (FileNotFoundError, json.JSONDecodeError):
+                self.sleep(0.05)
+                continue
+            deadline = permit.get("deadline_monotonic")
+            if (
+                permit.get("lease_id") != self.lease["lease_id"]
+                or type(deadline) not in (int, float)
+                or not math.isfinite(deadline)
+            ):
+                raise ValueError("Invalid controller pin permission")
+            self.pin_deadline = deadline
         for ordinal, size in enumerate(self.limits.steps_bytes):
             self.check()
             sample = self.capture("before_pin", ordinal=ordinal, requested_bytes=size, allocator_rank=0)
