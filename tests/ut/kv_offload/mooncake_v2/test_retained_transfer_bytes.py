@@ -62,6 +62,7 @@ def make_scheduler(block_size, spec):
     scheduler._reqs_in_batch = set()
     scheduler._recving_thread = SimpleNamespace(add_request=lambda *args: None)
     scheduler.group_unique_specs = [[spec]]
+    scheduler.group_block_size = [block_size]
     return scheduler
 
 
@@ -100,9 +101,10 @@ def test_retained_scheduler_metadata_to_read_bytes(block_size, prompt_tokens, re
     source_blocks = list(range(physical_blocks - 1, 0, -1))[: retained_tokens // block_size]
     local_blocks = [(index * 7 + 3) % physical_blocks for index in range(math.ceil(prompt_tokens / block_size))]
     hit_blocks = local_hits // block_size
+    covered_tokens = min(retained_tokens, (prompt_tokens - 1) // block_size * block_size)
     for layer in range(layer_count):
         for kind in range(2):
-            for logical, remote_block in enumerate(source_blocks):
+            for logical, remote_block in enumerate(source_blocks[: covered_tokens // block_size]):
                 expected[layer][kind][local_blocks[logical]].copy_(source[layer][kind][remote_block])
                 if logical < hit_blocks:
                     local[layer][kind][local_blocks[logical]].copy_(source[layer][kind][remote_block])
@@ -129,7 +131,7 @@ def test_retained_scheduler_metadata_to_read_bytes(block_size, prompt_tokens, re
         },
     )
     matched, asynchronous = scheduler.get_num_new_matched_tokens(request, local_hits)
-    assert (matched, asynchronous) == (retained_tokens - local_hits, True)
+    assert (matched, asynchronous) == (covered_tokens - local_hits, True)
     blocks = SimpleNamespace(
         get_unhashed_block_ids_all_groups=lambda: (local_blocks[hit_blocks:],),
         get_block_ids=lambda: (local_blocks,),
@@ -191,8 +193,44 @@ def test_retained_scheduler_metadata_to_read_bytes(block_size, prompt_tokens, re
     for (pcp_rank, tp_rank), entries in buckets.items():
         worker._execute_tp_transfer_bucket(0, pcp_rank, tp_rank, 1, 1, 1, remote, entries)
 
-    assert worker.engine.total_bytes == (retained_tokens - local_hits) * heads * head_dim * 2 * 2 * layer_count
+    assert worker.engine.total_bytes == (covered_tokens - local_hits) * heads * head_dim * 2 * 2 * layer_count
     # Whole backing tensors also cover untouched cached pages, the new suffix,
     # unrelated physical pages, and sibling K/V storage between page strides.
     for actual, independent in zip(local_storage, expected_storage):
         assert torch.equal(actual.view(torch.uint8), independent.view(torch.uint8))
+
+
+@pytest.mark.parametrize("interleaved", [False, True])
+@pytest.mark.parametrize("prompt_tokens,local_hits", [(48, 0), (48, 16), (49, 0)])
+def test_prompt_end_bounds_retained_read(prompt_tokens, local_hits, interleaved):
+    # An identical 48-token prefix still needs its final token computed for
+    # logits. The scheduler therefore declares only 32 remotely loaded tokens.
+    # A 49-token prompt can consume all 48: this is the adjacent control case.
+    test_retained_scheduler_metadata_to_read_bytes(16, prompt_tokens, 48, local_hits, interleaved)
+
+
+def test_off_receive_metadata_preserves_allocated_blocks():
+    spec = FullAttentionSpec(block_size=16, num_kv_heads=2, head_size=8, head_size_v=8, dtype=torch.bfloat16)
+    scheduler = make_scheduler(16, spec)
+    scheduler.bidirectional = BidirectionalKVConfig()
+    scheduler.kv_transfer_config = SimpleNamespace(is_kv_producer=False, is_kv_consumer=True)
+    params = {
+        "do_remote_prefill": True,
+        "do_remote_decode": False,
+        "remote_num_prompt_tokens": 80,
+        "remote_block_ids": ([20, 21, 22, 23, 24],),
+        "remote_engine_id": "producer",
+        "remote_request_id": "prompt",
+        "remote_host": "127.0.0.1",
+        "remote_port": 6000,
+    }
+    request = SimpleNamespace(request_id="ordinary", kv_transfer_params=params, num_prompt_tokens=80)
+    blocks = SimpleNamespace(
+        get_unhashed_block_ids_all_groups=lambda: ([10, 11, 12],),
+        get_block_ids=lambda: ([1, 2, 3, 4, 10, 11, 12],),
+    )
+    scheduler.update_state_after_alloc(request, blocks, 16)
+    result = scheduler.build_connector_meta(SimpleNamespace()).requests[request.request_id]
+    assert result.local_block_ids == ([10, 11, 12],)
+    assert result.local_full_block_ids == ([1, 2, 3, 4, 10, 11, 12],)
+    assert result.num_external_tokens == 16

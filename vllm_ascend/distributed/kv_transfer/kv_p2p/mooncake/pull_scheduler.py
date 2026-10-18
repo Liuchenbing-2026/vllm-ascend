@@ -18,6 +18,7 @@ from vllm.distributed.kv_transfer.kv_connector.v1.base import (
     KVConnectorMetadata,
 )
 from vllm.logger import logger
+from vllm.utils.math_utils import cdiv
 from vllm.utils.network_utils import make_zmq_path, make_zmq_socket
 from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.v1.outputs import KVConnectorOutput
@@ -672,6 +673,13 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
             (req, block_ids, full_block_ids, num_external_tokens),
         ) in self._reqs_need_recv.items():
             assert req.kv_transfer_params is not None
+            if req.kv_transfer_params.get("remote_retained") is True:
+                # Retained KV can cover the final prompt block that remains
+                # for local computation. Do not import that unscheduled block.
+                block_ids = tuple(
+                    group_blocks[: cdiv(num_external_tokens, block_size)]
+                    for group_blocks, block_size in zip(block_ids, self.group_block_size)
+                )
             meta.add_new_req(
                 request_id=req_id,
                 local_block_ids=block_ids,
