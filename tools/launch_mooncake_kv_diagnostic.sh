@@ -31,11 +31,12 @@ for role in prefill decode; do
         device=$d_device; port=29511; kv_port=29530; kv_role=kv_consumer
     fi
     ASCEND_RT_VISIBLE_DEVICES="$device" \
-        python -m vllm.entrypoints.openai.api_server \
+        python /diag/tools/kv_diagnostic_runtime.py serve \
+        --receipt "/output/servers/$role-preload.json" -- \
         --model /models/Qwen3-8B --served-model-name bidir --dtype bfloat16 \
         --host 127.0.0.1 --port "$port" --enforce-eager --no-enable-prefix-caching \
         --worker-extension-cls tools.mooncake_kv_snapshot.KVSnapshotWorkerExtension \
-        --tensor-parallel-size 1 --max-model-len 24576 --max-num-seqs 4 \
+        --tensor-parallel-size 1 --block-size 128 --max-model-len 24576 --max-num-seqs 4 \
         --kv-cache-memory-bytes 17179869184 \
         --kv-transfer-config "{\"kv_connector\":\"MooncakeConnectorV2\",\"kv_role\":\"$kv_role\",\"engine_id\":\"bidir-$role\",\"kv_port\":$kv_port,\"kv_load_failure_policy\":\"recompute\",\"kv_connector_extra_config\":{\"bidirectional_kv_xfer\":true,\"decoder_kv_blocks_ttl\":480,\"kv_recompute_threshold\":64}}" \
         > "/output/servers/$role.log" 2>&1 &

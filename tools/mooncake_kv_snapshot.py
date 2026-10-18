@@ -101,6 +101,18 @@ def capture_pages(caches, layer_names, block_ids, num_tokens, block_size, direct
 class KVSnapshotWorkerExtension:
     """Add a diagnostic RPC without replacing the worker/model/connector."""
 
+    def mooncake_diagnostic_cache_config(self):
+        from vllm.distributed.kv_transfer import get_kv_transfer_group
+
+        connector = get_kv_transfer_group().connector_worker
+        return {
+            "engine_id": connector.engine_id,
+            "config_block_size": connector.vllm_config.cache_config.block_size,
+            "group_block_sizes": [
+                group.kv_cache_spec.block_size for group in connector.kv_cache_config.kv_cache_groups
+            ],
+        }
+
     def mooncake_transport_endpoint(self):
         from vllm.distributed.kv_transfer import get_kv_transfer_group
 
