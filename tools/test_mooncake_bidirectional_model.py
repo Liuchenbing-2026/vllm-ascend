@@ -9,6 +9,7 @@ All inputs, outputs and tensor dumps stay in the private output directory.
 import argparse
 import hashlib
 import json
+import time
 import uuid
 from pathlib import Path
 
@@ -170,6 +171,12 @@ def main():
                 client, args.prefill, p["kv_transfer_params"], prefix, block_size, args.output, "P-recomputed"
             )
             reference, _ = decode(client, args, rid, fixture["second"], p)
+            # Prometheus receives connector stats asynchronously; wait only for
+            # observation, outside every model request and snapshot operation.
+            stats_deadline = time.monotonic() + 15
+            while after - before < source["total_bytes"] and time.monotonic() < stats_deadline:
+                time.sleep(0.2)
+                after = metric(client, args.prefill)
         transfer = compare_snapshots(source["manifest"], imported["manifest"], numerical=True)
         arithmetic = compare_snapshots(imported["manifest"], recomputed["manifest"], numerical=True)
         for name, data in (("D-to-P-byte-comparison", transfer), ("imported-vs-recomputed", arithmetic)):
