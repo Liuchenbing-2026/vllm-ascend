@@ -86,6 +86,7 @@ from vllm_ascend.distributed.kv_transfer.sparse_kv_offload.sparse_kv_offload_man
 )
 from vllm_ascend.models.deepseek_v41.cache_config import uses_a5_packed_cache
 from vllm_ascend.ops.rotary_embedding import set_cos_and_sin, update_cos_sin
+from vllm_ascend.task4_bounded_pin import StageAProbe
 from vllm_ascend.utils import (
     is_deepseek_v41,
     is_pd_decode_recompute_scheduler_enabled,
@@ -267,9 +268,17 @@ class NPUModelRunner(GPUModelRunner):
         return AscendPCPManager
 
     def load_model(self, load_dummy_weights: bool = False, *args, **kwargs) -> None:
-        aux_layers = get_pd_dspark_aux_layer_ids(self.vllm_config)
-        super().load_model(load_dummy_weights, *args, **kwargs)
-        self.pd_dspark_aux_layer_ids = aux_layers
+        # Diagnostic branch only: refuse unapproved runs and never reach KV I/O.
+        probe = StageAProbe.before_model(self.vllm_config, load_dummy_weights)
+        try:
+            aux_layers = get_pd_dspark_aux_layer_ids(self.vllm_config)
+            super().load_model(load_dummy_weights, *args, **kwargs)
+            self.pd_dspark_aux_layer_ids = aux_layers
+            probe.after_model()
+            raise RuntimeError("Diagnostic probe unexpectedly returned")
+        except BaseException as error:
+            probe.fail(error)
+            raise
 
     def _restore_replicated_draft_target_states(self) -> None:
         """Restore target states consumed by a replicated PCP draft."""
