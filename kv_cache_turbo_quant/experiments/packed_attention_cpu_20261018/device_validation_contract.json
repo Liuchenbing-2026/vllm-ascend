@@ -1,0 +1,58 @@
+{
+  "contract_version": 1,
+  "state": "planned_only_not_executed_on_device",
+  "cpu_baseline_commit": "e5423f98fa417859077a490c8435f3fdace94bee",
+  "reuse_fixture": "verify_cpu.py:fixture",
+  "store_codec_sha256": "9e80293023796907c35d369c1b7a578d33a781c98c9dd1eec1307fd3e02bf031",
+  "operator": "TqPackedAttention",
+  "core_reference": {
+    "query": "the unchanged FP32 query rotation rounded to BF16",
+    "key_value": "same packed rows decoded by unchanged kvtq_store._dequant_dense_reference on the target device",
+    "attention": "the actual existing BF16 npu_fused_infer_attention_score TND call; original head mapping and caller scale",
+    "compare": "BF16 attention_rot output before inverse rotation",
+    "rtol": 0,
+    "atol": 0,
+    "bitwise_required": true
+  },
+  "whole_attention_reference": {
+    "path": "existing FP32 query rotation -> BF16 FIA -> FP32 inverse rotation -> BF16 output",
+    "same_inputs": true,
+    "rtol": 0,
+    "atol": 0,
+    "bitwise_required": true,
+    "baseline_scale_must_not_be_rounded_or_changed_to_match_candidate": true
+  },
+  "cases_pending_device": {
+    "primary": [{"batch": 16, "kv_length": 20}, {"batch": 60, "kv_length": 2000}],
+    "tails": [1, 31, 32, 33, 63, 64, 65, 127, 128, 129, 1999, 2000, 2001, 2199, 2200, 8192],
+    "traits": ["permuted pages", "ragged lengths", "inactive negative table entries ignored",
+               "zero and finite large norm", "last physical row without readable padding",
+               "nondefault stream", "input/adjacent-memory immutability", "empty batch"],
+    "negative_cases": ["invalid active page", "zero/negative/over-capacity nonempty KV length",
+                       "nonfinite norm", "wrong shape/dtype", "insufficient UB/scratch"]
+  },
+  "error_and_stability_gate": {
+    "all_success_status_values": 0,
+    "nonzero_status_is_failure_not_a_zero_output_success": true,
+    "required_evidence": ["device compilation", "SDK scratch size evidence", "bounds/synchronization checks",
+                          "device precision", "long-running memory trend and failures retained"],
+    "historical_684_requests_are_not_a_soak_test": true
+  },
+  "model_quality": {
+    "reference": "original unquantized BF16 KV with the same real weights and evaluation workload",
+    "dataset_threshold_and_result": "still incomplete; do not invent or relax approval criteria",
+    "440_old_vs_new_tq_tokens_are_not_bf16_quality_acceptance": true,
+    "cpu_math_is_not_device_or_model_quality": true
+  },
+  "performance_gate": {
+    "short_20_20_c16": "output throughput >= same-run BF16; TTFT and TPOT <= same-run BF16",
+    "long_2000_200_c60": "strictly positive output throughput gain vs same-run BF16; TTFT and TPOT <= BF16",
+    "whole_attention_timing": "include query/output rotations, required status handling, workspace/dispatch and synchronization",
+    "full_model_result": "FAIL unchanged; no device or full-model performance measurement in this milestone"
+  },
+  "resource_gate": {
+    "coordinator": "01a14f7b-e870-7512-bb4f-67bac111a3a4",
+    "valid_allocation_required_before_shared_execution": true,
+    "new_request_or_allocation_created": false
+  }
+}

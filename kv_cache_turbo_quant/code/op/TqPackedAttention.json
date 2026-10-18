@@ -1,0 +1,22 @@
+[
+  {
+    "op": "TqPackedAttention",
+    "language": "cpp",
+    "input_desc": [
+      {"name": "query_rot", "param_type": "required", "format": ["ND"], "type": ["bfloat16"]},
+      {"name": "key", "param_type": "required", "format": ["ND"], "type": ["uint8"]},
+      {"name": "value", "param_type": "required", "format": ["ND"], "type": ["uint8"]},
+      {"name": "table", "param_type": "required", "format": ["ND"], "type": ["int32"]},
+      {"name": "lengths", "param_type": "required", "format": ["ND"], "type": ["int32"]},
+      {"name": "centroids", "param_type": "required", "format": ["ND"], "type": ["bfloat16"]}
+    ],
+    "output_desc": [
+      {"name": "attention_rot", "param_type": "required", "format": ["ND"], "type": ["bfloat16"]},
+      {"name": "status", "param_type": "required", "format": ["ND"], "type": ["int32"]}
+    ],
+    "attr": [
+      {"name": "scale", "type": "float", "param_type": "required"},
+      {"name": "api_scratch_bytes", "type": "int", "param_type": "required"}
+    ]
+  }
+]
