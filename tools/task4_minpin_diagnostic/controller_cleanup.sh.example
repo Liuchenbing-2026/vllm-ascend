@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+root="${1:?prepared task directory required}"
+attempt="${2:?unique attempt directory required}"
+[[ "$attempt" == "$root/attempts/"* ]]
+container_attempt="/ws/task4_minpin/attempts/$(basename "$attempt")"
+mkdir "$attempt"
+cd "$attempt"
+exec >> controller.log 2>&1
+container=task4-cpuoffload-031-20261017
+started=0
+watchdog=''
+finish(){
+ rc=$?; trap - EXIT INT TERM ERR
+ if [[ -n "$watchdog" ]]; then
+   kill "$watchdog" 2>/dev/null || true
+   wait "$watchdog" 2>/dev/null || true
+ fi
+ if [[ "$started" == 1 ]]; then docker stop --time 10 "$container" > stop.log 2>&1 || true; fi
+ docker inspect --format '{{json .State}}' "$container" > final_state.json
+ npu-smi info > resources_after.log 2>&1 || true
+ printf '%s\n' "$rc" > controller.exit
+ printf '%s END rc=%s; diagnostic only, not service/performance success\n' "$(date -Is)" "$rc" | tee RELEASE.md
+ exit "$rc"
+}
+trap finish EXIT
+trap 'rc=$?; printf "CONTROLLER_FAILED rc=%s line=%s command=%s\n" "$rc" "$LINENO" "$BASH_COMMAND"' ERR
+trap 'exit 130' INT
+trap 'exit 143' TERM
+end=$(python3 -c 'import json; print(json.load(open("../../active_lease.json"))["end_epoch"]-120)')
+preflight_end="${3:?approved preflight deadline epoch required}"
+[[ $(date +%s) -lt "$preflight_end" ]]
+[[ $(docker inspect --format '{{.State.Running}}' "$container") == false ]]
+npu-smi info > resources_before.log
+python3 - <<'PY'
+from pathlib import Path
+assert Path('resources_before.log').read_text().count('No running processes found in NPU')==8
+PY
+docker inspect "$container" > container_before.json
+printf '%s PREPARE; reservation recorded in active_lease.json\n' "$(date -Is)" | tee PREPARE.md
+started=1
+docker start "$container"
+python3 "$root/watchdog.py" --deadline "$end" --container "$container" > watchdog_stop.log 2>&1 & watchdog=$!
+python3 "$root/run_logged_step.py" --directory "$attempt" --step preflight -- timeout "$((preflight_end-$(date +%s)))" docker exec "$container" bash /ws/task4_minpin/preflight.sh
+[[ $(date +%s) -lt "$preflight_end" ]]
+printf '%s MODEL_START; actual imported identity in import_identity.json\n' "$(date -Is)" | tee MODEL_START.md
+docker exec -d "$container" bash -c 'bash /ws/task4_minpin/serve_minpin.sh > "$1/model_probe.log" 2>&1; echo $? > "$1/model_probe.exit"' _ "$container_attempt"
+load_deadline=$(($(date +%s)+600))
+probe_deadline=0
+while [[ $(date +%s) -lt "$end" ]]; do
+ [[ ! -f FAILED ]] || { cat FAILED; exit 1; }
+ [[ ! -f model_probe.exit ]] || { cat model_probe.exit; exit 1; }
+ if [[ -f model_probe.log ]] && grep -qE 'Traceback \(most recent call last\)|error code is 207001|Engine core initialization failed' model_probe.log; then echo 'First exception; no retry'; exit 1; fi
+ completed=$(find . -maxdepth 1 -name 'rank-*.complete' | wc -l)
+ if [[ "$completed" -eq 8 ]]; then printf '%s ALL_8_MINPIN_COMPLETE; NOT_224GiB_FIXED\n' "$(date -Is)" | tee PROBE_COMPLETE.md; exit 0; fi
+ loaded=$(grep -l '"phase": "model_loaded"' worker-*.jsonl 2>/dev/null | wc -l || true)
+ if [[ "$loaded" -eq 8 ]]; then
+   [[ "$probe_deadline" -ne 0 ]] || probe_deadline=$(($(date +%s)+180))
+   [[ $(date +%s) -lt "$probe_deadline" ]] || { echo 'Probe timeout'; exit 124; }
+ else
+   [[ $(date +%s) -lt "$load_deadline" ]] || { echo 'Full model load timeout'; exit 124; }
+ fi
+ sleep 2
+done
+exit 124
