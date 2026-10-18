@@ -84,6 +84,10 @@ class AscendLinearMethod(LinearMethodBase):
     def __init__(self, scheme: AscendLinearScheme) -> None:
         self.quant_method = scheme
 
+    @property
+    def supports_pre_processed_weights(self) -> bool:
+        return getattr(self.quant_method, "supports_pre_processed_weights", False)
+
     def create_weights(
         self,
         layer: torch.nn.Module,
@@ -236,6 +240,10 @@ class AscendKVCacheMethod(BaseKVCacheMethod):
     def __init__(self, scheme: AscendAttentionScheme) -> None:
         self.quant_method = scheme
 
+    @property
+    def supports_pre_processed_weights(self) -> bool:
+        return getattr(self.quant_method, "supports_pre_processed_weights", False)
+
     def create_weights(self, layer: torch.nn.Module) -> None:
         # Different from linear method, there are no weight processing/slicing
         # steps for attention in vllm. So the whole process of create weights
@@ -274,6 +282,10 @@ class AscendFusedMoEMethod(FusedMoEMethodBase):
         super().__init__(moe_config)
         self.quant_method = scheme
         self.tid2eid = tid2eid
+
+    @property
+    def supports_pre_processed_weights(self) -> bool:
+        return getattr(self.quant_method, "supports_pre_processed_weights", False)
 
     @property
     def is_monolithic(self) -> bool:

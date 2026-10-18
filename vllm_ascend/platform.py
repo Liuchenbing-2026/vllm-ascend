@@ -226,7 +226,9 @@ class NPUPlatform(Platform):
         device_props = torch.npu.get_device_properties(device_id)
         if not hasattr(device_props, "uuid") or device_props.uuid is None:
             raise RuntimeError(f"Device {device_id} does not have a valid UUID.")
-        return device_props.uuid
+        # torch_npu exposes an opaque torch_npu._C._CUuuid object. The platform
+        # API promises a string, and IPC protocols serialize the UUID.
+        return str(device_props.uuid)
 
     @classmethod
     def get_device_total_memory(cls, device_id: int = 0) -> int:

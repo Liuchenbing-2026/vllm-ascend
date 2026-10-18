@@ -37,7 +37,11 @@ from vllm.model_executor.layers.linear import (  # noqa
     UnquantizedLinearMethod,
 )
 from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
-from vllm.model_executor.utils import replace_parameter, set_weight_attrs
+from vllm.model_executor.utils import (
+    is_weights_pre_processed,
+    replace_parameter,
+    set_weight_attrs,
+)
 from vllm.utils.torch_utils import direct_register_custom_op
 
 from vllm_ascend.device.hardware_profile import HardwareCapability, WeightLayoutPolicy, get_current_hardware_profile
@@ -103,8 +107,11 @@ class AscendUnquantizedLinearMethod(WeightSwitchMixin, UnquantizedLinearMethod):
     weight_switch_gather_specs = (WeightSwitchGatherSpec("weight", gather_dim=1),)
     weight_switch_output_gather_specs = (WeightSwitchGatherSpec("weight"),)
     supports_weight_switch = True
+    supports_pre_processed_weights = True
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
+        if is_weights_pre_processed():
+            return
         super().process_weights_after_loading(layer)
         keep_nd_weight = _should_keep_nd_for_compatibility_weight(layer.weight.data)
         skip_weight_nz_conversion = getattr(layer, "skip_weight_nz_conversion", False)

@@ -90,9 +90,11 @@ def register_model_loader():
 
     from .model_loader.netloader import register_netloader
     from .model_loader.rfork import register_rforkloader
+    from .model_loader.weight_cache import install_npu_ipc
 
     register_netloader()
     register_rforkloader()
+    install_npu_ipc()
 
 
 def register_service_profiling():
