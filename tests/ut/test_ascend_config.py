@@ -1284,6 +1284,7 @@ class TestSubconfigPydanticTypeValidation(TestBase):
         cudagraph_capture_sizes=None,
         cudagraph_mode=CUDAGraphMode.FULL_DECODE_ONLY,
         prefill_context_parallel_size=1,
+        pipeline_parallel_size=1,
     ):
         speculative_config = None
         if num_speculative_tokens:
@@ -1293,6 +1294,7 @@ class TestSubconfigPydanticTypeValidation(TestBase):
                 tensor_parallel_size=1,
                 data_parallel_size=8,
                 prefill_context_parallel_size=prefill_context_parallel_size,
+                pipeline_parallel_size=pipeline_parallel_size,
             ),
             compilation_config=SimpleNamespace(
                 cudagraph_mode=cudagraph_mode,

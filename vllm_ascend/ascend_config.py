@@ -1344,6 +1344,22 @@ class FinegrainedTPConfig:
         from vllm.config.compilation import CUDAGraphMode
 
         vc = vllm_config
+        if (
+            any(
+                size > 0
+                for size in (
+                    self.oproj_tensor_parallel_size,
+                    self.lmhead_tensor_parallel_size,
+                    self.embedding_tensor_parallel_size,
+                    self.mlp_tensor_parallel_size,
+                )
+            )
+            and vc.parallel_config.pipeline_parallel_size > 1
+        ):
+            raise AssertionError(
+                "finegrained_tp_config is not supported with pipeline_parallel_size > 1. "
+                "Set pipeline_parallel_size to 1 or disable all finegrained TP sizes."
+            )
         enabled_configs = []
         if self.oproj_tensor_parallel_size > 1 or self.mlp_tensor_parallel_size > 1:
             # o_proj's _forward_o_proj reshape misaligns under tp > 1; mlp is untested there.
