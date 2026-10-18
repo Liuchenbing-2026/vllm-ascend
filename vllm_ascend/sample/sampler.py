@@ -5,7 +5,7 @@ from vllm.distributed.parallel_state import get_tp_group
 from vllm.logger import logger
 from vllm.triton_utils import HAS_TRITON
 from vllm.v1.sample.metadata import SamplingMetadata
-from vllm.v1.sample.ops.topk_topp_sampler import TopKTopPSampler
+from vllm.v1.sample.ops.topk_topp_sampler import TopKTopPSampler, apply_top_k_top_p_pytorch
 from vllm.v1.sample.sampler import Sampler
 
 from vllm_ascend.ascend_config import get_ascend_config
@@ -204,35 +204,9 @@ def _apply_top_k_top_p_pytorch(
             gathered_vals.masked_fill_(elements_to_discard, -float("inf"))
         return gathered_vals, gathered_idx
     else:
-        if p is None and k is None:
-            return logits
-
-        probs = logits.softmax(dim=-1)
-        probs_sort, _ = probs.sort(dim=-1, descending=False)
-
-        if k is not None:
-            top_k_count = probs_sort.size(1) - k.to(torch.long)  # shape: (batch, )
-            top_k_count = top_k_count.unsqueeze(dim=1)
-            top_k_cutoff = probs_sort.gather(-1, top_k_count)
-
-            # Make sure the no top-k rows are no-op.
-            no_top_k_mask = (k == logits.shape[1]).unsqueeze(dim=1)
-            top_k_cutoff.masked_fill_(no_top_k_mask, -float("inf"))
-
-            elements_to_discard = probs < top_k_cutoff
-            logits.masked_fill_(elements_to_discard, -float("inf"))
-
-        if p is not None:
-            cumprob = torch.cumsum(probs_sort, dim=-1)
-            top_p_mask = cumprob <= 1 - p.unsqueeze(dim=1)
-            top_p_mask[:, -1] = False  # at least one
-
-            top_p_count = top_p_mask.sum(dim=-1).unsqueeze(1)
-            top_p_cutoff = probs_sort.gather(-1, top_p_count)
-            elements_to_discard = probs < top_p_cutoff
-            logits.masked_fill_(elements_to_discard, -float("inf"))
-
-        return logits
+        # Share the small-batch path's contract: apply top-k before
+        # normalizing for top-p, including its handling of tied logits.
+        return apply_top_k_top_p_pytorch(logits, k, p)
 
 
 def _apply_top_k_top_p_torch_npu(
