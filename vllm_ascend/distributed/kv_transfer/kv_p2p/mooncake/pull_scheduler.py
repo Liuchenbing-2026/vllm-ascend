@@ -7,6 +7,7 @@ import threading
 import time
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import msgspec
@@ -69,7 +70,7 @@ class MooncakeSchedulerSendingThread(threading.Thread):
         ready_event: threading.Event,
     ) -> None:
         super().__init__(daemon=True, name="MooncakeSchedulerSendingThread")
-        encoder = msgspec.msgpack.Encoder()
+        self.encoder = msgspec.msgpack.Encoder()
         self.host = host
         self.port = port
         self.tp_size = tp_size
@@ -81,18 +82,16 @@ class MooncakeSchedulerSendingThread(threading.Thread):
         if self.use_kv_pp and self.dcp_size != 1:
             raise ValueError(f"Mooncake KVPP cannot be combined with DCP, got dcp_size={self.dcp_size}")
         metadata_by_pp_rank = self._merge_metadata_by_pp_rank(metadata)
-        self.encoded_metadata = encoder.encode(
-            MooncakeTransferMetadataGroups(
-                engine_id=engine_id,
-                scheduler_host=host,
-                scheduler_port=port,
-                pp_size=pp_size,
-                pcp_size=pcp_size,
-                dcp_size=dcp_size,
-                tp_size=tp_size,
-                use_kv_pp=self.use_kv_pp,
-                metadata_by_pp_rank=metadata_by_pp_rank,
-            )
+        self.transfer_metadata_groups = MooncakeTransferMetadataGroups(
+            engine_id=engine_id,
+            scheduler_host=host,
+            scheduler_port=port,
+            pp_size=pp_size,
+            pcp_size=pcp_size,
+            dcp_size=dcp_size,
+            tp_size=tp_size,
+            use_kv_pp=self.use_kv_pp,
+            metadata_by_pp_rank=metadata_by_pp_rank,
         )
         logger.info(
             "Initialized Mooncake scheduler handshake metadata: engine_id=%s, "
@@ -108,11 +107,23 @@ class MooncakeSchedulerSendingThread(threading.Thread):
             self.use_kv_pp,
         )
         self.ready_event = ready_event
-        self.delayed_free_requests: OrderedDict[str, float] = OrderedDict()
+        # request_id -> (delay start time, seconds the blocks stay pinned).
+        self.delayed_free_requests: OrderedDict[str, tuple[float, float]] = OrderedDict()
         self.finished_requests: queue.SimpleQueue[str] = queue.SimpleQueue()
         self.early_finished_requests: set[str] = set()
         self.finished_request_ids: set[str] = set()
         self.state_lock = threading.Lock()
+
+    def encode_metadata(self) -> bytes:
+        """Serialize the handshake metadata with a fresh clock sample.
+
+        Remote workers translate the Decode-side block-expiry deadlines of this
+        engine into their own monotonic clock with ``scheduler_clock``. The
+        sample therefore has to be taken when this process actually serves the
+        reply; a sample from startup would report long-expired blocks as live
+        once the engine has been up for longer than the block TTL.
+        """
+        return self.encoder.encode(replace(self.transfer_metadata_groups, scheduler_clock=time.perf_counter()))
 
     def _merge_metadata_by_pp_rank(
         self,
@@ -311,9 +322,10 @@ class MooncakeSchedulerSendingThread(threading.Thread):
             )
         return merged
 
-    def add_delayed_request(self, request_id: str, delay_start_time: float) -> None:
+    def add_delayed_request(self, request_id: str, delay_start_time: float, ttl: float) -> None:
+        """Pin the blocks of *request_id* for *ttl* seconds or until the peer acks."""
         with self.state_lock:
-            self.delayed_free_requests[request_id] = delay_start_time
+            self.delayed_free_requests[request_id] = (delay_start_time, ttl)
             if request_id in self.early_finished_requests:
                 self.early_finished_requests.remove(request_id)
                 self._mark_finished_locked(request_id)
@@ -357,7 +369,7 @@ class MooncakeSchedulerSendingThread(threading.Thread):
             try:
                 msg = decoder.decode(payload[0])
                 if msg and msg[0] == GET_META_MSG:
-                    sock.send_multipart((identity, b"", self.encoded_metadata))
+                    sock.send_multipart((identity, b"", self.encode_metadata()))
                 elif msg[0] == DONE_RECVING_MSG and len(msg) == 2:
                     self._handle_finished_request(str(msg[1]))
                     sock.send_multipart((identity, b"", ACK_MSG))
@@ -384,17 +396,23 @@ class MooncakeSchedulerSendingThread(threading.Thread):
 
     def _retrieve_expired_requests_locked(self) -> None:
         current_time = time.time()
-        while self.delayed_free_requests:
-            request_id = next(iter(self.delayed_free_requests))
-            delay_start_time = self.delayed_free_requests[request_id]
-            if current_time - delay_start_time <= envs.VLLM_MOONCAKE_ABORT_REQUEST_TIMEOUT:
-                break
-
+        # Pinned blocks no longer share one TTL: a Decode node of a
+        # bidirectional transfer pins its blocks for the configured
+        # ``decoder_kv_blocks_ttl`` while a Prefill node keeps the lease
+        # timeout. A live head entry therefore no longer implies that every
+        # following entry is live as well, so scan them all.
+        expired_request_ids = [
+            request_id
+            for request_id, (delay_start_time, ttl) in self.delayed_free_requests.items()
+            if current_time - delay_start_time > ttl
+        ]
+        for request_id in expired_request_ids:
+            ttl = self.delayed_free_requests[request_id][1]
             self._mark_finished_locked(request_id)
             logger.error(
                 "Force freed expired Mooncake request %s after %s seconds",
                 request_id,
-                envs.VLLM_MOONCAKE_ABORT_REQUEST_TIMEOUT,
+                ttl,
             )
 
 
@@ -541,6 +559,39 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
             if count > 0:
                 return count, True
 
+        if (
+            params is not None
+            and params.get("do_remote_decode")
+            and params.get("remote_block_ids")
+            and all(
+                field in params
+                for field in (
+                    "remote_engine_id",
+                    "remote_request_id",
+                    "remote_host",
+                    "remote_port",
+                )
+            )
+        ):
+            # With bidirectional KV transfer the Prefill node of the next turn
+            # can read the conversation back from the Decode node that answered
+            # the previous turn. Pull the blocks that the Decode node exposes
+            # and recompute locally when they cover too little of the prompt to
+            # amortize the transfer.
+            params["num_computed_tokens"] = num_computed_tokens
+            remote_num_tokens = params.get("remote_num_tokens") or 0
+            count = min(remote_num_tokens, request.num_prompt_tokens) - num_computed_tokens
+            if count > 0:
+                if self.kv_recompute_threshold > 0 and count < self.kv_recompute_threshold:
+                    logger.debug(
+                        "Skipping Mooncake remote read for %s: %d remote tokens < threshold %d",
+                        request.request_id,
+                        count,
+                        self.kv_recompute_threshold,
+                    )
+                    return 0, False
+                return count, True
+
         return 0, False
 
     def update_state_after_alloc(
@@ -559,7 +610,16 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
         if params is not None and (params.get("do_remote_prefill", False) or params.get("do_remote_decode", False)):
             self._reqs_in_batch.add(request.request_id)
 
-        if params is None or not params.get("do_remote_prefill"):
+        if params is None:
+            return
+
+        # A Decode node reads from a Prefill node; with bidirectional KV
+        # transfer a Prefill node reads back from the Decode node that answered
+        # the previous turn. Both directions register the same READ transfer.
+        is_decoder_readback = self.is_bidirectional_kv_xfer_enabled and bool(params.get("do_remote_decode"))
+        if not params.get("do_remote_prefill") and not (
+            is_decoder_readback and not params.get("_remote_blocks_processed")
+        ):
             return
 
         if params.get("remote_block_ids"):
@@ -594,6 +654,8 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
 
         # Only trigger one transfer for a request.
         params["do_remote_prefill"] = False
+        if is_decoder_readback:
+            params["_remote_blocks_processed"] = True
 
     def build_connector_meta(self, scheduler_output: SchedulerOutput) -> KVConnectorMetadata:
         meta = MooncakeConnectorMetadata()
@@ -622,7 +684,13 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
         request: "Request",
         block_ids: BlockIds,
     ) -> tuple[bool, dict[str, Any] | None]:
-        """Expose completed producer blocks for a remote READ transfer."""
+        """Expose completed blocks for a remote READ transfer.
+
+        A Prefill request publishes the prompt blocks its Decode peer still
+        needs. With bidirectional KV transfer the roles also run backwards: the
+        Decode request publishes everything it computed, so the Prefill node of
+        the next turn can read the conversation back instead of recomputing it.
+        """
         params = request.kv_transfer_params
         logger.debug(
             "MooncakeConnector request_finished: request_status=%s, kv_transfer_params=%s",
@@ -630,18 +698,31 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
             params,
         )
 
-        if (
-            params is None
-            or not params.get("do_remote_decode")
-            or request.status != RequestStatus.FINISHED_LENGTH_CAPPED
+        if params is None:
+            return False, None
+
+        is_p_node = bool(params.get("do_remote_decode"))
+        is_d_node = not is_p_node
+        if is_d_node and not self.is_bidirectional_kv_xfer_enabled:
+            # Without bidirectional transfer only the Prefill node publishes KV.
+            return False, None
+
+        if request.status not in (
+            RequestStatus.FINISHED_LENGTH_CAPPED,
+            RequestStatus.FINISHED_STOPPED,
         ):
             return False, None
 
         prompt_token_ids = request.prompt_token_ids or []
         prompt_len = len(prompt_token_ids)
-        computed_block_ids = self._get_transfer_block_ids(block_ids, prompt_len)
+        # A Prefill node publishes its prompt blocks only. A Decode node
+        # publishes every block it computed, because the reverse read covers the
+        # whole conversation.
+        transferred_num_tokens = prompt_len if is_p_node else request.num_computed_tokens
+        computed_block_ids = self._get_transfer_block_ids(block_ids, transferred_num_tokens)
         num_computed_blocks = sum(len(group_block_ids) for group_block_ids in computed_block_ids)
         delay_free_blocks = num_computed_blocks > 0
+        blocks_expiry_time: float | None = None
         if delay_free_blocks:
             logger.info(
                 "Delaying free of %d blocks for request %s",
@@ -652,21 +733,30 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
             self._reqs_need_send[request.request_id] = delay_start_time
             if self._sending_thread is None:
                 raise RuntimeError("Mooncake scheduler metadata has not been initialized")
-            self._sending_thread.add_delayed_request(
-                request.request_id,
-                delay_start_time,
-            )
+            # A Decode node pins its blocks for the fixed bidirectional TTL,
+            # not for the Prefill lease timeout: the next turn is client-driven
+            # and no transfer is waiting for the blocks yet.
+            blocks_ttl = self.decoder_kv_blocks_ttl if is_d_node else envs.VLLM_MOONCAKE_ABORT_REQUEST_TIMEOUT
+            self._sending_thread.add_delayed_request(request.request_id, delay_start_time, blocks_ttl)
+            if is_d_node:
+                # Decode blocks are pinned for a fixed TTL rather than a lease,
+                # because the next turn is client-driven. Export the deadline so
+                # the Prefill worker can decline a read that arrives once the
+                # blocks are allowed to be gone.
+                blocks_expiry_time = time.perf_counter() + blocks_ttl
 
         return delay_free_blocks, {
-            "do_remote_prefill": True,
-            "do_remote_decode": False,
+            "do_remote_prefill": is_p_node,
+            "do_remote_decode": is_d_node,
             "remote_block_ids": computed_block_ids,
-            "remote_num_prompt_tokens": prompt_len,
+            "remote_num_prompt_tokens": transferred_num_tokens,
+            "remote_num_tokens": transferred_num_tokens,
             "remote_engine_id": self.engine_id,
             "remote_request_id": request.request_id,
             "remote_host": self.side_channel_host,
             "remote_port": self.side_channel_port,
-            "last_token_id": request.output_token_ids[-1],
+            "remote_blocks_expiry_time": blocks_expiry_time,
+            "last_token_id": request.output_token_ids[-1] if request.output_token_ids else None,
         }
 
     def update_connector_output(

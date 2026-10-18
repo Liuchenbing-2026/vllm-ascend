@@ -120,6 +120,10 @@ class MooncakeTransferMetadataGroups:
     tp_size: int
     use_kv_pp: bool
     metadata_by_pp_rank: dict[int, MooncakePPTransferMetadata]
+    # Wall-clock sample taken when this scheduler served the handshake. Remote
+    # workers use it to translate block-expiry deadlines (bidirectional KV
+    # transfer) into their own clock domain. Zero means "unknown clock".
+    scheduler_clock: float = 0.0
 
 
 @dataclass
@@ -137,6 +141,9 @@ class ReqMeta:
     remote_request_id: str
     remote_num_prompt_tokens: int
     local_full_block_ids: BlockIds
+    # Wall-clock deadline after which the remote engine may drop the blocks of
+    # this request. ``None`` means the remote keeps them until it is notified.
+    remote_blocks_expiry_time: float | None = None
 
 
 class MooncakeConnectorMetadata(KVConnectorMetadata):
@@ -168,6 +175,7 @@ class MooncakeConnectorMetadata(KVConnectorMetadata):
             remote_request_id=kv_transfer_params["remote_request_id"],
             remote_num_prompt_tokens=kv_transfer_params["remote_num_prompt_tokens"],
             local_full_block_ids=local_full_block_ids or tuple(),
+            remote_blocks_expiry_time=kv_transfer_params.get("remote_blocks_expiry_time"),
         )
 
 

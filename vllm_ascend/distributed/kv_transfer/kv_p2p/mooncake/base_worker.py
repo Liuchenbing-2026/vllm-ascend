@@ -42,6 +42,7 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.stats import (
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
     as_kv_cache_tensors,
     collect_configured_register_regions,
+    read_bidirectional_kv_xfer_settings,
 )
 from vllm_ascend.distributed.kv_transfer.utils.mooncake_transfer_engine import (
     global_te,
@@ -112,7 +113,13 @@ class MooncakeBaseConnectorWorker:
 
         self.vllm_config = vllm_config
         self.kv_transfer_config = vllm_config.kv_transfer_config
-        if self.kv_transfer_config.is_kv_consumer == self.kv_transfer_config.is_kv_producer:
+        # Bidirectional KV transfer makes one engine both consumer and producer,
+        # so ``kv_both`` is only accepted together with that JSON flag.
+        self.is_bidirectional_kv_xfer_enabled = read_bidirectional_kv_xfer_settings(self.kv_transfer_config).enabled
+        is_kv_both = self.kv_transfer_config.is_kv_consumer and self.kv_transfer_config.is_kv_producer
+        if self.kv_transfer_config.is_kv_consumer == self.kv_transfer_config.is_kv_producer and not (
+            is_kv_both and self.is_bidirectional_kv_xfer_enabled
+        ):
             raise ValueError(
                 f"Mooncake worker requires exactly one KV transfer role, got {self.kv_transfer_config.kv_role!r}"
             )

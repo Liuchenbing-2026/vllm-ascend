@@ -32,6 +32,7 @@ class MooncakeKVConnectorStats(KVConnectorStats):
             "transfer_duration": [],
             "bytes_transferred": [],
             "num_failed_transfers": [],
+            "num_expired_requests": [],
         }
 
     def record_transfer(self, transfer_duration: float, bytes_transferred: int) -> None:
@@ -45,13 +46,26 @@ class MooncakeKVConnectorStats(KVConnectorStats):
     def record_failed_transfer(self) -> None:
         self.data["num_failed_transfers"].append(1)
 
+    def record_kv_expired_req(self) -> None:
+        """Record a request whose remote KV blocks expired before the read.
+
+        Expiry is counted apart from transfer failures because it is caused by
+        the remote block TTL rather than by the transport, and it makes the
+        reading engine recompute the tokens locally.
+        """
+        self.data["num_expired_requests"].append(1)
+
     def clone_and_reset(self) -> "MooncakeKVConnectorStats":
         previous = copy.copy(self)
         self.reset()
         return previous
 
     def is_empty(self) -> bool:
-        return self.num_successful_transfers == 0 and not self.data["num_failed_transfers"]
+        return (
+            self.num_successful_transfers == 0
+            and not self.data["num_failed_transfers"]
+            and not self.data["num_expired_requests"]
+        )
 
     def aggregate(self, other: KVConnectorStats) -> KVConnectorStats:
         if not other.is_empty():
@@ -62,10 +76,12 @@ class MooncakeKVConnectorStats(KVConnectorStats):
         return self
 
     def reduce(self) -> dict[str, int | float]:
+        expired_requests = len(self.data["num_expired_requests"])
         if self.num_successful_transfers == 0:
             return {
                 "Num successful transfers": 0,
                 "Num failed transfers": len(self.data["num_failed_transfers"]),
+                "Num expired requests": expired_requests,
                 "Avg xfer time (ms)": 0,
                 "P90 xfer time (ms)": 0,
                 "Avg MB per transfer": 0,
@@ -80,6 +96,7 @@ class MooncakeKVConnectorStats(KVConnectorStats):
         return {
             "Num successful transfers": self.num_successful_transfers,
             "Num failed transfers": len(self.data["num_failed_transfers"]),
+            "Num expired requests": expired_requests,
             "Avg xfer time (ms)": round(durations.mean() * 1e3, 3),
             "P90 xfer time (ms)": round(np.percentile(durations, 90).item() * 1e3, 3),
             "Avg MB per transfer": round(megabytes.mean(), 3),
@@ -144,6 +161,17 @@ class MooncakePromMetrics(KVConnectorPromMetrics):
         )
         self.failed_transfers = create_metric_per_engine(failed_transfers, self.per_engine_labelvalues)
 
+        expired_requests = self._counter_cls(
+            name="vllm:mooncake_num_expired_requests",
+            documentation=(
+                "Number of requests whose remote KV blocks expired before the "
+                "Mooncake read. NOTE: this is tracked on the engine that reads "
+                "the blocks, i.e. the Prefill node of a bidirectional transfer."
+            ),
+            labelnames=labelnames,
+        )
+        self.expired_requests = create_metric_per_engine(expired_requests, self.per_engine_labelvalues)
+
     def observe(self, transfer_stats_data: dict[str, Any], engine_idx: int = 0) -> None:
         for duration in transfer_stats_data["transfer_duration"]:
             self.transfer_duration[engine_idx].observe(duration)
@@ -151,3 +179,5 @@ class MooncakePromMetrics(KVConnectorPromMetrics):
             self.bytes_transferred[engine_idx].observe(num_bytes)
         for failure in transfer_stats_data["num_failed_transfers"]:
             self.failed_transfers[engine_idx].inc(failure)
+        for expired in transfer_stats_data["num_expired_requests"]:
+            self.expired_requests[engine_idx].inc(expired)
