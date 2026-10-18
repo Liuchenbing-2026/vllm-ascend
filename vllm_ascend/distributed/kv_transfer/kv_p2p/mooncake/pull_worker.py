@@ -13,6 +13,7 @@ import torch
 import zmq
 from vllm.config import VllmConfig
 from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorTransferResults
+from vllm.distributed.kv_transfer.kv_connector.v1.metrics import KVConnectorStats
 from vllm.logger import logger
 from vllm.utils.network_utils import make_zmq_path
 from vllm.v1.attention.backends.registry import MambaAttentionBackendEnum
@@ -41,10 +42,12 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.metadata import (
     ReqMeta,
 )
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
+    BIDIRECTIONAL_KV_XFER_EXPIRY_SAFETY_MARGIN_SECONDS,
     SizedDict,
     ensure_zmq_recv,
     ensure_zmq_send,
     group_concurrent_contiguous,
+    read_bidirectional_kv_xfer_settings,
     zmq_ctx,
 )
 
@@ -137,10 +140,19 @@ class MooncakePullRecvingThread(threading.Thread):
         # engine_id -> remote_pp_rank
         # -> [(local_layer_index, remote_layer_index), ...]
         self.remote_layer_index_pairs: SizedDict[str, dict[int, list[tuple[int, int]]]] = SizedDict()
+        # engine_id -> (remote monotonic clock - local monotonic clock).
+        self.remote_clock_offsets: dict[str, float] = {}
+        # Bidirectional KV transfer turns this engine into a reader of the
+        # blocks it produced in a previous turn, which is the only case where a
+        # remote block deadline has to be honoured here.
+        self.is_bidirectional_kv_xfer_enabled = read_bidirectional_kv_xfer_settings(
+            vllm_config.kv_transfer_config
+        ).enabled
         self.request_queue: queue.Queue[tuple[str, dict[str, ReqMeta]]] = queue.Queue()
         self.finished_requests: queue.SimpleQueue[tuple[str, bool]] = queue.SimpleQueue()
         self.invalid_block_ids: set[int] = set()
         self.invalid_block_ids_lock = threading.Lock()
+        self.num_expired_reads = 0
         assert self.local_metadata is not None
 
     def add_requests(
@@ -170,6 +182,13 @@ class MooncakePullRecvingThread(threading.Thread):
             invalid_block_ids = self.invalid_block_ids
             self.invalid_block_ids = set()
         return invalid_block_ids
+
+    def get_and_clear_num_expired_reads(self) -> int:
+        """Drain reverse reads declined because the remote blocks had expired."""
+        with self.invalid_block_ids_lock:
+            num_expired_reads = self.num_expired_reads
+            self.num_expired_reads = 0
+        return num_expired_reads
 
     def run(self) -> None:
         """Consume queued requests and invoke the transfer implementation."""
@@ -523,6 +542,65 @@ class MooncakePullRecvingThread(threading.Thread):
         head_index = tp_rank // replication_size
         return head_index, head_index + 1
 
+    def _is_turn2_read_expired(
+        self,
+        request_metadata: ReqMeta,
+        remote_metadata: MooncakeTransferMetadataGroups,
+    ) -> bool:
+        """Whether the blocks of a reverse read are (nearly) gone on the peer."""
+        blocks_expiry_time = request_metadata.remote_blocks_expiry_time
+        # No deadline means the peer keeps its blocks until it is notified.
+        if blocks_expiry_time is None or not any(request_metadata.local_block_ids):
+            return False
+        clock_offset = self.remote_clock_offsets.get(remote_metadata.engine_id)
+        if clock_offset is None:
+            # The peer scheduler clock is unknown, so the exported deadline
+            # cannot be translated onto this monotonic clock. Reading is the
+            # safer default: the peer publishes the deadline precisely because
+            # it accepts reads until then.
+            return False
+        deadline = blocks_expiry_time - clock_offset
+        return time.perf_counter() + BIDIRECTIONAL_KV_XFER_EXPIRY_SAFETY_MARGIN_SECONDS >= deadline
+
+    def _drop_expired_reads(
+        self,
+        remote_engine_id: str,
+        requests: dict[str, ReqMeta],
+        remote_metadata: MooncakeTransferMetadataGroups,
+    ) -> tuple[dict[str, ReqMeta], set[str]]:
+        """Drop reverse reads whose remote blocks have expired.
+
+        Only bidirectional KV transfer can read blocks the peer has already
+        computed in an earlier turn. Loading those blocks after the peer's TTL
+        elapsed would copy KV the peer is allowed to reuse, so the request is
+        failed instead: vLLM then recomputes the tokens locally.
+        """
+        if not self.is_bidirectional_kv_xfer_enabled:
+            return requests, set()
+
+        expired_request_ids = {
+            request_id
+            for request_id, request_metadata in requests.items()
+            if self._is_turn2_read_expired(request_metadata, remote_metadata)
+        }
+        if not expired_request_ids:
+            return requests, expired_request_ids
+
+        with self.invalid_block_ids_lock:
+            self.num_expired_reads += len(expired_request_ids)
+        for request_id in sorted(expired_request_ids):
+            logger.warning(
+                "Declining expired Mooncake remote read for %s from engine %s.",
+                request_id,
+                remote_engine_id,
+            )
+        remaining_requests = {
+            request_id: request_metadata
+            for request_id, request_metadata in requests.items()
+            if request_id not in expired_request_ids
+        }
+        return remaining_requests, expired_request_ids
+
     def _handle_requests(
         self,
         remote_engine_id: str,
@@ -532,6 +610,9 @@ class MooncakePullRecvingThread(threading.Thread):
     ) -> set[str]:
         """Build and execute transfer buckets for one producer engine."""
         remote_metadata = self._get_remote_metadata(remote_engine_id, remote_host, remote_port)
+        requests, expired_request_ids = self._drop_expired_reads(remote_engine_id, requests, remote_metadata)
+        if not requests:
+            return expired_request_ids
         tp_rank_groups_by_pp_rank = self.remote_tp_rank_groups[remote_engine_id]
         layer_pairs_by_pp_rank = self.remote_layer_index_pairs[remote_engine_id]
         # Cache block mappings for this producer-engine batch:
@@ -586,7 +667,7 @@ class MooncakePullRecvingThread(threading.Thread):
         except Exception as exc:
             submission_error = exc
 
-        failed_request_ids: set[str] = set()
+        failed_request_ids: set[str] = set(expired_request_ids)
         for future in as_completed(future_to_task):
             remote_pp_rank, remote_pcp_rank, remote_tp_rank, request_ids = future_to_task[future]
             try:
@@ -1500,12 +1581,14 @@ class MooncakePullRecvingThread(threading.Thread):
         with zmq_ctx(zmq.REQ, path) as sock:  # type: ignore[attr-defined]
             sock.setsockopt(zmq.SNDTIMEO, 1000)  # type: ignore[attr-defined]
             sock.setsockopt(zmq.RCVTIMEO, 1000)  # type: ignore[attr-defined]
+            send_time = time.perf_counter()
             ensure_zmq_send(
                 sock,
                 self.encoder.encode((b"get_meta_msg",)),
                 path,
             )
             metadata_bytes = ensure_zmq_recv(sock, path)
+            recv_time = time.perf_counter()
 
         if not metadata_bytes:
             raise RuntimeError(
@@ -1514,6 +1597,7 @@ class MooncakePullRecvingThread(threading.Thread):
 
         transfer_metadata = self.decoder.decode(metadata_bytes)
         self._validate_remote_metadata(transfer_metadata, remote_engine_id)
+        self._record_remote_clock(remote_engine_id, transfer_metadata, send_time, recv_time)
         remote_tp_rank_groups, remote_layer_index_pairs = self._build_remote_transfer_layout(transfer_metadata)
         self.remote_metadata[remote_engine_id] = transfer_metadata
         self.remote_tp_rank_groups[remote_engine_id] = remote_tp_rank_groups
@@ -1525,6 +1609,24 @@ class MooncakePullRecvingThread(threading.Thread):
             remote_layer_index_pairs,
         )
         return transfer_metadata
+
+    def _record_remote_clock(
+        self,
+        remote_engine_id: str,
+        remote_metadata: MooncakeTransferMetadataGroups,
+        send_time: float,
+        recv_time: float,
+    ) -> None:
+        """Estimate the peer scheduler's clock offset from the metadata round trip.
+
+        Block deadlines travel in the peer's ``perf_counter`` domain. The peer
+        stamps a reply right before sending it, so the midpoint of this round
+        trip maps its clock onto the local monotonic clock:
+        ``offset = remote_clock - (send_time + recv_time) / 2``.
+        """
+        if not self.is_bidirectional_kv_xfer_enabled or not remote_metadata.scheduler_clock:
+            return
+        self.remote_clock_offsets[remote_engine_id] = remote_metadata.scheduler_clock - (send_time + recv_time) / 2
 
 
 class MooncakePullConnectorWorker(MooncakeBaseConnectorWorker):
@@ -1603,6 +1705,13 @@ class MooncakePullConnectorWorker(MooncakeBaseConnectorWorker):
         if self._recving_thread is None:
             return set()
         return self._recving_thread.get_and_clear_invalid_block_ids()
+
+    def get_kv_connector_stats(self) -> KVConnectorStats | None:
+        """Report reverse reads that were declined because their blocks expired."""
+        if self._recving_thread is not None:
+            for _ in range(self._recving_thread.get_and_clear_num_expired_reads()):
+                self.xfer_stats.record_kv_expired_req()
+        return super().get_kv_connector_stats()
 
 
 __all__ = [

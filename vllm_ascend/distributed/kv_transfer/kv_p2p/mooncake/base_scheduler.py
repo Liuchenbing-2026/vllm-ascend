@@ -27,6 +27,9 @@ from vllm_ascend.ascend_config import (
     init_ascend_config,
 )
 from vllm_ascend.core.kv_cache_interface import is_circular_kv_cache_spec
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
+    read_bidirectional_kv_xfer_settings,
+)
 
 if TYPE_CHECKING:
     from vllm.v1.core.kv_cache_manager import KVCacheBlocks
@@ -47,9 +50,27 @@ class MooncakeBaseConnectorScheduler:
 
         self.vllm_config = vllm_config
         self.kv_transfer_config = vllm_config.kv_transfer_config
-        if self.kv_transfer_config.is_kv_consumer == self.kv_transfer_config.is_kv_producer:
+        # Bidirectional KV transfer lets a Decode node hand its KV blocks back
+        # to a Prefill node for the next turn of the same conversation. It
+        # requires one engine to act as consumer and producer at the same time,
+        # so ``kv_both`` is only accepted together with that JSON flag.
+        bidirectional_kv_xfer = read_bidirectional_kv_xfer_settings(self.kv_transfer_config)
+        self.is_bidirectional_kv_xfer_enabled = bidirectional_kv_xfer.enabled
+        self.decoder_kv_blocks_ttl = bidirectional_kv_xfer.decoder_kv_blocks_ttl
+        self.kv_recompute_threshold = bidirectional_kv_xfer.kv_recompute_threshold
+        is_kv_both = self.kv_transfer_config.is_kv_consumer and self.kv_transfer_config.is_kv_producer
+        if self.kv_transfer_config.is_kv_consumer == self.kv_transfer_config.is_kv_producer and not (
+            is_kv_both and self.is_bidirectional_kv_xfer_enabled
+        ):
             raise ValueError(
                 f"Mooncake scheduler requires exactly one KV transfer role, got {self.kv_transfer_config.kv_role!r}"
+            )
+        if is_kv_both and self.is_bidirectional_kv_xfer_enabled:
+            logger.info(
+                "Mooncake bidirectional KV transfer is enabled: remote tokens below "
+                "%d are recomputed locally and Decode blocks are released after %.3f seconds.",
+                self.kv_recompute_threshold,
+                self.decoder_kv_blocks_ttl,
             )
         self.kv_cache_config = kv_cache_config
         self.engine_id = engine_id
@@ -73,6 +94,14 @@ class MooncakeBaseConnectorScheduler:
             * self.pcp_size
             * vllm_config.parallel_config.pipeline_parallel_size
         )
+        if self.pcp_size > 1 and self.is_bidirectional_kv_xfer_enabled:
+            # A Prefill engine running PCP would have to track send and receive
+            # completions of the same engine separately. Upstream vLLM rejects
+            # the combination for NIXL as well; keep the two backends aligned.
+            raise NotImplementedError(
+                "Mooncake PCP does not support bidirectional KV transfer. "
+                "Set prefill_context_parallel_size=1 or disable bidirectional_kv_xfer."
+            )
 
         # Worker handshake ports occupy
         # [kv_port, kv_port + dp_size * pp_size * pcp_size * tp_size).

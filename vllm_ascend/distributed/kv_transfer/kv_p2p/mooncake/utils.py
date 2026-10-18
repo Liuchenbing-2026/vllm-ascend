@@ -30,6 +30,47 @@ if TYPE_CHECKING:
 
 KV_CACHE_BUFFER_ALIGNMENT = 2 * 1024 * 1024
 
+# Bidirectional KV transfer defaults. They mirror the upstream vLLM NIXL
+# connector so that one KV transfer config drives either backend: a reverse read
+# that only shortens the sequence by less than ``kv_recompute_threshold`` tokens
+# is recomputed locally, and Decode-side blocks stay pinned for
+# ``decoder_kv_blocks_ttl`` seconds in case the next turn reads them back.
+DEFAULT_KV_RECOMPUTE_THRESHOLD_TOKENS = 64
+DEFAULT_DECODER_KV_BLOCKS_TTL_SECONDS = 480.0
+# A reverse read is declined slightly before the exported deadline: the blocks
+# are dropped by the peer on its own clock and the two engines are not
+# synchronised, so the last few seconds of a lease are not safe to read.
+BIDIRECTIONAL_KV_XFER_EXPIRY_SAFETY_MARGIN_SECONDS = 5.0
+
+
+@dataclass(frozen=True)
+class BidirectionalKVXferSettings:
+    """Resolved bidirectional KV transfer settings of a single engine."""
+
+    enabled: bool
+    kv_recompute_threshold: int
+    decoder_kv_blocks_ttl: float
+
+
+def read_bidirectional_kv_xfer_settings(kv_transfer_config: Any) -> BidirectionalKVXferSettings:
+    """Read the bidirectional KV transfer knobs from a KV transfer config.
+
+    The knobs live in ``kv_transfer_config.extra_config`` and share their names
+    with the upstream vLLM NIXL connector, so the same JSON enables either
+    backend. Scheduler and worker must agree on the outcome, hence the parsing
+    lives here instead of being repeated by each side.
+    """
+    get_from_extra_config = kv_transfer_config.get_from_extra_config
+    return BidirectionalKVXferSettings(
+        enabled=bool(get_from_extra_config("bidirectional_kv_xfer", False)),
+        kv_recompute_threshold=int(
+            get_from_extra_config("kv_recompute_threshold", DEFAULT_KV_RECOMPUTE_THRESHOLD_TOKENS)
+        ),
+        decoder_kv_blocks_ttl=float(
+            get_from_extra_config("decoder_kv_blocks_ttl", DEFAULT_DECODER_KV_BLOCKS_TTL_SECONDS)
+        ),
+    )
+
 
 @contextlib.contextmanager
 def zmq_ctx(socket_type: Any, addr: str) -> Iterator[Any]:
@@ -299,12 +340,17 @@ def ensure_zmq_recv(
 
 
 __all__ = [
+    "BIDIRECTIONAL_KV_XFER_EXPIRY_SAFETY_MARGIN_SECONDS",
+    "BidirectionalKVXferSettings",
+    "DEFAULT_DECODER_KV_BLOCKS_TTL_SECONDS",
+    "DEFAULT_KV_RECOMPUTE_THRESHOLD_TOKENS",
     "SizedDict",
     "as_kv_cache_tensors",
     "collect_configured_register_regions",
     "ensure_zmq_recv",
     "ensure_zmq_send",
     "group_concurrent_contiguous",
+    "read_bidirectional_kv_xfer_settings",
     "split_if_not_byte_contiguous",
     "string_to_int64_hash",
     "zmq_ctx",
