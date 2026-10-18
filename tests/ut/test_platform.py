@@ -1,4 +1,5 @@
 import importlib
+import pickle
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -986,11 +987,20 @@ class TestNPUPlatform(TestBase):
 
     @patch("vllm_ascend.platform.torch.npu.get_device_properties")
     def test_get_device_uuid(self, mock_get_device_properties):
+        class OpaqueDeviceUuid:
+            def __str__(self):
+                return "01020304-0000-0000-0000-01020304"
+
         device_id = 0
         device_properties = MagicMock()
-        device_properties.uuid = "01020304-0000-0000-0000-01020304"
+        device_properties.uuid = OpaqueDeviceUuid()
         mock_get_device_properties.return_value = device_properties
-        self.assertEqual(self.platform.get_device_uuid(device_id), device_properties.uuid)
+
+        device_uuid = self.platform.get_device_uuid(device_id)
+
+        self.assertIsInstance(device_uuid, str)
+        self.assertEqual(device_uuid, "01020304-0000-0000-0000-01020304")
+        self.assertEqual(pickle.loads(pickle.dumps(device_uuid)), device_uuid)
         mock_get_device_properties.assert_called_once_with(0)
 
     @patch("torch.inference_mode")
