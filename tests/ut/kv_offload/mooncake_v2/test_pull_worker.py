@@ -68,6 +68,10 @@ def make_thread(**overrides: object) -> MooncakePullRecvingThread:
     thread.invalid_block_ids_lock = threading.Lock()
     thread.finished_requests = queue.SimpleQueue()
     thread.request_queue = queue.Queue()
+    # Bidirectional KV transfer bookkeeping; off unless a test turns it on.
+    thread.is_bidirectional_kv_xfer_enabled = False
+    thread.remote_clock_offsets = {}
+    thread.num_expired_reads = 0
     for name, value in overrides.items():
         setattr(thread, name, value)
     return thread
@@ -79,6 +83,7 @@ def make_req_meta(
     remote: tuple[list[int], ...] = ([20, 21],),
     engine_id: str = "engine-p",
     remote_request_id: str = "request-p",
+    remote_blocks_expiry_time: float | None = None,
 ) -> ReqMeta:
     return ReqMeta(
         local_block_ids=local,
@@ -92,6 +97,7 @@ def make_req_meta(
         remote_request_id=remote_request_id,
         remote_num_prompt_tokens=32,
         local_full_block_ids=local,
+        remote_blocks_expiry_time=remote_blocks_expiry_time,
     )
 
 

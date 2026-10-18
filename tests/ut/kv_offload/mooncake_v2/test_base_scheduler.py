@@ -26,13 +26,19 @@ def make_scheduler_config(
     is_consumer: bool = True,
     is_producer: bool = False,
     pcp_size: int = 1,
+    bidirectional: bool = False,
 ) -> SimpleNamespace:
+    # ``kv_both`` is only legal together with bidirectional KV transfer, which is
+    # carried by the KV transfer extra config just like upstream vLLM.
+    extra_config = {"bidirectional_kv_xfer": True} if bidirectional else {}
+    kv_role = "kv_both" if is_consumer and is_producer else ("kv_consumer" if is_consumer else "kv_producer")
     return SimpleNamespace(
         kv_transfer_config=SimpleNamespace(
             is_kv_consumer=is_consumer,
             is_kv_producer=is_producer,
-            kv_role="kv_consumer" if is_consumer else "kv_producer",
+            kv_role=kv_role,
             kv_port=6000,
+            get_from_extra_config=lambda key, default: extra_config.get(key, default),
         ),
         cache_config=SimpleNamespace(block_size=16),
         speculative_config=SimpleNamespace(num_speculative_tokens=3),
@@ -92,10 +98,43 @@ def test_base_scheduler_rejects_invalid_transfer_roles(
     is_consumer: bool,
     is_producer: bool,
 ) -> None:
+    # ``kv_both`` is only accepted together with bidirectional KV transfer.
     config = make_scheduler_config(is_consumer=is_consumer, is_producer=is_producer)
 
     with pytest.raises(ValueError, match="exactly one KV transfer role"):
         MooncakeBaseConnectorScheduler(config, "engine", SimpleNamespace())  # type: ignore[arg-type]
+
+
+def test_base_scheduler_accepts_kv_both_with_bidirectional_kv_xfer(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_scheduler_config(is_consumer=True, is_producer=True, bidirectional=True)
+    monkeypatch.setattr(base_scheduler, "init_ascend_config", MagicMock())
+    monkeypatch.setattr(base_scheduler, "get_ascend_config", MagicMock())
+    monkeypatch.setattr(base_scheduler, "get_ip", MagicMock(return_value="10.0.0.1"))
+
+    scheduler = MooncakeBaseConnectorScheduler(
+        config,
+        "engine",
+        SimpleNamespace(kv_cache_groups=[]),
+    )  # type: ignore[arg-type]
+
+    assert scheduler.is_bidirectional_kv_xfer_enabled is True
+    # Defaults mirror the upstream vLLM NIXL connector.
+    assert scheduler.kv_recompute_threshold == 64
+    assert scheduler.decoder_kv_blocks_ttl == 480.0
+
+
+def test_base_scheduler_rejects_pcp_with_bidirectional_kv_xfer(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_scheduler_config(pcp_size=2, bidirectional=True)
+    monkeypatch.setattr(base_scheduler, "init_ascend_config", MagicMock())
+    monkeypatch.setattr(base_scheduler, "get_ascend_config", MagicMock())
+    monkeypatch.setattr(base_scheduler, "get_ip", MagicMock(return_value="10.0.0.1"))
+
+    with pytest.raises(NotImplementedError, match="PCP does not support bidirectional KV transfer"):
+        MooncakeBaseConnectorScheduler(
+            config,
+            "engine",
+            SimpleNamespace(kv_cache_groups=[]),
+        )  # type: ignore[arg-type]
 
 
 def test_base_scheduler_accepts_consumer_pcp(monkeypatch: pytest.MonkeyPatch) -> None:
