@@ -4,6 +4,7 @@
 import copy
 import importlib.util
 import json
+import os
 import socket
 import subprocess
 from pathlib import Path
@@ -400,3 +401,23 @@ def test_cleanup_error_receipt_matches_process_exit(module, allocation):
     receipt = json.loads((root / "guard-exit.json").read_text())
     assert exit_code == 1 and receipt["exit"] == exit_code
     assert "cleanup_error" in receipt
+
+
+def test_unreadable_output_directory_must_not_hide_budget(module, tmp_path, monkeypatch):
+    if os.geteuid() == 0:
+        # A privileged CI user bypasses DAC; isolate only that OS boundary.
+        def inaccessible_walk(*args, onerror=None, **kwargs):
+            if onerror is not None:
+                onerror(PermissionError("injected inaccessible output directory"))
+            return iter(())
+
+        monkeypatch.setattr(module.os, "walk", inaccessible_walk)
+    blocked = tmp_path / "blocked"
+    blocked.mkdir()
+    (blocked / "payload").write_bytes(b"private-output")
+    blocked.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            module.output_bytes(tmp_path)
+    finally:
+        blocked.chmod(0o700)

@@ -186,8 +186,12 @@ def inspect_owned(container, container_id, spec):
 
 def output_bytes(root):
     """No following symlinks; include allocated bytes as well as logical size."""
+
+    def fail_on_error(error):
+        raise error
+
     total = 0
-    for directory, dirs, files in os.walk(root, followlinks=False):
+    for directory, dirs, files in os.walk(root, followlinks=False, onerror=fail_on_error):
         for name in [*dirs, *files]:
             path = Path(directory) / name
             if path.is_symlink():
