@@ -101,6 +101,17 @@ def capture_pages(caches, layer_names, block_ids, num_tokens, block_size, direct
 class KVSnapshotWorkerExtension:
     """Add a diagnostic RPC without replacing the worker/model/connector."""
 
+    def mooncake_transport_endpoint(self):
+        from vllm.distributed.kv_transfer import get_kv_transfer_group
+
+        connector = get_kv_transfer_group().connector_worker
+        return {
+            "engine_id": connector.engine_id,
+            "host": connector.side_channel_host,
+            "rpc_port": connector.te_rpc_port,
+            "handshake_port": connector.handshake_port,
+        }
+
     def capture_mooncake_kv(self, specification: str):
         import torch
         from vllm.distributed.kv_transfer import get_kv_transfer_group
