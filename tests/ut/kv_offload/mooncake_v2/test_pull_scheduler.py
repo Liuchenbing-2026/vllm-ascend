@@ -67,6 +67,9 @@ def make_pull_scheduler() -> MooncakePullConnectorScheduler:
     scheduler.num_speculative_tokens = 0
     scheduler.pcp_size = 1
     scheduler.dcp_size = 1
+    scheduler.is_bidirectional_kv_xfer_enabled = False
+    scheduler.kv_recompute_threshold = 64
+    scheduler.decoder_kv_blocks_ttl = 480.0
     scheduler.ascend_config = SimpleNamespace(kvpp_config=SimpleNamespace(size=1))
     scheduler.group_block_size = [16]
     scheduler.group_unique_specs = [[make_full_spec()]]
@@ -87,7 +90,7 @@ def test_sending_thread_merges_tp_private_and_pp_common_metadata() -> None:
     second = make_transfer_metadata(te_rpc_port=9001, local_ip="10.0.0.2", base_addrs=[[2000]])
 
     thread = make_sending_thread({0: first, 1: second}, tp_size=2)
-    decoded = msgspec.msgpack.decode(thread.encoded_metadata, type=MooncakeTransferMetadataGroups)
+    decoded = msgspec.msgpack.decode(thread.encode_metadata(), type=MooncakeTransferMetadataGroups)
 
     assert decoded.use_kv_pp is False
     pp_metadata = decoded.metadata_by_pp_rank[0]
@@ -122,7 +125,7 @@ def test_sending_thread_merges_layer_split_metadata_by_name() -> None:
     )
 
     thread = make_sending_thread({0: tp0, 1: tp1}, tp_size=2, use_kv_pp=True)
-    decoded = msgspec.msgpack.decode(thread.encoded_metadata, type=MooncakeTransferMetadataGroups)
+    decoded = msgspec.msgpack.decode(thread.encode_metadata(), type=MooncakeTransferMetadataGroups)
 
     assert decoded.use_kv_pp is True
     pp_metadata = decoded.metadata_by_pp_rank[0]
@@ -171,7 +174,7 @@ def test_sending_thread_aligns_different_tp_layer_orders() -> None:
     )
 
     thread = make_sending_thread({0: tp0, 1: tp1}, tp_size=2)
-    decoded = msgspec.msgpack.decode(thread.encoded_metadata, type=MooncakeTransferMetadataGroups)
+    decoded = msgspec.msgpack.decode(thread.encode_metadata(), type=MooncakeTransferMetadataGroups)
 
     pp_metadata = decoded.metadata_by_pp_rank[0]
     assert pp_metadata.layer_names == ["layer.0", "layer.1"]
@@ -189,7 +192,7 @@ def test_sending_thread_accepts_pp_aware_keys() -> None:
     pp1 = make_transfer_metadata(layer_names=["pp1.layer"], base_addrs=[[3000]])
 
     thread = make_sending_thread({(0, 0): pp0, (1, 0): pp1}, pp_size=2)
-    decoded = msgspec.msgpack.decode(thread.encoded_metadata, type=MooncakeTransferMetadataGroups)
+    decoded = msgspec.msgpack.decode(thread.encode_metadata(), type=MooncakeTransferMetadataGroups)
 
     assert decoded.metadata_by_pp_rank[0].layer_names == ["pp0.layer"]
     assert decoded.metadata_by_pp_rank[1].layer_names == ["pp1.layer"]
@@ -207,7 +210,7 @@ def test_sending_thread_groups_kvpp_layers_across_all_pcp_tp_workers() -> None:
         )
 
     thread = make_sending_thread(metadata, tp_size=2, pcp_size=2, use_kv_pp=True)
-    decoded = msgspec.msgpack.decode(thread.encoded_metadata, type=MooncakeTransferMetadataGroups)
+    decoded = msgspec.msgpack.decode(thread.encode_metadata(), type=MooncakeTransferMetadataGroups)
 
     pp_metadata = decoded.metadata_by_pp_rank[0]
     assert decoded.use_kv_pp
@@ -231,7 +234,7 @@ def test_sending_thread_uses_configured_kvpp_when_worker_layers_match() -> None:
     }
 
     thread = make_sending_thread(metadata, tp_size=2, pcp_size=2, use_kv_pp=True)
-    decoded = msgspec.msgpack.decode(thread.encoded_metadata, type=MooncakeTransferMetadataGroups)
+    decoded = msgspec.msgpack.decode(thread.encode_metadata(), type=MooncakeTransferMetadataGroups)
 
     assert decoded.use_kv_pp
 
@@ -259,13 +262,14 @@ def test_sending_thread_rejects_incomplete_or_inconsistent_workers() -> None:
 
 def test_sending_thread_handles_early_and_normal_completion_once() -> None:
     thread = make_sending_thread()
+    ttl = 480.0
 
     thread._handle_finished_request("early")
     assert thread.get_and_clear_finished_requests() == set()
-    thread.add_delayed_request("early", time.time())
+    thread.add_delayed_request("early", time.time(), ttl)
     assert thread.get_and_clear_finished_requests() == {"early"}
 
-    thread.add_delayed_request("normal", time.time())
+    thread.add_delayed_request("normal", time.time(), ttl)
     thread._handle_finished_request("normal")
     thread._handle_finished_request("normal")
     assert thread.get_and_clear_finished_requests() == {"normal"}
@@ -273,7 +277,7 @@ def test_sending_thread_handles_early_and_normal_completion_once() -> None:
 
 def test_sending_thread_force_frees_expired_request(monkeypatch: pytest.MonkeyPatch) -> None:
     thread = make_sending_thread()
-    thread.add_delayed_request("expired", 10.0)
+    thread.add_delayed_request("expired", 10.0, 5.0)
     monkeypatch.setattr(
         pull_scheduler.envs,
         "VLLM_MOONCAKE_ABORT_REQUEST_TIMEOUT",
@@ -432,6 +436,8 @@ def test_zero_external_tokens_acknowledges_without_worker_transfer() -> None:
 
 
 def test_request_finished_delays_blocks_and_builds_remote_params() -> None:
+    # A Prefill request carries ``do_remote_decode``: it publishes its prompt
+    # blocks for the Decode node to read.
     scheduler = make_pull_scheduler()
     scheduler._sending_thread = MagicMock()
     request = make_request(
@@ -448,6 +454,9 @@ def test_request_finished_delays_blocks_and_builds_remote_params() -> None:
     assert params["remote_block_ids"] == ([10, 11],)
     assert params["remote_request_id"] == "request-p"
     assert params["last_token_id"] == 123
+    assert params["do_remote_prefill"] is True
+    assert params["do_remote_decode"] is False
+    assert params["remote_blocks_expiry_time"] is None
     scheduler._sending_thread.add_delayed_request.assert_called_once()
 
 
@@ -547,10 +556,13 @@ def test_sending_busy_loop_serves_metadata_and_completion_ack() -> None:
     with pytest.raises(_StopLoop):
         thread._run_busy_loop(socket)
 
-    assert socket.send_multipart.call_args_list == [
-        call((b"worker", b"", thread.encoded_metadata)),
-        call((b"worker", b"", ACK_MSG)),
-    ]
+    served_frames = socket.send_multipart.call_args_list[0].args[0]
+    assert served_frames[:1] == (b"worker",)
+    served_metadata = msgspec.msgpack.decode(served_frames[2], type=MooncakeTransferMetadataGroups)
+    assert served_metadata.engine_id == "engine-p"
+    # The clock sample travels with the reply so the peer can rebase deadlines.
+    assert served_metadata.scheduler_clock > 0
+    assert socket.send_multipart.call_args_list[1] == call((b"worker", b"", ACK_MSG))
     thread._handle_finished_request.assert_called_once_with("request-p")
 
 

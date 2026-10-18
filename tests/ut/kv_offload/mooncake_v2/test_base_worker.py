@@ -396,13 +396,19 @@ def make_worker_config(
     is_consumer: bool = True,
     is_producer: bool = False,
     local_dp_rank: int | None = 1,
+    bidirectional: bool = False,
 ) -> SimpleNamespace:
+    # ``kv_both`` is only legal together with bidirectional KV transfer, which is
+    # carried by the KV transfer extra config just like upstream vLLM.
+    extra_config = {"bidirectional_kv_xfer": True} if bidirectional else {}
+    kv_role = "kv_both" if is_consumer and is_producer else ("kv_consumer" if is_consumer else "kv_producer")
     return SimpleNamespace(
         kv_transfer_config=SimpleNamespace(
             is_kv_consumer=is_consumer,
             is_kv_producer=is_producer,
-            kv_role="kv_consumer" if is_consumer else "kv_producer",
+            kv_role=kv_role,
             kv_port=6000,
+            get_from_extra_config=lambda key, default: extra_config.get(key, default),
         ),
         cache_config=SimpleNamespace(block_size=16),
         parallel_config=SimpleNamespace(
@@ -487,10 +493,22 @@ def test_base_worker_rejects_invalid_transfer_roles(
     is_consumer: bool,
     is_producer: bool,
 ) -> None:
+    # ``kv_both`` is only accepted together with bidirectional KV transfer.
     config = make_worker_config(is_consumer=is_consumer, is_producer=is_producer)
 
     with pytest.raises(ValueError, match="exactly one KV transfer role"):
         MooncakeBaseConnectorWorker(config, "engine", SimpleNamespace(num_blocks=1))  # type: ignore[arg-type]
+
+
+def test_base_worker_accepts_kv_both_with_bidirectional_kv_xfer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = make_worker_config(is_consumer=True, is_producer=True, bidirectional=True)
+    patch_worker_runtime(monkeypatch)
+
+    worker = MooncakeBaseConnectorWorker(config, "engine", SimpleNamespace(num_blocks=1))  # type: ignore[arg-type]
+
+    assert worker.is_bidirectional_kv_xfer_enabled is True
 
 
 def test_base_worker_requires_local_dp_rank(monkeypatch: pytest.MonkeyPatch) -> None:
