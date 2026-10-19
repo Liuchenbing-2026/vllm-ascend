@@ -7,6 +7,7 @@
 | Task branch | perf/tq-packed-attention-cpu-20261018 |
 | CPU result | 10 new shape/boundary cases and 13 invalid-contract cases passed; final BF16 output compared with zero tolerance |
 | Device source | Actual AIV source now supplied; target CANN compilation, NPU precision and performance remain unverified |
+| Torch adapter | Schema/Meta compiled and checked on CPU; NPU binding and device gate source prepared, not compiled/executed on NPU |
 | Delivery goal | Existing full-model speed failure and quality/stability/reproduction gaps remain open |
 
 The old 16:14 read-only notice governed that evidence-recheck round. The current
@@ -356,3 +357,91 @@ mkdir "$task_record_dir"
 
 设备构建后才进入原BF16 FIA对照、末行/相邻status guard、非默认stream及同步/内存验证。
 PTA/Meta、服务分流、完整质量、长期稳定性、原速度目标仍待补；容量收益不能抵消这些缺项。
+
+## Torch绑定、Meta与设备对照入口增量（2026-10-19）
+
+| 产物 | 本轮实际边界 |
+|---|---|
+| `code/integration/torch_ext/tq_packed_attention_contract.{h,cpp}` | 真实Torch schema/Meta，复用同一个shape/dtype/stride检查；本机实际编译并加载 |
+| `code/integration/torch_ext/tq_packed_attention_npu.cpp` | NPU PTA源码候选，未用torch_npu/CANN编译；不能宣称NPU可调用 |
+| `code/integration/torch_ext/build_packed_attention.py` | 分离`meta-cpu`和`npu`，均只构建注册/PTA，不编译AscendC kernel，不安装、不启动设备 |
+| `code/integration/kvtq_packed_attention.py` | 显式适配器，核对绑定/OPP库SHA，保留原FP32旋转→BF16→逆旋转，非零状态报错；服务路径尚未切换 |
+| `verify_packed_attention_meta.py` | 本机14项新检查通过；仅验证真实Meta/FakeTensor与输入契约，无计算后端 |
+| `verify_adapter_control_cpu.py` | 本机5项新控制检查通过；库身份、状态失败和严格BF16比较门禁，无设备/模型计算 |
+| `verify_packed_attention_device.py` | 新的未来设备入口，尚未执行；沿用原codec/fixture，对实际BF16 FIA和逆旋转结果逐位比较 |
+
+本轮基础提交为`7ee717e722a2cafbba6354e116e5ed5e150e3b12`，沿用原任务分支。
+AIV kernel、66B codec、原host预算/80B ABI以及`device_validation_contract.json`没有修改。
+本分支不包含完整vLLM-Ascend `csrc`构建树，因此本轮提供独立绑定，**没有完成生产服务接入**。
+
+### 实际注册与目标绑定
+
+Torch注册为`turboquant::tq_packed_attention`，返回新分配的BF16 attention和int32 status，
+不修改输入、不声明输出alias。`op_api_library`是显式PTA装载路径参数，不传给设备/GE，
+不会改变六输入、两属性、两输出的kernel ABI。Meta只检查张量元数据，不读取lengths内容或打开OPP文件。
+CPU构建只包含contract.cpp，**不注册CPU或PrivateUse1计算实现**，真实CPU执行会拒绝。
+
+NPU源码直接包含实际生成的`aclnn_tq_packed_attention.h`，用`decltype`取得两段式函数类型；
+没有手写workspace/run函数指针签名，也没有伪造SDK头文件。OPP库按显式绝对路径
+`dlopen(RTLD_LOCAL)`，避免裸库名选中其他vendor。实际ACLNN查询返回的workspace另行分配，
+不把用户workspace=0误当成ACLNN总workspace=0。
+
+输入/输出tensor、ACL描述符、workspace和库handle保持至`OpCommand::RunOpApiV2`队列回调完成；
+使用当前stream(false)，没有直调kernel或强制stream(true)清队列。
+这些队列/生命周期行为仍需目标torch_npu头文件编译及非默认流实测证明，不能由Meta通过推定。
+独立适配器的status回读同步必须计入后续完整attention计时；没有自动回退或新增服务开关。
+
+### 本轮实际本机检查
+
+环境：macOS arm64、Apple clang17、Python3.9.6、torch2.8.0；没有torch_npu/ninja/CANN，
+没有安装依赖或创建容器。使用现有C++编译器直接链接现有LibTorch；无需ninja。
+以下为实际执行入口，私有输出目录以占位路径表示；build.json保留完整编译argv、源文件/库SHA和编译器版本。
+
+```bash
+/usr/bin/python3 kv_cache_turbo_quant/code/integration/torch_ext/build_packed_attention.py \
+  --mode meta-cpu --compiler /usr/bin/clang++ --out-dir /absolute/private/new_pta_meta
+/usr/bin/python3 kv_cache_turbo_quant/experiments/packed_attention_cpu_20261018/verify_packed_attention_meta.py \
+  --library /absolute/private/new_pta_meta/tq_packed_attention.so \
+  --report /absolute/private/new_pta_meta/meta_result.json
+/usr/bin/python3 kv_cache_turbo_quant/experiments/packed_attention_cpu_20261018/verify_adapter_control_cpu.py \
+  --meta-build-record /absolute/private/new_pta_meta/build.json \
+  --report /absolute/private/new_pta_meta/adapter_control_result.json
+```
+
+14项Meta检查覆盖B=0/2/16/60输出元数据、无alias、dtype/66B宽度/stride/属性拒绝、
+FakeTensor和“没有CPU/NPU计算实现”的分发证据。5项适配检查覆盖实际CPU库哈希验证、
+非零状态拒绝、正负零位级区别、相同NaN/Inf仍不通过，以及拒绝把真实CPU-only构建记录用作NPU证据。
+旧10/13/17和4组kernel控制检查没有重跑；本轮没有NPU、模型精度或性能结果。
+
+### 未来分配后的构建与设备门禁（未执行）
+
+先完成上一节的OPP build/install并保留其原始JSON，再在唯一服务器有效分配内执行：
+
+```bash
+python3 kv_cache_turbo_quant/code/integration/torch_ext/build_packed_attention.py \
+  --mode npu --cann-root "$task_cann_root" --opp-vendor "$task_opp_vendor" \
+  --out-dir "$task_new_pta_dir"
+
+python3 kv_cache_turbo_quant/experiments/packed_attention_cpu_20261018/verify_packed_attention_device.py \
+  --binding "$task_new_pta_dir/tq_packed_attention.so" --binding-sha256 "$task_binding_sha256" \
+  --op-api "$task_opp_vendor/op_api/lib/libcust_opapi.so" --op-api-sha256 "$task_op_api_sha256" \
+  --binding-build-record "$task_new_pta_dir/build.json" \
+  --opp-build-record "$task_opp_build_record" --opp-install-record "$task_opp_install_record" \
+  --device "$task_allocated_device" --api-scratch-bytes 32768 \
+  --case short_b16 --report "$task_new_device_report"
+```
+
+`task_*`均须来自实际分配、实际制品及新输出路径；32KiB仍只是原预留，未核实SDK需要量。
+NPU构建要求真实生成头和库存在；验证入口要求绑定构建、OPP构建/安装记录及实际SHA一致，
+并核对当前OPP源码与构建时哈希。不能用Meta库/CPU报告替代，也不自动申请资源、安装OPP或起服务。
+NPU绑定与CPU-only Meta库须在不同的新进程中加载，不能用重复注册覆盖已有schema。
+
+设备case可单独选`short_b16`、`long_b60`、`ragged_page_tails`、`long_single_8192`、
+`zero_norm`、`nondefault_stream`以及三种status负例。沿用既有fixture与原dense解码helper，
+baseline直接调用原TND BF16 FIA、原scale，不将baseline scale舍入为candidate属性来对齐。
+分别检查core输出和原逆旋转后最终BF16输出，要求有限且位模式相同（包括正负零），不放宽容差。
+非默认流显式等待准备输入的默认流；status负例仅算错误路径检查，不计入BF16精度通过。
+失败时保存实际packed输入/rotation、status、candidate/golden与traceback；不覆盖旧文件、不自动重试或挑快轮。
+
+设备相邻内存guard/mssanitizer、图模式、真实模型质量、长期稳定性及整网TTFT/TPOT/吞吐仍未验收。
+本轮源码接入准备和Meta通过不改变既有整网速度FAIL结论。
