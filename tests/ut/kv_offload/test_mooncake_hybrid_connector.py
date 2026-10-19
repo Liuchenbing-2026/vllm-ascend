@@ -505,6 +505,9 @@ class TestMooncakeHybridConnectorWorker(unittest.TestCase):
                         self.assertEqual(len({(port - base_port) // prefill_tp_size for port in source_ports}), 1)
 
                         scheduler._reqs_in_batch.add(request_id)
+                        # Producer-side requests are marked as send-direction by
+                        # update_state_after_alloc (do_remote_decode) in production.
+                        scheduler._reqs_in_batch_send.add(request_id)
                         send_metadata = scheduler.build_connector_meta(MagicMock())
                         for port, sender in senders.items():
                             sender.start_load_kv(send_metadata)
