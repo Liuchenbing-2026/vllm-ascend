@@ -1,7 +1,7 @@
 """Explicit, isolated OPP reproduction entry; default action only reports a plan.
 
-No docker/SSH/NPU launcher is provided. Build never installs. The missing device
-kernel blocks build before sourcing CANN or generating a placeholder project.
+No docker/SSH/NPU launcher is provided. Build never installs. Missing real source
+files block before CANN generation; source completeness is not compile evidence.
 """
 
 import argparse
@@ -23,6 +23,7 @@ def source_plan():
         root / "code/op/op_host/tq_packed_attention.cpp",
         root / "code/op/op_host/tq_packed_attention_plan.h",
         root / "code/op/op_kernel/tq_packed_attention_tiling.h",
+        root / "code/op/op_kernel/tq_packed_attention_core.h",
         root / "code/op/op_kernel/tq_packed_attention.cpp",
     ]
     return {"op": "TqPackedAttention", "target": "ascend910b", "planned_cann": "9.1.0",
@@ -31,6 +32,8 @@ def source_plan():
                               for p in sources if p.is_file()},
             "missing_sources": [str(p.relative_to(root)) for p in sources if not p.is_file()],
             "sources_complete": all(p.is_file() for p in sources),
+            "kernel_stage": "AIV source candidate; target CANN compilation pending",
+            "scratch_policy": "32KiB is only a reservation; no high-level ReduceSum/Softmax used; target SDK unverified",
             "cann_compile_verified": False, "sdk_scratch_requirement_verified": False,
             "npu_kernel_verified": False, "launches_npu": False}
 

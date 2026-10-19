@@ -1,4 +1,4 @@
-# Store4 packed attention CPU candidate
+# Store4 packed attention candidate
 
 | Item | Status |
 |---|---|
@@ -6,7 +6,7 @@
 | Base | 87b101ba2690c55e4314798092d93af095d8c38f |
 | Task branch | perf/tq-packed-attention-cpu-20261018 |
 | CPU result | 10 new shape/boundary cases and 13 invalid-contract cases passed; final BF16 output compared with zero tolerance |
-| Device result | No NPU kernel implemented, compiled, or tested; no device performance claim |
+| Device source | Actual AIV source now supplied; target CANN compilation, NPU precision and performance remain unverified |
 | Delivery goal | Existing full-model speed failure and quality/stability/reproduction gaps remain open |
 
 The old 16:14 read-only notice governed that evidence-recheck round. The current
@@ -83,9 +83,9 @@ task evidence directory, not embedded as historical NPU or full-model evidence.
 
 ## Remaining device work and closure
 
-The next implementation needs a real device kernel that consumes the same 66B
-pages, preserves the codec rounding, and combines QK, softmax and PV without a
-full-length BF16 K/V buffer. NPU FP32 reduction behavior, boundaries, nondefault
+The AIV source below now consumes the same 66B pages, preserves the codec
+rounding, and combines QK, online normalization and PV without a full-length
+BF16 K/V buffer. It is an uncompiled source candidate. NPU FP32 reduction behavior, boundaries, nondefault
 streams, memory safety and the existing precision gate remain unverified.
 CPU FP64 arithmetic cannot establish any of those device properties.
 
@@ -97,7 +97,8 @@ evidence. No old failure or precision threshold is removed or weakened.
 
 ## 设备阶段增量：ABI、tiling、workspace与OPP入口
 
-本节接续同一分支，不创建重复任务。e5423f98的10组shape与13项CPU契约检查
+本节保留`5eb6022`时的历史阶段记录；其设备核缺失状态已由下一节源码实现推进，
+历史编译/设备/质量未验证状态没有被改写。本节接续同一分支，不创建重复任务。e5423f98的10组shape与13项CPU契约检查
 保持原证据，本轮没有重跑。新增内容是设备接口与host规划代码，**尚无设备kernel
 实现、CANN编译、OPP安装、NPU精度或性能通过记录**。
 
@@ -233,7 +234,125 @@ golden或容差。FP32在线归约与FIA归约顺序可能不同，是否满足�
 未来性能比较应计入两侧旋转、必要status处理、workspace、host dispatch及同步，
 不能只报告核心核耗时或容量收益。
 
-**下一实际节点**：实现尚缺的AIV设备kernel，按本ABI落实66B精确搬运、BF16舍入、
+**5eb6022时的下一节点**：实现尚缺的AIV设备kernel，按本ABI落实66B精确搬运、BF16舍入、
 FP32 online softmax/PV和状态输出；确认实际SDK scratch，再完成CANN构建及设备验证入口。
 共享执行仍须指定资源协调人的有效分配，本轮没有新增申请或自动排队；
 没有设备kernel、OPP实物和设备精度证据之前，整网速度FAIL与完整交付阻断状态不变。
+
+## 实际AIV源码增量（2026-10-19）
+
+| 项目 | 本轮实际状态 |
+|---|---|
+| 分支 / 基础 | 沿用`perf/tq-packed-attention-cpu-20261018`；本轮基础`5eb6022be3f0e82e6cb96ac56574d913edead5f3` |
+| 设备源文件 | `code/op/op_kernel/tq_packed_attention.cpp`，真实AIV源码候选，包含全部计算路径；没有占位核或CPU运行时替身 |
+| 共享控制代码 | `code/op/op_kernel/tq_packed_attention_core.h`：设备实际使用的UB大小、长度、norm位型与页内span规则 |
+| 新增本机检查 | `check_kernel_control.cpp`：4组新控制规则检查，ASan/UBSan通过；未编译设备核 |
+| 保持 | 原66B codec、16个BF16 centroids、80B ABI、状态码0/1/2/3、scale和全部精度/稳定性/性能门槛 |
+| 未完成 | CANN host/kernel编译、OPP包、PTA/Meta、FIA位级对照、设备访存/流验证、整网质量/稳定性/收益 |
+
+### 已实现的核内路径
+
+`RunJob`按`b*Hkv+kv_head`分配任务，bulk DMA读取当前length和实际使用的table项。
+`PageSpan`生成不跨页的`min(tile,页内剩余,有效剩余)`片段，先验证physical index，
+再形成64位K/V地址；最后一行只请求66B。`ReadPacked`使用GM字节stride和96B UB pitch；
+GM stride超过uint32范围时退回单行精确搬运，不窄化地址。
+
+`DecodeRow`从原字节解出低/高nibble，查输入的16项BF16表，恢复末尾小端BF16 norm。
+先升FP32相乘，再舍入BF16；K随后升FP32做QK，V保留BF16直到PV。
+这保留了原codec的BF16乘法输出边界；没有改centroid、量化器或旋转。
+
+`AttendTile`逐GQA head执行向量`Mul`和基础`WholeReduceSum`得到QK，
+保持FP32 running max/sum/numerator：
+
+```text
+m_new = max(m_old, max(score_tile))
+alpha = exp(m_old - m_new)                 # 第一片段直接取0
+p = exp(score_tile - m_new)
+l_new = alpha * l_old + sum(p)
+n_new = alpha * n_old + sum(p * V)
+output_rot = BF16(n_final / l_final)
+```
+
+FP32基础归约采用两段64 lanes；尾片只归约有效元素。未调用高阶`ReduceSum`或`Softmax`。
+**该FP32运算顺序与FIA是否位级相同未知**，不能由旧FP64数学参考推定通过；
+`device_validation_contract.json`中的BF16 bitwise、rtol=0/atol=0门槛不变。
+第一版使用串行搬运、标量UB nibble解码与逐行PV；尚未做DMA/计算重叠或Cube优化，
+没有速度收益结论。它仅支持每序列一个query的GQA decode；没有接入服务或新增prefill核。
+
+长度、活动physical page、norm非有限分别写状态1/2/3，并为该任务写确定的零输出；
+调用者必须把非零状态判失败，不能将零输出当成功。B=0不做输入/输出payload访问。
+
+### UB与临时空间生命周期
+
+设备使用一个TPipe管理的`TBuf<VECIN>` arena，全部slice大小与原host的14项预算一致。
+仅用手动事件，无TQue，不混入固定UB地址；不在每个tile重新InitBuffer。
+
+| 区域 | 生命周期 / 实际用途 |
+|---|---|
+| K/V packed，各2槽预算 | 每次只使用首槽；scalar消费者完成后才允许MTE2重写；没有声称双缓冲重叠 |
+| K FP32 / V BF16 | 当前片段，完成所有GQA heads后复用，不生成全长dense KV |
+| Query BF16 / FP32 | 当前任务；BF16区在全部attention完成后才复用为输出 |
+| FP32 numerator / max+sum | 跨片段保留，任务结束才复用 |
+| phase | 依次用于单行K的BF16舍入、QK乘积、V升精度/PV、最终归一化；每次复用有V依赖屏障 |
+| 原decode 8192B预算 | `[0,256)` BF16 centroid行；`[256,768)` FP32乘norm；升精度源/目标不重叠，其余保留 |
+| control 128B | `[0,32)` DMA metadata；`[32,64)` status；`[64,96)`归约/Exp；`[96,128)`norm bits；互不重叠 |
+| centroid 96B预算 | 首32B为16项BF16 LUT，其余64B保留 |
+| api_scratch_bytes | 原属性及预算保持；当前实现不访问这段预留，32KiB不是已核实的SDK需要量 |
+
+跨流水依赖显式经`FetchEventID`取得ID后成对Set/Wait，包括MTE2→S/V、S↔V、
+S/V→MTE3及MTE3→S/V/MTE2；错误出口同样走完整输出/状态写回。该设计尚未接受设备同步检查。
+源码首稿曾将arena标为VECCALC；按官方A2搬运路径复核后已改VECIN，保留此发现，
+不能把静态修正说成真实设备故障已复现/修复。
+
+### 新检查与复现入口
+
+本轮只编译共享控制header和新的独立CPU检查，没有用伪造`kernel_operator.h`模拟设备编译。
+4组检查为：设备各slice与host预算一致（64组配置）、permuted页/末行/tile尾片、
+活动非法页/长度/独立V边界与大于4GiB地址、全部65536种BF16 norm位型分类。
+这些结果不覆盖设备计算、DMA执行、同步或BF16 FIA精度。
+
+```bash
+# 仅新CPU控制检查；指定一个全新的本地私有目录，输出不要覆盖历史记录。
+task_record_dir=/absolute/private/new_aiv_control_run
+mkdir "$task_record_dir"
+/usr/bin/clang++ -std=c++17 -Wall -Wextra -Werror \
+  -fsanitize=address,undefined -fno-omit-frame-pointer \
+  kv_cache_turbo_quant/experiments/packed_attention_cpu_20261018/check_kernel_control.cpp \
+  -o "$task_record_dir/check_kernel_control"
+"$task_record_dir/check_kernel_control"
+
+# plan只读源文件，不source CANN、不生成工程、不启动设备。
+/usr/bin/python3 kv_cache_turbo_quant/experiments/packed_attention_cpu_20261018/opp_entry.py \
+  --action plan --record /absolute/private/new_aiv_source_plan.json
+```
+
+当前环境为macOS arm64、Apple clang17；没有镜像、容器、CANN安装或额外依赖安装。
+旧10 shape/13 CPU契约、5eb6022的17 host检查均未重跑；旧17检查中的“缺kernel”断言
+属于该固定提交的历史入口，不应在当前有源码的版本上套用。
+
+### 最小下一build点与SDK缺项
+
+`opp_entry.py`的source list已加入实际kernel和core header，build会把两者复制到OPP生成工程；
+源码齐全不代表编译成功。下一节点是在**有效唯一服务器分配之后**使用原build命令构建
+`TqPackedAttention`这一只算子，保留编译器命令、日志和`.run`哈希；build不安装、不跑用例。
+本轮不申请/启动共享构建或设备。当前未选定新执行镜像/tag/digest，不能用历史镜像冒充。
+
+缺少目标CANN9.1的真实`kernel_operator.h`及其传递头文件；以下声明仅依据一手文档选择，
+没有声称已与目标SDK头文件匹配：
+
+| 待核对入口 | 实际使用的符号 / 第一处验证 |
+|---|---|
+| `kernel_operator.h` | `TBuf<VECIN>`、`LocalTensor::SetSize/ReinterpretCast/GetValue/SetValue`、`TPipe::FetchEventID` |
+| data-copy接口 / `kernel_struct_data_copy.h` | `DataCopyPad`双向Ext overload；uint8 66B→96B、int32 4B→32B及精确4B状态写回 |
+| 基础归约接口 | `WholeReduceSum<float>`连续mask、64 lanes、2 repeats、显式32B destination；没有假设高阶API临时空间大小 |
+| 向量/类型转换接口 | `Mul/Muls/Add/Adds/Exp/Duplicate`，BF16↔FP32 `Cast`的CAST_NONE/CAST_RINT |
+| kernel/tiling宏 | `KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY)`、`REGISTER_TILING_DEFAULT`及现有80B POD拷贝 |
+
+参考来源是官方[DataCopyPad](https://www.hiascend.com/doc_center/source/en/CANNCommunityEdition/900/API/ascendcopapi/atlasascendc_api_07_0265.html)、
+[WholeReduceSum](https://www.hiascend.com/doc_center/source/zh/CANNCommunityEdition/910beta2/API/ascendcopapi/atlasascendc_api_07_0081.html)、
+[SetFlag/WaitFlag](https://www.hiascend.com/doc_center/source/zh/CANNCommunityEdition/910beta2/API/ascendcopapi/atlasascendc_api_07_0270.html)和
+[AIV类型设置](https://www.hiascend.com/document/detail/en/CANNCommunityEdition/910/API/ascendcopapi/docs/en/api/SIMD-API/basic_api/Kernel-Tiling/set_kernel_type.md)。
+这些页面版本不等同于实际CANN9.1.0安装包的头文件或编译证明。
+
+设备构建后才进入原BF16 FIA对照、末行/相邻status guard、非默认stream及同步/内存验证。
+PTA/Meta、服务分流、完整质量、长期稳定性、原速度目标仍待补；容量收益不能抵消这些缺项。
