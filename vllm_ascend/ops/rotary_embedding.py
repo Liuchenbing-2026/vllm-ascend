@@ -171,6 +171,44 @@ def _record_cos_and_sin_cache_interleaved(owner: "torch.nn.Module", cos_sin_cach
     owner.register_buffer("_rope_derived_sin_cache", _sin_cache, persistent=False)
 
 
+def rebind_cos_sin_cache_from_model(model: "torch.nn.Module") -> None:
+    """Refresh module-global rope caches after meta-device model construction.
+
+    The IPC loader first builds the model on the meta device and only then
+    replaces its parameters and buffers with daemon-backed NPU tensors. The
+    rope globals are populated during construction and therefore keep pointing
+    at the original meta tensors unless they are explicitly rebound. Some rope
+    buffers are also materialized on CPU by the daemon, so rebuild the derived
+    pair on the model device instead of retaining device-mismatched aliases.
+    """
+
+    global _cos_sin_cache
+    global _cos_cache
+    global _sin_cache
+
+    for module in model.modules():
+        cos_sin_cache = getattr(module, "cos_sin_cache", None)
+        if not isinstance(cos_sin_cache, torch.Tensor) or cos_sin_cache.is_meta:
+            continue
+
+        model_device = torch.device(NPUPlatform.device_type, torch.accelerator.current_device_index())
+        if cos_sin_cache.device != model_device:
+            cos_sin_cache = cos_sin_cache.to(model_device)
+            module._buffers["cos_sin_cache"] = cos_sin_cache
+
+        hidden_dim = cos_sin_cache.shape[-1] // 2
+        cos_cache, sin_cache = cos_sin_cache.view(-1, 2, hidden_dim).repeat(1, 1, 2).chunk(2, dim=1)
+        cos_cache = cos_cache.squeeze(1)
+        sin_cache = sin_cache.squeeze(1)
+        module.register_buffer("_rope_derived_cos_cache", cos_cache, persistent=False)
+        module.register_buffer("_rope_derived_sin_cache", sin_cache, persistent=False)
+
+        _cos_sin_cache = cos_sin_cache
+        _cos_cache = cos_cache
+        _sin_cache = sin_cache
+        return
+
+
 def update_cos_sin(positions):
     global _cos
     global _sin

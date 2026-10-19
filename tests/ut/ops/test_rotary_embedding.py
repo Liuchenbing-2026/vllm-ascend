@@ -30,8 +30,10 @@ from vllm_ascend.ops.rotary_embedding import (
     AscendGemma4RotaryEmbedding,
     AscendRotaryEmbedding,
     AscendYaRNRotaryEmbedding,
+    rebind_cos_sin_cache_from_model,
     rope_forward_oot,
 )
+from vllm_ascend.platform import NPUPlatform
 
 HEAD_SIZE = 64
 ROTARY_DIM = 64
@@ -107,6 +109,53 @@ class TestRopeForwardOOT:
         assert key_out.shape == key.shape
         assert query_out.dtype == torch.float8_e4m3fn
         assert key_out.dtype == torch.float8_e4m3fn
+
+
+def test_rebind_cos_sin_cache_from_model_skips_meta_and_refreshes_aliases(monkeypatch):
+    import vllm_ascend.ops.rotary_embedding as rotary
+
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.meta_rope = torch.nn.Module()
+            self.meta_rope.register_buffer("cos_sin_cache", torch.empty(4, 4, device="meta"))
+            self.valid_rope = torch.nn.Module()
+            self.valid_rope.register_buffer("cos_sin_cache", torch.arange(16, dtype=torch.float32).view(4, 4))
+
+    monkeypatch.setattr(NPUPlatform, "device_type", "cpu")
+    monkeypatch.setattr(torch.accelerator, "current_device_index", lambda: 0)
+
+    model = Model()
+    rebind_cos_sin_cache_from_model(model)
+
+    expected_cos, expected_sin = model.valid_rope.cos_sin_cache.view(-1, 2, 2).repeat(1, 1, 2).chunk(2, dim=1)
+    expected_cos = expected_cos.squeeze(1)
+    expected_sin = expected_sin.squeeze(1)
+    assert rotary._cos_sin_cache is model.valid_rope.cos_sin_cache
+    assert rotary._cos_cache is model.valid_rope._rope_derived_cos_cache
+    assert rotary._sin_cache is model.valid_rope._rope_derived_sin_cache
+    torch.testing.assert_close(model.valid_rope._rope_derived_cos_cache, expected_cos)
+    torch.testing.assert_close(model.valid_rope._rope_derived_sin_cache, expected_sin)
+    assert not hasattr(model.meta_rope, "_rope_derived_cos_cache")
+    assert not hasattr(model.meta_rope, "_rope_derived_sin_cache")
+
+
+def test_rebind_cos_sin_cache_from_model_moves_daemon_cpu_buffer_to_target_device(monkeypatch):
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.rope = torch.nn.Module()
+            self.rope.register_buffer("cos_sin_cache", torch.arange(16, dtype=torch.float32).view(4, 4))
+
+    monkeypatch.setattr(NPUPlatform, "device_type", "meta")
+    monkeypatch.setattr(torch.accelerator, "current_device_index", lambda: 0)
+
+    model = Model()
+    rebind_cos_sin_cache_from_model(model)
+
+    assert model.rope.cos_sin_cache.device.type == "meta"
+    assert model.rope._rope_derived_cos_cache.is_meta
+    assert model.rope._rope_derived_sin_cache.is_meta
 
 
 @pytest.fixture(autouse=True)

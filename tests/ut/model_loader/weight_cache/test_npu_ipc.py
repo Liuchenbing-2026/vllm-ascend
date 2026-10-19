@@ -412,6 +412,31 @@ def test_install_npu_ipc_patches_shared_tensor_entry_factory(monkeypatch):
     assert entry.npu_ipc_args == _ipc_args()
 
 
+def test_build_model_rebinds_rope_cache_after_materialization(monkeypatch):
+    model = torch.nn.Module()
+    calls: list[torch.nn.Module] = []
+    monkeypatch.setattr(
+        npu_ipc.IpcModelLoader,
+        "_build_model",
+        lambda *_args, **_kwargs: model,
+    )
+    monkeypatch.setattr(
+        "vllm_ascend.ops.rotary_embedding.rebind_cos_sin_cache_from_model",
+        lambda value: calls.append(value),
+    )
+
+    result = _loader()._build_model(
+        object(),
+        object(),
+        "model",
+        {},
+        {},
+    )
+
+    assert result is model
+    assert calls == [model]
+
+
 def test_daemon_lifecycle_initializes_ascend_config_once_per_load(monkeypatch):
     calls: list[object] = []
     config = object()

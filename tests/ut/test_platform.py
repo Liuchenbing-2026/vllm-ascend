@@ -20,6 +20,7 @@ from vllm_ascend.platform import (
     _setup_compile_backend,
     _validate_draft_decode_context_parallel_config,
     _validate_eplb_config,
+    _validate_fa3_backend,
     _validate_parallel_config,
     _validate_pcp_dcp_config,
     _validate_routing_replay_config,
@@ -2374,6 +2375,39 @@ class TestNPUPlatform(TestBase):
         result = self.platform.get_attn_backend_cls(AttentionBackendEnum.FLASH_ATTN, attn_selector_config)
 
         self.assertEqual(result, "vllm_ascend.attention.attention_v1.AscendAttentionBackend")
+
+    @patch("vllm.config.get_current_vllm_config")
+    @patch("vllm_ascend.platform.init_ascend_config")
+    @patch(
+        "vllm_ascend.platform.get_ascend_config",
+        side_effect=RuntimeError("Ascend config is not initialized. Please call init_ascend_config first."),
+    )
+    def test_validate_fa3_backend_initializes_config_in_weight_cache_daemon(
+        self,
+        _mock_get_ascend_config,
+        mock_init_ascend_config,
+        mock_get_current_vllm_config,
+    ):
+        current_config = object()
+        mock_get_current_vllm_config.return_value = current_config
+        mock_init_ascend_config.return_value.rl_config.enabled = True
+        mock_init_ascend_config.return_value.rl_config.enable_training_consistency = False
+
+        result = _validate_fa3_backend((False, False), None)
+
+        self.assertFalse(result)
+        mock_init_ascend_config.assert_called_once_with(current_config)
+
+    @patch(
+        "vllm_ascend.platform.get_ascend_config",
+        side_effect=RuntimeError("unexpected config failure"),
+    )
+    def test_validate_fa3_backend_does_not_hide_unexpected_runtime_error(
+        self,
+        _mock_get_ascend_config,
+    ):
+        with pytest.raises(RuntimeError, match="unexpected config failure"):
+            _validate_fa3_backend((False, False), None)
 
     def test_get_punica_wrapper(self):
         result = self.platform.get_punica_wrapper()

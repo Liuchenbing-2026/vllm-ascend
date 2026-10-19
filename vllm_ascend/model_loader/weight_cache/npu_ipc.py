@@ -172,6 +172,23 @@ def _tensor_mismatch_fields(
 class NPUIpcModelLoader(IpcModelLoader):
     """Weight-cache loader with fail-closed Ascend cache validation."""
 
+    def _build_model(
+        self,
+        vllm_config,
+        model_config: ModelConfig,
+        prefix: str,
+        entries: dict[str, TensorEntry],
+        aliases: dict[str, str],
+    ) -> torch.nn.Module:
+        model = super()._build_model(vllm_config, model_config, prefix, entries, aliases)
+        # IPC constructs the model on meta before replacing tensors. Rope keeps
+        # hot-path aliases in module globals, so refresh those aliases once the
+        # complete model, including post-load buffers, is materialized.
+        from vllm_ascend.ops.rotary_embedding import rebind_cos_sin_cache_from_model
+
+        rebind_cos_sin_cache_from_model(model)
+        return model
+
     def _apply_entries(
         self,
         model: torch.nn.Module,

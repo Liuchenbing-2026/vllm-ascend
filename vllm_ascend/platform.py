@@ -1475,7 +1475,18 @@ def _disable_expandable_segments() -> None:
 
 
 def _validate_fa3_backend(key, _attn_selector_config):
-    rl_config = get_ascend_config().rl_config
+    try:
+        rl_config = get_ascend_config().rl_config
+    except RuntimeError as exc:
+        if "Ascend config is not initialized" not in str(exc):
+            raise
+        # The weight-cache daemon builds a model without creating an NPUWorker,
+        # including in a spawn child where the parent's process-local Ascend
+        # config does not exist. Model construction runs under
+        # set_current_vllm_config(), so initialize lazily from that config.
+        from vllm.config import get_current_vllm_config
+
+        rl_config = init_ascend_config(get_current_vllm_config()).rl_config
     if not (rl_config.enabled and rl_config.enable_training_consistency):
         logger.info(
             "FA3 will not be enabled when rl_config.enable_training_consistency is false. "
