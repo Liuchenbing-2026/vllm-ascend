@@ -1072,6 +1072,43 @@ def test_connector_worker_exposes_finished_and_invalid_blocks() -> None:
     assert worker.get_transfer_results() == KVConnectorTransferResults()
 
 
+def test_connector_worker_reports_reading_transfer_stats_once() -> None:
+    worker = MooncakePullConnectorWorker.__new__(MooncakePullConnectorWorker)
+    thread = make_thread()
+    worker._recving_thread = thread
+    worker.xfer_stats = thread.xfer_stats
+    thread.xfer_stats.record_transfer(0.0123, 4096)
+
+    reported = worker.get_kv_connector_stats()
+
+    assert reported is not None
+    assert reported.reduce()["Num successful transfers"] == 1
+    assert reported.data["bytes_transferred"] == [4096]
+    assert reported.data["transfer_duration"] == [0.0123]
+    assert thread.xfer_stats.is_empty()
+    assert worker.get_kv_connector_stats() is None
+
+
+def test_connector_worker_keeps_failed_transfers_and_expired_reads_separate() -> None:
+    worker = MooncakePullConnectorWorker.__new__(MooncakePullConnectorWorker)
+    thread = make_thread()
+    worker._recving_thread = thread
+    worker.xfer_stats = thread.xfer_stats
+    thread.xfer_stats.record_failed_transfer()
+    thread.num_expired_reads = 2
+
+    reported = worker.get_kv_connector_stats()
+
+    assert reported is not None
+    reduced = reported.reduce()
+    assert reduced["Num successful transfers"] == 0
+    assert reduced["Num failed transfers"] == 1
+    assert reduced["Num expired requests"] == 2
+    assert thread.xfer_stats.is_empty()
+    assert thread.get_and_clear_num_expired_reads() == 0
+    assert worker.get_kv_connector_stats() is None
+
+
 class _StopWorkerLoop(BaseException):
     """Stop the worker's unbounded queue loop after one test iteration."""
 
