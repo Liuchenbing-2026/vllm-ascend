@@ -707,6 +707,13 @@ address, DP RPC port, and TP size to each role script as `$1` through `$7`.
     Save the following script as `run_p.sh` on P0 and P1. The node wrappers
     below provide `LOCAL_IP` and the API/headless role.
 
+    Prefill uses internal DP load balancing: P0's API serves both ranks,
+    including the headless P1 engine. Do not set `--data-parallel-rank`,
+    which enables external load balancing. Only P1 sets
+    `--data-parallel-start-rank 1`; omit this option on P0, since explicitly
+    setting it to `0` also enables hybrid/external load balancing on a
+    non-headless node. Decode uses external load balancing separately.
+
     ```shell
     #!/usr/bin/env bash
     # Usage: bash run_p.sh <visible_devices> <http_port> <dp_size> \
@@ -715,6 +722,11 @@ address, DP RPC port, and TP size to each role script as `$1` through `$7`.
     : "${LOCAL_IP:?Set LOCAL_IP in the P0 or P1 wrapper}"
     : "${NIC_NAME:?Set NIC_NAME in the P0 or P1 wrapper}"
     : "${MODEL_PATH:?Set MODEL_PATH in the P0 or P1 wrapper}"
+
+    DP_RANK_ARGS=()
+    if [[ "$4" != "0" ]]; then
+      DP_RANK_ARGS=(--data-parallel-start-rank "$4")
+    fi
 
     export HCCL_IF_IP="$LOCAL_IP"
     export GLOO_SOCKET_IFNAME="$NIC_NAME"
@@ -737,7 +749,8 @@ address, DP RPC port, and TP size to each role script as `$1` through `$7`.
       --host 0.0.0.0 \
       --port "$2" \
       --data-parallel-size "$3" \
-      --data-parallel-rank "$4" \
+      --data-parallel-size-local 1 \
+      "${DP_RANK_ARGS[@]}" \
       --data-parallel-address "$5" \
       --data-parallel-rpc-port "$6" \
       --tensor-parallel-size "$7" \
