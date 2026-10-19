@@ -403,20 +403,14 @@ def _loaded_modules_with_spec_name(
         module_file = getattr(module, "__file__", None)
         namespace = vars(module)
         same_source = (
-            canonical_file is not None
-            and module_file is not None
-            and os.path.realpath(module_file) == canonical_file
+            canonical_file is not None and module_file is not None and os.path.realpath(module_file) == canonical_file
         )
         spawn_alias = (
             module_key in {"__main__", "__mp_main__"}
             and callable(namespace.get("export_entries"))
             and "WeightCacheDaemon" in namespace
         )
-        if (
-            getattr(spec, "name", None) != module_name
-            and not same_source
-            and not spawn_alias
-        ):
+        if getattr(spec, "name", None) != module_name and not same_source and not spawn_alias:
             continue
         module_id = id(module)
         if module_id not in seen:

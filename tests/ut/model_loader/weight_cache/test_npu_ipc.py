@@ -468,8 +468,6 @@ def test_install_npu_ipc_patches_daemon_run_as_main(monkeypatch):
 
 
 def test_install_npu_ipc_patches_daemon_spawn_alias(monkeypatch):
-    daemon_name = "vllm.model_executor.model_loader.weight_cache.daemon"
-    canonical_module = sys.modules[daemon_name]
     spawn_module = SimpleNamespace(
         __spec__=SimpleNamespace(name="__mp_main__"),
         TensorEntry=object(),
