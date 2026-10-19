@@ -41,6 +41,9 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.metadata import (
     MooncakeTransferMetadataGroups,
     ReqMeta,
 )
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.stats import (
+    MooncakeKVConnectorStats,
+)
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
     BIDIRECTIONAL_KV_XFER_EXPIRY_SAFETY_MARGIN_SECONDS,
     SizedDict,
@@ -81,6 +84,7 @@ class MooncakePullRecvingThread(threading.Thread):
         dcp_size: int,
         device: Any,
         ready_event: threading.Event,
+        xfer_stats: MooncakeKVConnectorStats,
     ) -> None:
         super().__init__(daemon=True, name="MooncakePullRecvingThread")
         self.engine = engine
@@ -121,6 +125,8 @@ class MooncakePullRecvingThread(threading.Thread):
         self.dcp_size = dcp_size
         self.device = device
         self.ready_event = ready_event
+        self.xfer_stats = xfer_stats
+        self.xfer_stats_lock = threading.Lock()
         self.executor = ThreadPoolExecutor(
             max_workers=32,
             initializer=torch.npu.set_device,
@@ -208,6 +214,7 @@ class MooncakePullRecvingThread(threading.Thread):
                 )
                 for request_id in failed_request_ids:
                     self._mark_request_failed(requests[request_id])
+                self._record_failed_transfers(failed_request_ids)
             except Exception as exc:
                 failed_request_ids = set(requests)
                 if self.can_report_invalid_block_ids:
@@ -220,6 +227,7 @@ class MooncakePullRecvingThread(threading.Thread):
                     sorted(failed_request_ids),
                     exc,
                 )
+                self._record_failed_transfers(failed_request_ids)
             finally:
                 for request_id in requests:
                     self.finished_requests.put((request_id, request_id in failed_request_ids))
@@ -231,6 +239,13 @@ class MooncakePullRecvingThread(threading.Thread):
         with self.invalid_block_ids_lock:
             for group_block_ids in request_metadata.local_block_ids:
                 self.invalid_block_ids.update(group_block_ids)
+
+    def _record_failed_transfers(self, request_ids: set[str]) -> None:
+        if not request_ids:
+            return
+        with self.xfer_stats_lock:
+            for _ in request_ids:
+                self.xfer_stats.record_failed_transfer()
 
     @staticmethod
     def _get_remote_endpoint(
@@ -1491,6 +1506,11 @@ class MooncakePullRecvingThread(threading.Thread):
                 f"PP/PCP/TP rank {remote_pp_rank}/{remote_pcp_rank}/{remote_tp_rank}, ret={ret}"
             )
         transfer_elapsed_ms = (time.perf_counter() - transfer_start_time) * 1000
+        with self.xfer_stats_lock:
+            self.xfer_stats.record_transfer(
+                transfer_duration=transfer_elapsed_ms / 1000,
+                bytes_transferred=sum(length_list),
+            )
         logger.info(
             "KV cache transfer for requests %s took %.2f ms (%d ranges, %d bytes). "
             "local_ip %s local_device_id %s remote_session_id %s",
@@ -1671,6 +1691,7 @@ class MooncakePullConnectorWorker(MooncakeBaseConnectorWorker):
                 dcp_size=self.dcp_size,
                 device=torch.npu.current_device(),
                 ready_event=ready_event,
+                xfer_stats=self.xfer_stats,
             )
             self._recving_thread.start()
             if not ready_event.wait(timeout=10):
@@ -1709,8 +1730,10 @@ class MooncakePullConnectorWorker(MooncakeBaseConnectorWorker):
     def get_kv_connector_stats(self) -> KVConnectorStats | None:
         """Report reverse reads that were declined because their blocks expired."""
         if self._recving_thread is not None:
-            for _ in range(self._recving_thread.get_and_clear_num_expired_reads()):
-                self.xfer_stats.record_kv_expired_req()
+            with self._recving_thread.xfer_stats_lock:
+                for _ in range(self._recving_thread.get_and_clear_num_expired_reads()):
+                    self.xfer_stats.record_kv_expired_req()
+                return super().get_kv_connector_stats()
         return super().get_kv_connector_stats()
 
 

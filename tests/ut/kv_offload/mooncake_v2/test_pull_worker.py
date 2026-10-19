@@ -24,6 +24,9 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.pull_worker import (
     MooncakePullConnectorWorker,
     MooncakePullRecvingThread,
 )
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.stats import (
+    MooncakeKVConnectorStats,
+)
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
     SizedDict,
     group_concurrent_contiguous,
@@ -72,6 +75,8 @@ def make_thread(**overrides: object) -> MooncakePullRecvingThread:
     thread.is_bidirectional_kv_xfer_enabled = False
     thread.remote_clock_offsets = {}
     thread.num_expired_reads = 0
+    thread.xfer_stats = MooncakeKVConnectorStats()
+    thread.xfer_stats_lock = threading.Lock()
     for name, value in overrides.items():
         setattr(thread, name, value)
     return thread
@@ -952,10 +957,14 @@ def test_execute_bucket_calls_mooncake_and_raises_on_negative_return() -> None:
     thread.engine.batch_transfer_sync_read.return_value = 0
     thread._execute_tp_transfer_bucket(0, 0, 0, 1, 1, 1, remote, entries)
     thread.engine.batch_transfer_sync_read.assert_called_once_with("10.0.0.1:9000", [1000], [2000], [128])
+    assert thread.xfer_stats.num_successful_transfers == 1
+    assert thread.xfer_stats.data["bytes_transferred"] == [128]
+    assert thread.xfer_stats.data["transfer_duration"][0] >= 0
 
     thread.engine.batch_transfer_sync_read.return_value = -1
     with pytest.raises(RuntimeError, match="transfer failed"):
         thread._execute_tp_transfer_bucket(0, 0, 0, 1, 1, 1, remote, entries)
+    assert thread.xfer_stats.num_successful_transfers == 1
 
 
 def test_execute_bucket_uses_selected_pcp_endpoint_and_addresses() -> None:
@@ -1208,6 +1217,7 @@ def test_worker_run_marks_only_failed_requests_and_finishes_the_batch(
     assert thread.ready_event.is_set()
     expected_failed = set(requests) if batch_error else {"request-b"}
     assert thread.invalid_block_ids == (({10, 20} if batch_error else {20}) if can_report else set())
+    assert len(thread.xfer_stats.data["num_failed_transfers"]) == (len(requests) if batch_error else 1)
     assert thread.get_and_clear_finished_requests() == KVConnectorTransferResults(
         finished_recving=set(requests), failed_recving=expected_failed
     )
@@ -1502,6 +1512,7 @@ def test_register_kv_caches_starts_receiving_thread_only_for_consumer(
     worker.tp_rank = worker.pp_rank = worker.dp_rank = worker.pcp_rank = worker.dcp_rank = 0
     worker.tp_size = worker.pp_size = worker.dp_size = worker.pcp_size = worker.dcp_size = 1
     worker._recving_thread = None
+    worker.xfer_stats = MooncakeKVConnectorStats()
 
     def fake_register(instance: MooncakePullConnectorWorker, _kv_caches: object) -> None:
         instance.xfer_handshake_metadata = make_transfer_metadata()
@@ -1511,6 +1522,7 @@ def test_register_kv_caches_starts_receiving_thread_only_for_consumer(
     def fake_thread(**kwargs: object) -> MagicMock:
         ready_event = kwargs["ready_event"]
         assert isinstance(ready_event, threading.Event)
+        assert kwargs["xfer_stats"] is worker.xfer_stats
         thread = MagicMock()
         thread.start.side_effect = ready_event.set
         thread.is_alive.return_value = True
