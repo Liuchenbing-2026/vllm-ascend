@@ -93,6 +93,56 @@ def _manager_spec(spec: KVCacheSpec) -> KVCacheSpec:
     return spec
 
 
+def _kv_group_block_size_summary(kv_cache_config: KVCacheConfig) -> str:
+    """Name the per-group block sizes behind ``scheduler_block_size``.
+
+    The effective scheduler block size is the LCM of the KV cache group block
+    sizes (times DCP), so hybrid Mamba align mode can widen it far beyond the
+    user-facing ``--block-size``: ``--block-size 32`` plus a 1536-token Mamba
+    align group yields 1536. Listing the groups keeps validation errors
+    actionable instead of only quoting the derived number.
+    """
+    parts = []
+    for group in kv_cache_config.kv_cache_groups:
+        block_size = getattr(_manager_spec(group.kv_cache_spec), "block_size", None)
+        if block_size is None:
+            continue
+        parts.append(f"{type(_manager_spec(group.kv_cache_spec)).__name__}={block_size}")
+    return ", ".join(parts)
+
+
+def _validate_retention_interval_with_hint(
+    retention_interval: int,
+    scheduler_block_size: int,
+    kv_cache_config: KVCacheConfig,
+    upstream_validate,
+) -> None:
+    """Run upstream validation and make the multiple-of failure actionable.
+
+    Upstream only reports the derived ``scheduler_block_size``, which users
+    cannot map back to ``--block-size`` on hybrid Mamba models. When the value
+    is rejected for not being a multiple, append the group breakdown and the
+    next valid interval; every other rejection is re-raised unchanged.
+    """
+    try:
+        upstream_validate(retention_interval, scheduler_block_size, kv_cache_config)
+    except ValueError as exc:
+        is_multiple_mismatch = (
+            retention_interval > 0 and scheduler_block_size > 0 and retention_interval % scheduler_block_size != 0
+        )
+        if not is_multiple_mismatch:
+            raise
+        summary = _kv_group_block_size_summary(kv_cache_config) or "unknown"
+        suggested = cdiv(retention_interval, scheduler_block_size) * scheduler_block_size
+        raise ValueError(
+            f"{exc} The effective scheduler block size is the LCM of the KV cache "
+            f"group block sizes ({summary}), and the user-facing --block-size only "
+            f"covers the groups it applies to. Set "
+            f"VLLM_PREFIX_CACHE_RETENTION_INTERVAL to {suggested} (the next multiple "
+            f"of {scheduler_block_size}), or 0 to keep only the latest boundary."
+        ) from exc
+
+
 class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
     """
     KV cache coordinator for hybrid models with multiple KV cache types, and
@@ -144,10 +194,11 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
             None,
         )
         if self.retention_interval is not None and validate_retention_interval is not None:
-            validate_retention_interval(
+            _validate_retention_interval_with_hint(
                 self.retention_interval,
                 self.scheduler_block_size,
                 kv_cache_config,
+                validate_retention_interval,
             )
         self.block_pool = BlockPool(
             num_gpu_blocks=kv_cache_config.num_blocks,

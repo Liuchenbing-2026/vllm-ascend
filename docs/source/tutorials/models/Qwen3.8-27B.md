@@ -580,3 +580,7 @@ The following optimizations are enabled by default and require no additional con
 ## 10 FAQ
 
 For common environment, installation, and general parameter issues, refer to the [Public FAQs](../../faqs.md).
+
+### Why is `VLLM_PREFIX_CACHE_RETENTION_INTERVAL=4096` rejected when `--block-size 32`?
+
+Qwen3.8-27B has a Mamba (linear-attention) KV cache group. With `--enable-prefix-caching` that group switches into align mode, so the effective scheduler block size becomes the LCM of the KV cache group block sizes — 1536 for `--block-size 32` — instead of the value passed to `--block-size`. `VLLM_PREFIX_CACHE_RETENTION_INTERVAL` must be a non-negative multiple of that effective size, so use `4608` (3 × 1536) rather than `4096`. Startup validation reports the effective scheduler block size together with the per-group block sizes it was derived from and the next valid interval.
