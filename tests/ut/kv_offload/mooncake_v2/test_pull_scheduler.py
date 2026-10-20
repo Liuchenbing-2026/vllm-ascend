@@ -830,6 +830,48 @@ def test_sending_thread_shutdown_exits_receive_loop(monkeypatch: pytest.MonkeyPa
     assert thread.finished_requests.empty()
 
 
+def _occupied_tcp_endpoint() -> tuple[zmq.Context, zmq.Socket, int]:
+    ctx = zmq.Context()
+    sock = ctx.socket(zmq.ROUTER)
+    sock.bind("tcp://127.0.0.1:*")
+    endpoint = sock.getsockopt(zmq.LAST_ENDPOINT)
+    port = int(endpoint.rsplit(b":", 1)[1])
+    return ctx, sock, port
+
+
+def test_sending_thread_records_bind_failure() -> None:
+    ctx, sock, port = _occupied_tcp_endpoint()
+    thread = make_sending_thread()
+    thread.port = port
+    thread.ready_event = threading.Event()
+    try:
+        thread.start()
+        thread.join(timeout=10)
+
+        assert thread.ready_event.is_set()
+        assert not thread.is_alive()
+        assert isinstance(thread.startup_error, zmq.ZMQError)
+    finally:
+        sock.close(linger=0)
+        ctx.term()
+
+
+def test_scheduler_fails_fast_when_sending_port_is_occupied() -> None:
+    ctx, sock, port = _occupied_tcp_endpoint()
+    scheduler = make_pull_scheduler()
+    scheduler.side_channel_host = "127.0.0.1"
+    scheduler.side_channel_port = port
+    scheduler.kv_transfer_config = SimpleNamespace(is_kv_producer=True)
+    scheduler.tp_size = 1
+    scheduler.pp_size = 1
+    try:
+        with pytest.raises(RuntimeError, match="failed to bind"):
+            scheduler.set_xfer_handshake_metadata_from_workers({0: make_transfer_metadata()})
+    finally:
+        sock.close(linger=0)
+        ctx.term()
+
+
 def test_scheduler_shutdown_stops_threads_and_clears_request_state() -> None:
     scheduler = make_pull_scheduler()
     scheduler._sending_thread = MagicMock()

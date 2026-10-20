@@ -109,6 +109,7 @@ class MooncakeSchedulerSendingThread(threading.Thread):
         )
         self.ready_event = ready_event
         self.stop_event = threading.Event()
+        self.startup_error: Exception | None = None
         self.delayed_free_requests: OrderedDict[str, float] = OrderedDict()
         self.finished_requests: queue.SimpleQueue[str] = queue.SimpleQueue()
         self.state_lock = threading.Lock()
@@ -342,7 +343,8 @@ class MooncakeSchedulerSendingThread(threading.Thread):
                 sock.setsockopt(zmq.RCVTIMEO, 1000)  # type: ignore[attr-defined]
                 self.ready_event.set()
                 self._run_busy_loop(sock)
-        except Exception:
+        except Exception as exc:
+            self.startup_error = exc
             self.ready_event.set()
             logger.exception("Mooncake scheduler sending thread failed on %s", path)
 
@@ -573,6 +575,10 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
         self._sending_thread.start()
         if not ready_event.wait(timeout=10):
             raise RuntimeError("Timed out starting Mooncake scheduler sending thread")
+        if self._sending_thread.startup_error is not None:
+            raise RuntimeError(
+                f"Mooncake scheduler sending thread failed to bind {self.side_channel_host}:{self.side_channel_port}"
+            ) from self._sending_thread.startup_error
         if not self._sending_thread.is_alive():
             raise RuntimeError("Mooncake scheduler sending thread failed to start")
 
