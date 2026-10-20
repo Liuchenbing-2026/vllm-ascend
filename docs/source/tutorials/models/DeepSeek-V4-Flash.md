@@ -168,7 +168,6 @@ vllm serve /mnt/nfs_hw/weight/DeepSeek-V4-Flash-w8a8-mtp \
   --quantization ascend \
   --port 7000 \
   --block-size 128 \
-  --enable-chunked-prefill \
   --enable-prefix-caching \
   --tokenizer-mode deepseek_v4 \
   --tool-call-parser deepseek_v4 \
@@ -180,6 +179,16 @@ vllm serve /mnt/nfs_hw/weight/DeepSeek-V4-Flash-w8a8-mtp \
   --model-loader-extra-config '{"enable_multithread_load":true,"num_threads":16}' \
   --speculative-config '{"num_speculative_tokens": 1,"method": "mtp"}'
 ```
+
+:::{note}
+The default open-source vLLM V1 scheduler enables chunked prefill by
+default, so `--enable-chunked-prefill` is not required and is omitted here.
+To use the Ascend-native scheduler instead, configure
+`ascend_scheduler_config` as described in the
+[chunked-prefill configuration guide](https://support.huaweicloud.com/bestpractice-modelarts/modelarts_llm_infer_5908021.html);
+chunked prefill must then be enabled explicitly in
+`ascend_scheduler_config`.
+:::
 
 ::::
 
@@ -231,6 +240,22 @@ vllm serve /root/.cache/modelscope/hub/models/vllm-ascend/DeepSeek-V4-Flash-w8a8
     "multistream_overlap_shared_expert":false,
     "multistream_dsa_preprocess":false}'
 ```
+
+:::{note}
+The default path, used when `ascend_scheduler_config` is not configured or
+disabled, uses the open-source vLLM V1 scheduler, where chunked prefill is
+enabled by default. For high-performance or high-throughput scenarios, the
+Ascend-native scheduler (`ascend_scheduler_config.enabled: true`) is
+recommended because it includes Ascend-specific graph-mode, KV-cache, and
+MLA chunked-prefill optimizations. Enable chunked prefill explicitly in
+`ascend_scheduler_config` when using that scheduler.
+
+Do not add `--enable-chunked-prefill` to the default V1 path: the option is
+redundant there and does not address long-run stability. For production
+deployments that require sustained operation, prefer the Ascend-native
+scheduler and validate the selected configuration with the target model,
+workload, and software versions under a long-running test.
+:::
 
 ::::
 :::::
