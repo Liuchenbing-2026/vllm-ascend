@@ -65,6 +65,32 @@ def _select_kv_token_budget(max_model_len: int, max_in_flight_tokens: int | None
     return max_in_flight_tokens if max_in_flight_tokens is not None else max_model_len
 
 
+def _augment_retention_interval_error(
+    exc: ValueError,
+    retention_interval: int,
+    scheduler_block_size: int | None,
+) -> ValueError:
+    """Add the next valid value to a retention-interval alignment error.
+
+    Hybrid Mamba models switch prefix caching to align mode, which enlarges the
+    effective scheduler block size beyond the user-facing ``--block-size``. A
+    value picked from ``--block-size`` alone is then rejected with an error that
+    only mentions the internal block size, which is hard to act on. Keep the
+    upstream message intact and append the actionable value.
+    """
+    if not scheduler_block_size or retention_interval < 0:
+        return exc
+    if retention_interval % scheduler_block_size == 0:
+        return exc
+    next_valid = ((retention_interval // scheduler_block_size) + 1) * scheduler_block_size
+    return ValueError(
+        f"{exc} Hybrid Mamba models enlarge the scheduler block size above "
+        f"--block-size when prefix caching is enabled. Set "
+        f"VLLM_PREFIX_CACHE_RETENTION_INTERVAL to a multiple of "
+        f"{scheduler_block_size} (for example {next_valid}) or unset it."
+    )
+
+
 def _is_deepseek_v4_kv_cache_spec(kv_cache_spec: KVCacheSpec) -> bool:
     if getattr(kv_cache_spec, "model_version", None) in {"deepseek_v4", "deepseek_v41"}:
         return True
@@ -144,11 +170,18 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
             None,
         )
         if self.retention_interval is not None and validate_retention_interval is not None:
-            validate_retention_interval(
-                self.retention_interval,
-                self.scheduler_block_size,
-                kv_cache_config,
-            )
+            try:
+                validate_retention_interval(
+                    self.retention_interval,
+                    self.scheduler_block_size,
+                    kv_cache_config,
+                )
+            except ValueError as exc:
+                raise _augment_retention_interval_error(
+                    exc,
+                    self.retention_interval,
+                    self.scheduler_block_size,
+                ) from exc
         self.block_pool = BlockPool(
             num_gpu_blocks=kv_cache_config.num_blocks,
             enable_caching=enable_caching,
