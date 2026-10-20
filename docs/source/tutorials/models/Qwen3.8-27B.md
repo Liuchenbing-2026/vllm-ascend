@@ -574,7 +574,7 @@ The following optimizations are enabled by default and require no additional con
 
 | Optimization Technique | Applicable Scenarios | Enablement Method | Technical Principle | Precautions |
 | --- | --- | --- | --- | --- |
-| Prefix Cache | Scenarios with repeated prefixes (e.g., shared system prompts, few-shot examples) | `--enable-prefix-caching` | Reuses cached KV state for repeated prefixes, avoiding redundant prefill computation. | The benefit depends on the prefix cache hit rate. |
+| Prefix Cache | Scenarios with repeated prefixes (e.g., shared system prompts, few-shot examples) | `--enable-prefix-caching` | Reuses cached KV state for repeated prefixes, avoiding redundant prefill computation. | The benefit depends on the prefix cache hit rate. If `VLLM_PREFIX_CACHE_RETENTION_INTERVAL` is set, it must be a multiple of the effective scheduler block size. For this hybrid Mamba model, prefix caching switches the Mamba cache to align mode and enlarges the effective size (1536 with `--block-size 32`), so `4096` fails startup validation; use `4608` instead. |
 | Qwen3.5 MTP Speculative Decoding | Decode-heavy workloads with acceptable acceptance rate | `--speculative-config '{"method":"qwen3_5_mtp","num_speculative_tokens":3}'` | Uses the built-in MTP draft head to speculate multiple tokens per step and verifies them in a single forward pass. | Tune the speculative token count for the target workload; benefit depends on the acceptance rate. |
 
 ## 10 FAQ
