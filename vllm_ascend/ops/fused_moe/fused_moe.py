@@ -33,6 +33,7 @@ from vllm_ascend.ascend_forward_context import _EXTRA_CTX, MoECommType
 from vllm_ascend.distributed.parallel_state import get_mc2_group
 from vllm_ascend.ops.fused_moe.dataclass.shared_experts import PreparedSharedExpertInput, RoutedMoEMilestones
 from vllm_ascend.ops.fused_moe.moe_comm_method import get_moe_comm_method, setup_moe_comm_method
+from vllm_ascend.ops.fused_moe.moe_mlp import maybe_record_event
 from vllm_ascend.ops.fused_moe.routed_experts import AscendRoutedExperts
 from vllm_ascend.ops.fused_moe.shared_experts import (
     AscendSharedExperts,
@@ -397,8 +398,8 @@ class AscendMoERunner(MoERunner):  # type: ignore[no-redef]
         """Apply the internal router gate to an already prepared input."""
         gate = self.gate
         assert gate is not None
-        # Models with pre-cast FP32 weights use the direct linear path; other
-        # gates retain their registered forward and its dtype semantics.
+        # Gates without pre-cast FP32 weights keep their registered forward
+        # path and its dtype semantics.
         if hasattr(gate, "weight_fp32"):
             return F.linear(router_input, gate.weight_fp32)
         gate_out = gate(router_input)
@@ -411,11 +412,21 @@ class AscendMoERunner(MoERunner):  # type: ignore[no-redef]
     ) -> torch.Tensor:
         """Compute router logits without extending a fresh FP32 cast's lifetime.
 
-        Gates without a pre-cast weight retain their registered forward path
-        and do not allocate an unused FP32 input.
+        The FP32 activation stays local to this helper and becomes releasable
+        after the gate linear is enqueued. An existing FP32 ``router_logits``
+        remains caller-owned. Gates without a pre-cast weight keep using their
+        registered forward path and must not allocate an unused FP32 input.
         """
-        router_input = self._prepare_router_input(hidden_states, router_logits)
-        return self._apply_router_linear(router_input)
+        gate = self.gate
+        assert gate is not None
+        if not hasattr(gate, "weight_fp32"):
+            gate_out = gate(hidden_states)
+            return gate_out[0] if isinstance(gate_out, tuple) else gate_out
+
+        # AscendUnquantizedLinearMethod normally pre-casts the weight so the
+        # hot path only needs to materialize the FP32 activation when required.
+        router_input = router_logits if router_logits.dtype == torch.float32 else hidden_states.float()
+        return F.linear(router_input, gate.weight_fp32)
 
     def _prepare_shared_for_router_overlap(
         self,
@@ -438,25 +449,27 @@ class AscendMoERunner(MoERunner):  # type: ignore[no-redef]
         router_logits: torch.Tensor,
     ) -> tuple[
         torch.Tensor,
-        torch.npu.Event,
-        torch.npu.Event,
+        torch.npu.Event | None,
+        torch.npu.Event | None,
         SubmittedSharedExpertGateUp | None,
     ]:
+        # The milestones are consumed only by the shared-expert side stream,
+        # which runs only when multistream overlap is enabled; skip the record
+        # (notably slow host-side) when it is off.
         if self.is_internal_router:
             router_input = self._prepare_router_input(shared_hidden_states, router_logits)
-            # Release shared Vector/AIV preparation after any external FP32
-            # router-input Cast. Gates using their registered forward path may
-            # still prepare their input internally.
-            shared_input_ready = torch.npu.current_stream().record_event()
+            # Release shared Vector/AIV preparation only after the router input
+            # Cast. It then overlaps the Cube-heavy gate matmul instead of
+            # competing with another Vector/AIV operation.
+            shared_input_ready = maybe_record_event()
             prepared_execution = self._prepare_shared_for_router_overlap(
                 prepared_shared_input,
                 shared_input_ready,
             )
             router_logits = self._apply_router_linear(router_input)
-            del router_input
-            router_output_ready = torch.npu.current_stream().record_event()
+            router_output_ready = maybe_record_event()
         else:
-            shared_input_ready = torch.npu.current_stream().record_event()
+            shared_input_ready = maybe_record_event()
             prepared_execution = self._prepare_shared_for_router_overlap(
                 prepared_shared_input,
                 shared_input_ready,

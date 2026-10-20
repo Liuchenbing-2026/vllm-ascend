@@ -14,7 +14,7 @@ Delivering substantial gains over Qwen3.5/Qwen3.6 across coding, professional wo
 
 This document focuses on text serving on Ascend NPUs. It describes the main validation steps for the model, including supported features, prerequisites, installation, multi-node deployment, functional verification, accuracy and performance evaluation, performance tuning, and FAQs.
 
-It is **recommended to use the latest release candidate (rc) version or the latest official version** of the `vllm-ascend` image to ensure the best compatibility and access to the latest features.
+This document is validated and written based on **vLLM-Ascend 0.23.0**. The current model (Qwen3.8-27B) is first supported in this version.
 
 ## 2 Supported Features
 
@@ -87,7 +87,7 @@ Select an image based on your machine type and start the docker image on your no
     Start the docker image on each node.
 
     ```bash
-    export IMAGE=quay.io/ascend/vllm-ascend:{{ vllm_ascend_version }}-a3
+    export IMAGE=quay.io/ascend/vllm-ascend:qwen3.8-a3
     export NAME=vllm-ascend
 
     docker run --rm \
@@ -128,7 +128,7 @@ Select an image based on your machine type and start the docker image on your no
     Start the docker image on each node.
 
     ```bash
-    export IMAGE=quay.io/ascend/vllm-ascend:{{ vllm_ascend_version }}
+    export IMAGE=quay.io/ascend/vllm-ascend:qwen3.8-a2
     export NAME=vllm-ascend
 
     docker run --rm \
@@ -161,7 +161,7 @@ Select an image based on your machine type and start the docker image on your no
     Start the docker image on each node.
 
     ```bash
-    export IMAGE=quay.io/ascend/vllm-ascend:{{ vllm_ascend_version }}-310p
+    export IMAGE=quay.io/ascend/vllm-ascend:v0.23.0-310p
     export NAME=vllm-ascend
 
     docker run --rm \
@@ -495,11 +495,19 @@ Expected Result: The service returns HTTP 200 OK. The JSON response contains the
 
 ## 7 Accuracy Evaluation
 
-Refer to [Using AISBench](../../developer_guide/evaluation/using_ais_bench.md)
-to evaluate the deployed service. Accuracy results will be documented in the
-[release notes](../../user_guide/release_notes.md). When reporting results, record the
-checkpoint, prompt encoder, reasoning effort, sampling parameters and dataset
-version.
+Here is an accuracy evaluation method.
+
+### 7.1 Using AISBench
+
+1. Refer to [Using AISBench](../../developer_guide/evaluation/using_ais_bench.md) for details.
+
+2. After execution, you can get the result. Here are the results of `Qwen3.8-27B`, `Qwen3.8-27B-w8a8` and `Qwen3.8-27B-w8a8-mxfp8` in `vllm-ascend:v0.23.0rc1` for reference only.
+
+| dataset | model | metric | mode | vllm-api-general-chat |
+|----- | ----- | ----- | ----- | -----|
+| GPQA Diamond | Qwen3.8-27B | accuracy | gen | 90.40 |
+| GPQA Diamond | Qwen3.8-27B-w8a8 | accuracy | gen | 89.90 |
+| GPQA Diamond | Qwen3.8-27B-w8a8-mxfp8 | accuracy | gen | 89.39 |
 
 ## 8 Performance Evaluation
 

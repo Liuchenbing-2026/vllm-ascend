@@ -29,6 +29,7 @@ from vllm.logger import logger
 from vllm.utils.math_utils import cdiv
 
 from vllm_ascend.config_utils import config
+from vllm_ascend.device.device_config import is_950
 from vllm_ascend.device.hardware_profile import DeviceAdaptorFamily, HardwareCapability, get_current_hardware_profile
 
 if TYPE_CHECKING:
@@ -425,6 +426,7 @@ class AscendConfig:
             "enable_prefill_mc2": false,
             "multistream_overlap_shared_expert": false,
             "enable_kv_nz": false,
+            "kv_pool_range_debug": false,
             "enable_mc2_hierarchy_comm": false,
             "enable_dsa_cp": false,
             "sfa_dcp_force_tmajor_restore": false,
@@ -535,7 +537,7 @@ class AscendConfig:
             "sparse_kv_offload_config": {
                 "enabled": false,
                 "topk_buffer_size": -1,
-                "dram_size_per_dp_GB": 128,
+                "dram_size_per_dp_GB": 110,
                 "keep_device_kv_cache": false
             }
         }
@@ -573,6 +575,7 @@ class AscendConfig:
     enable_prefill_mc2: bool = False
     multistream_overlap_shared_expert: bool = False
     enable_kv_nz: bool = False
+    kv_pool_range_debug: bool = False
     enable_mc2_hierarchy_comm: bool = False  # deprecated, will be replaced by mc2_comm_alg = "hierarchy"
     enable_dsa_cp: bool = False
     sfa_dcp_force_tmajor_restore: bool = False
@@ -598,6 +601,10 @@ class AscendConfig:
         default_factory=lambda: os.path.join(os.path.expanduser("~"), "ascend", "log", "vllm_ascend")
     )
     dump_config_path: str | None = None
+    runtime_config_path: str | None = None
+    runtime_config_hot_reload: bool = False
+    # Runtime object constructed in init_ascend_config (not from additional_config dict).
+    runtime_config: Any = None
     mc2_comm_alg: Literal["", "fullmesh", "hierarchy", "fullmesh_v2"] = ""
 
     # ---- A-family (envs fallback): default = envs module value, before-validator injects ----
@@ -686,6 +693,14 @@ class AscendConfig:
             # DP-dummy ranks have no hash work in MRV2. Share host tables
             # across DP and PCP peers to avoid per-step lookup collectives.
             engram_config.dp_shared_memory = True
+        if self.enable_force_eplb:
+            logger.warning(
+                "enable_force_eplb is enabled: it forces a deterministic round-robin "
+                "expert routing that replaces the real MoE router output. The model "
+                "results and accuracy are therefore invalid. This is an analysis-only "
+                "switch for measuring the EPLB performance ceiling and must not be "
+                "used in production."
+            )
         if (
             self.enable_force_eplb
             and self.eplb_config.dynamic_eplb
@@ -812,6 +827,43 @@ class AscendConfig:
                     str(vc.scheduler_config.max_num_batched_tokens),
                 )
 
+        # PCP padding headroom for the scheduling budget.
+        #
+        # Under prefill context parallelism each request's scheduled tokens are
+        # padded up to a multiple of ``2 * pcp_size`` before being split into
+        # per-rank chunks, and the padded batch has to survive the all-gather
+        # back to ``padded_total`` tokens. If the scheduler packs a step up to
+        # ``max_num_batched_tokens`` and every request then grows by the worst
+        # case padding, the enlarged activation exceeds
+        # ``max_num_batched_tokens`` and the Ascend index kernels report an out
+        # of range index (see vllm-ascend#18518). Reserve that worst-case
+        # padding from the scheduler budget so the padding can never push the
+        # batch over the limit.
+        pcp_size = vc.parallel_config.prefill_context_parallel_size
+        if pcp_size > 1:
+            max_num_batched_tokens = vc.scheduler_config.max_num_batched_tokens
+            padding_budget = self._pcp_padding_token_budget(pcp_size, vc.scheduler_config.max_num_seqs)
+            reserved_budget = max_num_batched_tokens - padding_budget
+            if reserved_budget <= 0:
+                raise ValueError(
+                    "max_num_batched_tokens is too small to reserve the worst-case prefill "
+                    f"context parallel padding: {max_num_batched_tokens} - {padding_budget} <= 0. "
+                    "Increase max_num_batched_tokens, decrease max_num_seqs, or lower "
+                    "--prefill-context-parallel-size."
+                )
+            current_budget = vc.scheduler_config.max_num_scheduled_tokens
+            if current_budget is None or current_budget > reserved_budget:
+                vc.scheduler_config.max_num_scheduled_tokens = reserved_budget
+                logger.warning_once(
+                    "prefill context parallelism (pcp_size=%s) reserves %s tokens of the "
+                    "scheduling budget for worst-case batch padding; capping "
+                    "max_num_scheduled_tokens at %s (max_num_batched_tokens=%s).",
+                    str(pcp_size),
+                    str(padding_budget),
+                    str(reserved_budget),
+                    str(max_num_batched_tokens),
+                )
+
         finegrained_tp_enabled = (
             self.finegrained_tp_config.oproj_tensor_parallel_size > 0
             or self.finegrained_tp_config.mlp_tensor_parallel_size > 0
@@ -925,11 +977,14 @@ class AscendConfig:
             self._sparse_li_c4_layer_names,
         ) = self._parse_sparse_li_layers_from_quant_config(quant_config, ("W8A8_MXFP8",))
         self._sparse_li_layer_filter_enabled = self._has_sparse_li_layer_config(quant_config)
-        self.enable_sp_by_pass = (
-            vc.model_config is not None
-            and not vc.model_config.enforce_eager
-            and vc.compilation_config.pass_config.enable_sp
-        )
+        # vLLM #60517 removed the torch.compile-based sequence-parallelism pass
+        # (and `PassConfig.enable_sp`) on main; it still exists on v0.31.0.
+        from vllm_ascend.utils import vllm_version_is
+
+        enable_sp_by_pass = False
+        if vllm_version_is("0.31.0"):
+            enable_sp_by_pass = vc.compilation_config.pass_config.enable_sp
+        self.enable_sp_by_pass = vc.model_config is not None and not vc.model_config.enforce_eager and enable_sp_by_pass
 
         self._validate_mc2_comm_alg(vc)
 
@@ -954,6 +1009,18 @@ class AscendConfig:
         # sparse KV offload vs packed SFA main cache mutex
         self._validate_sparse_packed_kv_offload_compatibility()
         return self
+
+    @staticmethod
+    def _pcp_padding_token_budget(pcp_size: int, max_num_seqs: int) -> int:
+        """Worst-case extra tokens the PCP batch layout adds per scheduling step.
+
+        Each scheduled request has its tokens padded up to a multiple of
+        ``2 * pcp_size`` (the DualChunkSwap split) before the per-rank chunks
+        are formed, so a single request can gain up to ``2 * pcp_size - 1``
+        tokens. A step can schedule at most ``max_num_seqs`` requests, hence the
+        padding is bounded by ``(2 * pcp_size - 1) * max_num_seqs``.
+        """
+        return (2 * pcp_size - 1) * max_num_seqs
 
     @property
     def uses_packed_sfa_main_cache(self) -> bool:
@@ -1039,7 +1106,9 @@ class AscendConfig:
             logger.debug("mega moe operator is supported by current a5 config: %r", mega_moe_supported_by_config)
             return mega_moe_supported_by_config
         hf_text_config = vllm_config.model_config.hf_text_config
-        hidden_size = getattr(hf_text_config, "hidden_size", None)
+        hidden_size = getattr(hf_text_config, "routed_expert_hidden_size", None)
+        if hidden_size is None:
+            hidden_size = getattr(hf_text_config, "hidden_size", None)
         if hidden_size is None and hasattr(vllm_config.model_config, "get_hidden_size"):
             hidden_size = vllm_config.model_config.get_hidden_size()
         if hidden_size is None:
@@ -1672,7 +1741,7 @@ class SparseKVOffloadConfig:
     enabled: bool = False
     # -1 resolves to (1 + num_speculative_tokens) * 2048.
     topk_buffer_size: int = -1
-    dram_size_per_dp_GB: int = 128
+    dram_size_per_dp_GB: int = 110
     keep_device_kv_cache: bool = False
     topk: int = dataclasses.field(default=0, init=False)
     use_fused_overlap: bool = False
@@ -1707,6 +1776,13 @@ class SparseKVOffloadConfig:
     def _validate_preconditions(self, vllm_config: VllmConfig) -> None:
         if not self.enabled:
             return
+
+        if is_950():
+            raise ValueError("Sparse KV offload is not supported on 950PR&950DT Products")
+
+        kv_transfer_config = vllm_config.kv_transfer_config
+        if kv_transfer_config is not None and kv_transfer_config.has_connector("PreemptOffloadConnector"):
+            raise ValueError("Sparse KV offload cannot be combined with PreemptOffloadConnector")
 
         if hasattr(vllm_config.model_config.hf_text_config, "compress_ratios"):
             raise ValueError("Sparse KV offload don't support compress now.")
@@ -1819,6 +1895,15 @@ def init_ascend_config(vllm_config: VllmConfig) -> AscendConfig:
     # pre-step; the resolved path is passed as the dump_config_path field.
     dump_config_path = AscendConfig._resolve_dump_config_path(additional_config)
 
+    from vllm_ascend.observability.runtime_config import (
+        ADDITIONAL_CONFIG_STRIP_KEYS as _RUNTIME_CONFIG_STRIP_KEYS,
+    )
+    from vllm_ascend.observability.runtime_config import (
+        build_runtime_config_from_additional,
+    )
+
+    runtime_boot = build_runtime_config_from_additional(additional_config)
+
     # Keys that must NOT flow from additional_config into AscendConfig.
     # These are stripped so that only user-configurable keys reach pydantic,
     # where extra="forbid" can reject unknown options.
@@ -1845,6 +1930,7 @@ def init_ascend_config(vllm_config: VllmConfig) -> AscendConfig:
         # replaced with the validated dump_config_path field below.
         "dump_config",
         "dump_config_path",
+        *_RUNTIME_CONFIG_STRIP_KEYS,
         # pure-derived fields (derive_and_validate computes them; user input would residualize)
         # enable_sparse_li_c4 is selected by attention_config.indexer_kv_dtype
         # and the model's sparse-attention support,not additional config.
@@ -1886,6 +1972,9 @@ def init_ascend_config(vllm_config: VllmConfig) -> AscendConfig:
         sparse_kv_offload_config=sparse_kv,
         kvpp_config=kvpp_config,
         dump_config_path=dump_config_path,
+        runtime_config_path=runtime_boot.path,
+        runtime_config_hot_reload=runtime_boot.hot_reload,
+        runtime_config=runtime_boot.runtime_config,
         **kwargs,
     )
     # Business validation (Plan B): pydantic did type/range/enum checks during

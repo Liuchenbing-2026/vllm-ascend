@@ -43,9 +43,6 @@ CHECK_IMPORTS = {
             "vllm_ascend/distributed/kv_transfer/kv_pool/cpu_offload/metadata.py",
             "vllm_ascend/distributed/weight_transfer/npu_ipc_engine.py",
             "tests/ut/distributed/test_hccl_weight_transfer.py",
-            # Backport the upstream MessageQueue pickle protocol and test its wire format.
-            "vllm_ascend/patch/platform/patch_shm_broadcast.py",
-            "tests/ut/patch/platform/test_patch_shm_broadcast.py",
         },
     ),
     "re": ForbiddenImport(
@@ -53,11 +50,16 @@ CHECK_IMPORTS = {
         tip="Replace 'import re' with 'import regex as re' or 'import regex'.",
         allowed_pattern=re.compile(r"^\s*import\s+regex(\s*|\s+as\s+re\s*)$"),
         allowed_files={
+            # Profiling indexes run in minimal CPU jobs without third-party dependencies.
+            "tools/profiling/artifacts.py",
+            # Cache key preparation and native build wrappers must work before
+            # third-party Python build dependencies are installed.
+            "csrc/scripts/build_cache.py",
             # The doctest selector runs in a minimal CPU workflow before
             # project dependencies are installed.
             "tests/e2e/doctests/scripts/doctest_helper.py",
-            # Verify that the upstream stdlib re.Pattern copyreg reducer is preserved.
-            "tests/ut/patch/platform/test_patch_shm_broadcast.py",
+            # Artifact naming also runs in minimal CPU jobs without regex installed.
+            "tools/profiling/__init__.py",
         },
     ),
     "triton": ForbiddenImport(

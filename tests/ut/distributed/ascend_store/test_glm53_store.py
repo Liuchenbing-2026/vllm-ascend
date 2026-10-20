@@ -157,6 +157,7 @@ class TestGLM53Store(unittest.TestCase):
                 self.assertEqual(worker.cache_transfer_granularity, 512)
                 for prompt_len, hit, expected in ((512, 512, 0), (1024, 1024, 512), (1025, 1024, 1024)):
                     scheduler.client = MagicMock()
+                    scheduler.client.closed = False
                     scheduler.client.lookup.return_value = hit
                     request = SimpleNamespace(
                         request_id="hit", prompt_token_ids=[1] * prompt_len, num_tokens=prompt_len, block_hashes=[]
@@ -177,7 +178,7 @@ class TestGLM53Store(unittest.TestCase):
                 def put(keys, addresses, sizes, stored=stored):
                     for key, row, lengths in zip(keys, addresses, sizes):
                         stored[key] = [ctypes.string_at(address, length) for address, length in zip(row, lengths)]
-                    return [0] * len(keys)
+                    return [True] * len(keys)
 
                 def get(keys, addresses, sizes, stored=stored):
                     for key, row, lengths in zip(keys, addresses, sizes):

@@ -478,6 +478,21 @@ class TestAscendConfig(TestBase):
 
     @_clean_up_ascend_config
     @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
+    def test_enable_force_eplb_logs_production_warning(self, mock_fix_incompatible_config):
+        test_vllm_config = VllmConfig()
+        test_vllm_config.additional_config = {"enable_force_eplb": True}
+        with patch("vllm_ascend.ascend_config.logger") as mock_logger:
+            ascend_config = init_ascend_config(test_vllm_config)
+
+        self.assertTrue(ascend_config.enable_force_eplb)
+        warnings = [str(call.args[0]) for call in mock_logger.warning.call_args_list]
+        self.assertTrue(
+            any("must not be used in production" in message for message in warnings),
+            f"expected a production warning, got {warnings}",
+        )
+
+    @_clean_up_ascend_config
+    @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
     def test_init_ascend_config_validates_mega_moe_max_tokens(self, mock_fix_incompatible_config):
         # NOTE: pydantic coerces numeric strings (e.g. "65536") to int, so only
         # out-of-range values are invalid on main.
@@ -771,6 +786,78 @@ class TestAscendConfig(TestBase):
                 self.assertEqual(ascend_config.enable_shared_expert_dp, enable_shared_expert_dp)
                 self.assertEqual(shared_expert_dp_enabled(), enable_shared_expert_dp)
 
+    def test_pcp_padding_token_budget(self):
+        # Each request is padded up to a multiple of 2 * pcp_size, i.e. at most
+        # 2 * pcp_size - 1 extra tokens, and a step schedules at most max_num_seqs
+        # requests.
+        self.assertEqual(AscendConfig._pcp_padding_token_budget(2, 64), 192)
+        self.assertEqual(AscendConfig._pcp_padding_token_budget(4, 16), 112)
+        self.assertEqual(AscendConfig._pcp_padding_token_budget(1, 256), 256)
+
+    @staticmethod
+    def _pcp_padded_total(scheduled_tokens, pcp_size):
+        num_chunks = 2 * pcp_size
+        return sum(math.ceil(num_tokens / num_chunks) * num_chunks for num_tokens in scheduled_tokens)
+
+    def test_pcp_padding_overflow_before_reservation(self):
+        # vllm-ascend#18518: packing 8192 tokens into [6661, 1531] leaves no room
+        # for the padder, so the padded batch grows past max_num_batched_tokens.
+        self.assertEqual(self._pcp_padded_total([6661, 1531], 2), 8196)
+        self.assertGreater(self._pcp_padded_total([6661, 1531], 2), 8192)
+
+    @_clean_up_ascend_config
+    @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
+    def test_pcp_reserves_scheduling_budget_for_padding(self, mock_fix_incompatible_config):
+        test_vllm_config = VllmConfig()
+        test_vllm_config.parallel_config.prefill_context_parallel_size = 2
+        test_vllm_config.scheduler_config.max_num_batched_tokens = 8192
+        test_vllm_config.scheduler_config.max_num_seqs = 64
+
+        init_ascend_config(test_vllm_config)
+
+        # 8192 - (2 * 2 - 1) * 64 = 8000
+        self.assertEqual(test_vllm_config.scheduler_config.max_num_scheduled_tokens, 8000)
+        # The worst-case padding now fits back inside max_num_batched_tokens.
+        budget = test_vllm_config.scheduler_config.max_num_scheduled_tokens
+        padding_budget = AscendConfig._pcp_padding_token_budget(2, 64)
+        self.assertLessEqual(budget + padding_budget, test_vllm_config.scheduler_config.max_num_batched_tokens)
+        self.assertLessEqual(self._pcp_padded_total([6661, 1339], 2), 8192)
+
+    @_clean_up_ascend_config
+    @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
+    def test_pcp_reservation_keeps_a_lower_user_budget(self, mock_fix_incompatible_config):
+        test_vllm_config = VllmConfig()
+        test_vllm_config.parallel_config.prefill_context_parallel_size = 2
+        test_vllm_config.scheduler_config.max_num_batched_tokens = 8192
+        test_vllm_config.scheduler_config.max_num_seqs = 64
+        test_vllm_config.scheduler_config.max_num_scheduled_tokens = 4096
+
+        init_ascend_config(test_vllm_config)
+
+        self.assertEqual(test_vllm_config.scheduler_config.max_num_scheduled_tokens, 4096)
+
+    @_clean_up_ascend_config
+    @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
+    def test_pcp_reservation_raises_when_budget_too_small(self, mock_fix_incompatible_config):
+        test_vllm_config = VllmConfig()
+        test_vllm_config.parallel_config.prefill_context_parallel_size = 2
+        test_vllm_config.scheduler_config.max_num_batched_tokens = 256
+        test_vllm_config.scheduler_config.max_num_seqs = 128
+
+        with self.assertRaises(ValueError):
+            init_ascend_config(test_vllm_config)
+
+    @_clean_up_ascend_config
+    @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
+    def test_no_pcp_reservation_without_pcp(self, mock_fix_incompatible_config):
+        test_vllm_config = VllmConfig()
+        test_vllm_config.scheduler_config.max_num_batched_tokens = 8192
+        test_vllm_config.scheduler_config.max_num_seqs = 64
+
+        init_ascend_config(test_vllm_config)
+
+        self.assertIsNone(test_vllm_config.scheduler_config.max_num_scheduled_tokens)
+
     @_clean_up_ascend_config
     @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
     def test_get_ascend_config(self, mock_fix_incompatible_config):
@@ -883,6 +970,56 @@ class TestShortRequestFirstConfig(TestBase):
 
 
 class TestSparseKVOffloadConfig(TestBase):
+    @patch("vllm_ascend.ascend_config.is_950", return_value=True)
+    def test_950_rejects_sparse_offload(self, mock_is_950):
+        for keep_device_kv_cache in (False, True):
+            for use_fused_overlap in (False, True):
+                with (
+                    self.subTest(keep_device_kv_cache=keep_device_kv_cache, use_fused_overlap=use_fused_overlap),
+                    self.assertRaisesRegex(ValueError, "not supported on 950PR&950DT Products"),
+                ):
+                    SparseKVOffloadConfig.from_additional_config(
+                        SimpleNamespace(speculative_config=None),
+                        {
+                            "enabled": True,
+                            "keep_device_kv_cache": keep_device_kv_cache,
+                            "use_fused_overlap": use_fused_overlap,
+                        },
+                    )
+        mock_is_950.assert_called()
+
+    @patch("vllm_ascend.ascend_config.is_950", return_value=True)
+    def test_a5_allows_sparse_offload_disabled(self, mock_is_950):
+        config = SparseKVOffloadConfig.from_additional_config(SimpleNamespace(speculative_config=None), {})
+        self.assertFalse(config.enabled)
+        mock_is_950.assert_not_called()
+
+    def test_preempt_offload_is_mutually_exclusive(self):
+        for multi_connector in (False, True):
+            transfer_config = KVTransferConfig(
+                kv_connector="MultiConnector" if multi_connector else "PreemptOffloadConnector",
+                kv_role="kv_consumer",
+                kv_connector_extra_config={
+                    "connectors": [
+                        {"kv_connector": "SfaRemoteD2HConnector", "kv_role": "kv_consumer"},
+                        {"kv_connector": "PreemptOffloadConnector", "kv_role": "kv_consumer"},
+                    ]
+                }
+                if multi_connector
+                else {},
+            )
+            vllm_config = SimpleNamespace(kv_transfer_config=transfer_config, speculative_config=None)
+            for keep_device_kv_cache in (False, True):
+                with (
+                    self.subTest(multi_connector=multi_connector, keep_device_kv_cache=keep_device_kv_cache),
+                    self.assertRaisesRegex(ValueError, "cannot be combined with PreemptOffloadConnector"),
+                ):
+                    SparseKVOffloadConfig.from_additional_config(
+                        vllm_config, {"enabled": True, "keep_device_kv_cache": keep_device_kv_cache}
+                    )
+            # Preempt offload alone remains supported.
+            self.assertFalse(SparseKVOffloadConfig.from_additional_config(vllm_config, {}).enabled)
+
     def test_topk_buffer_default_is_unset(self):
         self.assertEqual(SparseKVOffloadConfig().topk_buffer_size, -1)
 
@@ -927,7 +1064,7 @@ class TestSparseKVOffloadConfig(TestBase):
                 decode_context_parallel_size=1,
                 pipeline_parallel_size=1,
             ),
-            kv_transfer_config=SimpleNamespace(is_kv_consumer=True),
+            kv_transfer_config=KVTransferConfig(kv_connector="SfaRemoteD2HConnector", kv_role="kv_consumer"),
             use_v2_model_runner=False,
         )
 
@@ -956,7 +1093,7 @@ class TestSparseKVOffloadConfig(TestBase):
                 decode_context_parallel_size=1,
                 pipeline_parallel_size=1,
             ),
-            kv_transfer_config=SimpleNamespace(is_kv_consumer=True),
+            kv_transfer_config=KVTransferConfig(kv_connector="SfaRemoteD2HConnector", kv_role="kv_consumer"),
             use_v2_model_runner=True,
             speculative_config=None,
         )
@@ -978,7 +1115,7 @@ class TestSparseKVOffloadConfig(TestBase):
                 decode_context_parallel_size=1,
                 pipeline_parallel_size=1,
             ),
-            kv_transfer_config=SimpleNamespace(is_kv_consumer=True),
+            kv_transfer_config=KVTransferConfig(kv_connector="SfaRemoteD2HConnector", kv_role="kv_consumer"),
             use_v2_model_runner=True,
             speculative_config=None,
         )
@@ -1006,7 +1143,7 @@ class TestSparseKVOffloadConfig(TestBase):
                 decode_context_parallel_size=1,
                 pipeline_parallel_size=1,
             ),
-            kv_transfer_config=SimpleNamespace(is_kv_consumer=True),
+            kv_transfer_config=KVTransferConfig(kv_connector="SfaRemoteD2HConnector", kv_role="kv_consumer"),
             use_v2_model_runner=False,
             speculative_config=SimpleNamespace(method="dspark", num_speculative_tokens=3),
         )
@@ -1457,6 +1594,22 @@ class TestUpstreamConfigCompatibility(TestBase):
         )
         self.assertTrue(AscendConfig._is_megamoe_supported_by_config(minimax_m3))
 
+    def test_kimi_k3_megamoe_uses_routed_expert_dimensions(self):
+        kimi_k3 = SimpleNamespace(
+            model_config=SimpleNamespace(
+                hf_text_config=SimpleNamespace(
+                    hidden_size=8193,
+                    routed_expert_hidden_size=3584,
+                    moe_intermediate_size=3072,
+                    moe_quantize="w4a8",
+                )
+            )
+        )
+
+        self.assertTrue(AscendConfig._is_megamoe_supported_by_config(kimi_k3))
+        kimi_k3.model_config.hf_text_config.routed_expert_hidden_size = 8193
+        self.assertFalse(AscendConfig._is_megamoe_supported_by_config(kimi_k3))
+
     @patch(
         "vllm_ascend.device.hardware_profile.get_current_hardware_profile",
         return_value=get_hardware_profile(AscendDeviceType.A2),
@@ -1531,6 +1684,33 @@ class TestTopLevelSwitchTypeValidation(TestBase):
                 clear_enable_sp()
 
         return wrapper
+
+    @_clean_up
+    @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
+    @patch.dict(os.environ, {"VLLM_ASCEND_KVPOOL_RANGE_DEBUG": "1"})
+    def test_kv_pool_range_debug_defaults_off_without_env_fallback(self, mock_fix):
+        vc = VllmConfig()
+        vc.additional_config = {}
+        self.assertIs(init_ascend_config(vc).kv_pool_range_debug, False)
+
+    @_clean_up
+    @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
+    def test_kv_pool_range_debug_additional_config_is_typed(self, mock_fix):
+        for value, expected in ((True, True), (False, False), ("false", False), ("0", False), (1, True)):
+            with self.subTest(value=value):
+                vc = VllmConfig()
+                vc.additional_config = {"kv_pool_range_debug": value}
+                self.assertIs(init_ascend_config(vc).kv_pool_range_debug, expected)
+
+    @_clean_up
+    @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
+    def test_kv_pool_range_debug_rejects_invalid_values(self, mock_fix):
+        for value in (2, "invalid", None):
+            with self.subTest(value=value):
+                vc = VllmConfig()
+                vc.additional_config = {"kv_pool_range_debug": value}
+                with self.assertRaises(ValueError):
+                    init_ascend_config(vc)
 
     @_clean_up
     @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")

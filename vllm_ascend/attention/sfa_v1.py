@@ -70,6 +70,7 @@ from vllm_ascend.utils import (
     is_mtp_layer,
     is_rl_weight_update_enabled,
     maybe_trans_nz,
+    vllm_version_is,
 )
 
 if TYPE_CHECKING:
@@ -356,6 +357,12 @@ class AscendSFABackend(AttentionBackend):
     def get_name() -> str:
         return "ASCEND_SFA"
 
+    @classmethod
+    def supports_batch_invariance(cls) -> bool:
+        # vLLM #60271 added the batch-invariance support check in
+        # `init_attn_backend` on main; the v0.31.0 lane has no such check.
+        return not vllm_version_is("0.31.0")
+
     @staticmethod
     def get_builder_cls():
         if get_ascend_config().sparse_kv_offload_config.enabled:
@@ -387,7 +394,7 @@ class AscendSFABackend(AttentionBackend):
         return resolve_sfa_impl(get_current_vllm_config())
 
     @staticmethod
-    def get_supported_kernel_block_sizes() -> list[int]:
+    def get_supported_kernel_block_sizes(kv_cache_spec=None) -> list[int]:
         return [128]
 
 
@@ -1894,8 +1901,6 @@ class AscendSFAImpl(MLAAttentionImpl):
         kv_cache: tuple[torch.Tensor, ...],
         attn_metadata: M,
         output: torch.Tensor | None = None,
-        input_is_sequence_parallel: bool = False,
-        output_scale: float = 1.0,
     ) -> torch.Tensor:
         assert output is not None, "Output tensor must be provided."
         if self.enable_sparse_sfa_turboquant:
@@ -1906,7 +1911,7 @@ class AscendSFAImpl(MLAAttentionImpl):
             # Profiling run.
             return output.fill_(0)
 
-        if self.qk_rope_head_dim == 0 and not input_is_sequence_parallel:
+        if self.qk_rope_head_dim == 0:
             num_tokens = min(hidden_states.shape[0], attn_metadata.slot_mapping.shape[0])
             if get_forward_context().cudagraph_runtime_mode != CUDAGraphMode.FULL:
                 num_tokens = min(num_tokens, attn_metadata.num_actual_tokens)
@@ -1925,11 +1930,7 @@ class AscendSFAImpl(MLAAttentionImpl):
         indexer_attn_metadata = self._get_indexer_attn_metadata()
 
         # Inputs and outputs may be padded for CUDA graphs
-        num_input_tokens = (
-            hidden_states.shape[0]
-            if self.qk_rope_head_dim == 0 and not input_is_sequence_parallel
-            else attn_metadata.num_input_tokens
-        )
+        num_input_tokens = hidden_states.shape[0] if self.qk_rope_head_dim == 0 else attn_metadata.num_input_tokens
         parallel_context = self._get_parallel_forward_context(
             attn_metadata,
             num_input_tokens,
@@ -1958,10 +1959,7 @@ class AscendSFAImpl(MLAAttentionImpl):
 
         if fused_type == PreprocessType.NATIVE:
             # Trim in the input layout before CP adds padding and shards it.
-            if input_is_sequence_parallel:
-                hidden_states = self._prepare_sequence_parallel_hidden_states(hidden_states, attn_metadata)
-            else:
-                hidden_states = self._prepare_native_hidden_states(hidden_states, attn_metadata)
+            hidden_states = self._prepare_native_hidden_states(hidden_states, attn_metadata)
             if gate_hidden_states is not None:
                 gate_hidden_states = hidden_states
 
@@ -2125,20 +2123,11 @@ class AscendSFAImpl(MLAAttentionImpl):
         if gate_hidden_states is not None:
             assert self.g_proj is not None
             attn_output.mul_(torch.sigmoid(self.g_proj(gate_hidden_states.contiguous())[0]))
-        if input_is_sequence_parallel:
-            self._finalize_sequence_parallel_o_proj(
-                attn_output,
-                output,
-                parallel_context.gather_full_o_proj,
-                attn_metadata,
-                output_scale,
-            )
-        else:
-            self._finalize_o_proj(
-                attn_output,
-                output[:num_input_tokens],
-                parallel_context.gather_full_o_proj,
-            )
+        self._finalize_o_proj(
+            attn_output,
+            output[:num_input_tokens],
+            parallel_context.gather_full_o_proj,
+        )
 
         maybe_save_kv_layer_to_connector(layer_name, list(kv_cache))
 

@@ -12,8 +12,6 @@ Kimi K3 is a native multimodal Mixture-of-Experts (MoE) model. Its language back
 
 This document will show the main verification steps of the model, including supported features, feature configuration, environment preparation, multi-node deployment on 950DT Products, Atlas 800 A3, and Atlas 800 A2, functional verification, and AISBench evaluation.
 
-This document is validated and written based on **vLLM-Ascend `v0.30.0`**.
-
 The current release includes a subset of the Kimi K3 optimization features that have been validated for this version. To provide a reproducible and supportable baseline, this guide uses fixed deployment configurations instead of exposing every tunable optimization.
 
 These configurations position Kimi K3 for native multimodal inference, reasoning and tool calling, and multi-node mixed Prefill/Decode or PD separation deployments on 950DT Products, Atlas 800 A3, and Atlas 800 A2. Additional optimization features and configuration guidance will be added in later releases after validation.

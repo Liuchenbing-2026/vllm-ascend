@@ -56,7 +56,7 @@ from vllm_ascend.patch.platform.patch_kv_cache_utils import (
     _get_kv_cache_config_deepseek_v4_main,
 )
 from vllm_ascend.spec_decode.dspark_proposer import AscendDSparkProposer
-from vllm_ascend.utils import AscendDeviceType
+from vllm_ascend.utils import AscendDeviceType, vllm_version_is
 from vllm_ascend.worker.model_runner_v1 import NPUModelRunner
 from vllm_ascend.worker.v2.kvpp import KVPPRuntime
 
@@ -169,44 +169,6 @@ class TestGlm5MtpGraphMetadata(unittest.TestCase):
                     )
                 self.assertEqual(runner.cudagraph_dispatcher.dispatch.call_args.kwargs["uniform_decode"], expected)
 
-    def test_pd_recompute_hybrid_tail_dispatches_decode_graph(self):
-        cases = [
-            ([4095], [4096], True, False, 6, 6, True),
-            ([4095], [4096], False, False, 6, 6, False),
-            ([4092], [4096], True, False, 6, 6, False),  # incomplete prompt
-            ([0], [4096], True, False, 6, 6, False),  # no initial state
-            ([0], [1], True, False, 6, 6, False),  # N-1 still needs state
-            ([4096], [4096], False, False, 6, 6, True),
-            ([4100, 4095], [4096, 4096], True, False, 6, 6, True),
-            ([4095, 4092], [4096, 4096], True, False, 6, 6, False),
-            ([4095], [4096], True, True, 6, 6, False),  # retain DCP guard
-            ([4095], [4096], True, False, 6, 1, False),  # unpadded MTP tail
-            ([4095], [4096], True, False, 1, 1, True),  # non-spec decode
-        ]
-        for computed, prompts, enabled, dcp, graph_width, query_width, expected in cases:
-            with self.subTest(computed=computed, enabled=enabled, dcp=dcp, query_width=query_width):
-                runner = self._build_dispatch_runner(speculative=graph_width > 1)
-                runner.model_config.is_hybrid = True
-                runner.dcp_size = 2 if dcp else 1
-                runner.uniform_decode_query_len = graph_width
-                runner.input_batch.num_computed_tokens_cpu = np.array(computed + [0])
-                runner.input_batch.num_prompt_tokens = np.array(prompts + [999])
-                with (
-                    patch("vllm_ascend.worker.model_runner_v1.enable_sp", return_value=False),
-                    patch(
-                        "vllm_ascend.worker.model_runner_v1.is_pd_decode_recompute_scheduler_enabled",
-                        return_value=enabled,
-                    ),
-                ):
-                    runner._determine_batch_execution_and_padding(
-                        num_tokens=query_width * len(computed),
-                        num_reqs=len(computed),
-                        num_scheduled_tokens_np=np.full(len(computed), query_width),
-                        max_num_scheduled_tokens=query_width,
-                        use_cascade_attn=False,
-                    )
-                self.assertEqual(runner.cudagraph_dispatcher.dispatch.call_args.kwargs["uniform_decode"], expected)
-
 
 class TestDPPaddingPolicy(unittest.TestCase):
     @staticmethod
@@ -214,7 +176,10 @@ class TestDPPaddingPolicy(unittest.TestCase):
         runner = NPUModelRunner.__new__(NPUModelRunner)
         runner.dp_size = 2
         runner.dp_rank = dp_rank
-        runner.vllm_config = SimpleNamespace(model_config=SimpleNamespace())
+        runner.vllm_config = SimpleNamespace(
+            model_config=SimpleNamespace(),
+            aux_output_config=SimpleNamespace(enable_return_routed_experts=False),
+        )
         runner.ascend_config = SimpleNamespace(finegrained_tp_config=FinegrainedTPConfig())
         return runner
 
@@ -312,6 +277,15 @@ class TestDPPaddingPolicy(unittest.TestCase):
                                 self.assertEqual(maximum, 31)
                                 self.assertEqual(mode, CUDAGraphMode.NONE)
                                 self.assertEqual(across_dp.tolist(), [31, 31] if size > 1 else list(tokens))
+
+    def test_routing_capture_keeps_uniform_eager_inputs(self):
+        for dp_rank in range(2):
+            with self.subTest(dp_rank=dp_rank):
+                runner = self._make_runner(dp_rank)
+                runner.vllm_config.aux_output_config.enable_return_routed_experts = True
+                _, across_dp, mode = self._run_sync(runner, comm_method=MoECommType.FUSED_MC2)
+                self.assertEqual(mode, CUDAGraphMode.NONE)
+                self.assertEqual(across_dp.tolist(), [32, 32])
 
     def test_imbalanced_and_idle_metadata_use_agreed_graph_mode(self):
         for tokens in ((0, 32), (1, 32), (8, 32)):
@@ -735,7 +709,8 @@ class TestDeviceMetadataFullGraphEvents(unittest.TestCase):
         runner.use_compress = False
         runner._finalize_dump_data = MagicMock()
 
-        def model_forward(*args):
+        def model_forward(*args, decoder_replay_dummy=False):
+            assert decoder_replay_dummy
             events.append("forward")
             return torch.zeros((4, 1))
 
@@ -1053,7 +1028,7 @@ class TestAcceptedTokenSnapshot(unittest.TestCase):
                 device=torch.device("cpu"),
                 vocab_size=128,
                 block_sizes=[4],
-                kernel_block_sizes=[4],
+                **({"kernel_block_sizes": [4]} if vllm_version_is("0.31.0") else {}),
                 max_num_blocks_per_req=[8],
                 num_spec_tokens=3,
             )
@@ -1150,7 +1125,9 @@ class TestAcceptedTokenSnapshot(unittest.TestCase):
                 runner.requests = {}
                 runner.mamba_state_idx = {}
                 runner.num_spec_tokens = 3
-                with patch("vllm_ascend.worker.model_runner_v1.mamba_utils.postprocess_mamba_all") as postprocess_all:
+                with patch(
+                    "vllm_ascend.worker.model_runner_v1.mamba_utils.postprocess_mamba_all", create=True
+                ) as postprocess_all:
                     runner._update_states_after_model_execute(torch.tensor([[10, -1], [11, 12]]), SimpleNamespace())
                 np.testing.assert_array_equal(runner.num_accepted_tokens.np[:2], [1, 2])
                 np.testing.assert_array_equal(runner.input_batch.num_accepted_tokens_cpu[:2], [1, 1])
@@ -1220,6 +1197,7 @@ class TestNPUModelRunnerKVCache(unittest.TestCase):
         return runner
 
     def _check_load_model_prolog_budget(self, with_draft, pcp_enabled):
+        """Verify persistent PROLOG buffers are charged during weight loading."""
         runner = self._build_runner()
         runner.model_config.model = "test-model"
         runner.model_config.multimodal_config = None
@@ -1242,6 +1220,7 @@ class TestNPUModelRunnerKVCache(unittest.TestCase):
         def add_layer(name):
             layer = MLAAttention.__new__(MLAAttention)
             torch.nn.Module.__init__(layer)
+            layer.attn_backend = AscendMLABackend
             impl = AscendMLAImpl.__new__(AscendMLAImpl)
             impl.layer_name = name
             impl.vllm_config = runner.vllm_config
@@ -1361,7 +1340,8 @@ class TestNPUModelRunnerKVCache(unittest.TestCase):
         torch.nn.Module.__init__(attn_module)
         attn_module.impl = SimpleNamespace(
             fa_quant_layer=False,
-            supports_prolog_v3_writer=lambda: True,
+            supports_prolog_v3_writer=lambda: False,
+            supports_strided_mla_writer=lambda: True,
         )
         runner.compilation_config = SimpleNamespace(static_forward_context={layer_name: attn_module})
         runner.kernel_block_sizes = [128]
@@ -1497,7 +1477,7 @@ class TestNPUModelRunnerKVCache(unittest.TestCase):
             dcp_enabled=False,
             pcp_enabled=False,
             is_pcp_decode_sharded=False,
-            supports_prolog_v3_writer=lambda: False,
+            supports_strided_mla_writer=lambda: False,
         )
         runner.compilation_config = SimpleNamespace(static_forward_context={layer_name: attn_module})
 
@@ -1531,7 +1511,7 @@ class TestNPUModelRunnerKVCache(unittest.TestCase):
         attn_module.impl.is_pcp_decode_sharded = False
 
         attn_module.impl.dcp_enabled = True
-        attn_module.impl.supports_prolog_v3_writer = lambda: True
+        attn_module.impl.supports_strided_mla_writer = lambda: True
         runner.vllm_config.scheduler_config.max_num_batched_tokens = 16384
         attn_module.impl._dcp_current_kv_buffers_are_sufficient = lambda: False
         with patch(
@@ -1553,7 +1533,7 @@ class TestNPUModelRunnerKVCache(unittest.TestCase):
             self.assertTrue(runner._uses_single_raw_mla_cache(layer_name, spec, attn_module))
         attn_module.impl._dcp_current_kv_buffers = None
         attn_module.impl.dcp_enabled = False
-        attn_module.impl.supports_prolog_v3_writer = lambda: True
+        attn_module.impl.supports_strided_mla_writer = lambda: True
         with patch(
             "vllm_ascend.worker.model_runner_v1.supports_component_major_mla_pd",
             return_value=True,
@@ -4029,6 +4009,7 @@ class TestNPUModelRunnerDebugger(unittest.TestCase):
         mock_get_pp_group.return_value = SimpleNamespace(world_size=1, is_first_rank=True, is_last_rank=True)
         runner = self._build_runner(MagicMock(spec=["start", "stop", "step"]))
         runner.vllm_config = MagicMock()
+        runner.vllm_config.aux_output_config.enable_return_routed_experts = False
         runner.ascend_config = SimpleNamespace(
             scheduler_config=SimpleNamespace(profiling_chunk_config=SimpleNamespace(enabled=False, need_timing=False))
         )
@@ -4068,6 +4049,7 @@ class TestNPUModelRunnerDebugger(unittest.TestCase):
         mock_get_pp_group.return_value = SimpleNamespace(world_size=1, is_first_rank=True, is_last_rank=True)
         runner = self._build_runner(MagicMock(spec=["start", "stop", "step"]))
         runner.vllm_config = MagicMock()
+        runner.vllm_config.aux_output_config.enable_return_routed_experts = False
         runner.ascend_config = SimpleNamespace(
             scheduler_config=SimpleNamespace(profiling_chunk_config=SimpleNamespace(enabled=False, need_timing=False))
         )

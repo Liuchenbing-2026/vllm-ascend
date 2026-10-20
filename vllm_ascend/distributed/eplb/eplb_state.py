@@ -149,6 +149,7 @@ class AscendEplbState(_eplb_state.EplbState):
     """Keep Ascend routing and load-recording state around upstream EPLB."""
 
     cuda_device_index: int | None
+    device_index: int | None
     async_worker: threading.Thread | None
 
     def __init__(
@@ -168,8 +169,11 @@ class AscendEplbState(_eplb_state.EplbState):
         self._suspended = False
         self._close_error: Exception | None = None
         self._hixl_session: _HixlSession | None = None
-        if self.cuda_device_index is None:
-            self.cuda_device_index = torch.accelerator.current_device_index()
+        # vLLM main renamed ``EplbState.cuda_device_index`` to ``device_index``
+        # (and passes it to EplbModelState on add_model), so keep both lanes
+        # pointing at the attribute upstream actually reads.
+        if self.device_index is None:
+            self.device_index = torch.accelerator.current_device_index()
 
     @property
     def uses_custom_load_stats(self) -> bool:
@@ -569,6 +573,12 @@ class AscendEplbState(_eplb_state.EplbState):
         model_state._eplb_ready_flag = flag
         model_state._eplb_ready_work = work
         return False
+
+    def update_mapping(self, model_config, expanded_physical_to_logical: torch.Tensor) -> None:
+        super().update_mapping(model_config, expanded_physical_to_logical)
+        # Verified main updates a live state during elastic EP. Refresh the
+        # Ascend replica table in place so captured graphs use the new mapping.
+        refresh_model_routing_tables(self.model_states[model_config.compute_hash()])
 
     @classmethod
     def from_mapping(

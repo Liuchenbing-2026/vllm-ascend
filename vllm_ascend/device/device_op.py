@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any
 import torch
 import torch.nn.functional as F
 import torch_npu
-from vllm.third_party.flash_linear_attention.ops.l2norm import l2norm_fwd
 from vllm.triton_utils import HAS_TRITON
 
 from vllm_ascend.device import utils as device_utils
@@ -40,7 +39,7 @@ if TYPE_CHECKING:
 
 ACL_HOST_REG_MAPPED = 0x2
 ACL_HOST_REG_PINNED = 0x10000000
-
+INT64_MAX = torch.iinfo(torch.int64).max
 
 if HAS_TRITON:
     from vllm_ascend.ops.triton.rms_norm import triton_q_rms  # noqa: F811
@@ -485,7 +484,7 @@ class BaseDeviceAdaptor:
             assert q_li_scale is not None
             assert q_li_shape_ori is not None
             weights = weights.to(torch.float16)
-            topk_indices = torch.ops._C_ascend.npu_lightning_indexer_quant(
+            topk_indices = torch_npu.npu_quant_lightning_indexer(
                 query=q_li.view(q_li_shape_ori),
                 key=kv_cache[indexer_cache_idx],
                 weights=weights,
@@ -500,6 +499,8 @@ class BaseDeviceAdaptor:
                 layout_key="PA_BSND",
                 sparse_count=2048,
                 sparse_mode=3,
+                pre_tokens=INT64_MAX,
+                next_tokens=INT64_MAX,
             )
         else:
             topk_indices, _ = torch_npu.npu_lightning_indexer(
@@ -889,6 +890,12 @@ class BaseDeviceAdaptor:
         fused_fwd,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Run the A2/A3 Phase6 FLA NPU GDN prefill kernel."""
+        # FLA's import-time capability queries can initialize an NPU context;
+        # defer them until execution on the selected worker device.
+        # TODO: Restore the top-level import once supported vLLM FLA or Triton
+        # Ascend versions make these queries safe before device selection.
+        from vllm.third_party.flash_linear_attention.ops.l2norm import l2norm_fwd
+
         q = l2norm_fwd(q.contiguous()).contiguous()
         k = l2norm_fwd(k.contiguous()).contiguous()
         v = v.contiguous()
@@ -1792,6 +1799,8 @@ class A5DeviceAdaptor(BaseDeviceAdaptor):
                     layout_key="PA_BSND",
                     sparse_count=2048,
                     sparse_mode=3,
+                    pre_tokens=INT64_MAX,
+                    next_tokens=INT64_MAX,
                 )
             else:
                 topk_indices, _ = torch_npu.npu_lightning_indexer(
@@ -2064,6 +2073,21 @@ class Ascend310PDeviceAdaptor(BaseDeviceAdaptor):
         idx[dim] = mask
         tensor[tuple(idx)] = value
         return tensor
+
+    @staticmethod
+    def clipped_swiglu(
+        hidden_states: torch.Tensor,
+        swiglu_limit: float,
+        swiglu_alpha: float,
+        swiglu_beta: float,
+    ) -> torch.Tensor:
+        hidden_size = hidden_states.shape[-1] // 2
+        gate = hidden_states[..., :hidden_size].clamp(max=swiglu_limit)
+        up = hidden_states[..., hidden_size:].clamp(
+            min=-swiglu_limit,
+            max=swiglu_limit,
+        )
+        return gate * torch.sigmoid(swiglu_alpha * gate) * (up + swiglu_beta)
 
 
 def get_device_adaptor() -> type["BaseDeviceAdaptor"]:

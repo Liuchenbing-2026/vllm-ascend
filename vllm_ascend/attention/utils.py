@@ -8,6 +8,7 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
+import torch_npu
 from vllm.config import VllmConfig, get_current_vllm_config
 from vllm.config.speculative import SpeculativeConfig
 from vllm.distributed.kv_transfer import get_kv_transfer_group, has_kv_transfer_group, is_v1_kv_transfer_group
@@ -29,12 +30,15 @@ from vllm.v1.kv_cache_interface import (
 from vllm_ascend.core.kv_cache_interface import get_kv_cache_compression_ratio, supports_component_major_mla_pd
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.device.utils import FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE
+from vllm_ascend.ops.triton.attention_update import prepare_attention_update
 from vllm_ascend.utils import (
     _is_glm_model,
     get_ascend_config,
     is_pd_decode_recompute_scheduler_enabled,
 )
 
+# Native npu_attention_update accepts at most 16 output/LSE pairs.
+ATTENTION_UPDATE_MAX_INPUTS = 16
 SFA_QSFA_TILE_SIZE = 128
 MLAPO_MAX_SUPPORTED_TOKENS = 1024
 # FlashMLA's A5 kernel accepts these per-rank query-head counts (N1). Other
@@ -79,8 +83,9 @@ def supports_strided_mla_cache(
             return False
     if getattr(impl, "fa_quant_layer", False) or getattr(impl, "enable_kv_nz", False):
         return False
-    supports_prolog_writer = getattr(impl, "supports_prolog_v3_writer", None)
-    return supports_prolog_writer is not None and supports_prolog_writer()
+    # Wide A5 draft inputs use the prepared scatter adapter instead of PROLOG_V3.
+    supports_strided_writer = getattr(impl, "supports_strided_mla_writer", None)
+    return supports_strided_writer is not None and supports_strided_writer()
 
 
 @lru_cache(maxsize=1)
@@ -399,6 +404,14 @@ class AscendCommonAttentionMetadata(CommonAttentionMetadata):
     _num_computed_tokens_cpu: torch.Tensor | None = None
     dcp_local_seq_lens_cpu: torch.Tensor | None = None
 
+    # Per-request replay start: 0 for every request that is not replaying, else
+    # where that request's replayed run begins. A backend clamps a replaying
+    # request's sliding-window lower bound to it: below that point the window's
+    # KV is not being rebuilt -- the replayed positions are padded on the
+    # cacheable groups -- and only the shared prefix is there. ``None`` means
+    # the same as all zeros; dummy/profiling/capture batches do not fill it.
+    replay_start: torch.Tensor | None = None
+
     # TODO: Remove it when vLLM no longer uses this function.
     def unpadded(self, num_actual_tokens: int, num_actual_reqs: int) -> "AscendCommonAttentionMetadata":
         # This only use to eagle now. It will be use to enforce_eager in future.
@@ -454,6 +467,7 @@ class AscendCommonAttentionMetadata(CommonAttentionMetadata):
             req_topk_buffer_active=_slice_reqs(self.req_topk_buffer_active),
             copy_sfa_draft_index=self.copy_sfa_draft_index,
             offload_dummy=self.offload_dummy,
+            replay_start=_slice_reqs(self.replay_start),
             req_ids_tensor=_slice_reqs(self.req_ids_tensor),
             token_to_req=(self.token_to_req[:num_actual_tokens] if self.token_to_req is not None else None),
         )
@@ -706,3 +720,26 @@ def _select_seq_lens(
         if not (speculative_config.use_dspark() and _is_glm_model(model_config)):
             seq_lens = common_attn_metadata.seq_lens
     return seq_lens
+
+
+def merge_prefill_chunks(
+    out_list: list[torch.Tensor],
+    lse_list: list[torch.Tensor],
+    lse_anchor: torch.Tensor | None,
+    *,
+    return_lse: bool,
+) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    """Merge bounded FP32 pairs with a separate anchor for relative LSEs.
+
+    Adding the anchor to an intermediate LSE would round away small relative
+    weights at large common offsets. Fused preparation retains this split
+    representation without synchronizing the host. The first group contains
+    current causal attention, so every real query has a finite prefix LSE.
+    """
+    assert 1 < len(out_list) == len(lse_list) <= ATTENTION_UPDATE_MAX_INPUTS
+    if lse_anchor is None and not return_lse:
+        output, lse = torch_npu.npu_attention_update(tuple(lse_list), tuple(out_list), 0)
+        return output, lse, None
+    relative_lse, anchor = prepare_attention_update(lse_list, lse_anchor)
+    output, lse = torch_npu.npu_attention_update(relative_lse, tuple(out_list), int(return_lse))
+    return output, lse, anchor

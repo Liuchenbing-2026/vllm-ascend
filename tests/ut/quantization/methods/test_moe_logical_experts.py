@@ -45,7 +45,6 @@ def test_routed_moe_interface_is_not_exposed_on_linear_schemes():
         AscendW4A8DynamicFusedMoEMethod,
         AscendW4A4MXFP4DynamicFusedMoEMethod,
         AscendW8A8MXFP8DynamicFusedMoEMethod,
-        AscendW4A8MXFPDynamicFusedMoEMethod,
     ],
 )
 def test_v2_eplb_supported_quantization(scheme_cls):
@@ -57,6 +56,7 @@ def test_v2_eplb_supported_quantization(scheme_cls):
     [
         AscendW4A16FusedMoEMethod,
         AscendW4A16MXFP4FusedMoEMethod,
+        AscendW4A8MXFPDynamicFusedMoEMethod,
     ],
 )
 def test_v2_eplb_unsupported_quantization_is_explicit(scheme_cls):

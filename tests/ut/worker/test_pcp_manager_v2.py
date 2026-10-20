@@ -26,11 +26,13 @@ import torch
 from vllm.config import CUDAGraphMode, ParallelConfig
 from vllm.config.utils import replace
 from vllm.v1.worker.gpu import model_runner as vllm_model_runner
+from vllm.v1.worker.gpu.cudagraph_utils import BatchExecutionDescriptor
 from vllm.v1.worker.gpu.input_batch import InputBatch
 from vllm.v1.worker.gpu.pcp_manager import PCPManager
 
 from vllm_ascend.attention.context_parallel.common_cp import is_pcp_decode_sharding_enabled
 from vllm_ascend.platform import _setup_worker_and_scheduler
+from vllm_ascend.utils import vllm_version_is
 from vllm_ascend.worker.v2 import states as states_module
 from vllm_ascend.worker.v2.aclgraph_utils import ModelAclGraphManager, _prepare_pcp_inputs_to_capture
 from vllm_ascend.worker.v2.input_batch import AscendInputBatch, AscendInputBuffers
@@ -84,6 +86,17 @@ def _make_pcp_config(
     )
 
 
+def _partition_batch(manager, batch, *, padded_num_tokens=None, batch_desc=None):
+    """Use the 0.31 descriptor API, without token/request padding by default."""
+    if batch_desc is None:
+        batch_desc = BatchExecutionDescriptor(
+            CUDAGraphMode.NONE,
+            int(getattr(batch, "num_tokens", 0)),
+            None,
+        )
+    return manager.partition_batch(batch, batch_desc)
+
+
 @pytest.mark.parametrize(
     "cudagraph_mode,speculative,pcp_size,dcp_size,expected_sharding",
     [
@@ -122,6 +135,7 @@ def test_decode_sharding_does_not_add_a_parallel_config_field():
         parallel_config=parallel_config,
         speculative_config=SimpleNamespace(method="mtp"),
         compilation_config=SimpleNamespace(cudagraph_mode=CUDAGraphMode.NONE),
+        cache_config=None,
     )
     ascend_config = SimpleNamespace(
         scheduler_config=SimpleNamespace(
@@ -137,7 +151,11 @@ def test_decode_sharding_does_not_add_a_parallel_config_field():
         hardware_profile.return_value.supports.return_value = False
         _setup_worker_and_scheduler(config, ascend_config)
 
-    assert not hasattr(parallel_config, "pcp_shard_decode_requests")
+    if vllm_version_is("0.31.0"):
+        assert not hasattr(parallel_config, "pcp_shard_decode_requests")
+    else:
+        # vLLM main declares this on ParallelConfig itself.
+        assert parallel_config.pcp_shard_decode_requests is True
     replace(parallel_config)
     assert is_pcp_decode_sharding_enabled(config) is True
 
@@ -315,7 +333,12 @@ def test_partition_batch_refreshes_local_ascend_input_batch_metadata():
             return_value=local_attn_state,
         ) as build_attn_state,
     ):
-        result = manager.partition_batch(global_batch, padded_num_tokens=12)
+        result = _partition_batch(
+            manager,
+            global_batch,
+            padded_num_tokens=12,
+            batch_desc=BatchExecutionDescriptor(CUDAGraphMode.PIECEWISE, 12, None),
+        )
 
     assert isinstance(result, AscendInputBatch)
     assert result is not global_batch
@@ -384,7 +407,8 @@ def _make_replicated_pcp_manager():
     return manager
 
 
-def test_partition_batch_pads_decode_requests_when_tokens_are_already_padded():
+@pytest.mark.parametrize("requests_already_padded", [False, True])
+def test_partition_batch_pads_decode_requests_when_tokens_are_already_padded(requests_already_padded):
     """Keep request metadata aligned when upstream already pads tokens."""
     input_buffers = AscendInputBuffers(
         max_num_reqs=4,
@@ -441,6 +465,13 @@ def test_partition_batch_pads_decode_requests_when_tokens_are_already_padded():
     input_buffers.is_padding[:4].fill_(False)
     input_buffers.query_start_loc[:5].copy_(torch.tensor([0, 1, 2, 3, -1], dtype=torch.int32))
     input_buffers.seq_lens[:4].copy_(torch.tensor([11, 21, 31, 99], dtype=torch.int32))
+    if requests_already_padded:
+        local_batch.num_reqs_after_padding = 4
+        local_batch.query_start_loc = input_buffers.query_start_loc[:5]
+        local_batch.query_start_loc_np = np.array([0, 1, 2, 3, 3], dtype=np.int32)
+        local_batch.query_start_loc.copy_(torch.from_numpy(local_batch.query_start_loc_np))
+        local_batch.seq_lens = input_buffers.seq_lens[:4]
+        local_batch.seq_lens_cpu_upper_bound = torch.tensor([11, 21, 31, 0], dtype=torch.int32)
 
     manager = _make_replicated_pcp_manager()
     manager._input_buffers = input_buffers
@@ -451,6 +482,7 @@ def test_partition_batch_pads_decode_requests_when_tokens_are_already_padded():
     manager._hidden_restore_idx = torch.arange(4, dtype=torch.int64)
     # Upstream replace() preserves the global attention state.
     local_batch.attn_state = global_batch.attn_state
+    batch_desc = BatchExecutionDescriptor(CUDAGraphMode.FULL_DECODE_ONLY, 4, None)
 
     with (
         patch.object(
@@ -466,9 +498,9 @@ def test_partition_batch_pads_decode_requests_when_tokens_are_already_padded():
             side_effect=_mock_async_copy_to_cpu,
         ),
     ):
-        result = manager.partition_batch(global_batch, padded_num_tokens=4)
+        result = _partition_batch(manager, global_batch, padded_num_tokens=4, batch_desc=batch_desc)
 
-    upstream_partition.assert_called_once_with(global_batch, padded_num_tokens=4, padded_num_reqs=None)
+    upstream_partition.assert_called_once_with(global_batch, batch_desc)
     assert result.num_reqs == 3
     assert result.num_reqs_after_padding == 4
     assert result.num_tokens == 3
@@ -504,6 +536,7 @@ def test_partition_batch_keeps_piecewise_request_extent():
         CUDAGraphMode.PIECEWISE,
         speculative_config=SimpleNamespace(num_speculative_tokens=3),
     )
+    batch_desc = BatchExecutionDescriptor(CUDAGraphMode.PIECEWISE, 4, None)
 
     with (
         patch.object(
@@ -513,9 +546,9 @@ def test_partition_batch_keeps_piecewise_request_extent():
         ) as upstream_partition,
         patch("vllm_ascend.worker.v2.pcp_manager.build_attn_state"),
     ):
-        result = manager.partition_batch(batch, padded_num_tokens=4)
+        result = _partition_batch(manager, batch, padded_num_tokens=4, batch_desc=batch_desc)
 
-    upstream_partition.assert_called_once_with(batch, padded_num_tokens=4, padded_num_reqs=None)
+    upstream_partition.assert_called_once_with(batch, batch_desc)
     assert result.num_reqs_after_padding == 2
     assert torch.equal(result.query_start_loc, torch.tensor([0, 1, 2], dtype=torch.int32))
     np.testing.assert_array_equal(result.query_start_loc_np, np.array([0, 1, 2], dtype=np.int32))
@@ -671,7 +704,7 @@ def test_partition_batch_preserves_fia_dummy_layout() -> None:
             return_value=object(),
         ),
     ):
-        local_batch = manager.partition_batch(global_batch)
+        local_batch = _partition_batch(manager, global_batch)
 
     assert local_batch.num_reqs == 1
     assert local_batch.num_reqs_after_padding == 2
@@ -736,7 +769,7 @@ def test_partition_batch_preserves_speculative_target_inputs(pcp_rank) -> None:
         patch("vllm.v1.worker.gpu.pcp_manager.async_tensor_h2d", side_effect=_mock_async_copy_to_cpu),
         patch("vllm_ascend.worker.v2.pcp_manager.build_attn_state") as recompute,
     ):
-        result = manager.partition_batch(global_batch)
+        result = _partition_batch(manager, global_batch)
 
     assert manager.global_batch is global_batch
     assert global_batch.num_draft_tokens == 3
@@ -798,7 +831,11 @@ def test_sampling_restore_exposes_unpadded_global_view() -> None:
     manager._sampling_hidden_restored = True
     hidden_states = torch.arange(32).reshape(16, 2)
     with patch.object(AscendPCPManager, "_restore_unpadded_global_batch", return_value=True):
-        restored_hidden, restored_batch = manager.restore_for_sampling(hidden_states)
+        # vLLM #57980 threads aux_hidden_states through this hook.
+        restored_hidden, restored_aux, restored_batch = manager.restore_for_sampling(hidden_states, [hidden_states])
+    assert len(restored_aux) == 1
+    assert restored_aux[0].shape == (12, 2)
+    assert restored_aux[0].data_ptr() == hidden_states.data_ptr()
     assert restored_batch is not batch
     assert restored_batch.num_tokens_after_padding == 12
     assert restored_batch.query_start_loc.tolist() == [0, 12]
@@ -950,12 +987,14 @@ def test_validate_config_rejects_unsupported_speculator_options(
 
 def test_main2main_v2_overrides_accept_new_upstream_keywords() -> None:
     """Lock the keyword contracts added by vLLM #53694 and #53869."""
+    # vLLM #60754 renamed `dp_sync` -> `dp_sync_state` on main.
+    dp_sync_param = "dp_sync" if vllm_version_is("0.31.0") else "dp_sync_state"
     for speculator_cls in (
         AscendAutoRegressiveSpeculator,
         AscendDFlashSpeculator,
         AscendDSparkSpeculator,
     ):
-        assert "dp_sync" in signature(speculator_cls.propose).parameters
+        assert dp_sync_param in signature(speculator_cls.propose).parameters
     assert "pcp_manager" in signature(ModelAclGraphManager.capture).parameters
 
 
@@ -967,7 +1006,7 @@ def test_main_pcp_capture_does_not_repartition_local_dummy_batch() -> None:
     slot_mappings = torch.arange(8)
     slot_mappings_by_layer = object()
     attn_metadata = object()
-    block_tables = MagicMock(cp_size=1, cp_rank=0, cp_interleave=1)
+    block_tables = MagicMock(cp_size=2, cp_rank=0, cp_interleave=1)
     pcp_manager = MagicMock()
     pcp_manager.get_dummy_block_tables.return_value = input_block_tables
     pcp_manager.get_dummy_slot_mappings.return_value = slot_mappings
@@ -986,7 +1025,7 @@ def test_main_pcp_capture_does_not_repartition_local_dummy_batch() -> None:
             return_value=slot_mappings_by_layer,
         ),
         patch(
-            "vllm_ascend.worker.v2.aclgraph_utils.maybe_prepare_dcp_local_seq_lens",
+            "vllm_ascend.worker.v2.aclgraph_utils._prepare_dcp_local_seq_lens",
             return_value=dcp_local_seq_lens,
         ) as prepare_dcp_local_seq_lens,
     ):
@@ -1013,7 +1052,7 @@ def test_main_pcp_capture_does_not_repartition_local_dummy_batch() -> None:
         input_buffers.dcp_local_seq_lens,
         input_batch.seq_lens,
         input_batch.num_reqs,
-        1,
+        2,
         0,
         1,
         num_reqs_padded=input_batch.num_reqs_after_padding,
@@ -1066,15 +1105,16 @@ def test_sample_tokens_uses_global_batch_only_on_non_last_pp_rank(
     runner.pcp_manager = manager
     runner.is_last_pp_rank = is_last_pp_rank
     runner.speculator = None
-    runner.use_spec_pp = False
     # Dump contract from the production initializer; helpers no-op on None.
     runner.debugger = None
     runner._debugger_started = False
     runner.prompt_logprobs_worker = None
     # vLLM main added these ExecuteModelState fields.
     state_kwargs: dict = {}
-    state_kwargs["dp_sync"] = None
+    state_kwargs["dp_sync" if vllm_version_is("0.31.0") else "dp_sync_state"] = None
     state_kwargs["cudagraph_stats"] = None
+    if not vllm_version_is("0.31.0"):
+        state_kwargs["num_spec_tokens_to_schedule"] = 0
     runner.execute_model_state = vllm_model_runner.ExecuteModelState(
         input_batch=local_batch,
         attn_metadata=None,
@@ -1083,7 +1123,6 @@ def test_sample_tokens_uses_global_batch_only_on_non_last_pp_rank(
         aux_hidden_states=None,
         finished_req_ids=set(),
         ec_connector_output=None,
-        routed_experts=None,
         **state_kwargs,
     )
     grammar_output = object()
@@ -1147,7 +1186,7 @@ def test_partition_batch_clears_padded_dcp_local_seq_lens() -> None:
             side_effect=_mock_async_copy_to_cpu,
         ),
     ):
-        result = manager.partition_batch(global_batch)
+        result = _partition_batch(manager, global_batch)
 
     assert result.dcp_local_seq_lens is not None
     torch.testing.assert_close(
@@ -1220,7 +1259,12 @@ def test_cpp_dummy_is_partitioned_instead_of_staged():
 
     assert result is local_batch
     stage.assert_not_called()
-    partition.assert_called_once_with(dummy)
+    partition.assert_called_once()
+    args = partition.call_args.args
+    assert len(args) == 2
+    assert args[0] is dummy
+    assert args[1].cg_mode == CUDAGraphMode.NONE
+    assert args[1].num_tokens == dummy.num_tokens
 
 
 def test_capture_input_without_cpp_marker_uses_staging_path():
@@ -1311,7 +1355,7 @@ def test_speculative_decode_keeps_draft_tokens_on_pcp_ranks(pcp_rank):
         patch("vllm.v1.worker.gpu.pcp_manager.async_tensor_h2d", side_effect=_mock_async_copy_to_cpu),
         patch("vllm_ascend.worker.v2.pcp_manager.build_attn_state"),
     ):
-        local = manager.partition_batch(batch)
+        local = _partition_batch(manager, batch)
     assert manager.get_num_tokens_for_dispatch(batch.num_scheduled_tokens, batch.is_prefilling_np) == 4
     # Replicated layouts keep the target verification tokens on every rank.
     assert local.num_tokens == 4
