@@ -61,6 +61,15 @@ def _use_pp_ipc_runtime_patch(vllm_config, use_pp: bool) -> bool:
     return not getattr(vllm_config, "use_v2_model_runner", False)
 
 
+def _use_sync_pp_spec_scheduler_fence(vllm_config, use_pp: bool) -> bool:
+    return (
+        use_pp
+        and getattr(vllm_config, "use_v2_model_runner", False)
+        and getattr(vllm_config, "speculative_config", None) is not None
+        and not getattr(getattr(vllm_config, "scheduler_config", None), "async_scheduling", True)
+    )
+
+
 def _patch_model_runner_output() -> None:
     from vllm.v1 import outputs as outputs_mod
 
@@ -129,9 +138,10 @@ def _patch_scheduler_update_after_schedule() -> None:
     @wraps(original_update_after_schedule)
     def _patched_update_after_schedule(self, scheduler_output):
         original_update_after_schedule(self, scheduler_output)
-        if not _use_pp_ipc_runtime_patch(
-            getattr(self, "vllm_config", None),
-            getattr(self, "use_pp", False),
+        vllm_config = getattr(self, "vllm_config", None)
+        use_pp = getattr(self, "use_pp", False)
+        if not (
+            _use_pp_ipc_runtime_patch(vllm_config, use_pp) or _use_sync_pp_spec_scheduler_fence(vllm_config, use_pp)
         ):
             return
 
@@ -269,10 +279,14 @@ def _patch_scheduler_update_from_output() -> None:
             model_runner_output,
         )
 
-        if use_pp_ipc_runtime_patch:
+        if use_pp_ipc_runtime_patch or _use_sync_pp_spec_scheduler_fence(
+            getattr(self, "vllm_config", None), getattr(self, "use_pp", False)
+        ):
             for req_id in scheduler_output.num_scheduled_tokens:
                 request = self.requests.get(req_id)
-                if request is not None:
+                # An older prefill output must not release the fence while a
+                # later chunk can still produce this request's sampled token.
+                if request is not None and (use_pp_ipc_runtime_patch or request.num_in_flight_tokens == 0):
                     request.next_decode_eligible_step = 0
 
         if not use_pp_mtp_runtime_patch:

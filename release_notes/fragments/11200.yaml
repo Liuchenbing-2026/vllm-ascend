@@ -1,0 +1,4 @@
+pr: 11200
+entries:
+  - category: bugfix
+    text: Wait for in-flight outputs before scheduling another synchronous Model Runner V2 pipeline-parallel speculative step for the same request.
