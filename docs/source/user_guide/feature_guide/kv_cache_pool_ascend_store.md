@@ -1699,3 +1699,15 @@ Note the following when enabling KV Pool for DSv4. Other historical known issues
 ### Issue 7: AscendStore KV Pool Known Issues (v0.23.0)
 
 For the v0.23.0 AscendStore KV Pool known issues, see [vllm-ascend issue #12390](https://github.com/vllm-project/vllm-ascend/issues/12390).
+
+### Issue 8: Does KV Pool Support `bidirectional_kv_xfer`?
+
+**Problem Description:** A deployment migrated from a Decode-to-Prefill reuse setup sets `"bidirectional_kv_xfer": true` in `kv_connector_extra_config` and expects the Prefill node to read back the KV cache that the Decode node still holds. The service starts normally, but no Decode-to-Prefill transfer occurs and multi-turn TTFT does not improve.
+
+**Root Cause Analysis:** `bidirectional_kv_xfer` (with `decoder_kv_blocks_ttl` and `kv_recompute_threshold`) is a vLLM upstream `NixlConnector` option, not a KV Pool option. That path keeps KV blocks on the Decode node for a TTL and depends on a stateful proxy that carries the Decode node's `kv_transfer_params` (engine ID, block IDs, address) back to the Prefill node, which then pulls those blocks over RDMA. `AscendStoreConnector` is store-mediated: Prefill and Decode exchange KV through Mooncake/Memcache/Yuanrong and never address each other directly, so no Decode-to-Prefill peer-pull path exists, and both `AscendStoreConnector` and `MooncakeConnectorV1` ignore the key.
+
+**Resolution Steps:**
+
+1. Use the store-mediated equivalent, which publishes Decode-side blocks into the pool so that the next Prefill turn hits them: set `kv_role` to `kv_both`, or keep the consumer role and set `save_decode_cache: true` (Prefill writes stay disabled; this consumer mode requires `use_layerwise: false`).
+2. Remove `bidirectional_kv_xfer` from `kv_connector_extra_config`. The key is silently ignored, so leaving it in place makes a one-way deployment look like a Decode-to-Prefill deployment during debugging.
+3. If direct Decode-to-Prefill pull is a hard requirement, track it as a feature request instead of a configuration change; the current release does not provide it for the Ascend Store or Mooncake PD connectors.
