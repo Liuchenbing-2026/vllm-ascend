@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 import torch_npu
@@ -36,11 +37,11 @@ from vllm_ascend.lora.fused_moe import (
     moe_lora_apply_w2,
     moe_lora_apply_w13,
 )
-from vllm_ascend.ops.activation import AscendSwigluOAIAndMul, AscendSwigluStepAndMul, SituActivationConfig
-from vllm_ascend.ops.fused_moe.moe_runtime_args import MoEMlpComputeInput
+from vllm_ascend.ops.activation import AscendSwigluOAIAndMul, AscendSwigluStepAndMul
+from vllm_ascend.ops.fused_moe.dataclass.moe_mlp import MoEMlpComputeInput
 from vllm_ascend.quantization.quant_type import QuantType
 
-QuantMoELoRAApply = Callable[[MoEMlpComputeInput], tuple[torch.Tensor, torch.npu.Event | None]]
+QuantMoELoRAApply = Callable[[MoEMlpComputeInput, Any], tuple[torch.Tensor, torch.npu.Event | None]]
 QuantMoELoRAActivationValidator = Callable[[torch.Tensor, torch.Tensor | None], None]
 
 
@@ -86,9 +87,10 @@ def _get_quant_moe_lora_impl(quant_type: QuantType) -> QuantMoELoRAImpl:
 def quant_apply_mlp_with_moe_lora(
     *,
     mlp_compute_input: MoEMlpComputeInput,
+    quant_method=None,
 ) -> tuple[torch.Tensor, torch.npu.Event | None]:
     """Dispatch an active quantized MoE LoRA batch to its backend."""
-    return _get_quant_moe_lora_impl(mlp_compute_input.quant.quant_type).apply(mlp_compute_input)
+    return _get_quant_moe_lora_impl(mlp_compute_input.quant.quant_type).apply(mlp_compute_input, quant_method)
 
 
 def validate_quant_moe_lora_activation_input(
@@ -105,14 +107,12 @@ def validate_quant_moe_lora_activation_input(
 
 def _apply_moe_activation(
     gate_up_out: torch.Tensor,
-    activation: str | MoEActivation | SituActivationConfig | None,
+    activation: str | None,
     swiglu_limit: float,
     swiglu_alpha: float,
     swiglu_beta: float,
 ) -> torch.Tensor:
     """Match the activation semantics of the common unquantized MoE path."""
-    if isinstance(activation, SituActivationConfig):
-        raise NotImplementedError("Quantized MoE LoRA does not support SiTU activation.")
     act_name = getattr(activation, "value", activation)
     if activation == MoEActivation.SWIGLUOAI:
         return AscendSwigluOAIAndMul.swiglu_oai_forward(gate_up_out)
@@ -152,6 +152,7 @@ def _validate_dynamic_int8_activations(
 )
 def _apply_dynamic_int8_moe_lora(
     mlp_compute_input: MoEMlpComputeInput,
+    quant_method=None,
 ) -> tuple[torch.Tensor, torch.npu.Event | None]:
     """Run INT8 base experts and inject LoRA at BF16/FP16 boundaries."""
     comm_type = _EXTRA_CTX.moe_comm_type
@@ -179,7 +180,12 @@ def _apply_dynamic_int8_moe_lora(
         # surrounding AlltoAll collectives, but avoid empty-tensor NPU kernels.
         return hidden_states, None
 
-    weights = mlp_compute_input.weights
+    # Weights are carried by the routed-expert layer since the MoE MLP refactor;
+    # fall back to the payload for direct callers/tests that still build it.
+    if quant_method is not None and mlp_compute_input.layer is not None:
+        weights = quant_method.get_mlp_weights(mlp_compute_input.layer)
+    else:
+        weights = mlp_compute_input.weights
     if weights.w1_scale_bias is not None or weights.w2_scale_bias is not None:
         raise NotImplementedError("Quantized MoE LoRA does not support fused scale-bias.")
     if weights.w1_offset is not None or weights.w2_offset is not None:

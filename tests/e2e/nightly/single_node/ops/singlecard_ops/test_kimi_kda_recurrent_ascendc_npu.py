@@ -14,7 +14,7 @@
 # limitations under the License.
 # This file is a part of the vllm-ascend project.
 
-"""Kimi K3 TP16 recurrent-KDA reference and AscendC accuracy coverage."""
+"""Kimi K3 recurrent-KDA reference and direct AscendC accuracy coverage."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from collections.abc import Sequence
 import torch
 import torch.nn.functional as F
 import torch_npu  # noqa: F401
+from fla_npu.ops.ascendc import recurrent_kda
 
 
 def _flatten_bsnd(x: torch.Tensor, layout: str) -> torch.Tensor:
@@ -152,77 +153,26 @@ def recurrent_kda_reference(
     return _restore_layout(out_flat.to(q.dtype), v, layout), state.to(state_dtype)
 
 
-@torch.inference_mode()
-def test_kimi_k3_tp16_recurrent_kda_bsnd_single_token_decode_wrapper():
-    """Exercise the non-spec Kimi decode wrapper with one cache slot per request."""
-    from torch import nn
-
-    from vllm_ascend.ops.kimi_kda import AscendKimiGatedDeltaNetAttention
-
-    torch.manual_seed(20260723)
-    device = torch.device("npu")
-    batch, heads, dim = 4, 6, 128
-    cu_seqlens_host = list(range(batch + 1))
-    q_cpu = torch.randn(1, batch, heads, dim, dtype=torch.bfloat16)
-    k_cpu = torch.randn_like(q_cpu)
-    v_cpu = torch.randn_like(q_cpu)
-    # The projection feeding Kimi's decode wrapper produces BF16. The aclnn
-    # path must preserve the Triton gate preprocessing contract for that dtype.
-    raw_gate_cpu = torch.randn(1, batch, heads, dim, dtype=torch.bfloat16) * 0.25
-    beta_cpu = torch.rand(1, batch, heads, dtype=torch.float32).sigmoid()
-    state_slots = 17
-    state_cpu = torch.randn(state_slots, heads, dim, dim, dtype=torch.float32) * 0.01
-    state_indices_cpu = torch.tensor([9, 2, 15, 4], dtype=torch.int64)
-    a_log_cpu = torch.randn(heads, dtype=torch.float32) * 0.05
-    dt_bias_cpu = torch.randn(heads, dim, dtype=torch.float32) * 0.05
-
-    ref_out, ref_state = recurrent_kda_reference(
-        q_cpu,
-        k_cpu,
-        v_cpu,
-        raw_gate_cpu,
-        beta_cpu,
-        state_cpu,
-        cu_seqlens=cu_seqlens_host,
-        ssm_state_indices=state_indices_cpu,
-        A_log=a_log_cpu,
-        dt_bias=dt_bias_cpu,
-        layout="BSND",
-        scale=dim**-0.5,
-        use_qk_l2norm_in_kernel=True,
-        use_gate_in_kernel=True,
-        safe_gate=True,
+def _padded_feature_view(
+    tensor: torch.Tensor,
+    *,
+    padding: int,
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    storage = torch.full(
+        (*tensor.shape[:-1], tensor.shape[-1] + padding),
+        11.0,
+        dtype=tensor.dtype,
+        device=device,
     )
-
-    layer = object.__new__(AscendKimiGatedDeltaNetAttention)
-    nn.Module.__init__(layer)
-    layer.head_dim = dim
-    layer.gate_lower_bound = -5.0
-    layer.A_log = nn.Parameter(a_log_cpu.reshape(1, 1, heads, 1).to(device))
-    layer.dt_bias = nn.Parameter(dt_bias_cpu.to(device))
-    state_npu = state_cpu.to(device)
-    out = layer._run_recurrent(
-        q_cpu.to(device),
-        k_cpu.to(device),
-        v_cpu.to(device),
-        raw_gate_cpu.to(device),
-        beta_cpu.to(device),
-        state_npu,
-        torch.tensor(cu_seqlens_host, dtype=torch.int32, device=device),
-        state_indices_cpu.to(device),
-    )
-    torch.npu.synchronize()
-
-    torch.testing.assert_close(out.cpu(), ref_out, rtol=0.02, atol=0.02)
-    final_state = state_npu.cpu()
-    torch.testing.assert_close(final_state, ref_state, rtol=0.02, atol=0.02)
-    untouched = [slot for slot in range(state_slots) if slot not in state_indices_cpu.tolist()]
-    torch.testing.assert_close(final_state[untouched], state_cpu[untouched], rtol=0, atol=0)
+    view = storage[..., : tensor.shape[-1]]
+    view.copy_(tensor.to(device))
+    return view, storage, storage[..., tensor.shape[-1] :].clone()
 
 
 @torch.inference_mode()
-def test_kimi_k3_tp16_recurrent_kda_non_contiguous_state_pool():
-    """Preserve a strided cache view while updating only selected Kimi slots."""
+def test_kimi_k3_tp16_recurrent_kda_non_contiguous_qkv_and_state_pool():
+    """Read strided QKV views and update only selected Kimi state slots."""
     torch.manual_seed(20260806)
     device = torch.device("npu")
     batch, heads, dim = 4, 6, 128
@@ -263,28 +213,35 @@ def test_kimi_k3_tp16_recurrent_kda_non_contiguous_state_pool():
         dtype=torch.float32,
         device=device,
     )
-    # Model-runner cache slots may be a strided view with a non-zero storage
-    # offset. Keep the adjacent layer as a guard against an incorrect write.
     state_view = state_pool[1:, 0]
     state_view.copy_(state_cpu.to(device))
     guard_layer = state_pool[1:, 1].clone()
     state_before = state_view.clone()
     state_stride = state_view.stride()
     state_storage = state_view.untyped_storage().data_ptr()
+    q_view, q_storage, q_guard = _padded_feature_view(q_cpu, padding=16, device=device)
+    k_view, k_storage, k_guard = _padded_feature_view(k_cpu, padding=32, device=device)
+    v_view, v_storage, v_guard = _padded_feature_view(v_cpu, padding=48, device=device)
+    qkv_views = (q_view, k_view, v_view)
+    qkv_strides = tuple(tensor.stride() for tensor in qkv_views)
+    qkv_storage = tuple(tensor.untyped_storage().data_ptr() for tensor in qkv_views)
     assert not state_view.is_contiguous()
     assert state_view.storage_offset() > 0
+    assert all(not tensor.is_contiguous() for tensor in qkv_views)
 
-    out = torch.ops._C_ascend.recurrent_kda(
-        q_cpu.to(device),
-        k_cpu.to(device),
-        v_cpu.to(device),
+    out, _ = recurrent_kda(
+        q_view,
+        k_view,
+        v_view,
         raw_gate_cpu.to(device),
         beta_cpu.to(device),
         state_view,
-        torch.tensor(cu_seqlens_host, dtype=torch.int32, device=device),
-        state_indices_cpu.to(device),
-        a_log_cpu.to(device),
-        dt_bias_cpu.to(device),
+        cu_seqlens=torch.tensor(cu_seqlens_host, dtype=torch.int32, device=device),
+        ssm_state_indices=state_indices_cpu.to(device),
+        A_log=a_log_cpu.to(device),
+        dt_bias=dt_bias_cpu.to(device),
+        state_v_first=True,
+        inplace_final_state=True,
         scale=dim**-0.5,
         use_qk_l2norm_in_kernel=True,
         use_gate_in_kernel=True,
@@ -297,583 +254,14 @@ def test_kimi_k3_tp16_recurrent_kda_non_contiguous_state_pool():
 
     assert state_view.stride() == state_stride
     assert state_view.untyped_storage().data_ptr() == state_storage
+    assert tuple(tensor.stride() for tensor in qkv_views) == qkv_strides
+    assert tuple(tensor.untyped_storage().data_ptr() for tensor in qkv_views) == qkv_storage
     torch.testing.assert_close(out.cpu(), ref_out, rtol=0.02, atol=0.02)
     torch.testing.assert_close(state_view.cpu(), ref_state, rtol=0.02, atol=0.02)
     torch.testing.assert_close(state_pool[1:, 1], guard_layer, rtol=0, atol=0)
+    torch.testing.assert_close(q_storage[..., dim:], q_guard, rtol=0, atol=0)
+    torch.testing.assert_close(k_storage[..., dim:], k_guard, rtol=0, atol=0)
+    torch.testing.assert_close(v_storage[..., dim:], v_guard, rtol=0, atol=0)
     used_slots = set(state_indices_cpu.tolist())
     untouched_slots = [slot for slot in range(state_capacity) if slot not in used_slots]
-    torch.testing.assert_close(
-        state_view[untouched_slots],
-        state_before[untouched_slots],
-        rtol=0,
-        atol=0,
-    )
-
-
-@torch.inference_mode()
-def test_kimi_k3_tp16_recurrent_kda_multistep_decode_matches_triton_and_reference():
-    """Reuse real decode cache slots across steps, as the model wrapper does."""
-    from torch import nn
-
-    from vllm_ascend.ops.kimi_kda import AscendKimiGatedDeltaNetAttention
-    from vllm_ascend.ops.triton.kda.kda import fused_recurrent_kda
-
-    torch.manual_seed(20260724)
-    device = torch.device("npu")
-    steps, batch, heads, dim = 8, 4, 6, 128
-    state_slots = 17
-    state_indices_cpu = torch.tensor([9, 2, 15, 4], dtype=torch.int64)
-    cu_seqlens_cpu = torch.arange(batch + 1, dtype=torch.int32)
-
-    # K3 checkpoints use a much wider decay range than the old small-random
-    # smoke. Exercise saturated and nonsaturated safe-gate rows together.
-    a_log_cpu = torch.linspace(0.0, 3.0, heads, dtype=torch.float32)
-    dt_bias_cpu = torch.linspace(-6.0, 2.0, heads * dim, dtype=torch.float32).reshape(heads, dim)
-    initial_state_cpu = torch.randn(state_slots, heads, dim, dim, dtype=torch.float32) * 0.1
-
-    layer = object.__new__(AscendKimiGatedDeltaNetAttention)
-    nn.Module.__init__(layer)
-    layer.head_dim = dim
-    layer.gate_lower_bound = -5.0
-    layer.A_log = nn.Parameter(a_log_cpu.reshape(1, 1, heads, 1).to(device))
-    layer.dt_bias = nn.Parameter(dt_bias_cpu.to(device))
-
-    ascendc_state = initial_state_cpu.to(device)
-    graph_state = initial_state_cpu.to(device)
-    triton_state = initial_state_cpu.to(device)
-    reference_state = initial_state_cpu
-    cu_seqlens = cu_seqlens_cpu.to(device)
-    state_indices = state_indices_cpu.to(device)
-
-    graph_q = torch.zeros(1, batch, heads, dim, dtype=torch.bfloat16, device=device)
-    graph_k = torch.zeros_like(graph_q)
-    graph_v = torch.zeros_like(graph_q)
-    graph_raw_gate = torch.zeros_like(graph_q)
-    graph_beta = torch.zeros(1, batch, heads, dtype=torch.float32, device=device)
-    layer._run_recurrent(
-        graph_q,
-        graph_k,
-        graph_v,
-        graph_raw_gate,
-        graph_beta,
-        graph_state,
-        cu_seqlens,
-        state_indices,
-    )
-    torch.npu.synchronize()
-    graph_state.copy_(initial_state_cpu)
-    graph = torch.npu.NPUGraph()
-    with torch.npu.graph(graph):
-        graph_out = layer._run_recurrent(
-            graph_q,
-            graph_k,
-            graph_v,
-            graph_raw_gate,
-            graph_beta,
-            graph_state,
-            cu_seqlens,
-            state_indices,
-        )
-    torch.npu.synchronize()
-    graph_state.copy_(initial_state_cpu)
-
-    for step in range(steps):
-        q_cpu = torch.randn(1, batch, heads, dim, dtype=torch.bfloat16)
-        k_cpu = torch.randn_like(q_cpu)
-        v_cpu = torch.randn_like(q_cpu)
-        raw_gate_cpu = torch.randn(1, batch, heads, dim, dtype=torch.bfloat16) * 2.0
-        beta_cpu = torch.rand(1, batch, heads, dtype=torch.float32).sigmoid()
-
-        reference_out, reference_state = recurrent_kda_reference(
-            q_cpu,
-            k_cpu,
-            v_cpu,
-            raw_gate_cpu,
-            beta_cpu,
-            reference_state,
-            cu_seqlens=cu_seqlens_cpu.tolist(),
-            ssm_state_indices=state_indices_cpu,
-            A_log=a_log_cpu,
-            dt_bias=dt_bias_cpu,
-            layout="BSND",
-            scale=dim**-0.5,
-            use_qk_l2norm_in_kernel=True,
-            use_gate_in_kernel=True,
-            safe_gate=True,
-        )
-
-        q, k, v = (tensor.to(device) for tensor in (q_cpu, k_cpu, v_cpu))
-        raw_gate = raw_gate_cpu.to(device)
-        beta = beta_cpu.to(device)
-        graph_q.copy_(q)
-        graph_k.copy_(k)
-        graph_v.copy_(v)
-        graph_raw_gate.copy_(raw_gate)
-        graph_beta.copy_(beta)
-        graph.replay()
-        ascendc_out = layer._run_recurrent(
-            q,
-            k,
-            v,
-            raw_gate,
-            beta,
-            ascendc_state,
-            cu_seqlens,
-            state_indices,
-        )
-        triton_out, _ = fused_recurrent_kda(
-            q=q,
-            k=k,
-            v=v,
-            g=layer._recurrent_gate(raw_gate),
-            beta=beta,
-            initial_state=triton_state,
-            inplace_final_state=True,
-            use_qk_l2norm_in_kernel=True,
-            cu_seqlens=cu_seqlens,
-            ssm_state_indices=state_indices,
-        )
-        torch.npu.synchronize()
-
-        torch.testing.assert_close(ascendc_out.cpu(), triton_out.cpu(), rtol=0.02, atol=0.02)
-        torch.testing.assert_close(ascendc_out.cpu(), reference_out, rtol=0.02, atol=0.02)
-        torch.testing.assert_close(ascendc_state.cpu(), triton_state.cpu(), rtol=0.02, atol=0.02)
-        torch.testing.assert_close(ascendc_state.cpu(), reference_state, rtol=0.02, atol=0.02)
-        torch.testing.assert_close(graph_out.cpu(), triton_out.cpu(), rtol=0.02, atol=0.02)
-        torch.testing.assert_close(graph_state.cpu(), triton_state.cpu(), rtol=0.02, atol=0.02)
-
-
-@torch.inference_mode()
-def test_kimi_k3_tp16_recurrent_kda_compiled_wrapper_updates_state_across_steps():
-    """Cover the AOT functionalization used before full-decode graph capture."""
-    import npugraph_ex as nge
-    from torch import nn
-
-    from vllm_ascend.ops.kimi_kda import AscendKimiGatedDeltaNetAttention
-
-    torch.manual_seed(20260725)
-    device = torch.device("npu")
-    steps, batch, heads, dim = 3, 4, 6, 128
-    state_indices_cpu = torch.tensor([9, 2, 15, 4], dtype=torch.int64)
-    cu_seqlens_cpu = torch.arange(batch + 1, dtype=torch.int32)
-    a_log_cpu = torch.linspace(-0.43, 1.26, heads, dtype=torch.float32)
-    dt_bias_cpu = torch.linspace(-9.0, -1.47, heads * dim, dtype=torch.float32).reshape(heads, dim)
-    initial_state_cpu = torch.randn(17, heads, dim, dim, dtype=torch.float32) * 0.1
-
-    layer = object.__new__(AscendKimiGatedDeltaNetAttention)
-    nn.Module.__init__(layer)
-    layer.head_dim = dim
-    layer.gate_lower_bound = -5.0
-    layer.A_log = nn.Parameter(a_log_cpu.reshape(1, 1, heads, 1).to(device))
-    layer.dt_bias = nn.Parameter(dt_bias_cpu.to(device))
-
-    class DecodeWrapper(nn.Module):
-        def __init__(self, attention: nn.Module) -> None:
-            super().__init__()
-            self.attention = attention
-
-        def forward(self, q, k, v, raw_gate, beta, state, cu_seqlens, state_indices):
-            return self.attention._run_recurrent(
-                q,
-                k,
-                v,
-                raw_gate,
-                beta,
-                state,
-                cu_seqlens,
-                state_indices,
-            )
-
-    config = nge.CompilerConfig()
-    compiled = torch.compile(
-        DecodeWrapper(layer),
-        backend=nge.get_npu_backend(compiler_config=config),
-        dynamic=False,
-    )
-    compiled_state = initial_state_cpu.to(device)
-    reference_state = initial_state_cpu
-    cu_seqlens = cu_seqlens_cpu.to(device)
-    state_indices = state_indices_cpu.to(device)
-
-    for _ in range(steps):
-        q_cpu = torch.randn(1, batch, heads, dim, dtype=torch.bfloat16)
-        k_cpu = torch.randn_like(q_cpu)
-        v_cpu = torch.randn_like(q_cpu)
-        raw_gate_cpu = torch.randn(1, batch, heads, dim, dtype=torch.bfloat16) * 2.0
-        beta_cpu = torch.rand(1, batch, heads, dtype=torch.float32).sigmoid()
-        reference_out, reference_state = recurrent_kda_reference(
-            q_cpu,
-            k_cpu,
-            v_cpu,
-            raw_gate_cpu,
-            beta_cpu,
-            reference_state,
-            cu_seqlens=cu_seqlens_cpu.tolist(),
-            ssm_state_indices=state_indices_cpu,
-            A_log=a_log_cpu,
-            dt_bias=dt_bias_cpu,
-            layout="BSND",
-            scale=dim**-0.5,
-            use_qk_l2norm_in_kernel=True,
-            use_gate_in_kernel=True,
-            safe_gate=True,
-        )
-        compiled_out = compiled(
-            q_cpu.to(device),
-            k_cpu.to(device),
-            v_cpu.to(device),
-            raw_gate_cpu.to(device),
-            beta_cpu.to(device),
-            compiled_state,
-            cu_seqlens,
-            state_indices,
-        )
-        torch.npu.synchronize()
-        torch.testing.assert_close(compiled_out.cpu(), reference_out, rtol=0.02, atol=0.02)
-        torch.testing.assert_close(compiled_state.cpu(), reference_state, rtol=0.02, atol=0.02)
-
-
-@torch.inference_mode()
-def test_kimi_k3_tp16_recurrent_kda_safe_gate_and_spec_state_slots():
-    torch.manual_seed(20260721)
-    device = torch.device("npu")
-    dtype = torch.bfloat16
-
-    # Kimi K3 has 96 KDA heads globally. TP16 exposes six heads to each
-    # recurrent kernel invocation. cu_seqlens follows the FLA prefix-sum format.
-    cu_seqlens_host = [0, 1, 4, 4, 5]
-    tokens, heads, dim = cu_seqlens_host[-1], 6, 128
-    q_cpu = torch.randn(1, tokens, heads, dim, dtype=dtype)
-    k_cpu = torch.randn_like(q_cpu)
-    v_cpu = torch.randn_like(q_cpu)
-    raw_gate_cpu = torch.randn(1, tokens, heads, dim, dtype=torch.float32) * 0.25
-    beta_cpu = torch.rand(1, tokens, heads, dtype=torch.float32).sigmoid()
-    # The production cache is a capacity-sized pool, not one state per active
-    # sequence. Non-contiguous slots exercise the same indirection contract as
-    # the Triton implementation and make accidental seq-index addressing fail.
-    # Active sequences own disjoint slots; draft steps within one sequence may
-    # reuse a slot.
-    state_slots = 13
-    state_cpu = torch.randn(state_slots, heads, dim, dim, dtype=torch.float32) * 0.01
-    a_log_cpu = torch.randn(heads, dtype=torch.float32) * 0.05
-    dt_bias_cpu = torch.randn(heads * dim, dtype=torch.float32) * 0.05
-    state_indices_cpu = torch.tensor(
-        [[8, 8, 8, 8, 8], [2, 11, 6, 2, 2], [4, 4, 4, 4, 4], [1, 3, 5, 7, 9]],
-        dtype=torch.int64,
-    )
-    accepted_cpu = torch.tensor([1, 2, 0, 1], dtype=torch.int64)
-
-    ref_out, ref_state = recurrent_kda_reference(
-        q_cpu,
-        k_cpu,
-        v_cpu,
-        raw_gate_cpu,
-        beta_cpu,
-        state_cpu,
-        cu_seqlens=cu_seqlens_host,
-        ssm_state_indices=state_indices_cpu,
-        A_log=a_log_cpu,
-        dt_bias=dt_bias_cpu,
-        num_accepted_tokens=accepted_cpu,
-        layout="BSND",
-        scale=dim**-0.5,
-        use_qk_l2norm_in_kernel=True,
-        use_gate_in_kernel=True,
-        safe_gate=True,
-        lower_bound=-5.0,
-    )
-
-    state_npu = state_cpu.to(device)
-    out = torch.ops._C_ascend.recurrent_kda(
-        q_cpu.to(device),
-        k_cpu.to(device),
-        v_cpu.to(device),
-        raw_gate_cpu.to(device),
-        beta_cpu.to(device),
-        state_npu,
-        torch.tensor(cu_seqlens_host, dtype=torch.int32, device=device),
-        state_indices_cpu.to(device),
-        a_log_cpu.to(device),
-        dt_bias_cpu.to(device),
-        num_accepted_tokens=accepted_cpu.to(device),
-        scale=dim**-0.5,
-        use_qk_l2norm_in_kernel=True,
-        use_gate_in_kernel=True,
-        use_beta_sigmoid_in_kernel=False,
-        allow_neg_eigval=False,
-        safe_gate=True,
-        lower_bound=-5.0,
-    )
-    torch.npu.synchronize()
-
-    torch.testing.assert_close(out.cpu(), ref_out, rtol=0.02, atol=0.02)
-    final_state_cpu = state_npu.cpu()
-    torch.testing.assert_close(final_state_cpu, ref_state, rtol=0.02, atol=0.02)
-    touched = {1, 2, 6, 8, 11}
-    untouched = [slot for slot in range(state_slots) if slot not in touched]
-    torch.testing.assert_close(final_state_cpu[untouched], state_cpu[untouched], rtol=0, atol=0)
-
-
-@torch.inference_mode()
-def test_kimi_k3_tp16_recurrent_kda_full_decode_graph_padding():
-    """Cover one real decode token replayed in a graph with capacity 16."""
-    from vllm_ascend.ops.triton.kda.kda import fused_kda_gate, fused_recurrent_kda
-
-    torch.manual_seed(20260723)
-    device = torch.device("npu")
-    graph_tokens, active_tokens, heads, dim = 16, 1, 6, 128
-    active_slot, state_capacity = 2, 17
-
-    q_cpu = torch.zeros(1, graph_tokens, heads, dim, dtype=torch.bfloat16)
-    k_cpu = torch.zeros_like(q_cpu)
-    v_cpu = torch.zeros_like(q_cpu)
-    raw_gate_cpu = torch.zeros_like(q_cpu)
-    beta_cpu = torch.zeros(1, graph_tokens, heads, dtype=torch.float32)
-    q_cpu[:, :active_tokens].normal_()
-    k_cpu[:, :active_tokens].normal_()
-    v_cpu[:, :active_tokens].normal_()
-    raw_gate_cpu[:, :active_tokens].normal_(std=0.25)
-    beta_cpu[:, :active_tokens].uniform_().sigmoid_()
-
-    state_cpu = torch.randn(state_capacity, heads, dim, dim, dtype=torch.float32) * 0.01
-    a_log_cpu = torch.linspace(-0.43, 1.26, heads, dtype=torch.float32)
-    dt_bias_cpu = torch.linspace(-9.0, -1.47, heads * dim, dtype=torch.float32)
-    # FULL_DECODE_ONLY pads graph metadata with zero-length rows. The QKV
-    # tensors retain the capture capacity, while the terminal cumulative
-    # offset is the number of real tokens rather than graph_tokens.
-    cu_seqlens_cpu = torch.tensor([0, 1] + [1] * (graph_tokens - 1), dtype=torch.int32)
-    state_indices_cpu = torch.tensor([active_slot] + [0] * (graph_tokens - 1), dtype=torch.int64)
-
-    reference_out, reference_state = recurrent_kda_reference(
-        q_cpu[:, :active_tokens],
-        k_cpu[:, :active_tokens],
-        v_cpu[:, :active_tokens],
-        raw_gate_cpu[:, :active_tokens],
-        beta_cpu[:, :active_tokens],
-        state_cpu,
-        cu_seqlens=[0, active_tokens],
-        ssm_state_indices=state_indices_cpu[:active_tokens],
-        A_log=a_log_cpu,
-        dt_bias=dt_bias_cpu,
-        layout="BSND",
-        scale=dim**-0.5,
-        use_qk_l2norm_in_kernel=True,
-        use_gate_in_kernel=True,
-        safe_gate=True,
-    )
-
-    q, k, v = (tensor.to(device) for tensor in (q_cpu, k_cpu, v_cpu))
-    raw_gate = raw_gate_cpu.to(device)
-    beta = beta_cpu.to(device)
-    cu_seqlens = cu_seqlens_cpu.to(device)
-    state_indices = state_indices_cpu.to(device)
-    a_log = a_log_cpu.to(device)
-    dt_bias = dt_bias_cpu.to(device)
-    ascendc_state = state_cpu.to(device)
-    triton_state = state_cpu.to(device)
-
-    ascendc_out = torch.ops._C_ascend.recurrent_kda(
-        q,
-        k,
-        v,
-        raw_gate,
-        beta,
-        ascendc_state,
-        cu_seqlens,
-        state_indices,
-        a_log,
-        dt_bias,
-        scale=dim**-0.5,
-        use_qk_l2norm_in_kernel=True,
-        use_gate_in_kernel=True,
-        use_beta_sigmoid_in_kernel=False,
-        allow_neg_eigval=False,
-        safe_gate=True,
-        lower_bound=-5.0,
-    )
-    gate = fused_kda_gate(
-        raw_gate.reshape(graph_tokens, heads * dim),
-        a_log.reshape(1, 1, heads, 1),
-        dim,
-        g_bias=dt_bias,
-        safe_gate=True,
-        lower_bound=-5.0,
-    ).unsqueeze(0)
-    triton_out, _ = fused_recurrent_kda(
-        q=q,
-        k=k,
-        v=v,
-        g=gate,
-        beta=beta,
-        initial_state=triton_state,
-        inplace_final_state=True,
-        use_qk_l2norm_in_kernel=True,
-        cu_seqlens=cu_seqlens,
-        ssm_state_indices=state_indices,
-    )
-    torch.npu.synchronize()
-
-    assert isinstance(ascendc_out, torch.Tensor)
-    assert torch.isfinite(ascendc_out[:, :active_tokens]).all()
-    # A graph-padded call must update the active cache line while skipping
-    # zero-length rows. Padding-tail output is intentionally not compared.
-    torch.testing.assert_close(ascendc_state.cpu(), triton_state.cpu(), rtol=0.02, atol=0.02)
-    torch.testing.assert_close(ascendc_state.cpu(), reference_state, rtol=0.02, atol=0.02)
-    torch.testing.assert_close(
-        ascendc_out[:, :active_tokens].cpu(),
-        triton_out[:, :active_tokens].cpu(),
-        rtol=0.02,
-        atol=0.02,
-    )
-    torch.testing.assert_close(
-        ascendc_out[:, :active_tokens].cpu(),
-        reference_out,
-        rtol=0.02,
-        atol=0.02,
-    )
-
-
-@torch.inference_mode()
-def test_kimi_k3_tp16_recurrent_kda_bsnd_mtp_lengths_1_to_8():
-    torch.manual_seed(20260722)
-    device = torch.device("npu")
-    lengths = list(range(1, 9))
-    cu_seqlens_host = [0]
-    for length in lengths:
-        cu_seqlens_host.append(cu_seqlens_host[-1] + length)
-
-    tokens, heads, dim = cu_seqlens_host[-1], 6, 128
-    q_cpu = torch.randn(1, tokens, heads, dim, dtype=torch.bfloat16)
-    k_cpu = torch.randn_like(q_cpu)
-    v_cpu = torch.randn_like(q_cpu)
-    raw_gate_cpu = torch.randn(1, tokens, heads, dim, dtype=torch.float32) * 0.25
-    beta_cpu = torch.rand(1, tokens, heads, dtype=torch.float32)
-    state_cpu = torch.randn(16, heads, dim, dim, dtype=torch.float32) * 0.01
-    slots = [8, 2, 11, 6, 4, 15, 1, 13]
-    state_indices_cpu = torch.tensor([[slot] * 8 for slot in slots], dtype=torch.int64)
-    accepted_cpu = torch.tensor(lengths, dtype=torch.int64)
-    a_log_cpu = torch.randn(heads, dtype=torch.float32) * 0.05
-    dt_bias_cpu = torch.randn(heads, dim, dtype=torch.float32) * 0.05
-
-    ref_out, ref_state = recurrent_kda_reference(
-        q_cpu,
-        k_cpu,
-        v_cpu,
-        raw_gate_cpu,
-        beta_cpu,
-        state_cpu,
-        cu_seqlens=cu_seqlens_host,
-        ssm_state_indices=state_indices_cpu,
-        A_log=a_log_cpu,
-        dt_bias=dt_bias_cpu,
-        num_accepted_tokens=accepted_cpu,
-        layout="BSND",
-        scale=dim**-0.5,
-        use_qk_l2norm_in_kernel=True,
-        use_gate_in_kernel=True,
-        safe_gate=True,
-    )
-
-    state_npu = state_cpu.to(device)
-    out = torch.ops._C_ascend.recurrent_kda(
-        q_cpu.to(device),
-        k_cpu.to(device),
-        v_cpu.to(device),
-        raw_gate_cpu.to(device),
-        beta_cpu.to(device),
-        state_npu,
-        torch.tensor(cu_seqlens_host, dtype=torch.int32, device=device),
-        state_indices_cpu.to(device),
-        a_log_cpu.to(device),
-        dt_bias_cpu.to(device),
-        num_accepted_tokens=accepted_cpu.to(device),
-        scale=dim**-0.5,
-        use_qk_l2norm_in_kernel=True,
-        use_gate_in_kernel=True,
-        use_beta_sigmoid_in_kernel=False,
-        allow_neg_eigval=False,
-        safe_gate=True,
-        lower_bound=-5.0,
-    )
-    torch.npu.synchronize()
-
-    torch.testing.assert_close(out.cpu(), ref_out, rtol=0.02, atol=0.02)
-    torch.testing.assert_close(state_npu.cpu(), ref_state, rtol=0.02, atol=0.02)
-
-
-@torch.inference_mode()
-def test_kimi_k3_recurrent_kda_decode_wrapper_aclgraph_replay():
-    """Replay the decode wrapper after changing graph-static device metadata buffers."""
-    from torch import nn
-
-    from vllm_ascend.ops.kimi_kda import AscendKimiGatedDeltaNetAttention
-
-    torch.manual_seed(20260724)
-    device = torch.device("npu")
-    tokens, heads, dim = 3, 6, 128
-    q = torch.randn(1, tokens, heads, dim, dtype=torch.bfloat16, device=device)
-    k = torch.randn_like(q)
-    v = torch.randn_like(q)
-    raw_gate = torch.randn(1, tokens, heads, dim, dtype=torch.float32, device=device) * 0.25
-    beta = torch.rand(1, tokens, heads, dtype=torch.float32, device=device)
-    state_initial = torch.randn(12, heads, dim, dim, dtype=torch.float32, device=device) * 0.01
-    state_graph = state_initial.clone()
-    cu_seqlens = torch.tensor([0, 1, 3], dtype=torch.int32, device=device)
-    state_indices = torch.tensor(
-        [[1, 2, 2, 2, 2, 2, 2, 2], [4, 5, 5, 5, 5, 5, 5, 5]],
-        dtype=torch.int64,
-        device=device,
-    )
-    accepted = torch.tensor([1, 2], dtype=torch.int64, device=device)
-
-    layer = object.__new__(AscendKimiGatedDeltaNetAttention)
-    nn.Module.__init__(layer)
-    layer.head_dim = dim
-    layer.gate_lower_bound = -5.0
-    layer.A_log = nn.Parameter(torch.randn(1, 1, heads, 1, dtype=torch.float32, device=device) * 0.05)
-    layer.dt_bias = nn.Parameter(torch.randn(heads, dim, dtype=torch.float32, device=device) * 0.05)
-
-    def invoke(state: torch.Tensor) -> torch.Tensor:
-        return layer._run_recurrent(
-            q,
-            k,
-            v,
-            raw_gate,
-            beta,
-            state,
-            cu_seqlens,
-            state_indices,
-            num_accepted_tokens=accepted,
-        )
-
-    invoke(state_graph)
-    torch.npu.synchronize()
-    state_graph.copy_(state_initial)
-    graph = torch.npu.NPUGraph()
-    with torch.npu.graph(graph):
-        graph_out = invoke(state_graph)
-    torch.npu.synchronize()
-
-    q.copy_(torch.randn_like(q))
-    k.copy_(torch.randn_like(k))
-    v.copy_(torch.randn_like(v))
-    raw_gate.copy_(torch.randn_like(raw_gate) * 0.25)
-    beta.copy_(torch.rand_like(beta))
-    cu_seqlens.copy_(torch.tensor([0, 2, 3], dtype=torch.int32, device=device))
-    state_indices.copy_(
-        torch.tensor(
-            [[7, 8, 8, 8, 8, 8, 8, 8], [3, 6, 6, 6, 6, 6, 6, 6]],
-            dtype=torch.int64,
-            device=device,
-        )
-    )
-    accepted.copy_(torch.tensor([2, 1], dtype=torch.int64, device=device))
-    state_graph.copy_(state_initial)
-    graph.replay()
-    torch.npu.synchronize()
-
-    state_eager = state_initial.clone()
-    eager_out = invoke(state_eager)
-    torch.npu.synchronize()
-    torch.testing.assert_close(graph_out.cpu(), eager_out.cpu(), rtol=0.02, atol=0.02)
-    torch.testing.assert_close(state_graph.cpu(), state_eager.cpu(), rtol=0.02, atol=0.02)
+    torch.testing.assert_close(state_view[untouched_slots], state_before[untouched_slots], rtol=0, atol=0)

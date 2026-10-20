@@ -248,10 +248,6 @@ SERVICE_PROFILING_SYMBOLS_YAML = f"""
   min_version: "0.9.1"
   domain: SpecDecode
   name: draft_model_forward
-- symbol: vllm_ascend.spec_decode.llm_base_proposer:AscendSpecDecodeBaseProposer.maybe_all_gather_and_unpad
-  min_version: "0.9.1"
-  domain: SpecDecode
-  name: draft_hidden_states_all_gather
 - symbol: vllm_ascend.spec_decode.llm_base_proposer:AscendSpecDecodeBaseProposer.compute_draft_token_ids
   min_version: "0.9.1"
   domain: SpecDecode
@@ -499,7 +495,7 @@ SERVICE_PROFILING_SYMBOLS_YAML = f"""
     expr: this | attr finished_recving_kv_req_ids | str
   - name: scheduler_failed_recving
     expr: this | attr failed_recving_kv_req_ids | str
-- symbol: vllm.v1.core.sched.scheduler:Scheduler._try_promote_blocked_waiting_request
+- symbol: vllm.v1.core.sched.scheduler:Scheduler._handle_blocked_waiting_request
   min_version: "0.9.1"
   domain: Schedule
   name: Scheduler.tryPromoteBlockedWaiting

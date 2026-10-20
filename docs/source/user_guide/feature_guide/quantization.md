@@ -10,6 +10,25 @@ Model quantization is a technique that reduces model size and computational over
 > See <https://www.modelscope.cn/models/vllm-ascend/Kimi-K2-Instruct-W8A8>.
 > Before you quantize a model, ensure sufficient RAM is available.
 
+## Lightning Indexer C8 layer selection
+
+For supported sparse-attention models, Lightning Indexer C8 is derived from
+`--indexer-kv-dtype int8` or `fp8`. When the checkpoint contains per-layer
+`.indexer.quant_type` or `.indexer.wq_b.weight` metadata, the layer filter
+selects only `INT8_DYNAMIC` and `W8A8_MXFP8` entries.
+
+If LI C8 is enabled but that metadata selects no eligible layers, startup
+logs a warning that LI C8 will not be used. Check the checkpoint's Indexer
+quantization metadata rather than treating the global switch as proof that
+the optimization is active. `W8A8_DYNAMIC`, `W8A8`, and `FLOAT` entries do
+not become eligible because of this warning. The existing behavior without
+per-layer metadata is unchanged; it does not trigger the empty-selection
+warning.
+
+Do not change the quantization metadata or widen the supported types simply
+to suppress the warning: mixed Indexer KV layouts require separate cache
+compatibility and accuracy validation.
+
 ## Quantization Tools
 
 vLLM Ascend supports models quantized by two main tools: `ModelSlim` and `LLM-Compressor`.
@@ -101,6 +120,24 @@ python3 w8a8_int8_dynamic_moe.py
 For more content, refer to the [official examples](https://github.com/vllm-project/llm-compressor/tree/main/examples).
 
 The quantization types currently supported by LLM-Compressor can be viewed in the `vllm_ascend/quantization/compressed_tensors_config.py` file.
+
+### 3. Native FP8 checkpoints (no quantization step needed)
+
+Many models are now published directly in FP8, for example [Qwen/Qwen3.8-27B-FP8](https://modelscope.cn/models/Qwen/Qwen3.8-27B-FP8) and [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash). Their `config.json` carries `"quant_method": "fp8"` together with a `weight_block_size`, meaning every quantized weight is stored as `float8_e4m3fn` plus one `float32` scale per weight block. vLLM Ascend detects and serves these checkpoints as published, so no offline re-quantization is required:
+
+```bash
+vllm serve /path/to/Qwen3.8-27B-FP8 --trust-remote-code
+vllm serve /path/to/GLM-5.3-Flash --tensor-parallel-size 8 --trust-remote-code
+```
+
+How the weights are executed depends on the hardware:
+
+- **950PR&950DT Products**: the block scales are re-grouped into MXFP8 at load time, so weights stay at one byte per element and the native FP8 matmul is used.
+- **Other Ascend generations**: the block scales are resolved into the model dtype at load time and served by the BF16 matmul. Numerically equivalent to the checkpoint, but plan for roughly twice the weight memory.
+
+Layers the checkpoint left unquantized, such as `visual.merger.*` on multimodal models, are listed in `ignored_layers` or `modules_to_not_convert` and are served unquantized.
+
+Only the block-wise flavour is supported. A native FP8 checkpoint without `weight_block_size` (per-tensor or per-channel scales) has no Ascend execution path yet; re-quantize it with ModelSlim or LLM-Compressor instead.
 
 ## Running Quantized Models
 
