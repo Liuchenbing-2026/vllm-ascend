@@ -8,6 +8,7 @@
 | CPU result | 10 new shape/boundary cases and 13 invalid-contract cases passed; final BF16 output compared with zero tolerance |
 | Device source | Actual AIV source now supplied; target CANN compilation, NPU precision and performance remain unverified |
 | Torch adapter | Schema/Meta compiled and checked on CPU; NPU binding and device gate source prepared, not compiled/executed on NPU |
+| Artifact identity gate | Eight new CPU record-consistency cases passed; no NPU build or device execution inferred |
 | Delivery goal | Existing full-model speed failure and quality/stability/reproduction gaps remain open |
 
 The old 16:14 read-only notice governed that evidence-recheck round. The current
@@ -445,3 +446,31 @@ baseline直接调用原TND BF16 FIA、原scale，不将baseline scale舍入为ca
 
 设备相邻内存guard/mssanitizer、图模式、真实模型质量、长期稳定性及整网TTFT/TPOT/吞吐仍未验收。
 本轮源码接入准备和Meta通过不改变既有整网速度FAIL结论。
+
+## 构建身份核对修复（2026-10-23）
+
+从基础提交`aeaffae491fe99f0ba8c848f2957b62dba679b8a`接续同一任务分支。
+旧设备入口未核对PTA源码和生成头文件，且空/不完整OPP源码清单会绕过逐项检查。
+因此旧二进制可能被错误关联到现今源码；这是一处本机反例确认的证据链缺陷，
+不是已经观察到的设备数值故障，也没有证据表明旧压测数据由该入口产生。
+
+`artifact_chain`现要求三类构建/安装记录均以成功退出，OPP源码清单完整且逐项相符，
+PTA的contract源文件/header/NPU源文件匹配实际构建输入，实际生成头文件同时匹配绑定与安装记录。
+原库SHA、包SHA及安装路径检查保留；允许源码目录迁移，不能借迁移接受不同文件内容。
+检查只核对现存记录和文件的一致性，不能补造旧运行副本、独立构建证明或设备结果。
+
+新增入口只运行8项CPU记录一致性用例：1个合法迁移路径、7个不一致拒绝反例。
+7个拒绝反例在原版均被放过，修复后全部拦住；历史10/13/17/4/14/5检查没有重跑。
+测试中的头文件、库文件及记录均明确标为合成fixture，保留在私有报告目录，
+没有装载这些库、调用编译器、导入torch_npu或启动设备。
+
+```bash
+/usr/bin/python3 kv_cache_turbo_quant/experiments/packed_attention_cpu_20261018/verify_artifact_chain_cpu.py \
+  --report /absolute/private/new_provenance_check.json
+```
+
+原版失败报告、修复后报告、对应脚本哈希和fixture分开保留，不能用本次哈希补证旧运行。
+66B codec、AIV源码、ABI、UB/scratch预算、BF16 bitwise判据和性能目标没有改变。
+下一设备节点仍是在唯一监管签发的NEW窗口内进行实际OPP构建、生成头核对及PTA编译；
+本轮没有申请或复用lease、构建共享环境、占卡或提交PR。实际目标CANN/torch_npu头文件
+及设备精度、质量、稳定性和整网收益仍待验证，不能由这8项CPU结果判定交付完成。

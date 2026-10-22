@@ -23,7 +23,8 @@ def identity(path):
 def artifact_chain(args, root):
     """Read actual existing build/install records; never manufacture a chain."""
     bindings = json.loads(args.binding_build_record.read_text())
-    if not bindings.get("npu_pta_compiled") or not bindings.get("registration_compiled"):
+    if (not bindings.get("npu_pta_compiled") or not bindings.get("registration_compiled")
+            or bindings.get("mode") != "npu" or bindings.get("exit_code") != 0):
         raise ValueError("binding record is not a successful NPU PTA build")
     package = json.loads(args.opp_build_record.read_text())
     installed = json.loads(args.opp_install_record.read_text())
@@ -31,7 +32,8 @@ def artifact_chain(args, root):
         raise ValueError("binding build identity mismatch")
     if bindings["opp_library"]["sha256"] != args.op_api_sha256:
         raise ValueError("binding was built for a different OPP library")
-    if not package.get("package_build_completed") or not installed.get("installed"):
+    if (not package.get("package_build_completed") or not installed.get("installed")
+            or package.get("exit_code") != 0 or installed.get("exit_code") != 0):
         raise ValueError("requires successful original OPP build and install records")
     if package["package_sha256"] != installed["package_sha256"]:
         raise ValueError("OPP build/install package mismatch")
@@ -39,9 +41,36 @@ def artifact_chain(args, root):
                           for p, digest in installed["installed_sha256"].items()}
     if recorded_libraries.get(str(args.op_api.resolve())) != args.op_api_sha256:
         raise ValueError("OPP install record does not identify the actual library")
-    for relative, digest in package["source_sha256"].items():
+
+    # Reuse the builder's complete source list. An empty/partial map must not
+    # turn source verification into a vacuous pass. Relocated checkouts are
+    # permitted, but every current source must match the recorded build input.
+    from opp_entry import source_plan
+
+    plan = source_plan()
+    manifest = package.get("source_sha256", {})
+    if not plan["sources_complete"] or set(manifest) != set(plan["source_sha256"]):
+        raise ValueError("OPP source manifest is incomplete or unexpected")
+    for relative, digest in manifest.items():
         if identity(root / relative)["sha256"] != digest:
             raise ValueError("OPP source differs from the actual tested source: " + relative)
+
+    header = args.op_api.resolve().parent.parent / "include/aclnn_tq_packed_attention.h"
+    header_digest = identity(header)["sha256"]
+    if (recorded_libraries.get(str(header)) != header_digest
+            or bindings["opp_header"]["sha256"] != header_digest):
+        raise ValueError("binding/generated/installed OPP header identity mismatch")
+    binding_sources = bindings.get("sources", [])
+    required = {"code/integration/torch_ext/" + name: identity(root / "code/integration/torch_ext" / name)["sha256"]
+                for name in ("tq_packed_attention_contract.cpp", "tq_packed_attention_contract.h",
+                             "tq_packed_attention_npu.cpp")}
+    required.update({"aclnn_tq_packed_attention.h": header_digest,
+                     "libcust_opapi.so": args.op_api_sha256})
+    for relative, digest in required.items():
+        matches = [entry for entry in binding_sources
+                   if pathlib.Path(entry["path"]).as_posix().endswith("/" + relative)]
+        if len(matches) != 1 or matches[0]["sha256"] != digest:
+            raise ValueError("binding source differs from the actual tested source: " + relative)
     return [identity(p) for p in [args.binding_build_record, args.opp_build_record, args.opp_install_record]]
 
 
