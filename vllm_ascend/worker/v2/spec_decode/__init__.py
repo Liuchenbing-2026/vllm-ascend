@@ -29,6 +29,11 @@ def init_speculator(
     """
     speculative_config = vllm_config.speculative_config
     assert speculative_config is not None
+    registered_method = getattr(speculative_config, "registered_method", None)
+    registered = registered_method() if registered_method is not None else None
+    if registered is not None:
+        # The external plugin registers its platform-specific implementation.
+        return registered.resolve_speculator_cls()(vllm_config, device)
     if speculative_config.method == "extract_hidden_states":
         # No Ascend-specific behavior beyond update_stream assignment in
         # NPUModelRunner; reuse upstream ExtractHiddenStatesSpeculator as-is.

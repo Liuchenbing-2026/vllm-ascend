@@ -215,6 +215,10 @@ class NPUModelRunner(GPUModelRunner):
             # Shared update_stream: main model (ModelAclGraphManager) and draft
             # (Eagle/DFlash/DSpark AclGraphManager) all use this same stream.
             self.speculator.update_stream = self.update_stream
+            # The parent runner recorded hooks on the replaced speculator.
+            overridden_hooks = getattr(self.speculator, "overridden_hooks", None)
+            if overridden_hooks is not None:
+                self.speculator_hooks = overridden_hooks()
 
         # AscendRequestState has extra `num_computed_tokens_cpu` attribute.
         # so reinitialize req_states here.

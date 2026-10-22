@@ -194,3 +194,27 @@ def test_init_speculator_skips_special_mtp(
         match="mtp is not supported yet",
     ):
         init_speculator(config, torch.device("cpu"))
+
+
+def test_registered_method_precedes_builtin_eagle_dispatch():
+    """A hidden-state plugin must not be silently replaced by stock EAGLE."""
+    config = _make_config("external_eagle", use_eagle=True)
+    selected = MagicMock()
+    config.speculative_config.registered_method = lambda: SimpleNamespace(resolve_speculator_cls=lambda: selected)
+    device = torch.device("cpu")
+    assert init_speculator(config, device) is selected.return_value
+    selected.assert_called_once_with(config, device)
+    config.speculative_config.use_eagle.assert_not_called()
+
+
+def test_unregistered_method_keeps_builtin_dispatch(monkeypatch):
+    config = _make_config("dspark", use_dspark=True)
+    config.speculative_config.registered_method = lambda: None
+    selected = _mock_speculator_module(
+        monkeypatch,
+        "vllm_ascend.worker.v2.spec_decode.dspark.speculator",
+        "AscendDSparkSpeculator",
+    )
+    device = torch.device("cpu")
+    assert init_speculator(config, device) is selected.return_value
+    selected.assert_called_once_with(config, device)
