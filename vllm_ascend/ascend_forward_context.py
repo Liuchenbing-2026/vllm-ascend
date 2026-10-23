@@ -18,6 +18,7 @@ from vllm_ascend.ascend_config import (
     get_ascend_config,
     is_mega_moe_supported,
 )
+from vllm_ascend.megamoe_policy import a2_bf16_megamoe_shape_rejection
 from vllm_ascend.utils import (
     AscendDeviceType,
     get_ascend_device_type,
@@ -42,11 +43,6 @@ _MC2_TOKENS_PER_RANK_LIMIT = 512
 _A2_CANN_MEGAMOE_SUPPORTED_EP_SIZES = {2, 4, 8, 16, 32}
 _A2_CANN_MEGAMOE_MAX_TOPK = 16
 _A2_CANN_MEGAMOE_MAX_EXPERTS_PER_RANK = 128
-# The BF16 dispatch path has a fixed per-expert setup cost.  Measurements on
-# Qwen3.6 show that small EP groups or many experts per rank lose to the
-# existing AllGather path, regardless of the local-partial mode.
-_A2_CANN_MEGAMOE_MIN_BF16_EP_SIZE = 16
-_A2_CANN_MEGAMOE_MAX_BF16_EXPERTS_PER_RANK = 24
 _A2_CANN_MEGAMOE_SUPPORTED_QUANT_NAMES = {
     "w8a8",
     "w4a8",
@@ -150,17 +146,11 @@ def _compute_a2_cann_megamoe_support(vllm_config: VllmConfig, is_draft_model: bo
         and getattr(model_config, "quantization", None) is None
         and getattr(model_config, "dtype", None) == torch.bfloat16
     )
-    if unquantized_bf16 and (
-        ep_world_size < _A2_CANN_MEGAMOE_MIN_BF16_EP_SIZE
-        or num_experts_per_rank > _A2_CANN_MEGAMOE_MAX_BF16_EXPERTS_PER_RANK
-    ):
+    shape_rejection = a2_bf16_megamoe_shape_rejection(ep_world_size, num_experts) if unquantized_bf16 else None
+    if shape_rejection is not None:
         logger.info_once(
-            "CANN MegaMoe BF16 shape guard: fallback to AllGather "
-            "(ep=%d, experts_per_rank=%d; requires ep>=%d and experts_per_rank<=%d)",
-            ep_world_size,
-            num_experts_per_rank,
-            _A2_CANN_MEGAMOE_MIN_BF16_EP_SIZE,
-            _A2_CANN_MEGAMOE_MAX_BF16_EXPERTS_PER_RANK,
+            "CANN MegaMoe BF16 shape guard: fallback to AllGather (%s)",
+            shape_rejection,
         )
         return False
     return (
@@ -381,26 +371,6 @@ def _select_a2_moe_comm_method(
         and min_tokens <= num_tokens <= mc2_tokens_capacity
         and _a2_cann_megamoe_supported_by_config(vllm_config, is_draft_model)
     ):
-        # BF16 local-partial keeps the TP partial-output contract, but the
-        # dispatch operator has a fixed per-expert tax. On small EP groups
-        # with many experts per rank this is slower than AllGather (measured
-        # on A2 for EP4/64 experts per rank). Keep MegaMoe for favorable
-        # shapes and make the measured fallback deterministic.
-        if getattr(ascend_config, "mega_moe_local_partial", False):
-            ep_world_size = get_ep_group().world_size
-            num_experts = vllm_config.model_config.get_num_experts()
-            experts_per_rank = num_experts // ep_world_size
-            if (
-                ep_world_size < _A2_CANN_MEGAMOE_MIN_BF16_EP_SIZE
-                or experts_per_rank > _A2_CANN_MEGAMOE_MAX_BF16_EXPERTS_PER_RANK
-            ):
-                logger.info_once(
-                    "CANN MegaMoe shape guard: fallback to AllGather for BF16 local-partial "
-                    "(ep=%d, experts_per_rank=%d)",
-                    ep_world_size,
-                    experts_per_rank,
-                )
-                return MoECommType.ALLGATHER
         return MoECommType.FUSED_MC2
 
     num_experts = vllm_config.model_config.get_num_experts()

@@ -26,6 +26,7 @@ from vllm.logger import logger
 from vllm.utils.math_utils import cdiv
 
 from vllm_ascend.config_utils import config
+from vllm_ascend.megamoe_policy import a2_bf16_megamoe_shape_rejection
 
 if TYPE_CHECKING:
     from vllm.config import VllmConfig
@@ -653,6 +654,7 @@ class AscendConfig:
         self._validate_mc2_comm_alg(vc)
         self._validate_megamoe_replicated_dispatch(vc)
         self._validate_megamoe_local_partial(vc)
+        self._resolve_a2_bf16_megamoe_shape(vc)
         self._resolve_fused_mc2_shared_overlap()
 
         # mega_moe_max_tokens range
@@ -722,6 +724,46 @@ class AscendConfig:
                 "mega_moe_replicated_dispatch requires A2 BF16, MegaMoe enabled, TP2/EP2, DP1/PP1/PCP1/DCP1, "
                 "no sequence parallelism, E256/H2048/I512/topk8, at most 4096 batched tokens, and no LoRA/EPLB."
             )
+
+    def _resolve_a2_bf16_megamoe_shape(self, vc: VllmConfig) -> None:
+        """Resolve protected shapes before weight preparation and stream policy.
+
+        Local-partial's TP4 contract is valid, but its current slow shape is
+        protected. Do not leave an enabled local-partial setting that the
+        runtime selector can never use, or disable shared-expert overlap for
+        a fused backend that will not run.
+        """
+        if self.enable_fused_mc2 != 1 or not is_mega_moe_supported():
+            return
+        import torch
+
+        from vllm_ascend.utils import AscendDeviceType, get_ascend_device_type
+
+        mc = vc.model_config
+        hf = mc.hf_text_config
+        if (
+            get_ascend_device_type() != AscendDeviceType.A2
+            or mc.dtype != torch.bfloat16
+            or vc.quant_config is not None
+            or getattr(mc, "quantization", None) is not None
+            or getattr(hf, "quantization_config", None)
+            or getattr(hf, "moe_quantize", getattr(hf, "quantize", None)) is not None
+        ):
+            return
+        pc = vc.parallel_config
+        ep_size = pc.world_size_across_dp // pc.pipeline_parallel_size
+        reason = a2_bf16_megamoe_shape_rejection(ep_size, int(mc.get_num_experts()))
+        if reason is None:
+            return
+        self.enable_fused_mc2 = 0
+        self.mega_moe_local_partial = False
+        self.mega_moe_replicated_dispatch = False
+        logger.warning_once(
+            "CANN MegaMoe BF16 shape guard: falling back to ordinary MoE selection (%s). "
+            "Resolved enable_fused_mc2=0, mega_moe_local_partial=False, "
+            "mega_moe_replicated_dispatch=False; slow-shape protection remains enabled.",
+            reason,
+        )
 
     def _resolve_fused_mc2_shared_overlap(self) -> None:
         if self.enable_fused_mc2 != 1 or not self.multistream_overlap_shared_expert:
