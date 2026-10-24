@@ -2,68 +2,11 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import torch
-from vllm.triton_utils import tl, triton
 
 _HIDDEN_SIZE = 2048
 _TOP_K = 8
 _NUM_EXPERTS = 256
-_DUMMY_ROWS = _NUM_EXPERTS // _TOP_K
 _MAX_TOKENS = 8192
-_A2_VECTOR_CORES = 40
-_COPY_BLOCK = 4096
-_ROUTING_BLOCK = 256
-
-
-@triton.jit
-def _prepare_local_partial_kernel(
-    hidden,
-    ids,
-    weights,
-    active,
-    padded_hidden,
-    padded_ids,
-    padded_weights,
-    padded_active,
-    tokens,
-    HAS_ACTIVE: tl.constexpr,
-    PREAPPLY_ACTIVE: tl.constexpr,
-    HIDDEN: tl.constexpr,
-    TOP_K: tl.constexpr,
-    EXPERTS: tl.constexpr,
-    DUMMY_ROWS: tl.constexpr,
-    COPY_BLOCK: tl.constexpr,
-    ROUTING_BLOCK: tl.constexpr,
-):
-    pid = tl.program_id(0)
-    programs = tl.num_programs(0)
-    rows = tokens + DUMMY_ROWS
-    for block in range(pid, tl.cdiv(rows * HIDDEN, COPY_BLOCK), programs):
-        offsets = block * COPY_BLOCK + tl.arange(0, COPY_BLOCK)
-        values = tl.load(hidden + offsets, offsets < tokens * HIDDEN, other=1.0)
-        tl.store(padded_hidden + offsets, values, offsets < rows * HIDDEN)
-
-    for block in range(pid, tl.cdiv(rows * TOP_K, ROUTING_BLOCK), programs):
-        offsets = block * ROUTING_BLOCK + tl.arange(0, ROUTING_BLOCK)
-        real = offsets < tokens * TOP_K
-        expert = tl.load(ids + offsets, real, other=0)
-        expert = tl.where(real, expert, (offsets - tokens * TOP_K) % EXPERTS)
-        if PREAPPLY_ACTIVE and HAS_ACTIVE:
-            is_active = tl.load(active + offsets // TOP_K, real, other=1) != 0
-            expert = tl.where(is_active, expert, EXPERTS)
-        # Widening BF16 probabilities is exact. The dummy probability 1/8
-        # is representable in both BF16 and FP32.
-        probability = tl.load(weights + offsets, real, other=1.0 / TOP_K).to(tl.float32)
-        tl.store(padded_ids + offsets, expert, offsets < rows * TOP_K)
-        tl.store(padded_weights + offsets, probability, offsets < rows * TOP_K)
-
-    if not PREAPPLY_ACTIVE:
-        for block in range(pid, tl.cdiv(rows, ROUTING_BLOCK), programs):
-            offsets = block * ROUTING_BLOCK + tl.arange(0, ROUTING_BLOCK)
-            if HAS_ACTIVE:
-                mask = tl.load(active + offsets, offsets < tokens, other=1)
-            else:
-                mask = tl.full((ROUTING_BLOCK,), 1, tl.int8)
-            tl.store(padded_active + offsets, mask, offsets < rows)
 
 
 def prepare_cann_megamoe_local_partial(
@@ -78,19 +21,16 @@ def prepare_cann_megamoe_local_partial(
     *,
     preapply_active_mask: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None, int]:
-    """Prepare replicated A2 BF16 local-partial inputs in one device launch.
+    """Prepare full A2 BF16 local-partial inputs without sentinel rows.
 
-    The local-partial layout appends all 32 sentinel rows on every rank, so
-    callers pass sentinel rank/world 0/1, irrespective of the TP rank. Returned
-    probabilities are already FP32 for CANN. Every output owns fresh storage:
-    CANN may modify routing IDs, and queued calls must remain independent.
-    ``dummy_cache`` is accepted for the reference helper's calling convention;
-    this kernel writes the constants directly and does not need a cache.
+    CANN accepts zero-row local experts, so appending one sentinel per expert
+    only adds copies. Hidden states stay zero-copy. Routing IDs always own
+    independent storage because CANN may apply the active mask in place.
+    Probabilities are widened to FP32 for CANN.
 
-    With ``preapply_active_mask``, inactive real routes receive expert ID 256,
-    exactly as A2 MegaMoe's ApplyXActiveMask does before sorting. The returned
-    mask is None so CANN skips its scalar mask traversal. Sentinel rows stay
-    active. This mode is specific to the local-partial CANN layout.
+    With ``preapply_active_mask``, inactive real routes receive expert ID 256
+    in the cloned IDs and the returned mask is None. Otherwise the returned
+    active mask has the INT8 dtype required by CANN.
     """
     if (num_experts, ep_rank_id, ep_world_size) != (_NUM_EXPERTS, 0, 1):
         raise ValueError("Local-partial preparation requires 256 experts and sentinel rank/world 0/1.")
@@ -115,35 +55,13 @@ def prepare_cann_megamoe_local_partial(
     ):
         raise ValueError("Local-partial preparation requires contiguous tensors on the same NPU.")
 
-    rows = tokens + _DUMMY_ROWS
-    padded_hidden = torch.empty((rows, _HIDDEN_SIZE), dtype=torch.bfloat16, device=hidden_states.device)
-    padded_ids = torch.empty((rows, _TOP_K), dtype=torch.int32, device=hidden_states.device)
-    padded_weights = torch.empty((rows, _TOP_K), dtype=torch.float32, device=hidden_states.device)
-    padded_active = (
-        None
-        if preapply_active_mask
-        else torch.empty(
-            rows, dtype=torch.int8 if x_active_mask is None else x_active_mask.dtype, device=hidden_states.device
-        )
-    )
-    programs = min(triton.cdiv(rows * _HIDDEN_SIZE, _COPY_BLOCK), _A2_VECTOR_CORES)
-    _prepare_local_partial_kernel[(programs,)](
-        hidden_states,
-        topk_ids,
-        topk_weights,
-        hidden_states if x_active_mask is None else x_active_mask,
-        padded_hidden,
-        padded_ids,
-        padded_weights,
-        padded_hidden if padded_active is None else padded_active,
-        tokens,
-        HAS_ACTIVE=x_active_mask is not None,
-        PREAPPLY_ACTIVE=preapply_active_mask,
-        HIDDEN=_HIDDEN_SIZE,
-        TOP_K=_TOP_K,
-        EXPERTS=_NUM_EXPERTS,
-        DUMMY_ROWS=_DUMMY_ROWS,
-        COPY_BLOCK=_COPY_BLOCK,
-        ROUTING_BLOCK=_ROUTING_BLOCK,
-    )
-    return padded_hidden, padded_ids, padded_weights, padded_active, tokens
+    topk_ids = topk_ids.clone()
+    if preapply_active_mask:
+        if x_active_mask is not None:
+            topk_ids.masked_fill_(~x_active_mask.bool().unsqueeze(-1), _NUM_EXPERTS)
+        active_mask = None
+    elif x_active_mask is None:
+        active_mask = torch.ones(tokens, dtype=torch.int8, device=hidden_states.device)
+    else:
+        active_mask = x_active_mask.to(torch.int8)
+    return hidden_states, topk_ids, topk_weights.to(torch.float32), active_mask, tokens

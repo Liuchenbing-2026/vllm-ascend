@@ -728,10 +728,10 @@ class AscendConfig:
     def _resolve_a2_bf16_megamoe_shape(self, vc: VllmConfig) -> None:
         """Resolve protected shapes before weight preparation and stream policy.
 
-        Local-partial's TP4 contract is valid, but its current slow shape is
-        protected. Do not leave an enabled local-partial setting that the
-        runtime selector can never use, or disable shared-expert overlap for
-        a fused backend that will not run.
+        The validated TP4/E256 local-partial path is eligible; other slow
+        shapes remain protected. Do not leave an enabled local-partial setting
+        that the runtime selector can never use, or disable shared-expert
+        overlap for a fused backend that will not run.
         """
         if self.enable_fused_mc2 != 1 or not is_mega_moe_supported():
             return
@@ -752,7 +752,9 @@ class AscendConfig:
             return
         pc = vc.parallel_config
         ep_size = pc.world_size_across_dp // pc.pipeline_parallel_size
-        reason = a2_bf16_megamoe_shape_rejection(ep_size, int(mc.get_num_experts()))
+        reason = a2_bf16_megamoe_shape_rejection(
+            ep_size, int(mc.get_num_experts()), local_partial=self.mega_moe_local_partial
+        )
         if reason is None:
             return
         self.enable_fused_mc2 = 0

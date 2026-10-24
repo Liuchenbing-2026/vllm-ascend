@@ -69,7 +69,6 @@ def resolve(config, vllm_config):
     "ep,local_partial,replicated,experts",
     [
         (2, False, True, 256),
-        (4, True, False, 256),
         (4, False, False, 256),
         (8, False, False, 256),
         (16, False, False, 512),
@@ -89,6 +88,19 @@ def test_protected_shape_resolves_to_actual_allgather(monkeypatch, ep, local_par
     # on the now-cleared original request flags.
     resolve(config, vc)
     assert config.enable_fused_mc2 == 0
+
+
+def test_validated_ep4_local_partial_keeps_fused_backend(monkeypatch):
+    config, vc = make_config(4, local_partial=True)
+    patch_environment(monkeypatch, config, 4)
+    resolve(config, vc)
+    assert config.enable_fused_mc2 == 1
+    assert config.mega_moe_local_partial
+    assert config.multistream_overlap_shared_expert
+    assert afc.select_moe_comm_method(512, vc) is afc.MoECommType.FUSED_MC2
+    assert afc.select_moe_comm_method(4096, vc) is afc.MoECommType.FUSED_MC2
+    assert afc.select_moe_comm_method(4097, vc) is afc.MoECommType.ALLGATHER
+    assert afc.select_moe_comm_method(32, vc) is afc.MoECommType.ALLGATHER
 
 
 @pytest.mark.parametrize("ep", [16, 32])
@@ -120,9 +132,21 @@ def test_ep16_does_not_make_local_partial_contract_valid(monkeypatch):
 
 
 def test_selector_defends_against_unresolved_protected_config(monkeypatch):
-    config, vc = make_config(4, local_partial=True)
+    config, vc = make_config(4, local_partial=False)
     patch_environment(monkeypatch, config, 4)
-    # Manually constructed configs still cannot bypass the slow-shape guard.
+    # Manually constructed ordinary EP4 configs still cannot bypass the slow-shape guard.
+    assert afc.select_moe_comm_method(4096, vc) is afc.MoECommType.ALLGATHER
+
+
+@pytest.mark.parametrize(
+    "field,bad_value",
+    [("hidden_size", 4096), ("moe_intermediate_size", 1024), ("num_experts_per_tok", 4), ("tensor_parallel_size", 8)],
+)
+def test_selector_rejects_unvalidated_local_partial_contract(monkeypatch, field, bad_value):
+    config, vc = make_config(4, local_partial=True)
+    target = vc.parallel_config if field == "tensor_parallel_size" else vc.model_config.hf_text_config
+    setattr(target, field, bad_value)
+    patch_environment(monkeypatch, config, 4)
     assert afc.select_moe_comm_method(4096, vc) is afc.MoECommType.ALLGATHER
 
 
@@ -162,7 +186,13 @@ def test_mode_two_resolves_during_full_startup_before_overlap_policy(monkeypatch
         hardware_profile, "get_current_hardware_profile", lambda: SimpleNamespace(supports=lambda _: True)
     )
     config.derive_and_validate(vc)
-    assert config.enable_fused_mc2 == 0
-    assert not config.mega_moe_local_partial
-    assert config.multistream_overlap_shared_expert
-    assert afc.select_moe_comm_method(4096, vc) is afc.MoECommType.ALLGATHER
+    if local_partial:
+        assert config.enable_fused_mc2 == 1
+        assert config.mega_moe_local_partial
+        assert config.multistream_overlap_shared_expert
+        assert afc.select_moe_comm_method(4096, vc) is afc.MoECommType.FUSED_MC2
+    else:
+        assert config.enable_fused_mc2 == 0
+        assert not config.mega_moe_local_partial
+        assert config.multistream_overlap_shared_expert
+        assert afc.select_moe_comm_method(4096, vc) is afc.MoECommType.ALLGATHER

@@ -221,10 +221,13 @@ def test_a2_nonquantized_bf16_uses_megamoe_only_in_prefill_window(monkeypatch, e
     config.model_config.dtype = torch.bfloat16
     config.parallel_config.world_size_across_dp = ep_world_size
     # EP8 with 256 experts leaves 32 experts per rank and is slower on BF16;
-    # only the EP16 shape satisfies the measured MegaMoe guard.
+    # only the EP16 shape satisfies the measured MegaMoe guard. Eligible small
+    # batches retain the existing MC2 path instead of entering MegaMoe prefill.
     expected = (
         MoECommType.FUSED_MC2
         if ep_world_size >= 16 and 512 <= num_tokens <= 4096
+        else MoECommType.MC2
+        if ep_world_size >= 16 and num_tokens <= 4096
         else MoECommType.ALLGATHER
     )
     assert afc.select_moe_comm_method(num_tokens, config) == expected

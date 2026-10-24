@@ -41,6 +41,8 @@ _MEGA_MOE_TOKENS_PER_RANK_LIMIT = 4096
 _DISPATCH_FFN_COMBINE_TOKENS_PER_RANK_LIMIT = 512
 _MC2_TOKENS_PER_RANK_LIMIT = 512
 _A2_CANN_MEGAMOE_SUPPORTED_EP_SIZES = {2, 4, 8, 16, 32}
+_A2_LOCAL_PARTIAL_CONTRACT_SHAPE = (4, 4, 256, 2048, 512, 8)
+_A2_LOCAL_PARTIAL_MAX_BATCHED_TOKENS = 8192
 _A2_CANN_MEGAMOE_MAX_TOPK = 16
 _A2_CANN_MEGAMOE_MAX_EXPERTS_PER_RANK = 128
 _A2_CANN_MEGAMOE_SUPPORTED_QUANT_NAMES = {
@@ -146,7 +148,37 @@ def _compute_a2_cann_megamoe_support(vllm_config: VllmConfig, is_draft_model: bo
         and getattr(model_config, "quantization", None) is None
         and getattr(model_config, "dtype", None) == torch.bfloat16
     )
-    shape_rejection = a2_bf16_megamoe_shape_rejection(ep_world_size, num_experts) if unquantized_bf16 else None
+    local_partial_requested = getattr(ascend_config, "mega_moe_local_partial", False)
+    parallel_config = vllm_config.parallel_config
+    local_partial_compatible = (
+        local_partial_requested
+        and unquantized_bf16
+        and parallel_config.tensor_parallel_size == 4
+        and parallel_config.pipeline_parallel_size == 1
+        and parallel_config.prefill_context_parallel_size == 1
+        and parallel_config.decode_context_parallel_size == 1
+        and not getattr(ascend_config, "enable_sp_by_pass", False)
+        and not getattr(ascend_config, "mega_moe_replicated_dispatch", False)
+        and getattr(vllm_config, "lora_config", None) is None
+        and 1 <= vllm_config.scheduler_config.max_num_batched_tokens <= _A2_LOCAL_PARTIAL_MAX_BATCHED_TOKENS
+        and getattr(parallel_config, "expert_placement_strategy", "linear") == "linear"
+        and (
+            parallel_config.tensor_parallel_size,
+            ep_world_size,
+            num_experts,
+            hidden_size,
+            intermediate_hidden,
+            num_topk,
+        )
+        == _A2_LOCAL_PARTIAL_CONTRACT_SHAPE
+    )
+    if local_partial_requested and not local_partial_compatible:
+        return False
+    shape_rejection = (
+        a2_bf16_megamoe_shape_rejection(ep_world_size, num_experts, local_partial=local_partial_compatible)
+        if unquantized_bf16
+        else None
+    )
     if shape_rejection is not None:
         logger.info_once(
             "CANN MegaMoe BF16 shape guard: fallback to AllGather (%s)",
