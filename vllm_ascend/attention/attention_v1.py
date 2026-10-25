@@ -1434,10 +1434,11 @@ class AscendAttentionBackendImpl(AttentionImpl):
         # runner v2, there is not capturing attribute in forward_context,
         # just use getattr to avoid attribute error.
         if _EXTRA_CTX.capturing:
-            if (
-                self.head_size == FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE
-                and query.shape[0] != attn_metadata.seq_lens.shape[0]
-            ):
+            # FIA TND does not accept the 512-dim global heads, and the ATB
+            # paged attention fallback cannot be captured into an ACL graph, so
+            # every captured step (spec verification as well as plain decode)
+            # runs these heads through the graph-safe BNSD path.
+            if self.head_size == FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE:
                 return self._forward_large_head_graph_verify_attention(
                     query,
                     attn_metadata,
@@ -1451,6 +1452,17 @@ class AscendAttentionBackendImpl(AttentionImpl):
                 attn_output, num_tokens = self.full_graph_fia(query, key, value, attn_metadata, output)
                 output[:num_tokens] = attn_output[:num_tokens]
                 return output
+        if (
+            self.head_size == FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE
+            and attn_metadata.attn_state == AscendAttentionState.DecodeOnly
+        ):
+            # Plain decode outside a captured graph (eager fallback batch
+            # sizes) uses the same BNSD path as the captured one.
+            return self._forward_large_head_graph_verify_attention(
+                query,
+                attn_metadata,
+                output,
+            )
         passed_value = value
         key, value, block_size, block_table, actual_seq_lengths_kv = self._get_fia_params(
             key, value, attn_metadata, kv_cache
