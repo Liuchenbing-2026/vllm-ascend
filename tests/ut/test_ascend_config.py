@@ -28,8 +28,6 @@ from unittest.mock import PropertyMock, patch
 from vllm.config import DeviceConfig, KVTransferConfig
 from vllm.config import VllmConfig as _VllmConfig
 from vllm.config.compilation import CUDAGraphMode
-from vllm_ascend.device.hardware import AscendDeviceType
-from vllm_ascend.device.hardware_profile import get_hardware_profile
 
 from tests.ut.base import TestBase
 from tests.ut.kvpp_utils import make_kvpp_config
@@ -54,6 +52,8 @@ from vllm_ascend.ascend_config import (
     init_ascend_config,
     is_mega_moe_supported,
 )
+from vllm_ascend.device.hardware import AscendDeviceType
+from vllm_ascend.device.hardware_profile import get_hardware_profile
 from vllm_ascend.utils import clear_enable_sp, enable_dsa_cp, enable_sp, shared_expert_dp_enabled
 
 
