@@ -601,6 +601,8 @@ class NPUPlatform(Platform):
         ascend_config = init_ascend_config(vllm_config)
         _validate_deepseek_v4_tp_config(vllm_config, ascend_config)
         _check_ascend_config(vllm_config, ascend_config)
+        # After init_ascend_config: UNO's validation reads ascend_config.
+        _validate_and_update_uno_config(vllm_config, ascend_config)
 
         # 6.Update compilation / cudagraph modes (ascend_config -> vllm_config).
         _update_compilation_modes(vllm_config, ascend_config)
@@ -1966,6 +1968,181 @@ def _validate_deepseek_v4_tp_config(vllm_config: VllmConfig, ascend_config: Any)
     max_tp_size = 16 if variant == "V4 Pro" else 8
     if tp_size > max_tp_size:
         raise ValueError(f"DeepSeek {variant} supports at most TP{max_tp_size}. Got tp_size={tp_size}.")
+
+
+# The released UNO adapters are rank-128 gated LoRAs over the decoder's seven
+# linear projections. Both values are checked against the adapter at load time,
+# so a mismatch fails loudly rather than degrading.
+UNO_LORA_RANK = 128
+UNO_LORA_TARGET_MODULES = (
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj",
+)
+
+
+def _is_uno_synthesised_lora_config(lora_config) -> bool:
+    """Is this the LoRAConfig UNO writes for itself, coming round a second time?
+
+    Identified by value rather than by a marker attribute: the config is
+    pickled to the EngineCore process, so anything not part of the dataclass
+    would not survive the trip. A user config that happens to match exactly is
+    indistinguishable -- and also equivalent, since it declares the single
+    rank-128 slot over the same seven projections that UNO would have asked
+    for.
+    """
+    return (
+        getattr(lora_config, "max_lora_rank", None) == UNO_LORA_RANK
+        and getattr(lora_config, "max_loras", None) == 1
+        and set(getattr(lora_config, "target_modules", None) or ()) == set(UNO_LORA_TARGET_MODULES)
+    )
+
+
+def _validate_and_update_uno_config(vllm_config: VllmConfig, ascend_config) -> None:
+    """Validate a UNO run and give it the LoRA config its draft pass needs.
+
+    UNO's gated draft LoRA is engine-internal: it is loaded by the proposer,
+    never selectable per request, and it owns the single adapter slot. Users
+    should therefore not have to pass `--enable-lora`, so synthesise the
+    LoRAConfig here when it is absent.
+    """
+    speculative_config = vllm_config.speculative_config
+    if speculative_config is None or speculative_config.method != "uno":
+        return
+
+    # Everything below validates the run, so this is the first point where UNO
+    # is known to be in use -- and the last one before the engine builds a
+    # scheduler and a model runner. Install the runtime hooks here rather than
+    # at import so that a non-UNO run never sees a patched vLLM class.
+    from vllm_ascend.patch.platform.patch_uno_speculative_config import install_uno_runtime_hooks
+
+    install_uno_runtime_hooks()
+
+    from vllm.config.lora import LoRAConfig
+
+    parallel_config = vllm_config.parallel_config
+    if parallel_config.pipeline_parallel_size != 1:
+        raise NotImplementedError("UNO speculative decoding does not support pipeline parallelism yet.")
+    if parallel_config.decode_context_parallel_size != 1 or parallel_config.prefill_context_parallel_size != 1:
+        raise NotImplementedError("UNO speculative decoding does not support context parallelism yet.")
+    if parallel_config.data_parallel_size != 1:
+        # The draft forward's private buffers are sized for the real batch, so
+        # a data-parallel padded token count has nowhere to go.
+        raise NotImplementedError("UNO speculative decoding does not support data parallelism yet.")
+
+    # Both of these otherwise fail at the first decode step rather than at
+    # startup: the forward width is baked into the gated row routing, and the
+    # proposer reads the sampled tokens as a device tensor.
+    if speculative_config.num_speculative_tokens_per_batch_size:
+        raise NotImplementedError(
+            "UNO speculative decoding does not support dynamic speculative "
+            "lengths: its forward width determines which draft rows the gated "
+            "adapter is applied to."
+        )
+    if speculative_config.disable_padded_drafter_batch:
+        raise NotImplementedError(
+            "UNO speculative decoding requires the padded drafter batch; it "
+            "derives its seed token and its post-acceptance frontier from the "
+            "device-side sampled tokens."
+        )
+    if ascend_config.enable_reduce_sample:
+        # In reduce-sample mode `apply_sampling_constraints` returns a compact
+        # top-k support instead of full-width logits. UNO builds its draft
+        # probabilities with that same function so that q and p are truncated
+        # identically, and the rejection kernel indexes the target probabilities
+        # with the draft tensor's vocabulary stride -- a compact q would read
+        # garbage there rather than fail.
+        raise NotImplementedError("UNO speculative decoding does not support enable_reduce_sample.")
+
+    # The draft forward is `max_num_seqs * F` rows wide, and the punica index
+    # buffers are sized from `max_num_batched_tokens` (see
+    # `PunicaWrapperBase.__init__`). A draft batch wider than that buffer makes
+    # `_update_base_metadata`'s `copy_` fail mid-decode; say so at startup.
+    scheduler_config = vllm_config.scheduler_config
+    from vllm_ascend.uno_config import get_uno_tree_options
+
+    tree_options = get_uno_tree_options(vllm_config)
+    if tree_options is not None:
+        if scheduler_config.max_num_seqs != 1:
+            raise ValueError("UNO tree currently supports max_num_seqs=1, matching the SGLang tree evaluation.")
+        if parallel_config.tensor_parallel_size != 1:
+            raise NotImplementedError("UNO tree currently requires tensor_parallel_size=1.")
+        if vllm_config.cache_config.enable_prefix_caching:
+            raise NotImplementedError("UNO tree currently requires enable_prefix_caching=False.")
+        if vllm_config.model_config.hf_config.architectures != ["Qwen3ForCausalLM"]:
+            raise NotImplementedError("UNO tree currently supports Qwen3ForCausalLM, including the SDAR alias.")
+        if vllm_config.cache_config.cache_dtype not in ("auto", "bfloat16", "float16"):
+            raise NotImplementedError("UNO tree does not support quantized KV caches.")
+        if vllm_config.cache_config.sliding_window is not None:
+            raise NotImplementedError("UNO tree does not support sliding-window attention.")
+        if speculative_config.rejection_sample_method != "standard":
+            raise NotImplementedError("UNO tree requires standard target sampling, not synthetic acceptance.")
+        # UNO tree attention runs its own FIA-v2 launch with an explicit tree
+        # mask; the Ascend attention graph path replays parameters through
+        # UpdatableGraph and cannot refresh that launch, so stay eager.
+        vllm_config.model_config.enforce_eager = True
+        scheduler_config.async_scheduling = False
+    draft_width = tree_options["draft_width"] if tree_options else speculative_config.num_speculative_tokens
+    draft_rows = scheduler_config.max_num_seqs * draft_width
+    if scheduler_config.max_num_batched_tokens < draft_rows:
+        raise ValueError(
+            "UNO's draft forward runs max_num_seqs * draft_width = "
+            f"{scheduler_config.max_num_seqs} * {draft_width} = "
+            f"{draft_rows} rows through the LoRA layers, but the per-token LoRA index "
+            f"buffers are sized by max_num_batched_tokens ({scheduler_config.max_num_batched_tokens}). "
+            f"Raise --max-num-batched-tokens to at least {draft_rows}, or lower "
+            "--max-num-seqs / num_speculative_tokens."
+        )
+
+    lora_config = vllm_config.lora_config
+    if lora_config is not None and _is_uno_synthesised_lora_config(lora_config):
+        # `check_and_update_config` runs more than once per launch: the front
+        # end builds the VllmConfig, and `VllmConfig.__post_init__` calls the
+        # platform hook again inside the EngineCore process. On that second pass
+        # the config synthesised below is already in place, and treating it as a
+        # user-supplied one rejected every UNO run at engine start.
+        return
+
+    if lora_config is None:
+        vllm_config.lora_config = LoRAConfig(
+            # Validated against the adapter's own `r` when it loads, so an
+            # under-declared rank fails loudly rather than truncating.
+            max_lora_rank=UNO_LORA_RANK,
+            max_loras=1,
+            lora_dtype=vllm_config.model_config.dtype,
+            # Restricting the wrapped modules is not a tuning knob here. With
+            # `target_modules=None` every supported module is wrapped, including
+            # `lm_head`, and the wrapped logits processor then runs a rank-128
+            # LoRA op over the full vocabulary on *every* forward -- for a
+            # 150k-token vocabulary that is hundreds of megabytes of transient
+            # per step, for a delta that is identically zero because the UNO
+            # adapter carries no lm_head weights.
+            target_modules=list(UNO_LORA_TARGET_MODULES),
+        )
+        logger.info(
+            "UNO speculative decoding: enabling the LoRA subsystem for the "
+            "internal draft adapter (max_lora_rank=%d, max_loras=1, target_modules=%s).",
+            UNO_LORA_RANK,
+            sorted(UNO_LORA_TARGET_MODULES),
+        )
+        return
+
+    # A LoRAConfig can only be here because the user passed --enable-lora, i.e.
+    # asked for request-selectable adapters. That collides with UNO on both
+    # forwards: a request adapter would be applied to the verify forward, which
+    # must stay on unadapted base weights, and it would compete for the adapter
+    # slot the gated draft adapter has to hold across every step (with
+    # max_loras=1 the two would swap the 698 MB adapter in and out per step).
+    raise NotImplementedError(
+        "UNO speculative decoding cannot be combined with request-selectable "
+        "LoRA serving: it loads its own gated draft adapter and the verify "
+        "forward must run on unadapted base weights. Drop --enable-lora and its "
+        "LoRA options; UNO enables the LoRA subsystem itself."
+    )
 
 
 def _validate_draft_decode_context_parallel_config(vllm_config: VllmConfig) -> None:

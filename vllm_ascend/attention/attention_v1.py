@@ -48,6 +48,7 @@ from vllm_ascend.attention.context_parallel.common_cp import (
     get_pcp_num_replicated_tokens,
     is_pcp_decode_sharding_enabled,
 )
+from vllm_ascend.attention.uno_tree_attention import forward_uno_tree_attention
 from vllm_ascend.attention.utils import (
     AscendCommonAttentionMetadata,
     _select_seq_lens,
@@ -279,7 +280,7 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
         if self.speculative_config:
             spec_token_num = self.speculative_config.num_speculative_tokens
             self.decode_threshold += spec_token_num
-            assert self.decode_threshold <= 16, (
+            assert self.decode_threshold <= 16 or get_uno_tree_options(vllm_config) is not None, (
                 f"decode_threshold exceeded \
                 npu_fused_infer_attention_score TND layout's limit of 16, \
                 got {self.decode_threshold}"
@@ -1298,6 +1299,9 @@ class AscendAttentionBackendImpl(AttentionImpl):
     ):
         with attention_transfer_window():
             num_tokens = query.shape[0]
+
+            if getattr(attn_metadata, "uno_tree_mask", None) is not None:
+                return forward_uno_tree_attention(self, query, key, value, attn_metadata, output)
 
             if (
                 attn_metadata.attn_state == AscendAttentionState.DecodeOnly

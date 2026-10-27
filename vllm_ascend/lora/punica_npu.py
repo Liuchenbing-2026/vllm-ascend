@@ -7,6 +7,7 @@ from vllm.lora.punica_wrapper.punica_base import PunicaWrapperBase
 
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.lora.lora_ops import _LORA_WRAPPER_IDS, _LORA_WRAPPERS, lora_linear
+from vllm_ascend.lora.uno import uno_lora_weight_key
 from vllm_ascend.lora.utils import refresh_all_lora_classes
 from vllm_ascend.utils import AscendDeviceType, get_ascend_device_type
 
@@ -26,6 +27,9 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         self._max_num_batched_tokens = max_num_batched_tokens
         self._lora_shrink_buffers: dict[tuple[int, int], torch.Tensor] = {}
         self._lora_triton_workspaces: dict[int, torch.Tensor] = {}
+        # UNO Tree packs its fixed adapter once per weight pointer set; see
+        # `vllm_ascend.lora.uno`. Empty for every other feature.
+        self._uno_packed_lora: dict = {}
         self.lora_config = kwargs.get("lora_config")
         ascend_device_type = get_ascend_device_type()
         self.ascend_device_type = ascend_device_type
@@ -384,6 +388,18 @@ class PunicaWrapperNPU(PunicaWrapperBase):
             return
 
         assert len(lora_a_stacked) == len(lora_b_stacked) == len(output_slices)
+
+        packed_entry = self._uno_packed_lora.get(uno_lora_weight_key(lora_a_stacked, lora_b_stacked))
+        if packed_entry is not None:
+            if tuple(output_slices) != packed_entry.output_slices:
+                raise ValueError("UNO packed LoRA output layout changed after preparation.")
+            packed_entry.apply(
+                y.view(-1, y.shape[-1]),
+                x.view(-1, x.shape[-1]),
+                scale,
+                self._single_lora_mask,
+            )
+            return
 
         if buffer is not None:
             self.add_shrink(buffer, x, lora_a_stacked, scale, **kwargs)

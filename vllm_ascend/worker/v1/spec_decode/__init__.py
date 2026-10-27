@@ -41,6 +41,7 @@ from vllm_ascend.worker.v1.spec_decode.suffix_proposer import AscendSuffixDecodi
 # lane still ships `AscendMedusaProposer`.
 if vllm_version_is("0.32.0"):
     from vllm_ascend.worker.v1.spec_decode.medusa_proposer import AscendMedusaProposer
+from vllm_ascend.worker.v1.spec_decode.uno_proposer import AscendUnoProposer
 
 
 def get_spec_decode_method(method, vllm_config, device, runner):
@@ -60,6 +61,8 @@ def get_spec_decode_method(method, vllm_config, device, runner):
         return AscendDSparkProposer(vllm_config, device, runner)
     elif method == "mtp" and vllm_config.speculative_config.use_gemma4_mtp():
         return AscendGemma4Proposer(vllm_config, device, runner)
+    elif method == "uno":
+        return AscendUnoProposer(vllm_config, device, runner)
     elif method in ("eagle", "eagle3", "mtp"):
         speculative_config = vllm_config.speculative_config
         if speculative_config is not None and speculative_config.use_step3p5_mtp():
