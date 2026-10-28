@@ -1162,20 +1162,21 @@ class AscendAttentionBackendImpl(AttentionImpl):
         attn_metadata: AscendMetadata,
         _: torch.Tensor,
     ) -> torch.Tensor:
-        # use default sparse_mode 0 in normal scenario, which means no mask works on it
-        # Pad actual_seq_len with 0 when num_tokens > actual_seq_len in TND layout
+        # Pooling consumes full sequences. Exclude graph padding from Q/K/V
+        # instead of adding an empty sequence to the TND length list.
         actual_seq_qlen = attn_metadata.actual_seq_lengths_q
-        if query.shape[0] > actual_seq_qlen[-1]:
-            actual_seq_qlen = actual_seq_qlen + [0]
-        return torch_npu.npu_fusion_attention(
-            query=query,
-            key=key,
-            value=value,
-            head_num=self.num_heads,
+        num_tokens = actual_seq_qlen[-1]
+        return torch_npu.npu_fused_infer_attention_score(
+            query=query[:num_tokens],
+            key=key[:num_tokens],
+            value=value[:num_tokens],
+            num_heads=self.num_heads,
+            num_key_value_heads=self.num_kv_heads,
             input_layout="TND",
             scale=self.scale,
-            actual_seq_qlen=actual_seq_qlen,
-            actual_seq_kvlen=actual_seq_qlen,
+            actual_seq_lengths=actual_seq_qlen,
+            actual_seq_lengths_kv=actual_seq_qlen,
+            sparse_mode=0,
         )[0]
 
     def do_kv_cache_update(
