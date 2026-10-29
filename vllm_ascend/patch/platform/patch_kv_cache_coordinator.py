@@ -118,6 +118,7 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         scheduler_block_size: int | None = None,
         num_prefill_lookahead: int = 0,
         allow_partial_hash_hits: bool = True,
+        num_hash_lookahead_tokens: int = 0,
     ):
         # Keep pcp_world_size in this patched constructor for compatibility
         # with the upstream coordinator interface. PCP is rejected by the platform.
@@ -155,6 +156,7 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
             hash_block_size=hash_block_size,
             enable_kv_cache_events=enable_kv_cache_events,
             metrics_collector=metrics_collector,
+            **({"num_hash_lookahead_tokens": num_hash_lookahead_tokens} if num_hash_lookahead_tokens else {}),
         )
 
         # KV cache group indices that get the EAGLE last-block drop.
@@ -515,6 +517,7 @@ def get_kv_cache_coordinator(  # type: ignore[misc]
     metrics_collector: KVCacheMetricsCollector | None = None,
     num_prefill_lookahead: int = 0,
     allow_partial_hash_hits: bool = True,
+    num_hash_lookahead_tokens: int = 0,
 ) -> KVCacheCoordinator:
     # Keep pcp_world_size in this patched function for upstream call
     # compatibility; platform validation guarantees that it is one.
@@ -534,6 +537,7 @@ def get_kv_cache_coordinator(  # type: ignore[misc]
         max_in_flight_tokens=token_budget,
         scheduler_block_size=scheduler_block_size,
         num_prefill_lookahead=num_prefill_lookahead,
+        num_hash_lookahead_tokens=num_hash_lookahead_tokens,
     )
     # vLLM main (#54736) added allow_partial_hash_hits.
     hybrid_kwargs["allow_partial_hash_hits"] = allow_partial_hash_hits
@@ -570,6 +574,8 @@ def get_kv_cache_coordinator(  # type: ignore[misc]
         orig_kwargs["scheduler_block_size"] = scheduler_block_size
         orig_kwargs["num_prefill_lookahead"] = num_prefill_lookahead
         orig_kwargs["allow_partial_hash_hits"] = allow_partial_hash_hits
+        if num_hash_lookahead_tokens:
+            orig_kwargs["num_hash_lookahead_tokens"] = num_hash_lookahead_tokens
         return _orig_get_kv_cache_coordinator(**orig_kwargs)
 
     return AscendHybridKVCacheCoordinator(**hybrid_kwargs)  # type: ignore[call-arg]

@@ -73,7 +73,7 @@ MAMBA_SPEC = MambaSpec(
 
 class _FakeBlockPool:
     def __init__(self, *args, **kwargs):
-        pass
+        self.kwargs = kwargs
 
 
 class _FakeFAManager:
@@ -109,6 +109,7 @@ def _make_coordinator(
     use_eagle: bool,
     kv_transfer_config=None,
     mamba_eagle: bool = False,
+    num_hash_lookahead_tokens: int = 0,
 ):
     monkeypatch.setattr(mod, "BlockPool", _FakeBlockPool)
     monkeypatch.setattr(mod, "get_manager_for_kv_cache_spec", _fake_manager_factory)
@@ -125,7 +126,36 @@ def _make_coordinator(
         dcp_world_size=1,
         pcp_world_size=1,
         hash_block_size=HASH_BLOCK_SIZE,
+        num_hash_lookahead_tokens=num_hash_lookahead_tokens,
     )
+
+
+@pytest.mark.parametrize("lookahead", [0, 3])
+def test_hybrid_hash_lookahead_reaches_block_pool(monkeypatch, lookahead):
+    coordinator = _make_coordinator(monkeypatch, use_eagle=False, num_hash_lookahead_tokens=lookahead)
+    assert coordinator.block_pool.kwargs.get("num_hash_lookahead_tokens", 0) == lookahead
+
+
+@pytest.mark.parametrize("lookahead", [0, 3])
+def test_no_cache_hash_lookahead_reaches_upstream(monkeypatch, lookahead):
+    calls = []
+    sentinel = object()
+
+    def upstream(**kwargs):
+        calls.append(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(mod, "_orig_get_kv_cache_coordinator", upstream)
+    result = mod.get_kv_cache_coordinator(
+        KVCacheConfig(num_blocks=0, kv_cache_tensors=[], kv_cache_groups=[]),
+        max_model_len=512,
+        enable_caching=False,
+        num_hash_lookahead_tokens=lookahead,
+    )
+    assert result is sentinel
+    assert calls[0].get("num_hash_lookahead_tokens", 0) == lookahead
+    if lookahead == 0:
+        assert "num_hash_lookahead_tokens" not in calls[0]
 
 
 # ---------------------------------------------------------------------------
