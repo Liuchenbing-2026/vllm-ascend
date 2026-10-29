@@ -1,9 +1,38 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import array
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
 import torch
 
-from vllm_ascend.patch.worker.patch_v2.patch_uva import _int64_storage, _zeros_on_npu
+from vllm_ascend.patch.worker.patch_v2.patch_uva import (
+    UvaBufferWrapper,
+    _copy_chunks_to_uva,
+    _int64_storage,
+    _zeros_on_npu,
+)
+
+
+@pytest.mark.parametrize("dtype", [torch.int32, torch.float32])
+def test_chunk_copy_updates_fallback_device_buffer(dtype):
+    buf = UvaBufferWrapper.__new__(UvaBufferWrapper)
+    buf._cpu = torch.zeros(4, dtype=dtype)
+    buf._np = buf._cpu.numpy()
+    buf._uva = torch.full((4,), -1, dtype=dtype)
+    buf._use_real_uva = False
+    buf._modified_indices = set()
+    pool = SimpleNamespace(_next_buf=lambda n: buf)
+
+    first = _copy_chunks_to_uva(pool, [np.array([4, 5]), array.array("i", [6])], 3)
+    assert first.tolist() == [4, 5, 6]
+    assert buf._uva.tolist() == [4, 5, 6, -1]
+    assert not buf._modified_indices
+    second = _copy_chunks_to_uva(pool, [np.array([], dtype=np.int32), np.array([8, 9])], 2)
+    assert second.tolist() == [8, 9]
+    assert buf._uva.tolist() == [8, 9, 6, -1]
 
 
 def test_uint64_npu_zeros_view_int64_storage(monkeypatch):

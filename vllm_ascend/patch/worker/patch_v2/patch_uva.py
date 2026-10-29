@@ -207,3 +207,15 @@ class UvaBufferWrapper:
 
 
 vllm.v1.worker.gpu.buffer_utils.UvaBuffer = UvaBufferWrapper
+
+
+def _copy_chunks_to_uva(self, chunks, n: int) -> torch.Tensor:
+    buf = self._next_buf(n)
+    # concatenate(out=buf.np[:n]) writes through a raw NumPy view, bypassing
+    # MonitoredNumPyArray.__setitem__ and leaving the NPU copy stale.
+    buf.np[:n] = np.concatenate(chunks)
+    return buf.uva(n)
+
+
+if hasattr(vllm.v1.worker.gpu.buffer_utils.UvaBufferPool, "copy_chunks_to_uva"):
+    vllm.v1.worker.gpu.buffer_utils.UvaBufferPool.copy_chunks_to_uva = _copy_chunks_to_uva
