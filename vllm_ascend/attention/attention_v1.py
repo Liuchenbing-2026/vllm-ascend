@@ -40,7 +40,7 @@ from vllm.v1.attention.backends.registry import (  # type: ignore
 )
 from vllm.v1.attention.ops.pcp import _gather_prefill_cache_inputs  # type: ignore[import-not-found]
 from vllm.v1.core.sched.output import SchedulerOutput
-from vllm.v1.kv_cache_interface import AttentionSpec, CrossAttentionSpec
+from vllm.v1.kv_cache_interface import AttentionSpec, CrossAttentionSpec, EncoderOnlyAttentionSpec
 
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX
 from vllm_ascend.attention.attention_mask import AttentionMaskBuilder
@@ -76,6 +76,10 @@ _PA_WORKSPACE_KEY = "npu_paged_attention.workspace"
 @register_backend(AttentionBackendEnum.CUSTOM, "ASCEND")
 class AscendAttentionBackend(AttentionBackend):
     accept_output_buffer: bool = True
+
+    @classmethod
+    def supports_mm_prefix(cls) -> bool:
+        return cls is AscendAttentionBackend
 
     @staticmethod
     def get_name() -> str:
@@ -236,6 +240,7 @@ class AscendMetadata:
     pcp_local_num_input_tokens: int | None = None
     # Resolved by the builder; execution must not infer layout from tensor sizes.
     uses_pcp_sharded_layout: bool = False
+    prefix_masks: list[torch.Tensor] | None = None
 
 
 class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
@@ -363,7 +368,10 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
         attn_state = common_attn_metadata.attn_state
 
         # Get attn_mask from singleton AttentionMaskBuilder
-        attn_mask = self.attn_mask_builder.get_attention_mask(common_attn_metadata.causal, self.model_config)
+        # Common metadata defaults to causal, including mixed recurrent/encoder
+        # models. Encoder-only groups must attend to the complete request.
+        causal = common_attn_metadata.causal and not isinstance(self.kv_cache_spec, EncoderOnlyAttentionSpec)
+        attn_mask = self.attn_mask_builder.get_attention_mask(causal, self.model_config)
 
         # TODO: Yet another unnecessary H2D while we already have a query_start_loc on device
         query_start_loc = query_start_loc_cpu.pin_memory().to(self.device, non_blocking=True)
@@ -460,10 +468,25 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
             attn_state=attn_state,
             num_prefills=num_prefills,
             num_decodes=num_decodes,
-            causal=common_attn_metadata.causal,
+            causal=causal,
             model_runner_type=self.model_config.runner_type,
             **backend_metadata,
         )
+        if common_attn_metadata.mm_req_doc_ranges:
+            if self.model_config.runner_type != "pooling" or self.use_pcp:
+                raise NotImplementedError("PrefixLM attention currently requires full-request pooling without PCP")
+            query_lengths = (query_start_loc_cpu[1:] - query_start_loc_cpu[:-1]).tolist()
+            if query_lengths != seq_lens_list[:num_reqs]:
+                raise NotImplementedError("PrefixLM pooling does not support cached or chunked prefill")
+            masks = []
+            for req_index, length in enumerate(query_lengths):
+                mask = torch.ones((length, length), dtype=torch.bool).triu_(1)
+                for start, end in common_attn_metadata.mm_req_doc_ranges.get(req_index, ()):
+                    if not 0 <= start <= end < length:
+                        raise ValueError("PrefixLM range is outside its request")
+                    mask[start : end + 1, start : end + 1] = False
+                masks.append(mask.to(self.device))
+            attn_metadata.prefix_masks = masks
         if pcp_shard_slot_mapping is not None:
             self._finalize_pcp_metadata(attn_metadata, pcp_shard_slot_mapping)
         return attn_metadata
@@ -1158,29 +1181,109 @@ class AscendAttentionBackendImpl(AttentionImpl):
         )
         return output
 
+    def _forward_prefix_attention(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_metadata: AscendMetadata,
+        output: torch.Tensor,
+    ) -> torch.Tensor:
+        if self.sliding_window is not None:
+            raise NotImplementedError("PrefixLM pooling with sliding attention is not supported")
+        start = 0
+        for end, mask in zip(attn_metadata.actual_seq_lengths_q, attn_metadata.prefix_masks):
+            length = end - start
+            q = query[start:end].reshape(length, self.num_heads, -1).transpose(0, 1).unsqueeze(0)
+            k = key[start:end].reshape(length, self.num_kv_heads, -1).transpose(0, 1).unsqueeze(0)
+            v = value[start:end].reshape(length, self.num_kv_heads, -1).transpose(0, 1).unsqueeze(0)
+            result = torch_npu.npu_fused_infer_attention_score(
+                query=q.contiguous(),
+                key=k.contiguous(),
+                value=v.contiguous(),
+                num_heads=self.num_heads,
+                num_key_value_heads=self.num_kv_heads,
+                input_layout="BNSD",
+                scale=self.scale,
+                atten_mask=mask,
+                sparse_mode=0,
+            )[0]
+            output[start:end] = result.squeeze(0).transpose(0, 1).reshape_as(query[start:end])
+            start = end
+        return output
+
     def _forward_encoder_attention(
         self,
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
         attn_metadata: AscendMetadata,
-        _: torch.Tensor,
+        output: torch.Tensor,
     ) -> torch.Tensor:
-        # use default sparse_mode 0 in normal scenario, which means no mask works on it
-        # Pad actual_seq_len with 0 when num_tokens > actual_seq_len in TND layout
-        actual_seq_qlen = attn_metadata.actual_seq_lengths_q
-        if query.shape[0] > actual_seq_qlen[-1]:
-            actual_seq_qlen = actual_seq_qlen + [0]
-        return torch_npu.npu_fusion_attention(
-            query=query,
-            key=key,
-            value=value,
-            head_num=self.num_heads,
+        # TND separates requests; encoder sliding attention additionally needs
+        # a symmetric band with abs(i - j) < sliding_window.
+        actual_seq_qlen = list(attn_metadata.actual_seq_lengths_q)
+        num_tokens = actual_seq_qlen[-1]
+        # The mask may be no larger than the query token count, so drop the
+        # padding rows (they are never pooled and produce garbage anyway).
+        query_t = query[:num_tokens] if query.shape[0] > num_tokens else query
+        key_t = key[:num_tokens] if key.shape[0] > num_tokens else key
+        value_t = value[:num_tokens] if value.shape[0] > num_tokens else value
+        fia_kwargs = dict(
+            query=query_t,
+            key=key_t,
+            value=value_t,
+            num_heads=self.num_heads,
+            num_key_value_heads=self.num_kv_heads,
             input_layout="TND",
             scale=self.scale,
-            actual_seq_qlen=actual_seq_qlen,
-            actual_seq_kvlen=actual_seq_qlen,
-        )[0]
+            actual_seq_lengths=actual_seq_qlen,
+            actual_seq_lengths_kv=actual_seq_qlen,
+        )
+        # A sequence that already fits inside one window cannot be masked, so
+        # keep the original maskless call for it; that covers the short-request
+        # common case at no extra cost. The boundary is inclusive, so every pair
+        # of a sequence is visible as soon as ``max_seq_len <= sliding_window``.
+        max_seq_len = 0
+        prev_len = 0
+        for cumulative_len in actual_seq_qlen:
+            max_seq_len = max(max_seq_len, cumulative_len - prev_len)
+            prev_len = cumulative_len
+        if self.sliding_window is not None and max_seq_len > self.sliding_window:
+            # FIA's TND GQA path does not accept an arbitrary band mask.
+            # Use BNSD per request so symmetric windows retain their semantics
+            # without expanding KV heads or mixing tokens between requests.
+            start = 0
+            for end in actual_seq_qlen:
+                seq_len = end - start
+                q = query_t[start:end].reshape(seq_len, self.num_heads, -1).transpose(0, 1).unsqueeze(0)
+                k = key_t[start:end].reshape(seq_len, self.num_kv_heads, -1).transpose(0, 1).unsqueeze(0)
+                v = value_t[start:end].reshape(seq_len, self.num_kv_heads, -1).transpose(0, 1).unsqueeze(0)
+                mask = AttentionMaskBuilder(query.device).get_encoder_band_mask(
+                    seq_len, self.sliding_window, query.device
+                )
+                result = torch_npu.npu_fused_infer_attention_score(
+                    query=q.contiguous(),
+                    key=k.contiguous(),
+                    value=v.contiguous(),
+                    num_heads=self.num_heads,
+                    num_key_value_heads=self.num_kv_heads,
+                    input_layout="BNSD",
+                    scale=self.scale,
+                    atten_mask=mask,
+                    sparse_mode=0,
+                )[0]
+                output[start:end] = result.squeeze(0).transpose(0, 1).reshape_as(query_t[start:end])
+                start = end
+            return output
+        attn_output = torch_npu.npu_fused_infer_attention_score(**fia_kwargs)[0]
+        if attn_output.shape == output.shape:
+            return attn_output
+        # Padding rows were trimmed above: hand back the caller's buffer with
+        # the live rows filled in, since the caller slices it by the untrimmed
+        # token count.
+        output[: attn_output.shape[0]] = attn_output
+        return output
 
     def do_kv_cache_update(
         self,
@@ -1339,6 +1442,9 @@ class AscendAttentionBackendImpl(AttentionImpl):
         num_tokens = query.shape[0]
         if attn_metadata is None:
             return output.fill_(0)
+
+        if attn_metadata.prefix_masks is not None:
+            return self._forward_prefix_attention(query, key, value, attn_metadata, output)
 
         # Initialize key_cache and value_cache from kv_cache if not already set.
         # This is needed for DecodeOnly mode where key/value are None but we still

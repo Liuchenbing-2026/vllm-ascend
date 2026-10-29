@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 from vllm.config.compilation import CUDAGraphMode
-from vllm.v1.kv_cache_interface import FullAttentionSpec
+from vllm.v1.kv_cache_interface import EncoderOnlyAttentionSpec, FullAttentionSpec
 
 import vllm_ascend.attention.attention_v1 as attn_module
 from tests.ut.base import TestBase
@@ -234,6 +234,49 @@ class TestAscendAttentionMetadataBuilder(TestBase):
         self.assertTrue(pcp_builder.use_pcp)
         self.assertIs(pcp_builder.metadata_cls, AscendMetadata)
 
+    def test_prefix_ranges_preserve_state_isolation_and_other_request_causality(self):
+        # The shared mask builder also serves tests with different mask dtypes.
+        mask_builder = self.builder.attn_mask_builder
+        with patch.object(mask_builder, "attn_mask_cache", None), patch.object(mask_builder, "_seq_len_cached", 0):
+            self._check_prefix_ranges()
+
+    def _check_prefix_ranges(self):
+        self.mock_vllm_config.use_v2_model_runner = False
+        self.mock_vllm_config.model_config.runner_type = "pooling"
+        common = AscendCommonAttentionMetadata(
+            query_start_loc=torch.tensor([0, 4, 7]),
+            query_start_loc_cpu=torch.tensor([0, 4, 7]),
+            seq_lens=torch.tensor([4, 3]),
+            seq_lens_cpu=torch.tensor([4, 3]),
+            num_reqs=2,
+            num_actual_tokens=7,
+            max_query_len=4,
+            max_seq_len=4,
+            block_table_tensor=torch.zeros((2, 1), dtype=torch.int32),
+            slot_mapping=torch.arange(7),
+            attn_state=AscendAttentionState.PrefillNoCache,
+            mm_req_doc_ranges={0: [(0, 1), (2, 3)]},
+        )
+        metadata = self.builder.build(0, common)
+        torch.testing.assert_close(
+            metadata.prefix_masks[0],
+            torch.tensor(
+                [
+                    [False, False, True, True],
+                    [False, False, True, True],
+                    [False, False, False, False],
+                    [False, False, False, False],
+                ]
+            ),
+        )
+        torch.testing.assert_close(
+            metadata.prefix_masks[1],
+            torch.tensor([[False, True, True], [False, False, True], [False, False, False]]),
+        )
+        common.mm_req_doc_ranges = {0: [(0, 4)]}
+        with self.assertRaisesRegex(ValueError, "outside its request"):
+            self.builder.build(0, common)
+
     def test_unpadded_preserves_internal_seq_lens_cpu(self):
         internal_seq_lens_cpu = torch.tensor([4, 5, 6], dtype=torch.int32)
         common_attn_metadata = AscendCommonAttentionMetadata(
@@ -279,9 +322,22 @@ class TestAscendAttentionMetadataBuilder(TestBase):
             seq_lens=None,
             max_seq_len=6,
         )
-        mock_model = MagicMock()
-
-        self.builder.build(1, common_attn_metadata, mock_model)
+        for spec_type, input_causal, expected_causal in (
+            (FullAttentionSpec, True, True),
+            (EncoderOnlyAttentionSpec, True, False),
+            (FullAttentionSpec, False, False),
+        ):
+            with self.subTest(spec=spec_type, causal=input_causal):
+                self.builder.kv_cache_spec = spec_type(
+                    block_size=64, num_kv_heads=2, head_size=128, dtype=torch.bfloat16
+                )
+                common_attn_metadata.causal = input_causal
+                with patch.object(self.builder.attn_mask_builder, "get_attention_mask", return_value=None) as mask:
+                    self.builder.build(1, common_attn_metadata)
+                mask.assert_called_once_with(expected_causal, self.builder.model_config)
+                self.assertIs(mock_ascend_metadata.call_args.kwargs["causal"], expected_causal)
+                # Group-local overrides must not change metadata shared with GDN.
+                self.assertIs(common_attn_metadata.causal, input_causal)
 
 
 def test_pcp_metadata_keeps_expanded_slot_mapping() -> None:
@@ -432,6 +488,7 @@ class TestAscendAttentionBackendImpl(TestBase):
         self.attention_type.DECODER = "decoder"
         self.attention_type.ENCODER = "encoder"
         self.attn_metadata = MagicMock()
+        self.attn_metadata.prefix_masks = None
         self.attn_metadata.uses_pcp_sharded_layout = False
         self.attn_metadata.return_value = "1"
         self.layer_no_quant = MagicMock(spec=["layer_name", "_k_scale_float", "_v_scale_float"])
@@ -598,6 +655,79 @@ class TestAscendAttentionBackendImpl(TestBase):
                 attn_type=self.attention_type.DECODER,
                 kv_sharing_target_layer_name=None,
             )
+
+    def _encoder_impl(self, sliding_window):
+        return AscendAttentionBackendImpl(
+            num_heads=8,
+            head_size=64,
+            scale=1.0,
+            num_kv_heads=8,
+            alibi_slopes=None,
+            sliding_window=sliding_window,
+            kv_cache_dtype="float16",
+            logits_soft_cap=None,
+            attn_type=self.attention_type.DECODER,
+            kv_sharing_target_layer_name=None,
+        )
+
+    def _encoder_metadata(self, cumulative_lengths):
+        metadata = MagicMock()
+        metadata.actual_seq_lengths_q = list(cumulative_lengths)
+        return metadata
+
+    def _run_encoder_attention(self, impl, query, cumulative_lengths, output=None):
+        captured = {}
+        output = torch.zeros_like(query) if output is None else output
+
+        def fake_fusion_attention(**kwargs):
+            captured.update(kwargs)
+            return (torch.zeros_like(kwargs["query"]),)
+
+        metadata = self._encoder_metadata(cumulative_lengths)
+        with patch.object(attn_module.torch_npu, "npu_fused_infer_attention_score", side_effect=fake_fusion_attention):
+            returned = impl._forward_encoder_attention(query, query, query, metadata, output)
+        return captured, returned, output
+
+    def test_encoder_attention_without_sliding_window_keeps_maskless_call(self):
+        query = torch.zeros(8, 8 * 64)
+        captured, _, _ = self._run_encoder_attention(self.impl, query, [4, 8])
+
+        self.assertNotIn("atten_mask", captured)
+        self.assertNotIn("sparse_mode", captured)
+        self.assertEqual(captured["actual_seq_lengths"], [4, 8])
+        self.assertEqual(captured["input_layout"], "TND")
+
+    def test_encoder_attention_applies_sliding_window_band_mask(self):
+        impl = self._encoder_impl(65)
+        query = torch.zeros(512, 8 * 64)
+        captured, _, _ = self._run_encoder_attention(impl, query, [512])
+
+        self.assertEqual(captured["sparse_mode"], 0)
+        mask = captured["atten_mask"]
+        self.assertEqual(mask.shape, (512, 512))
+        self.assertEqual(mask.dtype, torch.bool)
+        # The window boundary is inclusive: |i - j| <= sliding_window - 1.
+        self.assertFalse(mask[100, 164])
+        self.assertTrue(mask[100, 165])
+
+    def test_encoder_attention_skips_mask_when_sequence_fits_in_window(self):
+        impl = self._encoder_impl(65)
+        query = torch.zeros(64, 8 * 64)
+        captured, _, _ = self._run_encoder_attention(impl, query, [64])
+
+        self.assertNotIn("atten_mask", captured)
+        self.assertNotIn("sparse_mode", captured)
+
+    def test_encoder_attention_trims_padding_rows_before_masking(self):
+        impl = self._encoder_impl(65)
+        query = torch.arange(519 * 8 * 64, dtype=torch.float32).reshape(519, 8 * 64)
+        captured, returned, output = self._run_encoder_attention(impl, query, [512])
+
+        # The band must be no larger than the query token count.
+        self.assertEqual(captured["query"].shape, (1, 8, 512, 64))
+        self.assertEqual(captured["atten_mask"].shape, (512, 512))
+        self.assertIs(returned, output)
+        self.assertTrue(torch.equal(output[:512], torch.zeros(512, 8 * 64)))
 
     def test_hnd_layout_is_recorded_during_initialization(self):
         with patch.object(attn_module.envs_vllm, "VLLM_KV_CACHE_LAYOUT", "HND"):
