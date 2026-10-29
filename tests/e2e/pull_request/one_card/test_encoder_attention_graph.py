@@ -10,7 +10,7 @@ import torch_npu  # noqa: F401
 from vllm_ascend.attention.attention_v1 import AscendAttentionBackendImpl
 
 
-def encoder_reference(query, key, value, lengths):
+def encoder_reference(query, key, value, lengths, sliding_window):
     """Independent FP32 dense attention, with no cross-request visibility."""
     outputs = []
     start = 0
@@ -18,7 +18,12 @@ def encoder_reference(query, key, value, lengths):
         q, k, v = [x[start:end].float().transpose(0, 1) for x in (query, key, value)]
         repeats = q.shape[0] // k.shape[0]
         k, v = k.repeat_interleave(repeats, 0), v.repeat_interleave(repeats, 0)
-        weights = (q @ k.transpose(-1, -2) * query.shape[-1] ** -0.5).softmax(-1)
+        scores = q @ k.transpose(-1, -2) * query.shape[-1] ** -0.5
+        if sliding_window is not None:
+            positions = torch.arange(end - start)
+            mask = (positions[:, None] - positions[None, :]).abs() >= sliding_window
+            scores.masked_fill_(mask, float("-inf"))
+        weights = scores.softmax(-1)
         outputs.append((weights @ v).transpose(0, 1))
         start = end
     return torch.cat(outputs)
@@ -27,8 +32,9 @@ def encoder_reference(query, key, value, lengths):
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("num_heads,num_kv_heads,head_size", [(4, 4, 128), (8, 2, 128), (24, 4, 256)])
 @pytest.mark.parametrize("padding", [0, 7])
+@pytest.mark.parametrize("sliding_window", [None, 8, 64])
 @torch.inference_mode()
-def test_encoder_attention_changed_input_replay(dtype, num_heads, num_kv_heads, head_size, padding):
+def test_encoder_attention_changed_input_replay(dtype, num_heads, num_kv_heads, head_size, padding, sliding_window):
     torch.npu.set_device(0)
     torch.manual_seed(37)
     lengths = [17, 48]
@@ -37,6 +43,7 @@ def test_encoder_attention_changed_input_replay(dtype, num_heads, num_kv_heads, 
     device = [x.npu() for x in cpu]
     impl = AscendAttentionBackendImpl.__new__(AscendAttentionBackendImpl)
     impl.num_heads, impl.num_kv_heads, impl.scale = num_heads, num_kv_heads, head_size**-0.5
+    impl.sliding_window = sliding_window
     metadata = SimpleNamespace(actual_seq_lengths_q=lengths)
     output = torch.empty_like(device[0])
 
@@ -44,9 +51,9 @@ def test_encoder_attention_changed_input_replay(dtype, num_heads, num_kv_heads, 
         return impl._forward_encoder_attention(*device, metadata, output)
 
     atol = 0.008 if dtype == torch.bfloat16 else 0.001
-    expected = encoder_reference(*cpu, lengths)
+    expected = encoder_reference(*cpu, lengths, sliding_window)
     actual = forward()
-    torch.testing.assert_close(actual.cpu().float(), expected, atol=atol, rtol=0.01)
+    torch.testing.assert_close(actual[: lengths[-1]].cpu().float(), expected, atol=atol, rtol=0.01)
     stream = torch.npu.Stream()
     stream.wait_stream(torch.npu.current_stream())
     with torch.npu.stream(stream):
@@ -63,4 +70,9 @@ def test_encoder_attention_changed_input_replay(dtype, num_heads, num_kv_heads, 
             static.copy_(changed)
         graph.replay()
         torch.npu.synchronize()
-        torch.testing.assert_close(captured.cpu().float(), encoder_reference(*cpu, lengths), atol=atol, rtol=0.01)
+        torch.testing.assert_close(
+            captured[: lengths[-1]].cpu().float(),
+            encoder_reference(*cpu, lengths, sliding_window),
+            atol=atol,
+            rtol=0.01,
+        )
