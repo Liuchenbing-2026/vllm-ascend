@@ -178,6 +178,44 @@ class TestAscendSFADeviceOperator(TestBase):
         self.assertIs(actual_softmax_sum, softmax_sum)
         self.assertTrue(mock_sfa.call_args.kwargs["return_softmax_lse"])
 
+    def test_execute_sparse_flash_attention_nope_single_cache_returns_lse(self):
+        (
+            impl,
+            ql_nope,
+            _,
+            topk_indices,
+            attn_metadata,
+            actual_seq_lengths_query,
+            actual_seq_lengths_key,
+        ) = self._make_common_inputs()
+        impl.qk_rope_head_dim = 0
+        kv_cache = (torch.randn(4, 1, 1, 8),)
+        result = (torch.randn(3, 4, 8), torch.zeros(1, 3, 4), torch.ones(1, 3, 4))
+
+        with patch.object(
+            torch.ops._C_ascend,
+            "npu_sparse_flash_attention",
+            create=True,
+            return_value=result,
+        ) as mock_sfa:
+            actual = DeviceOperator.execute_sparse_flash_attention_process(
+                impl,
+                ql_nope,
+                torch.empty(3, 4, 0),
+                kv_cache,
+                topk_indices,
+                attn_metadata,
+                actual_seq_lengths_query,
+                actual_seq_lengths_key,
+                sparse_mode=0,
+                return_lse=True,
+            )
+
+        self.assertIs(actual, result)
+        self.assertIsNone(mock_sfa.call_args.kwargs["query_rope"])
+        self.assertIsNone(mock_sfa.call_args.kwargs["key_rope"])
+        self.assertTrue(mock_sfa.call_args.kwargs["return_softmax_lse"])
+
     def test_execute_sparse_flash_attention_c8_returns_softmax_components(self):
         (
             impl,
@@ -399,7 +437,7 @@ class TestAscendSFACacheComposition(TestBase):
         self.assertEqual(call_kwargs["layout_key"], "PA_BSND")
 
     @patch(
-        "vllm_ascend.device.device_op.torch.ops._C_ascend.npu_lightning_indexer_quant",
+        "vllm_ascend.device.device_op.torch_npu.npu_quant_lightning_indexer",
         create=True,
     )
     def test_li_c8_indexer_uses_own_cache_tuple_slots(self, mock_indexer):
@@ -435,6 +473,8 @@ class TestAscendSFACacheComposition(TestBase):
         self.assertIs(result, expected_topk)
         call_kwargs = mock_indexer.call_args.kwargs
         self.assertIs(call_kwargs["key"], indexer_k_cache)
+        self.assertEqual(call_kwargs["pre_tokens"], torch.iinfo(torch.int64).max)
+        self.assertEqual(call_kwargs["next_tokens"], torch.iinfo(torch.int64).max)
         self.assertEqual(
             call_kwargs["key_dequant_scale"].data_ptr(),
             indexer_scale_cache.data_ptr(),
@@ -484,19 +524,11 @@ class TestAscendSFAKVQuantSparseAttention(TestBase):
         actual_seq_lengths = torch.tensor([3], dtype=torch.int32)
         expected = torch.randn(3, 2, 32)
 
-        with (
-            patch.object(
-                torch.ops._C_ascend,
-                "npu_kv_quant_sparse_flash_attention_vllm",
-                create=True,
-                return_value=(expected, torch.empty(0), torch.empty(0)),
-            ) as mock_qsfa,
-            patch(
-                "vllm_ascend.device.device_op.torch_npu.npu_kv_quant_sparse_flash_attention",
-                create=True,
-                side_effect=AssertionError("Base must use _C_ascend custom op"),
-            ),
-        ):
+        with patch(
+            "vllm_ascend.device.device_op.torch_npu.npu_kv_quant_sparse_flash_attention",
+            create=True,
+            return_value=expected,
+        ) as mock_qsfa:
             result = impl._execute_sparse_flash_attention_process(
                 ql_nope,
                 q_pe,
@@ -513,7 +545,7 @@ class TestAscendSFAKVQuantSparseAttention(TestBase):
         self.assertEqual(call_kwargs["query"].shape, (3, 2, 48))
         self.assertEqual(call_kwargs["key_quant_mode"], 2)
         self.assertEqual(call_kwargs["tile_size"], 128)
-        self.assertFalse(call_kwargs["return_softmax_lse"])
+        self.assertNotIn("return_softmax_lse", call_kwargs)
 
     def test_prolog_v3_enables_packed_int8_kv_cache(self):
         self._check_prolog_v3_enables_packed_kv_cache(AscendW8A8DynamicLinearMethod)
@@ -670,7 +702,7 @@ class TestAscendSFAKPathFusion(TestBase):
         indexer.wq_b = MagicMock(return_value=(torch.randn(num_tokens, n_head * head_dim), None))
         indexer.use_torch_npu_lightning_indexer = False
         indexer.k_cache = SimpleNamespace(kv_cache=torch.zeros(2, 16, 1, 128))
-        indexer._pcp_active = False
+        indexer.use_pcp = False
         indexer._dsa_cp_active = False
         indexer.write_cache = MagicMock()
 
