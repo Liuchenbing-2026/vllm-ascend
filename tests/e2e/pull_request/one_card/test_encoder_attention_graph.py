@@ -29,6 +29,15 @@ def encoder_reference(query, key, value, lengths, sliding_window):
     return torch.cat(outputs)
 
 
+@pytest.mark.e2e_coverage(
+    arch="classification",
+    feature="pooling,aclgraph,mixed_lengths",
+    parallel="",
+    deploy="",
+    hardware="A2",
+    quantization="",
+    graph_mode="aclgraph",
+)
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("num_heads,num_kv_heads,head_size", [(4, 4, 128), (8, 2, 128), (24, 4, 256)])
 @pytest.mark.parametrize("padding", [0, 7])

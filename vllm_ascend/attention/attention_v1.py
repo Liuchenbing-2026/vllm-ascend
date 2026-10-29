@@ -1199,10 +1199,32 @@ class AscendAttentionBackendImpl(AttentionImpl):
             max_seq_len = max(max_seq_len, cumulative_len - prev_len)
             prev_len = cumulative_len
         if self.sliding_window is not None and max_seq_len > self.sliding_window:
-            fia_kwargs["atten_mask"] = AttentionMaskBuilder(query.device).get_encoder_band_mask(
-                num_tokens, self.sliding_window, query.device
-            )
-            fia_kwargs["sparse_mode"] = 0
+            # FIA's TND GQA path does not accept an arbitrary band mask.
+            # Use BNSD per request so symmetric windows retain their semantics
+            # without expanding KV heads or mixing tokens between requests.
+            start = 0
+            for end in actual_seq_qlen:
+                seq_len = end - start
+                q = query_t[start:end].reshape(seq_len, self.num_heads, -1).transpose(0, 1).unsqueeze(0)
+                k = key_t[start:end].reshape(seq_len, self.num_kv_heads, -1).transpose(0, 1).unsqueeze(0)
+                v = value_t[start:end].reshape(seq_len, self.num_kv_heads, -1).transpose(0, 1).unsqueeze(0)
+                mask = AttentionMaskBuilder(query.device).get_encoder_band_mask(
+                    seq_len, self.sliding_window, query.device
+                )
+                result = torch_npu.npu_fused_infer_attention_score(
+                    query=q.contiguous(),
+                    key=k.contiguous(),
+                    value=v.contiguous(),
+                    num_heads=self.num_heads,
+                    num_key_value_heads=self.num_kv_heads,
+                    input_layout="BNSD",
+                    scale=self.scale,
+                    atten_mask=mask,
+                    sparse_mode=0,
+                )[0]
+                output[start:end] = result.squeeze(0).transpose(0, 1).reshape_as(query_t[start:end])
+                start = end
+            return output
         attn_output = torch_npu.npu_fused_infer_attention_score(**fia_kwargs)[0]
         if attn_output.shape == output.shape:
             return attn_output

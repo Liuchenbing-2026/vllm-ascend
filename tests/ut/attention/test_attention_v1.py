@@ -680,7 +680,7 @@ class TestAscendAttentionBackendImpl(TestBase):
         captured, returned, output = self._run_encoder_attention(impl, query, [512])
 
         # The band must be no larger than the query token count.
-        self.assertEqual(captured["query"].shape[0], 512)
+        self.assertEqual(captured["query"].shape, (1, 8, 512, 64))
         self.assertEqual(captured["atten_mask"].shape, (512, 512))
         self.assertIs(returned, output)
         self.assertTrue(torch.equal(output[:512], torch.zeros(512, 8 * 64)))
