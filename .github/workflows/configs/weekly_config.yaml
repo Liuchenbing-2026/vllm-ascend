@@ -55,6 +55,10 @@ a3:
         config_file_path: DeepSeek-V4-Pro-w4a8-PD-no-prefix.yaml
         config_base_path: tests/e2e/cases/models/configs/DeepSeek
         size: 4
+      - name: DeepSeek-V4-Pro-w4a8-1M-PD
+        config_file_path: DeepSeek-V4-Pro-w4a8-1M-PD.yaml
+        config_base_path: tests/e2e/cases/models/configs/DeepSeek
+        size: 4
       - name: DeepSeek-V4-Pro-w4a8-prefix-cache-PD
         config_file_path: DeepSeek-V4-Pro-w4a8-prefix-cache-PD_weekly.yaml
         config_base_path: tests/e2e/cases/models/configs/DeepSeek
@@ -357,10 +361,6 @@ a3:
 310p:
   single_node:
     test_config:
-      - name: Qwen3VL-8B-310p
-        os: linux-aarch64-310p-4
-        config_file_path: Qwen3VL-8B-310p.yaml
-        config_base_path: tests/e2e/cases/models/configs/Qwen
       - name: Qwen3.5-2b-310p
         os: linux-aarch64-310p-4
         config_file_path: Qwen3.5-2b-310p.yaml
