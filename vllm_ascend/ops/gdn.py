@@ -42,7 +42,7 @@ from vllm_ascend.attention.utils import (
     wait_for_kv_layer_from_connector,
 )
 from vllm_ascend.device.device_op import DeviceOperator
-from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
+from vllm_ascend.device.hardware_profile import DeviceAdaptorFamily, HardwareCapability, get_current_hardware_profile
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.attention_fence import record_attention_compute_start
 from vllm_ascend.ops.gdn_attn_builder import AscendGDNFusedAttentionBackend
 from vllm_ascend.ops.triton.fla.chunk import chunk_gated_delta_rule
@@ -208,6 +208,28 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
         use_fla_gdn_prefill = get_current_hardware_profile().supports(HardwareCapability.FLA_GDN_PREFILL)
         if use_fla_gdn_prefill and _get_fla_gdn_prefill_op() is not None:
             return True
+        return cls._probe_fused_chunk()
+
+    @classmethod
+    def _prefer_fused_prefill(cls, q, k, v, chunk_metadata) -> bool:
+        """Prefer the existing CANN path for supported standard-adaptor inputs.
+
+        Preserve FLA handling of empty segments and other device families. The
+        CANN ABI requires BF16, 128-wide heads, at most 64 heads and an integral
+        value/key head ratio. No device tensor values are read on the host.
+        """
+        supported_head_dim, max_heads = 128, 64
+        if (
+            q.device.type != "npu"
+            or any(x.dtype != torch.bfloat16 for x in (q, k, v))
+            or q.shape != k.shape
+            or any(x.shape[-1] != supported_head_dim for x in (q, k, v))
+            or not (0 < q.shape[-2] <= max_heads and 0 < v.shape[-2] <= max_heads)
+            or v.shape[-2] % q.shape[-2] != 0
+            or chunk_metadata.keep_meta is not None
+            or get_current_hardware_profile().device_adaptor_family != DeviceAdaptorFamily.STANDARD
+        ):
+            return False
         return cls._probe_fused_chunk()
 
     @staticmethod
@@ -621,6 +643,10 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
                 HardwareCapability.FLA_GDN_PREFILL
             )
             fla_gdn_prefill_op = _get_fla_gdn_prefill_op() if use_fla_gdn_prefill else None
+            if fla_gdn_prefill_op is not None and AscendGatedDeltaNetAttention._prefer_fused_prefill(
+                query_non_spec, key_non_spec, value_non_spec, attn_metadata.non_spec_prefill_metadata.chunk
+            ):
+                fla_gdn_prefill_op = None
             # The built-in fused operator is NPU-only. Keep CPU/unit-test
             # dispatch on the Triton-compatible path even when its availability
             # probe was cached globally.
