@@ -1,0 +1,4 @@
+pr: 16292
+entries:
+  - category: bugfix
+    text: Rejected speculative GDN verify windows wider than the recurrent operator's per-sequence token cap instead of silently producing uninitialised output and garbled generations.

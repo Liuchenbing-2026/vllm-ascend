@@ -15,6 +15,7 @@
 # limitations under the License.
 #
 
+import os
 from functools import lru_cache, wraps
 
 import torch
@@ -192,6 +193,59 @@ def _flatten_recurrent_state_indices(
     seq_ids = torch.searchsorted(bounds, token_ids, right=True).clamp_(max=num_seqs - 1)
     slot_ids = (token_ids - starts[seq_ids]).clamp_(min=0, max=num_slots - 1)
     return state_indices[seq_ids, slot_ids].contiguous()
+
+
+# The fla_npu AscendC recurrent GDN kernel sizes its buffers for this many
+# tokens per sequence (``MAX_MTP``/``RGDR_MAX_MTP``) and returns without writing
+# any output for a longer sequence
+# (recurrent_gated_delta_rule.h: ``if (seqLen > MAX_MTP) { return; }``). Both
+# the AscendC operator and vLLM's fused MTP decode kernel
+# (``MAX_FUSED_GDN_MTP_TOKENS``) use eight. A wider speculative verify window
+# therefore leaves the layer output uninitialised, which only surfaces much
+# later as garbled generations, so the window is checked before the call.
+_MAX_RECURRENT_GDN_TOKENS = 8
+# Override only when the installed FLA-NPU operator was built with a larger
+# MAX_MTP/RGDR_MAX_MTP than the default cap above.
+_MAX_RECURRENT_GDN_TOKENS_ENV = "VLLM_ASCEND_RGDR_MAX_MTP"
+
+
+def _max_recurrent_gdn_tokens() -> int:
+    """Per-sequence token cap of the installed recurrent GDN operator."""
+    raw = os.environ.get(_MAX_RECURRENT_GDN_TOKENS_ENV)
+    if raw is None:
+        return _MAX_RECURRENT_GDN_TOKENS
+    try:
+        cap = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{_MAX_RECURRENT_GDN_TOKENS_ENV} must be an integer, got {raw!r}") from exc
+    if cap <= 0:
+        raise ValueError(f"{_MAX_RECURRENT_GDN_TOKENS_ENV} must be positive, got {cap}")
+    return cap
+
+
+def _check_recurrent_gdn_window(state_indices: torch.Tensor, num_seqs: int) -> None:
+    """Fail fast instead of silently truncating a wide speculative window.
+
+    Each speculative row owns one state slot per draft position plus the bonus
+    position, so the row width is the widest verify window this batch can
+    produce. Checking it needs no host data and no device synchronization.
+    """
+    if state_indices.ndim != 2:
+        return
+    max_tokens = _max_recurrent_gdn_tokens()
+    window = state_indices.shape[1]
+    if window <= max_tokens:
+        return
+    raise ValueError(
+        "the recurrent GDN operator supports at most "
+        f"{max_tokens} tokens per sequence, but this speculative "
+        f"decode batch needs a window of {window} for {num_seqs} sequences. "
+        "Using it would leave the layer output uninitialised and corrupt every "
+        "generated token. Lower num_speculative_tokens so that "
+        f"num_speculative_tokens + 1 <= {max_tokens}, or rebuild the FLA-NPU "
+        "recurrent GDN operator with a larger MAX_MTP/RGDR_MAX_MTP and set "
+        f"{_MAX_RECURRENT_GDN_TOKENS_ENV} to the same value."
+    )
 
 
 def _split_head_first_conv_output(
@@ -713,6 +767,7 @@ class AscendGatedDeltaNetAttention(GatedDeltaNetAttention):
         # 2.1: Process the multi-query part
         if spec_sequence_masks is not None:
             actual_seq_lengths = attn_metadata.spec_decode_metadata.actual_seq_lengths
+            _check_recurrent_gdn_window(spec_state_indices_tensor, spec_causal_conv1d_meta.num_accepted_tokens.shape[0])
             query_spec = l2norm_fwd(query_spec)
             key_spec = l2norm_fwd(key_spec)
             core_attn_out_spec = recurrent_gated_delta_rule(
