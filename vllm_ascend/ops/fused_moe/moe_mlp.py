@@ -79,10 +79,32 @@ def apply_moe_mlp(
     return hidden_states, before_gmm2_evt
 
 
+def _apply_non_gated_activation(
+    activation: MoEActivation,
+    hidden_states: torch.Tensor,
+) -> torch.Tensor:
+    """Apply an elementwise MoE activation that keeps the input width."""
+    if activation == MoEActivation.RELU2_NO_MUL:
+        return torch.nn.functional.relu(hidden_states).square()
+    if activation == MoEActivation.SILU_NO_MUL:
+        return torch.nn.functional.silu(hidden_states)
+    if activation == MoEActivation.GELU_NO_MUL:
+        return torch.nn.functional.gelu(hidden_states)
+    if activation == MoEActivation.GELU_TANH_NO_MUL:
+        return torch.nn.functional.gelu(hidden_states, approximate="tanh")
+    raise NotImplementedError(f"Unsupported non-gated MoE activation: {activation.value}")
+
+
 def _unified_apply_activation(
     mlp_compute_input: MoEMlpComputeInput, hidden_states: torch.Tensor, quant_method
 ) -> torch.Tensor:
     activation = mlp_compute_input.activation
+
+    if not activation.is_gated:
+        # Up-only experts (e.g. Nemotron-H ``relu2`` MoE): the gmm1 output is
+        # already at the final intermediate width, so apply the plain
+        # (non-multiplied) activation instead of the SwiGLU variants below.
+        return _apply_non_gated_activation(activation, hidden_states)
 
     if activation == MoEActivation.SITU:
         hidden_states = _apply_situ(

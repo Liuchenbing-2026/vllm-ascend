@@ -114,8 +114,13 @@ class AscendSharedExperts:
         self.layer = layer
         self.moe_config = moe_config
         self.hidden_size = moe_config.hidden_dim
+        # Non-gated ("up only") shared-expert MLPs, e.g. the relu2 MLP used by
+        # Nemotron-H style models, expose ``up_proj`` instead of the fused
+        # ``gate_up_proj`` column and apply an elementwise activation.
+        self.is_gated = moe_config.is_act_and_mul
+        self.up_proj = layer.gate_up_proj if self.is_gated else layer.up_proj
         self.shared_expert_input_size = getattr(
-            layer.gate_up_proj,
+            self.up_proj,
             "input_size",
             self.hidden_size,
         )
@@ -195,7 +200,7 @@ class AscendSharedExperts:
         self,
         hidden_states: LinearInput,
     ):
-        shared_gate_up, _ = self.layer.gate_up_proj(hidden_states)  # type: ignore
+        shared_gate_up, _ = self.up_proj(hidden_states)  # type: ignore
         return shared_gate_up
 
     def apply_activation(self, shared_gate_up: torch.Tensor):
@@ -443,7 +448,7 @@ class AscendSharedExperts:
                 hidden_states,
                 dst_type=torch.float8_e4m3fn,
             )
-        return self._prepare_linear_input_for_overlap(self.layer.gate_up_proj, hidden_states)
+        return self._prepare_linear_input_for_overlap(self.up_proj, hidden_states)
 
     def _prepare_linear_input_for_overlap(
         self,
@@ -488,8 +493,8 @@ class AscendSharedExperts:
                 quantized_x, gate_up_input_scale = prepared_execution.gate_up_input
                 gate_up = torch_npu.npu_quant_matmul(
                     quantized_x,
-                    self.layer.gate_up_proj.weight,
-                    self.layer.gate_up_proj.weight_scale,
+                    self.up_proj.weight,
+                    self.up_proj.weight_scale,
                     pertoken_scale=None,
                     bias=None,
                     output_dtype=torch.int32,
@@ -499,7 +504,7 @@ class AscendSharedExperts:
                 # W8A8MXFP remains on the registered linear-wrapper path.
                 assert isinstance(prepared_execution.gate_up_input, tuple)
                 quantized_x, pertoken_scale = prepared_execution.gate_up_input
-                gate_up = self.layer.gate_up_proj((quantized_x, pertoken_scale))[0]
+                gate_up = self.up_proj((quantized_x, pertoken_scale))[0]
             else:
                 gate_up = self.part1(prepared_execution.gate_up_input)
 
@@ -533,7 +538,7 @@ class AscendSharedExperts:
         if self.situ_activation is not None:
             quantized_x, swiglu_out_scale = torch.ops._C_ascend.dequant_situ_quant(
                 x=submitted_gate_up.gate_up,
-                weight_scale=self.layer.gate_up_proj.weight_scale_fp32,
+                weight_scale=self.up_proj.weight_scale_fp32,
                 activation_scale=pertoken_scale,
                 bias=None,
                 quant_scale=None,
@@ -547,7 +552,7 @@ class AscendSharedExperts:
         else:
             quantized_x, swiglu_out_scale = torch.ops._C_ascend.npu_dequant_swiglu_quant(
                 x=submitted_gate_up.gate_up,
-                weight_scale=self.layer.gate_up_proj.weight_scale_fp32,
+                weight_scale=self.up_proj.weight_scale_fp32,
                 activation_scale=pertoken_scale,
                 bias=None,
                 quant_scale=None,
@@ -705,9 +710,14 @@ class AscendSharedExperts:
         W8A8FP, W4A4MXFP and other schemes use the generic wrapper path.
         Active LoRA always uses that generic path to preserve its adapters.
         """
+        if not self.is_gated:
+            # Up-only shared experts have no SwiGLU width split, so every
+            # activation-quant fusion path is inapplicable; keep the generic
+            # registered-linear path, which is bit-exact with the module.
+            return SharedExpertMLPPath.LINEAR_WRAPPER
         has_quantized_shared_without_lora = (
             not has_lora(self.lora_context)
-            and hasattr(self.layer.gate_up_proj, "weight_scale")
+            and hasattr(self.up_proj, "weight_scale")
             and hasattr(self.layer.down_proj, "weight_scale")
         )
         # W8A8 and W4A8 share an INT8-activation implementation; A8 names

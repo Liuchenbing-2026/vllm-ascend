@@ -214,3 +214,50 @@ for module_name, module in list(sys.modules.items()):
         continue
     if module.__dict__.get("FusedMoEFactory") is _original_FusedMoE:
         module.__dict__["FusedMoEFactory"] = _ascend_FusedMoE
+
+
+# ---------------------------------------------------------------------------
+# Allow non-gated (``is_act_and_mul=False``) fused MoE configs on Ascend NPU.
+#
+# vLLM main rejects such configs on any platform that is not CUDA/XPU/ROCm
+# (``vllm/model_executor/layers/fused_moe/config.py``:
+# ``is_act_and_mul=False is supported only for CUDA, XPU and ROCm for now``).
+# Ascend MoE supports up-only projections (required by Nemotron-H style
+# models), so relax only that validation. The proxy is installed for the
+# duration of ``FusedMoEConfig.__post_init__`` so no other CUDA-only branch
+# in the process can observe it.
+# ---------------------------------------------------------------------------
+import vllm.model_executor.layers.fused_moe.config as _fused_moe_config
+
+
+class _CudaAlikePlatformProxy:
+    def __init__(self, platform) -> None:
+        self._platform = platform
+
+    def is_cuda_alike(self) -> bool:
+        return True
+
+    def __getattr__(self, name):
+        return getattr(self._platform, name)
+
+
+def _patch_fused_moe_config_platform() -> None:
+    if getattr(_fused_moe_config, "_vllm_ascend_cuda_alike_patched", False):
+        return
+    original_post_init = _fused_moe_config.FusedMoEConfig.__post_init__
+
+    def _post_init(config):
+        platform = _fused_moe_config.current_platform
+        if getattr(platform, "device_type", None) != "npu":
+            return original_post_init(config)
+        _fused_moe_config.current_platform = _CudaAlikePlatformProxy(platform)
+        try:
+            return original_post_init(config)
+        finally:
+            _fused_moe_config.current_platform = platform
+
+    _fused_moe_config.FusedMoEConfig.__post_init__ = _post_init
+    _fused_moe_config._vllm_ascend_cuda_alike_patched = True
+
+
+_patch_fused_moe_config_platform()
