@@ -16,8 +16,37 @@ LoRA applies to both dense models and mixture-of-experts (MoE) models. The base 
 | --- | --- | --- |
 | Non-quantized | Supported | Supported |
 | W8A8 dynamic quantization | Supported | Supported |
+| W4A8 dynamic quantization (per-channel) | Supported | Supported |
 
 Other MoE quantization methods, Fused MC2, and dynamic EPLB are not supported with LoRA.
+
+### DeepSeek-V4.1 compressed attention
+
+DeepSeek-V4.1 keeps its attention projections in the compressed (MLA) form. LoRA adapters may target `wq_a`, `wq_b`, `wkv`, `wo_a`, and `wo_b`, and, for the MoE blocks, the routed and shared experts. BF16, W8A8 and per-channel W4A8 bases are supported. For W4A8 the INT4 expert weights stay packed and the adapters are applied at the BF16/FP16 boundaries, so the LoRA result matches the unquantized path. An INT4 layout without a kernel fails at startup instead of dropping the adapter.
+
+The following limits are enforced, and a violating launch stops with an error instead of serving a stale adapter:
+
+| Setting | Requirement |
+| --- | --- |
+| W4A8 routed experts | Per-channel weight scales only. A per-group scale layout raises `ValueError`; antiquant offsets are rejected. |
+| `--max-loras` | `1`. `wo_a` is applied as a grouped batched matmul and needs the single-adapter mask. |
+| `--fully-sharded-loras` | Off. |
+| `additional_config.finegrained_tp_config.oproj_tensor_parallel_size` | `1` when the adapter targets `wo_a`. The all-to-all reorders groups across ranks while the adapter slices stay rank-local. |
+| Prefill-context-parallel O-projection sharding | Off when the adapter targets `wo_a`. |
+| `additional_config.enable_fused_mc2` | `0`. |
+| `dynamic_eplb` | Off. |
+
+If an adapter targets `wq_a`, `wkv`, or `wq_b`, the q/kv prolog gives up its fused W8A8 shortcuts and its multi-stream overlap, and runs the wrapped projection modules serially. The adapters stay correct; the fused prolog throughput is not available for that layer while an adapter is loaded.
+
+```bash
+vllm serve /path/to/DeepSeek-V4.1-Flash \
+    ... \
+    --enable-lora \
+    --max-loras 1 \
+    --max-lora-rank 16 \
+    --lora-modules '{"name": "dsv41-lora", "path": "/path/to/dsv41-lora", "base_model_name": "/path/to/DeepSeek-V4.1-Flash"}' \
+    --additional-config '{"enable_fused_mc2": 0}'
+```
 
 ## LoRA Parameters
 

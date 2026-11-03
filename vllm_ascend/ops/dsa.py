@@ -178,6 +178,11 @@ def dsa_forward(
     forward_context: ForwardContext = get_forward_context()
     self = forward_context.no_compile_layers[layer_name]
     attn_metadata = forward_context.attn_metadata
+    # LoRA replaces the projection submodules after the impl is built; keep the
+    # impl's references in sync with the (possibly wrapped) owning layer.
+    bind_lora_projections = getattr(self.dsa_attn.impl, "bind_lora_projections", None)
+    if bind_lora_projections is not None:
+        bind_lora_projections(self)
 
     if attn_metadata is None:
         # Profiling run: forward() handles OTP by running _forward_o_proj on a
