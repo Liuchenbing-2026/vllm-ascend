@@ -7,14 +7,15 @@ from unittest.mock import MagicMock
 
 import pytest
 import torch
-from vllm.config import CompilationConfig, CompilationMode, CUDAGraphMode
+from vllm.config import CompilationConfig, CompilationMode, CUDAGraphMode, SpeculativeConfig, VllmConfig
 
 from vllm_ascend.worker.v2.spec_decode import init_speculator
-from vllm_ascend.worker.v2.spec_decode.rejection_sampler_utils import rejection_sample
 
 
 def test_rejection_sample_rejects_block_with_synthetic_rates():
     """Reject incompatible verification modes before allocating or launching on NPU."""
+    from vllm_ascend.worker.v2.spec_decode.rejection_sampler_utils import rejection_sample
+
     with pytest.raises(AssertionError, match="incompatible with synthetic"):
         rejection_sample(
             target_logits=torch.zeros(2, 1),
@@ -98,6 +99,24 @@ def test_init_speculator_ngram_uses_current_request_state(monkeypatch, method, e
 def test_init_speculator_ngram_requires_request_state():
     with pytest.raises(ValueError, match="requires request states"):
         init_speculator(_make_config("ngram_gpu"), torch.device("cpu"))
+
+
+def test_builtin_does_not_require_custom_config_api(monkeypatch):
+    """Keep the native factory usable with vLLM pins predating registration."""
+    config = VllmConfig()
+    config.speculative_config = SpeculativeConfig(method="ngram", num_speculative_tokens=3)
+    req_states = object()
+    speculator_cls = _mock_speculator_module(
+        monkeypatch,
+        "vllm.v1.worker.gpu.spec_decode.ngram.speculator",
+        "NgramGPUSpeculator",
+    )
+    monkeypatch.setitem(sys.modules, "vllm.v1.worker.gpu.spec_decode.speculator_config", None)
+
+    result = init_speculator(config, torch.device("cpu"), req_states)
+
+    assert result is speculator_cls.return_value
+    speculator_cls.assert_called_once_with(config, torch.device("cpu"), req_states)
 
 
 def test_init_speculator_extract_hidden_states(monkeypatch):

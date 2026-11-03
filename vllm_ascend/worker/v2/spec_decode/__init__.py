@@ -20,10 +20,23 @@ import copy
 from typing import TYPE_CHECKING
 
 import torch
-from vllm.config import CompilationMode, VllmConfig
+from vllm.config import CompilationMode, SpeculativeConfig, VllmConfig
 
 if TYPE_CHECKING:
     from vllm.v1.worker.gpu.states import RequestState
+
+
+def _has_custom_speculator_class(speculative_config: SpeculativeConfig) -> bool:
+    # Older vLLM pins do not expose the registered-speculator config API.
+    if not getattr(speculative_config, "custom_method", None):
+        return False
+    if speculative_config.method is None:
+        return True
+    # A config-only customization should retain Ascend's native binding.
+    # Resolve the built-in specialization without mutating the user's config.
+    builtin_config = copy.copy(speculative_config)
+    builtin_config.custom_method = None
+    return speculative_config.speculator_config.speculator_class != builtin_config.speculator_config.speculator_class
 
 
 def init_speculator(
@@ -40,6 +53,11 @@ def init_speculator(
         vllm_config = copy.copy(vllm_config)
         vllm_config.compilation_config = copy.copy(vllm_config.compilation_config)
         vllm_config.compilation_config.mode = CompilationMode.NONE
+    if _has_custom_speculator_class(speculative_config):
+        # Reuse upstream class validation and optional request-state injection.
+        from vllm.v1.worker.gpu.spec_decode import init_speculator as init_registered_speculator
+
+        return init_registered_speculator(vllm_config, device, req_states)
     if speculative_config.method in ("ngram", "ngram_gpu"):
         if req_states is None:
             raise ValueError("MRV2 n-gram speculative decoding requires request states")
