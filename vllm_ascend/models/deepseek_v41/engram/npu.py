@@ -139,7 +139,21 @@ def _host_library() -> ctypes.CDLL:
     lib.aclrtHostGetDevicePointer.restype = ctypes.c_int
     lib.aclrtHostUnregister.argtypes = [ctypes.c_void_p]
     lib.aclrtHostUnregister.restype = ctypes.c_int
+    lib.aclGetRecentErrMsg.argtypes = []
+    lib.aclGetRecentErrMsg.restype = ctypes.c_char_p
     return lib
+
+
+def _acl_recent_error() -> str:
+    """Human readable reason behind the last failing ACL runtime call."""
+
+    try:
+        message = _host_library().aclGetRecentErrMsg()
+    except Exception:  # noqa: BLE001 - diagnostics must never mask the real error
+        return ""
+    if not message:
+        return ""
+    return f" ({message.decode('utf-8', 'replace').strip()})"
 
 
 class HostUvaBuffer:
@@ -167,7 +181,7 @@ class HostUvaBuffer:
         try:
             rc = self.lib.aclrtHostRegisterV2(self.pointer, size, DeviceOperator.host_register_flags())
             if rc:
-                raise RuntimeError(f"aclrtHostRegisterV2 failed: rc={rc} size={size}")
+                raise RuntimeError(f"aclrtHostRegisterV2 failed: rc={rc} size={size}{_acl_recent_error()}")
             address = ctypes.c_void_p()
             rc = self.lib.aclrtHostGetDevicePointer(self.pointer, ctypes.byref(address), 0)
             if rc:
@@ -313,7 +327,7 @@ class SharedUvaBuffer:
             _madvise_hugepage(self.shm, size)
             rc = self.lib.aclrtHostRegisterV2(address_of_mapping, size, DeviceOperator.host_register_flags())
             if rc:
-                raise RuntimeError(f"aclrtHostRegisterV2 failed: rc={rc} size={size}")
+                raise RuntimeError(f"aclrtHostRegisterV2 failed: rc={rc} size={size}{_acl_recent_error()}")
             # Registration succeeded: from here on the mapping owes exactly one
             # aclrtHostUnregister, and close() must keep the owner until it
             # returns success.  ``pointer`` is therefore set only
