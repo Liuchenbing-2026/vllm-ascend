@@ -1,14 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 from collections.abc import Callable
 
 import torch
+from vllm.logger import logger
 from vllm.lora.punica_wrapper.punica_base import PunicaWrapperBase
 
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.lora.lora_ops import _LORA_WRAPPER_IDS, _LORA_WRAPPERS, lora_linear
 from vllm_ascend.lora.utils import refresh_all_lora_classes
 from vllm_ascend.utils import AscendDeviceType, get_ascend_device_type
+
+_ADAPTER_DEBUG_COUNTS: dict[str, int] = {}
+# The range check below costs a device reduction, so run it once per process:
+# a persistent misalignment shows up on the very first MoE call anyway.
+_ADAPTER_RANGE_CHECKED = False
 
 
 # The platforms that are compatible with the PyTorch-native implementation can
@@ -529,13 +536,47 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         expert_idx = expert_ids.view(-1).to(torch.long)
         num_experts = lora_a_stacked[0].shape[1]
 
-        lora_idx_safe = token_lora_mapping.clamp(min=0)
-        enabled = (token_lora_mapping >= 0) & adapter_enabled[lora_idx_safe].bool()
+        # Row indices are device data, so a single stale/unfilled entry would
+        # trap inside the gather kernel (aivec "index out of range") instead of
+        # surfacing as a Python error. Slots outside [0, max_loras] cannot name
+        # a loaded adapter, so they are folded into the -1 "no adapter"
+        # sentinel -- the same result the caller expects for base-only rows.
+        num_slots = adapter_enabled.numel()
+        slot_idx = token_lora_mapping.clamp(min=0, max=num_slots - 1)
+        in_range = (token_lora_mapping >= 0) & (token_lora_mapping < num_slots)
+        enabled = in_range & adapter_enabled[slot_idx].bool()
         combined_idx = torch.where(
             enabled,
-            lora_idx_safe * num_experts + expert_idx,
+            slot_idx * num_experts + expert_idx,
             torch.full_like(token_lora_mapping, -1),
         ).contiguous()
+
+        global _ADAPTER_RANGE_CHECKED
+        debug = bool(os.environ.get("DSV41_LORA_DEBUG"))
+        if not _ADAPTER_RANGE_CHECKED or (debug and _ADAPTER_DEBUG_COUNTS.get("moe", 0) < 3):
+            _ADAPTER_DEBUG_COUNTS["moe"] = _ADAPTER_DEBUG_COUNTS.get("moe", 0) + 1
+            _ADAPTER_RANGE_CHECKED = True
+            rows = int(token_lora_mapping.numel())
+            lo = int(token_lora_mapping.min())
+            hi = int(token_lora_mapping.max())
+            bad = int((~in_range).sum())
+            message = (
+                f"rows={rows} dtype={token_lora_mapping.dtype} slots={num_slots} "
+                f"experts={num_experts} lora_min={lo} lora_max={hi} "
+                f"out_of_range_rows={bad} head={token_lora_mapping[:16].tolist()}"
+            )
+            if bad:
+                logger.warning_once(
+                    "Ascend MoE LoRA: %d of %d rows carry an adapter slot outside "
+                    "[0, %d); they are treated as base-only rows. LoRA index "
+                    "pipeline diagnostics: %s",
+                    bad,
+                    rows,
+                    num_slots,
+                    message,
+                )
+            if debug:
+                print(f"[dsv41-lora-debug][moe] {message}", flush=True)
 
         # bgmv_shrink writes fp32 (its Y_T); bgmv_expand reads fp32 (its X_T),
         # so the shrink buffer is fp32.
@@ -553,13 +594,18 @@ class PunicaWrapperNPU(PunicaWrapperBase):
             a_flat = a.view(-1, rank, a.shape[-1])
             b_flat = b.view(-1, out_size, rank)
 
-            self.bgmv_shrink(x2d, a_flat, shrink_out, combined_idx, 1.0)
+            # `combined_idx` addresses the flattened [max_loras * num_experts]
+            # view. An out-of-range expert id (possible only when the routing
+            # metadata disagrees with the LoRA weight layout) must not reach the
+            # kernel, so fold it into the -1 sentinel as well.
+            row_idx = torch.where(combined_idx < a_flat.shape[0], combined_idx, -1)
+            self.bgmv_shrink(x2d, a_flat, shrink_out, row_idx, 1.0)
 
             delta = shrink_out
             if mul_routed_weight and topk_weights is not None:
                 delta = shrink_out * topk_weights.view(-1, 1)
 
-            self.bgmv_expand_slice(delta, b_flat, y2d, combined_idx, cur_offset, out_size, add_inputs=True)
+            self.bgmv_expand_slice(delta, b_flat, y2d, row_idx, cur_offset, out_size, add_inputs=True)
             cur_offset += out_size
 
     def add_lora_logits(
