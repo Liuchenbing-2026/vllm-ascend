@@ -332,7 +332,7 @@ def test_assert_accepts_int4_int8_experts_and_rejects_other_quant_types() -> Non
 
 @pytest.mark.parametrize(
     ("index_mapping", "expected_no_lora"),
-    [((0, 0), True), ((0, 1), False), ((2, 0), False)],
+    [((-1, -1), True), ((0, 0), False), ((0, 1), False), ((2, 0), False)],
 )
 def test_decode_metadata_refreshes_no_lora(index_mapping, expected_no_lora) -> None:
     wrapper = object.__new__(PunicaWrapperNPU)

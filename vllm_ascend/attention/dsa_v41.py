@@ -29,7 +29,11 @@ from vllm.v1.attention.backend import (
 from vllm.v1.kv_cache_interface import CircularBufferSpec
 
 from vllm_ascend.ascend_config import get_ascend_config
-from vllm_ascend.attention.dsa_v1 import build_dspark_swa_indices, dsv4_dsa_overlap_stream
+from vllm_ascend.attention.dsa_v1 import (
+    _is_lora_wrapped,
+    build_dspark_swa_indices,
+    dsv4_dsa_overlap_stream,
+)
 from vllm_ascend.core.kv_cache_interface import (
     AscendMLAAttentionSpec,
     AscendSlidingWindowMLASpec,
@@ -437,7 +441,12 @@ class AscendDSAV41Impl:
             return None, None, None
         cos, sin = query_metadata.rope(attn.rotary_emb.layername, query_hidden.shape[0])
         kv_cos, kv_sin = cache_metadata.rope(attn.rotary_emb.layername, cache_hidden.shape[0])
-        if self.multistream_dsv4_dsa_overlap and cache_hidden.shape[0]:
+        # The multi-stream prolog quantizes and multiplies the projections through
+        # CVLinearWrapper, which bypasses the LoRA-aware module forward and would
+        # silently drop adapters on wq_a/wq_b/wkv. Use the serial prolog instead
+        # whenever those projections carry an adapter (same rule as V1).
+        prolog_lora = self._prolog_lora_enabled(attn)
+        if self.multistream_dsv4_dsa_overlap and cache_hidden.shape[0] and not prolog_lora:
             q, qr = self.multistream_preprocess(
                 attn,
                 query_hidden,
@@ -469,6 +478,13 @@ class AscendDSAV41Impl:
         else:
             self._quantize_indexer_query(attn, prepared_indexer, query_metadata)
         return q.to(query_hidden.dtype), qr, prepared_indexer
+
+    @staticmethod
+    def _prolog_lora_enabled(attn) -> bool:
+        """Whether the q/kv prolog must avoid the fused quantized shortcuts."""
+        return any(
+            _is_lora_wrapped(getattr(attn, name, None)) for name in ("wq_a", "wq_b", "wkv")
+        )
 
     def _indexer_hidden_states(self, hidden_states, metadata):
         return hidden_states[: metadata.swa.num_actual_tokens]

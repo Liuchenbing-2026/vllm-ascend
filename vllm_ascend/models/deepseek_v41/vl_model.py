@@ -7,8 +7,14 @@ from collections.abc import Iterable, Iterator
 import torch
 from torch import nn
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
-from vllm.model_executor.models.interfaces import MultiModalEmbeddings, SupportsEagle3, SupportsMultiModal, SupportsPP
-from vllm.model_executor.models.utils import maybe_prefix
+from vllm.model_executor.models.interfaces import (
+    MultiModalEmbeddings,
+    SupportsEagle3,
+    SupportsLoRA,
+    SupportsMultiModal,
+    SupportsPP,
+)
+from vllm.model_executor.models.utils import WeightsMapper, maybe_prefix
 
 # Upstream #56741 normalized the V4.1 model package name from deepseek_v4_1
 # to deepseek_v41.
@@ -47,13 +53,24 @@ class AscendDeepseekV41ForCausalLM(
     SupportsMultiModal,
     SupportsPP,
     SupportsEagle3,
+    SupportsLoRA,
 ):
     """V4.1 image-span semantics with the shared Ascend vision tower."""
 
     # Engram history and vision MoE routing also consume the original token IDs.
     requires_raw_input_tokens = True
     packed_modules_mapping = {"gate_up_proj": ["gate_proj", "up_proj"]}
+    # Adapters target the language-model attention projections only; the MTP
+    # draft head is never LoRA-adapted (mirrors the upstream V4.1 LLM class).
+    lora_skip_prefixes = ["mtp."]
     language_model_cls = AscendDeepseekV41LLMForCausalLM
+    # ``supports_lora`` checks the top-level module (this wrapper even for
+    # text-only checkpoints), so the text backbone's LoRA contract has to be
+    # surfaced here as well. Without ``embedding_modules`` the runtime check
+    # rejects the wrapper and raises "does not support LoRA yet".
+    embedding_modules = language_model_cls.embedding_modules
+    is_3d_moe_weight = language_model_cls.is_3d_moe_weight
+    is_non_gated_moe = language_model_cls.is_non_gated_moe
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
@@ -99,6 +116,21 @@ class AscendDeepseekV41ForCausalLM(
         self.requires_uncompiled_fallback = self.language_model.requires_uncompiled_fallback
         self.make_empty_intermediate_tensors = self.language_model.make_empty_intermediate_tensors
         self.moe_comm_methods = self.language_model.moe_comm_methods
+        # Adapters are trained against the HF text backbone, so their keys start
+        # at ``model.layers.``. After multimodal wrapping the same modules live
+        # under ``language_model.``, so the LoRA loader needs this re-rooting
+        # rule to reach them. It is set on the instance on purpose: the
+        # class-level attribute is also read by ``configure_quant_config`` and
+        # the base weight loader, which must keep seeing raw checkpoint names.
+        self.hf_to_vllm_mapper = WeightsMapper(
+            orig_to_new_prefix={
+                "model.layers.": "language_model.model.layers.",
+                "layers.": "language_model.model.layers.",
+                "model.hc_head": "language_model.model.hc_head",
+                "hc_head": "language_model.model.hc_head",
+                "lm_head.": "language_model.lm_head.",
+            },
+        )
 
     def _parse_and_validate_image_input(self, **kwargs: object) -> dict | None:
         patches = kwargs.pop("patches", None)
