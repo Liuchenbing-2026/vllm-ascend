@@ -40,6 +40,7 @@ from vllm.lora.layers.utils import _get_lora_device
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX
 from vllm_ascend.ops.fused_moe.moe_utils import async_all_to_all
+from vllm_ascend.quantization.quant_type import QuantType
 
 _MOE_LORA_INDEX_FIELDS = (
     "split_lora_indices",
@@ -168,6 +169,14 @@ def sync_lora_context(quant_method, lora_context):
 
 
 def _assert_ascend_moe_lora_supported(base_layer: nn.Module) -> None:
+    quant_type = _resolve_quant_type(base_layer)
+    if quant_type not in (QuantType.NONE, QuantType.W8A8, QuantType.W4A8):
+        raise NotImplementedError(
+            "Ascend MoE LoRA has no expert kernel for "
+            f"{quant_type.name} routed experts. "
+            "Run the base experts unquantized, W8A8 or W4A8, or drop the routed-expert "
+            "targets from the adapter."
+        )
     if getattr(base_layer, "dynamic_eplb", False):
         raise AssertionError(
             "Ascend MoE LoRA is incompatible with dynamic EPLB "
@@ -185,6 +194,13 @@ def _assert_ascend_moe_lora_supported(base_layer: nn.Module) -> None:
             "uses the MoE path; shared-expert LoRA uses dense wrappers with "
             "the compatible NPU expand-slice implementation."
         )
+
+
+def _resolve_quant_type(base_layer: nn.Module) -> QuantType:
+    """Quant scheme of the routed experts, resolved from the layer's method."""
+    method = getattr(base_layer, "quant_method", None)
+    inner_method = getattr(method, "quant_method", method)
+    return getattr(inner_method, "quant_type", QuantType.NONE)
 
 
 def _recover_moe_lora_routing_allgather(lora_context, expanded_row_idx, topk_ids):

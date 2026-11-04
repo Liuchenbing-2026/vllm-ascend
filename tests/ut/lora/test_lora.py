@@ -23,6 +23,7 @@ from vllm_ascend.lora.fused_moe import (
     sync_lora_context,
 )
 from vllm_ascend.lora.punica_npu import PunicaWrapperNPU
+from vllm_ascend.quantization.quant_type import QuantType
 
 
 def _make_base_layer(*, num_local_experts=256, is_act_and_mul=True, shared_experts=None, use_ep=False):
@@ -307,6 +308,26 @@ def test_assert_warns_once_for_shared_experts() -> None:
         _assert_ascend_moe_lora_supported(SimpleNamespace(dynamic_eplb=False, _shared_experts=object()))
     warn.assert_called_once()
     assert "shared_experts" in warn.call_args.args[0]
+
+
+def test_assert_accepts_int4_int8_experts_and_rejects_other_quant_types() -> None:
+    def base_layer(quant_type):
+        return SimpleNamespace(
+            dynamic_eplb=False,
+            _shared_experts=None,
+            quant_method=SimpleNamespace(quant_method=SimpleNamespace(quant_type=quant_type)),
+        )
+
+    # Quant schemes without a routed-expert LoRA kernel still fail at load time.
+    with pytest.raises(NotImplementedError, match="W4A16"):
+        _assert_ascend_moe_lora_supported(base_layer(QuantType.W4A16))
+
+    with patch(
+        "vllm_ascend.lora.fused_moe.get_ascend_config",
+        return_value=SimpleNamespace(enable_fused_mc2=0),
+    ):
+        for supported in (QuantType.NONE, QuantType.W8A8, QuantType.W4A8):
+            _assert_ascend_moe_lora_supported(base_layer(supported))
 
 
 @pytest.mark.parametrize(
