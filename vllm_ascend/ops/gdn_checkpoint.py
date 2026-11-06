@@ -43,11 +43,23 @@ def initialize_gdn_checkpoints(layer) -> None:
             "KV transfer or legacy EAGLE block dropping without lookahead hashes."
         )
         return
-    from vllm.model_executor.layers.mamba.checkpoint import MambaPrefillCheckpointExporter
+    from vllm.model_executor.layers.mamba.checkpoint import (
+        MambaPrefillCheckpointExporter,
+        MambaPrefillCheckpointMetadata,
+    )
     from vllm.v1.kv_cache_interface import MambaSpec
 
-    if "num_prefill_checkpoint_blocks" not in MambaSpec.__dataclass_fields__:
-        raise ValueError("GDN internal checkpoints require vLLM with PR #60050")
+    if (
+        "state_len" not in getattr(MambaPrefillCheckpointExporter, "__dataclass_fields__", {})
+        or "query_lens" not in MambaPrefillCheckpointMetadata.__dataclass_fields__
+        or "num_prefill_checkpoint_blocks" not in MambaSpec.__dataclass_fields__
+        or not hasattr(type(layer), "_exports_checkpoints")
+    ):
+        logger.warning_once(
+            "GDN internal prefill checkpoints require the concrete vLLM checkpoint exporter API. "
+            "Using existing split-prefill scheduling."
+        )
+        return
     layer._ascend_internal_checkpoint_enabled = True
     layer.register_buffer("_ascend_checkpoint_workspace", None, persistent=False)
     layer._checkpoint_alignment = GDN_CHECKPOINT_ALIGNMENT

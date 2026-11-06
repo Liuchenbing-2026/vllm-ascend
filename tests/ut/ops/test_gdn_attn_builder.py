@@ -25,6 +25,7 @@ from vllm_ascend.device.hardware import AscendDeviceType
 from vllm_ascend.device.hardware_profile import get_hardware_profile
 from vllm_ascend.ops import gdn as ascend_gdn
 from vllm_ascend.ops import gdn_attn_builder as ascend_gdn_attn_builder
+from vllm_ascend.ops import gdn_checkpoint
 from vllm_ascend.ops.gdn import AscendGatedDeltaNetAttention
 from vllm_ascend.ops.gdn_attn_builder import (
     AscendGDNAttentionBackend,
@@ -46,6 +47,43 @@ from vllm_ascend.ops.triton.fla.utils import (
 from vllm_ascend.ops.triton.fla.utils import (
     prepare_update_chunk_offsets as runtime_prepare_update_chunk_offsets,
 )
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_initialize_checkpoints_respects_exporter_api_and_opt_in(monkeypatch, enabled):
+    from vllm.model_executor.layers.mamba.checkpoint import MambaPrefillCheckpointExporter
+
+    class Layer(SimpleNamespace):
+        _exports_checkpoints = True
+        head_k_dim = head_v_dim = 128
+        conv_kernel_size = 4
+
+        def __init__(self):
+            self.register_buffer = Mock()
+            self.vllm_config = SimpleNamespace(
+                cache_config=SimpleNamespace(mamba_cache_mode="align"),
+                parallel_config=SimpleNamespace(prefill_context_parallel_size=1, use_ubatching=False),
+                model_config=SimpleNamespace(dtype=torch.bfloat16),
+                scheduler_config=SimpleNamespace(max_num_batched_tokens=8192),
+                kv_transfer_config=None,
+                speculative_config=None,
+            )
+
+    monkeypatch.setattr(
+        gdn_checkpoint, "get_ascend_config", lambda: SimpleNamespace(gdn_internal_prefill_checkpoints=enabled)
+    )
+    layer = Layer()
+    gdn_checkpoint.initialize_gdn_checkpoints(layer)
+    supports_api = "state_len" in getattr(MambaPrefillCheckpointExporter, "__dataclass_fields__", {})
+    if enabled and supports_api:
+        assert layer._ascend_internal_checkpoint_enabled
+        assert layer._checkpoint_alignment == 64
+        assert layer._checkpoint_exporter.state_len == 3
+        layer.register_buffer.assert_called_once_with("_ascend_checkpoint_workspace", None, persistent=False)
+    else:
+        assert not hasattr(layer, "_ascend_internal_checkpoint_enabled")
+        assert not hasattr(layer, "_checkpoint_alignment")
+        layer.register_buffer.assert_not_called()
 
 
 @pytest.mark.parametrize("builder_cls", [AscendGDNAttentionMetadataBuilder, AscendGDNHostMetadataBuilder])

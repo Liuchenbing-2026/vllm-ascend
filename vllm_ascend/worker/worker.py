@@ -1318,6 +1318,10 @@ class NPUWorker(WorkerBase):
 
     def initialize_from_config(self, kv_cache_config: KVCacheConfig) -> None:
         """Allocate NPU KV cache with the specified kv_cache_config."""
+        # The engine resolves these after workers are constructed. Checkpoint
+        # builders must use the same hash and hit grid as the scheduler.
+        self.vllm_config.cache_config.hash_block_size = kv_cache_config.hash_block_size
+        self.vllm_config.cache_config.cache_hit_alignment_tokens = kv_cache_config.cache_hit_alignment_tokens
         speculator = getattr(self.model_runner, "speculator", None)
         speculative = self.vllm_config.speculative_config
         if (

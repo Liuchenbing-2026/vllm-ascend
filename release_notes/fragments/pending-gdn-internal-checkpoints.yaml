@@ -1,4 +1,4 @@
 pr: 0  # Replace with the real PR number before submission.
 entries:
   - category: feature
-    text: Added experimental opt-in gdn internal prefill checkpoints.
+    text: Added experimental opt-in GDN internal prefill checkpoints with engine-resolved cache alignment. Versions with the abstract vLLM checkpoint exporter use existing split-prefill scheduling.

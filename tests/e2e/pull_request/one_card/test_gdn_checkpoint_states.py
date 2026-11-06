@@ -57,6 +57,9 @@ def test_shared_exporter_preserves_ascend_conv_layout_and_mtp_slots():
         MambaPrefillCheckpointMetadata,
     )
 
+    if "state_len" not in getattr(MambaPrefillCheckpointExporter, "__dataclass_fields__", {}):
+        pytest.skip("This vLLM lane provides only the abstract checkpoint exporter")
+
     device = "npu"
     raw = torch.arange(352 * 16, device=device, dtype=torch.float32).view(352, 16)
     conv = torch.full((5, 6, 16), -42.0, device=device)
@@ -88,7 +91,9 @@ def test_shared_exporter_preserves_ascend_conv_layout_and_mtp_slots():
 def test_checkpoint_prefill_matches_dense_inputs_and_restored_tail(layout, cache_dtype):
     from vllm_ascend.ops.gdn_attn_builder import _build_non_spec_chunked_prefill_metadata
     from vllm_ascend.ops.triton.fla import chunk
+    from vllm_ascend.ops.triton.triton_utils import init_device_properties_triton
 
+    init_device_properties_triton()
     torch.manual_seed(23)
     lengths = [145, 65, 209]
     total, heads, dim = sum(lengths), 4, 128

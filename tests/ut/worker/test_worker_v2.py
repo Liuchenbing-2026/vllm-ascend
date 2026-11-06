@@ -1,5 +1,6 @@
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -14,6 +15,49 @@ from vllm.v1.kv_cache_interface import (
 from vllm.v1.kv_cache_layout import KVCacheLayout
 
 from tests.ut.base import TestBase
+
+
+@pytest.mark.parametrize("use_v2", [False, True])
+@pytest.mark.parametrize("hash_size,hit_alignment", [(64, 64), (16, 64)])
+def test_initialize_from_config_adopts_checkpoint_grid_before_consumers(use_v2, hash_size, hit_alignment):
+    from vllm.model_executor.layers.mamba.checkpoint import MambaPrefillCheckpointBuilder
+
+    from vllm_ascend.worker.worker import NPUWorker
+
+    cache = SimpleNamespace(mamba_cache_mode="align", hash_block_size=None, cache_hit_alignment_tokens=None)
+    config = SimpleNamespace(cache_config=cache, speculative_config=None, num_hash_lookahead_tokens=0)
+    resolved = SimpleNamespace(
+        hash_block_size=hash_size,
+        cache_hit_alignment_tokens=hit_alignment,
+        has_mamba_layers=True,
+        needs_kv_cache_zeroing=False,
+    )
+
+    def check_grid(*args, **kwargs):
+        assert cache.hash_block_size == hash_size
+        assert cache.cache_hit_alignment_tokens == hit_alignment
+
+    worker = SimpleNamespace(
+        vllm_config=config,
+        model_runner=SimpleNamespace(initialize_kv_cache=check_grid),
+        use_v2_model_runner=use_v2,
+        _maybe_get_memory_pool_context=lambda **kwargs: nullcontext(),
+    )
+    with patch("vllm_ascend.worker.worker.ensure_kv_transfer_initialized", side_effect=check_grid):
+        NPUWorker.initialize_from_config(cast(NPUWorker, worker), resolved)
+
+    spec = SimpleNamespace(num_prefill_checkpoint_blocks=1, block_size=64, prefill_checkpoint_alignment=64)
+    builder = MambaPrefillCheckpointBuilder(config, spec)
+    common = SimpleNamespace(
+        seq_lens_cpu_upper_bound=torch.tensor([129], dtype=torch.int32),
+        query_start_loc_cpu=torch.tensor([0, 129], dtype=torch.int32),
+        query_start_loc=torch.tensor([0, 129], dtype=torch.int32),
+        block_table_tensor=torch.tensor([[7, 8, 9]], dtype=torch.int32),
+    )
+    checkpoint = builder.build(common, [0])
+    assert checkpoint is not None
+    assert checkpoint.checkpoint_offsets.tolist() == [128]
+    assert checkpoint.state_indices.tolist() == [8]
 
 
 @pytest.mark.parametrize("enforce_eager", [False, True])

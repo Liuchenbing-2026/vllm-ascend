@@ -380,7 +380,9 @@ PCP gathers prefill KV before cache writes. KVPP layer broadcasts restore prior-
 ## GDN internal prefill checkpoints
 
 Enable with `--additional-config '{"gdn_internal_prefill_checkpoints": true}'`
-and prefix caching in align mode. Requires vLLM with #60050. The option is
+and prefix caching in align mode. Internal checkpoint export requires vLLM's
+concrete checkpoint exporter API. Versions providing only the abstract exporter
+use existing split-prefill scheduling when this option is enabled. The option is
 experimental and disabled by default. Eligible GDN layers require BF16,
 K=V=128, PCP=1 and no ubatching. The upstream all-layer capability check preserves split
 prefill when another recurrent layer cannot export checkpoints.
