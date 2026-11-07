@@ -428,6 +428,21 @@ class TestChunkedTokenDatabase(unittest.TestCase):
         self.assertIn("@pp_rank:0", new_keys[0])
         self.assertIn("@pp_rank:1", new_keys[1])
 
+    def test_decode_adaptor_prefill_pp_nonzero_local_rank(self):
+        # A decode worker with PP > 1 builds keys with its own pp_rank.
+        meta = KeyMetadata("llama", 0, 0, 2)
+        db = ChunkedTokenDatabase([meta], [16], partitions=[2, 2])
+        db.set_group_buffers({0: [1000, 2000]}, {0: [160, 320]})
+        keys = ["k1@pp_rank:2"]
+        addrs = [[1, 2, 3, 4, 5, 6, 7, 8]]
+        sizes = [[10, 20, 30, 40, 50, 60, 70, 80]]
+        new_keys, new_addrs, new_sizes = db.decode_adaptor_prefill_pp(keys, addrs, sizes)
+        # Each partition must target a distinct prefill rank; identical keys
+        # would make every partition overwrite the same store entry.
+        self.assertEqual(len(set(new_keys)), 2)
+        self.assertIn("@pp_rank:0", new_keys[0])
+        self.assertIn("@pp_rank:1", new_keys[1])
+
 
 class TestLoadSpec(unittest.TestCase):
     def test_fields(self):

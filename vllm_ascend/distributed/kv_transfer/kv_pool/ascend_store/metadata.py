@@ -686,6 +686,9 @@ class ChunkedTokenDatabase:
         new_size = []
 
         group_num_layers = self.group_num_layers.get(cache_role, {}).get(kv_cache_group_id, 0)
+        # The key carries this worker's own pp_rank, not necessarily 0.
+        local_pp_rank = self.metadata[kv_cache_group_id].pp_rank
+        src_pattern = f"@pp_rank:{local_pp_rank}"
         for i, (addr_list, size_list) in enumerate(zip(addr, size)):
             caches_per_layer = len(addr_list) // group_num_layers if group_num_layers else 2
             caches_per_layer = max(caches_per_layer, 1)
@@ -693,7 +696,7 @@ class ChunkedTokenDatabase:
             for j, part in enumerate(self.partitions):
                 end = len(addr_list) if j == len(self.partitions) - 1 else start + part * caches_per_layer
                 new_str = key[i].replace(  # type: ignore[attr-defined]
-                    "@pp_rank:0", f"@pp_rank:{j}", 1
+                    src_pattern, f"@pp_rank:{j}", 1
                 )
                 new_key.append(new_str)
                 new_addr.append(addr_list[start:end])
