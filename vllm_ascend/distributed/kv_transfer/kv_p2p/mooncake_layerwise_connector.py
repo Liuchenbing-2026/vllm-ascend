@@ -953,6 +953,11 @@ class MooncakeLayerwiseConnectorScheduler:
         request._all_token_ids.pop()
         request.num_prompt_tokens -= 1
         request.max_tokens = 1
+        # The request hashed the full prompt on construction. Rebuild for the
+        # shortened prompt so the local prefix-cache lookup and the remote
+        # lookup agree on the prompt length (see #20213).
+        request.block_hashes.clear()
+        request.update_block_hashes()
         params["_p_side_truncated"] = True
 
     def _trim_hybrid_remote_block_ids(self, block_ids: tuple[list[int], ...], prompt_len: int) -> tuple[list[int], ...]:

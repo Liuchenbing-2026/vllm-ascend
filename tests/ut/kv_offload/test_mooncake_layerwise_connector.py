@@ -858,6 +858,10 @@ class MockRequest:
 
         self.all_token_ids = list(self.prompt_token_ids)
         self._all_token_ids = list(self.prompt_token_ids)
+        self.block_hashes = []
+
+    def update_block_hashes(self):
+        self.block_hashes.append(tuple(self._all_token_ids))
 
 
 class TestMooncakeLayerwiseConnectorMetadata(unittest.TestCase):
