@@ -344,7 +344,12 @@ class NPUWorker(WorkerBase):
         self.synchronize_device()
 
         allocator = CaMemAllocator.get_instance()
-        global_te.unregister_buffer()
+        # Level-1 sleep keeps the KV cache resident on device. Unregistering it
+        # would also disconnect the peers (Ascend Direct unregister_memory does
+        # that), and a weights-only wake_up() never re-registers, leaving the
+        # KV buffers unusable for the rest of the engine's lifetime.
+        if level != 1:
+            global_te.unregister_buffer()
         allocator.sleep(offload_tags=("weights",) if level == 1 else tuple())
         free_bytes_after_sleep, total = torch.npu.mem_get_info()
         freed_bytes = free_bytes_after_sleep - free_bytes_before_sleep
