@@ -1,0 +1,446 @@
+diff --git a/csrc/apis/mega_moe.hpp b/csrc/apis/mega_moe.hpp
+index f74fe19..fa93d04 100644
+--- a/csrc/apis/mega_moe.hpp
++++ b/csrc/apis/mega_moe.hpp
+@@ -73,7 +73,7 @@ static auto get_symm_buffer_size_for_mega_moe(
+     uint32_t num_ranks, uint32_t num_experts, uint32_t num_max_tokens_per_rank, uint32_t num_topk,
+     uint32_t hidden, uint32_t intermediate_hidden, const std::string& mma_type,
+     const std::string& activation, uint32_t num_shared_experts = 0) {
+-    DJ_HOST_ASSERT(mma_type == "fp8xfp4" and activation == "swiglu");
++    DJ_HOST_ASSERT((mma_type == "fp8xfp4" or mma_type == "fp8xfp8") and activation == "swiglu");
+     const auto workspace = get_workspace(num_ranks, num_experts, num_max_tokens_per_rank, num_topk,
+                                          hidden, intermediate_hidden, num_shared_experts);
+     auto slice_input_buffers = [workspace](const torch::Tensor& buffer) {
+@@ -113,12 +113,13 @@ static layout::LinearWeights check_weights(const std::tuple<torch::Tensor, torch
+                                            uint32_t num_k, uint32_t num_experts_per_rank = 0) {
+     const auto& [weights, weights_sf] = weights_tuple;
+     const bool is_shared = num_experts_per_rank == 0;
+-    DJ_HOST_ASSERT(weights.scalar_type() == (is_shared ? torch::kFloat8_e4m3fn : torch::kInt8) and weights.is_contiguous());
++    const bool fp8_weight = weights.scalar_type() == torch::kFloat8_e4m3fn;
++    DJ_HOST_ASSERT((fp8_weight or (not is_shared and weights.scalar_type() == torch::kInt8)) and weights.is_contiguous());
+     DJ_HOST_ASSERT(weights_sf.scalar_type() == torch::kInt16 and weights_sf.is_contiguous());
+     DJ_HOST_ASSERT(weights.device().type() == c10::DeviceType::PrivateUse1 and
+                    weights_sf.device().type() == c10::DeviceType::PrivateUse1);
+     // Shared weights omit the expert dimension and store unpacked FP8 data.
+-    const int64_t weight_shape[]{num_experts_per_rank, num_n_blocks, layout::BLOCK_N, num_k / (is_shared ? 1 : 2)};
++    const int64_t weight_shape[]{num_experts_per_rank, num_n_blocks, layout::BLOCK_N, num_k / (fp8_weight ? 1 : 2)};
+     const int64_t sf_shape[]{num_experts_per_rank, num_n_blocks, num_k / MX_SF_DIVISOR, layout::BLOCK_N};
+     DJ_HOST_ASSERT(weights.sizes() == torch::IntArrayRef(weight_shape + is_shared, 4 - is_shared));
+     DJ_HOST_ASSERT(weights_sf.sizes() == torch::IntArrayRef(sf_shape + is_shared, 4 - is_shared));
+@@ -176,6 +177,11 @@ static void fp8_fp4_mega_moe(
+         DJ_HOST_ASSERT(cumulative_local_expert_recv_stats->device() == y.device());
+     }
+
++    DJ_HOST_ASSERT(std::get<0>(l1_weights_tuple).scalar_type() == std::get<0>(l2_weights_tuple).scalar_type());
++    for (const auto* pair : {&l1_weights_tuple, &l2_weights_tuple}) {
++        DJ_HOST_ASSERT(std::get<0>(*pair).device() == y.device());
++        DJ_HOST_ASSERT(std::get<1>(*pair).device() == y.device());
++    }
+     // Check transformed weights and scales
+     const auto l1 = check_weights(l1_weights_tuple, intermediate_hidden / (layout::BLOCK_N / 2), hidden, num_experts_per_rank);
+     const auto l2 = check_weights(l2_weights_tuple, hidden / layout::BLOCK_N, intermediate_hidden, num_experts_per_rank);
+@@ -200,11 +206,13 @@ static void fp8_fp4_mega_moe(
+         .rank_idx = static_cast<uint32_t>(rank_idx),
+         .num_tokens = num_tokens,
+         .activation_clamp = static_cast<float>(c10::BFloat16(activation_clamp)),
++        .routed_fp8 = std::get<0>(l1_weights_tuple).scalar_type() == torch::kFloat8_e4m3fn,
+     });
+ }
+
+ static void register_apis(py::module_& m) {
+     m.attr("_mega_moe_block_n") = layout::BLOCK_N;
++    m.attr("_mega_moe_routed_fp8") = true;
+     py::class_<SymmBuffer>(m, "SymmBuffer")
+         .def(py::init<uint32_t, uint32_t, const std::string&, int64_t>(),
+              py::arg("rank_idx"), py::arg("num_ranks"), py::arg("hccl_group_name"), py::arg("num_bytes"))
+diff --git a/csrc/jit_kernels/mega_moe.hpp b/csrc/jit_kernels/mega_moe.hpp
+index f516422..afc5a9b 100644
+--- a/csrc/jit_kernels/mega_moe.hpp
++++ b/csrc/jit_kernels/mega_moe.hpp
+@@ -19,6 +19,7 @@ struct MegaMoEArgs {
+     uint32_t rank_idx;
+     uint32_t num_tokens;
+     float activation_clamp;
++    bool routed_fp8;
+ };
+
+ static void launch_mega_moe(const MegaMoEArgs& args) {
+@@ -28,12 +29,12 @@ static void launch_mega_moe(const MegaMoEArgs& args) {
+ #include <deep_gemm/mega_moe.hpp>
+
+ static void __instantiate() {{
+-    auto p = reinterpret_cast<void*>(&deep_gemm::mega_moe::mega_moe_impl<{}, {}, {}, {}, {}, {}, {}>);
++    auto p = reinterpret_cast<void*>(&deep_gemm::mega_moe::mega_moe_impl<{}, {}, {}, {}, {}, {}, {}, {}>);
+ }}
+
+ )",
+         config.num_ranks, config.num_experts, config.num_shared_experts, config.num_max_tokens_per_rank,
+-        config.num_topk, config.hidden, config.intermediate_hidden);
++        config.num_topk, config.hidden, config.intermediate_hidden, args.routed_fp8);
+     if (runtime->get_dry_run()) {
+         jit->compile_without_load("mega_moe", code);
+         return;
+diff --git a/deep_gemm/include/deep_gemm/mega_moe.hpp b/deep_gemm/include/deep_gemm/mega_moe.hpp
+index 5299e05..9f591ea 100644
+--- a/deep_gemm/include/deep_gemm/mega_moe.hpp
++++ b/deep_gemm/include/deep_gemm/mega_moe.hpp
+@@ -72,6 +72,8 @@ constexpr PipeEvent<PIPE_V, PIPE_MTE2> kFP4Empty{0};
+ constexpr PipeEvent<PIPE_V, PIPE_MTE3> kNZFull{0};
+ constexpr PipeEvent<PIPE_MTE3, PIPE_V> kNZEmpty{0};
+ constexpr PipeEvent<PIPE_V, PIPE_S> kMetadataDone{0};
++constexpr PipeEvent<PIPE_MTE2, PIPE_MTE3> kFP8NZFull{0};
++constexpr PipeEvent<PIPE_MTE3, PIPE_MTE2> kFP8NZEmpty{0};
+
+ // AIV1: pull 0–1 and push 2–5, full forward and empty backward
+ constexpr uint32_t kNumPullStages = 2, kNumPushStages = 4;
+@@ -294,8 +296,8 @@ __aicore__ __forceinline__ void combine_reduce(__gm__ uint8_t* buffer, __gm__ bf
+     }
+ }
+
+-// AIV0: FP4 weights -> FP8 NZ -> L1B
+-template <const auto& workspace, bool kOverlapReduce>
++// AIV0: routed FP8 NZ, or packed FP4 expanded to FP8 NZ, then L1B.
++template <const auto& workspace, bool kOverlapReduce, bool kRoutedFP8>
+ __aicore__ inline void aiv0_weight_pipeline(__gm__ uint8_t* buffer, __gm__ bfloat16_t* output,
+                                             uint32_t num_tokens, CombineReduceState<workspace>& reduce, uint32_t num_total_m_blocks,
+                                             const layout::Weights& weights, uint32_t core_idx) {
+@@ -317,8 +319,12 @@ __aicore__ inline void aiv0_weight_pipeline(__gm__ uint8_t* buffer, __gm__ bfloa
+     static_assert(ub_nz.offset(kNumNZStages) <= UBSizeBytes and ub_reduce_inputs.shape_n > 0, "AIV0 UB overflow");
+
+     // Initialize UB reuse credits; AIC releases the initial L1B credits
+-    notify<PIPE_V, PIPE_MTE2, kNumFP4Stages>(kFP4Empty);
+-    notify<PIPE_MTE3, PIPE_V, kNumNZStages>(kNZEmpty);
++    if constexpr (kRoutedFP8) {
++        notify<PIPE_MTE3, PIPE_MTE2, kNumNZStages>(kFP8NZEmpty);
++    } else {
++        notify<PIPE_V, PIPE_MTE2, kNumFP4Stages>(kFP4Empty);
++        notify<PIPE_MTE3, PIPE_V, kNumNZStages>(kNZEmpty);
++    }
+
+     // Size the reduce window from local output tokens
+     const uint32_t num_reduce_window_m_blocks = ceil_div(num_tokens, BLOCK_M);
+@@ -347,7 +353,7 @@ __aicore__ inline void aiv0_weight_pipeline(__gm__ uint8_t* buffer, __gm__ bfloa
+         const uint64_t weight_block_idx =
+             static_cast<uint64_t>(expert_cursors[layer_idx].local_expert_idx) * num_n_blocks + n_block_idx;
+         const auto weight_data = (is_linear1 ? weights.l1.data : weights.l2.data) +
+-                                 weight_block_idx * BLOCK_N * (num_k / 2);
++                                 weight_block_idx * BLOCK_N * (kRoutedFP8 ? num_k : num_k / 2);
+
+         const auto load_weights = [&]<uint32_t MAD_M>() __aicore__ {
+             constexpr uint32_t BLOCK_K = MMAConfig<MAD_M>::BLOCK_K;
+@@ -360,28 +366,47 @@ __aicore__ inline void aiv0_weight_pipeline(__gm__ uint8_t* buffer, __gm__ bfloa
+                 // valid_k remains a multiple of MAD_K, including the final K block
+                 const uint32_t valid_k = min(BLOCK_K, num_k - k_idx);
+                 for (uint32_t n_mad_idx = 0; n_mad_idx < BLOCK_N; n_mad_idx += MAD_N) {
+-                    // Load packed FP4
+-                    wait<PIPE_V, PIPE_MTE2>(kFP4Empty, fp4_stage_idx);
+-                    copy_gm_to_ub(ub_fp4[fp4_stage_idx],
+-                                  const_cast<__gm__ uint8_t*>(weight_data + static_cast<uint64_t>(n_mad_idx) * (num_k / 2) + k_idx / 2),
+-                                  MAD_N, valid_k / 2, num_k / 2, kNumPackedCols, weight_l2_hint);
+-                    notify<PIPE_MTE2, PIPE_V>(kFP4Full, fp4_stage_idx);
+-
+-                    // Dequantize to FP8 NZ
+-                    wait<PIPE_MTE2, PIPE_V>(kFP4Full, fp4_stage_idx);
+-                    wait<PIPE_MTE3, PIPE_V>(kNZEmpty, nz_stage_idx);
+-                    vf_fp4_to_fp8_nz<MAD_N, BLOCK_K>(ub_fp4[fp4_stage_idx].ptr(), ub_nz[nz_stage_idx].ptr());
+-                    notify<PIPE_V, PIPE_MTE2>(kFP4Empty, fp4_stage_idx);
+-                    notify<PIPE_V, PIPE_MTE3>(kNZFull, nz_stage_idx);
+-
+-                    // Publish L1B to AIC
+-                    wait<PIPE_V, PIPE_MTE3>(kNZFull, nz_stage_idx);
+-                    wait_intra_block<PIPE_MTE3, 0>(kL1BEmpty, l1b_stage_idx);
+-                    asc_copy_ub2l1(l1b[l1b_stage_idx].template ptr<uint8_t>(), ub_nz[nz_stage_idx].ptr(), kNumColGroups, MAD_N, 1, 0);
+-                    notify_intra_block<PIPE_MTE3, 0>(kL1BFull, l1b_stage_idx);
+-                    notify<PIPE_MTE3, PIPE_V>(kNZEmpty, nz_stage_idx);
+-
+-                    fp4_stage_idx = (fp4_stage_idx + 1) % kNumFP4Stages;
++                    if constexpr (kRoutedFP8) {
++                        constexpr uint32_t frac_k = get_frac_k<uint8_t>();
++                        static_assert(frac_k == 32);
++                        wait<PIPE_MTE3, PIPE_MTE2>(kFP8NZEmpty, nz_stage_idx);
++                        const auto source = weight_data + static_cast<uint64_t>(k_idx) * BLOCK_N +
++                                            static_cast<uint64_t>(n_mad_idx) * frac_k;
++                        // NZ physical layout: [K/32, N, 32]; UB includes one padded N row.
++                        copy_gm_to_ub(ub_nz[nz_stage_idx], const_cast<__gm__ uint8_t*>(source),
++                                      valid_k / frac_k, MAD_N * frac_k,
++                                      BLOCK_N * frac_k, (MAD_N + 1) * frac_k, weight_l2_hint);
++                        notify<PIPE_MTE2, PIPE_MTE3>(kFP8NZFull, nz_stage_idx);
++                        wait<PIPE_MTE2, PIPE_MTE3>(kFP8NZFull, nz_stage_idx);
++                        wait_intra_block<PIPE_MTE3, 0>(kL1BEmpty, l1b_stage_idx);
++                        asc_copy_ub2l1(l1b[l1b_stage_idx].template ptr<uint8_t>(),
++                                       ub_nz[nz_stage_idx].ptr(), kNumColGroups, MAD_N, 1, 0);
++                        notify_intra_block<PIPE_MTE3, 0>(kL1BFull, l1b_stage_idx);
++                        notify<PIPE_MTE3, PIPE_MTE2>(kFP8NZEmpty, nz_stage_idx);
++                    } else {
++                        // Load packed FP4
++                        wait<PIPE_V, PIPE_MTE2>(kFP4Empty, fp4_stage_idx);
++                        copy_gm_to_ub(ub_fp4[fp4_stage_idx],
++                                      const_cast<__gm__ uint8_t*>(weight_data + static_cast<uint64_t>(n_mad_idx) * (num_k / 2) + k_idx / 2),
++                                      MAD_N, valid_k / 2, num_k / 2, kNumPackedCols, weight_l2_hint);
++                        notify<PIPE_MTE2, PIPE_V>(kFP4Full, fp4_stage_idx);
++
++                        // Dequantize to FP8 NZ
++                        wait<PIPE_MTE2, PIPE_V>(kFP4Full, fp4_stage_idx);
++                        wait<PIPE_MTE3, PIPE_V>(kNZEmpty, nz_stage_idx);
++                        vf_fp4_to_fp8_nz<MAD_N, BLOCK_K>(ub_fp4[fp4_stage_idx].ptr(), ub_nz[nz_stage_idx].ptr());
++                        notify<PIPE_V, PIPE_MTE2>(kFP4Empty, fp4_stage_idx);
++                        notify<PIPE_V, PIPE_MTE3>(kNZFull, nz_stage_idx);
++
++                        // Publish L1B to AIC
++                        wait<PIPE_V, PIPE_MTE3>(kNZFull, nz_stage_idx);
++                        wait_intra_block<PIPE_MTE3, 0>(kL1BEmpty, l1b_stage_idx);
++                        asc_copy_ub2l1(l1b[l1b_stage_idx].template ptr<uint8_t>(), ub_nz[nz_stage_idx].ptr(), kNumColGroups, MAD_N, 1, 0);
++                        notify_intra_block<PIPE_MTE3, 0>(kL1BFull, l1b_stage_idx);
++                        notify<PIPE_MTE3, PIPE_V>(kNZEmpty, nz_stage_idx);
++
++                        fp4_stage_idx = (fp4_stage_idx + 1) % kNumFP4Stages;
++                    }
+                     nz_stage_idx = (nz_stage_idx + 1) % kNumNZStages;
+                     l1b_stage_idx = (l1b_stage_idx + 1) % kNumL1BStages;
+                 }
+@@ -396,6 +421,8 @@ __aicore__ inline void aiv0_weight_pipeline(__gm__ uint8_t* buffer, __gm__ bfloa
+         else
+             load_weights.template operator()<256>();
+     }
++    if constexpr (kRoutedFP8)
++        wait<PIPE_MTE3, PIPE_MTE2, kNumNZStages>(kFP8NZEmpty);
+ }
+
+ // AIC: shared and routed GEMMs
+@@ -1123,7 +1150,7 @@ __aicore__ inline void aiv1_epilogue_comm(__gm__ uint8_t* buffer, __gm__ bfloat1
+ }
+
+ template <uint32_t kNumRanks, uint32_t kNumExperts, uint32_t kNumSharedExperts,
+-          uint32_t kNumMaxTokensPerRank, uint32_t kNumTopk, uint32_t kHidden, uint32_t kIntermediateHidden>
++          uint32_t kNumMaxTokensPerRank, uint32_t kNumTopk, uint32_t kHidden, uint32_t kIntermediateHidden, bool kRoutedFP8 = false>
+ __global__ __mix__(1, 2) void mega_moe_impl(__gm__ bfloat16_t* output, __gm__ int32_t* cumulative_local_expert_recv_stats,
+                                             __gm__ const uint8_t* l1_weights, __gm__ const int16_t* l1_weights_sf,
+                                             __gm__ const uint8_t* l2_weights, __gm__ const int16_t* l2_weights_sf,
+@@ -1206,7 +1233,7 @@ __global__ __mix__(1, 2) void mega_moe_impl(__gm__ bfloat16_t* output, __gm__ in
+         asc_store_dev(workspace.progress.metadata_ready.get_ptr(buffer, core_idx), uint8_t{1});
+         notify_intra_block<PIPE_S, 0>(kMetadataFull);
+
+-        aiv0_weight_pipeline<workspace, kOverlapReduce>(buffer, output, num_tokens, reduce, num_total_m_blocks, weights, core_idx);
++        aiv0_weight_pipeline<workspace, kOverlapReduce, kRoutedFP8>(buffer, output, num_tokens, reduce, num_total_m_blocks, weights, core_idx);
+     } else {
+         // AIV1: epilogue and communication
+         aiv1_epilogue_comm<workspace, kOverlapReduce>(buffer, output, num_tokens, rank_idx, reduce, activation_clamp, core_idx, sym_buffer);
+diff --git a/deep_gemm/mega/__init__.py b/deep_gemm/mega/__init__.py
+index 5597b7f..881bc8b 100644
+--- a/deep_gemm/mega/__init__.py
++++ b/deep_gemm/mega/__init__.py
+@@ -17,6 +17,11 @@ class SymmBuffer:
+     Views become invalid when the last owner releases the allocation, even if retained.
+     """
+
++    @staticmethod
++    def supports_mma_type(mma_type: str) -> bool:
++        return mma_type == 'fp8xfp4' or (
++            mma_type == 'fp8xfp8' and bool(getattr(_C, '_mega_moe_routed_fp8', False)))
++
+     def __init__(self, group: dist.ProcessGroup,
+                  num_experts: int,
+                  num_max_tokens_per_rank: int, num_topk: int,
+@@ -25,7 +30,8 @@ class SymmBuffer:
+                  mma_type: str = 'fp8xfp4',
+                  activation: str = 'swiglu',
+                  base: 'SymmBuffer | None' = None):
+-        assert mma_type == 'fp8xfp4', 'Ascend MegaMoE currently supports only fp8xfp4'
++        if not self.supports_mma_type(mma_type):
++            raise ValueError('Unsupported MegaMoE format or native extension lacks routed FP8 support')
+         assert activation == 'swiglu', 'Ascend MegaMoE currently supports only swiglu'
+         self.group = group
+         self.num_experts = num_experts
+@@ -82,7 +88,7 @@ class SymmBuffer:
+
+
+ def _transform_fp8_nz(t: torch.Tensor) -> torch.Tensor:
+-    # Shared FP8 weights use the NZ order consumed directly by AIC.
++    # FP8 weights use NZ order; routed experts stage the same bytes through AIV0.
+     shape = t.shape
+     blocks = t.view(torch.uint8).reshape(*shape[:-2], shape[-2], shape[-1] // 32, 32)
+     return blocks.transpose(-3, -2).contiguous().view(shape).view(t.dtype)
+@@ -131,7 +137,7 @@ def transform_weights_for_mega_moe(
+     l2_weights: tuple[torch.Tensor, torch.Tensor],
+     activation: str = 'swiglu'
+ ) -> tuple[tuple[torch.Tensor, torch.Tensor], tuple[torch.Tensor, torch.Tensor]]:
+-    """Transform routed FP4 or shared FP8 (weight, scale) pairs."""
++    """Transform routed FP4/FP8 or shared FP8 (weight, scale) pairs."""
+     assert activation == 'swiglu', f'Only `swiglu` activation is supported, got `{activation}`'
+     assert isinstance(l1_weights, tuple) and isinstance(l2_weights, tuple), 'Ascend MegaMoE requires FP4/FP8 weight-scale pairs'
+     assert len(l1_weights) == len(l2_weights) == 2
+@@ -167,6 +173,9 @@ def fp8_fp4_mega_moe(y: torch.Tensor,
+                      activation: str = 'swiglu',
+                      activation_clamp: float | None = None,
+                      fast_math: bool = True) -> None:
++    expected_dtype = torch.float8_e4m3fn if sym_buffer.mma_type == 'fp8xfp8' else torch.int8
++    if l1_weights[0].dtype != expected_dtype or l2_weights[0].dtype != expected_dtype:
++        raise ValueError('Routed weight dtype does not match SymmBuffer.mma_type')
+     assert sym_buffer.buffer is not None and sym_buffer.handle is not None
+     _C.fp8_fp4_mega_moe(
+         y,
+diff --git a/tests/test_mega_moe.py b/tests/test_mega_moe.py
+index ff24fca..9733c4b 100644
+--- a/tests/test_mega_moe.py
++++ b/tests/test_mega_moe.py
+@@ -22,7 +22,7 @@ REFERENCE_DIFF_THRESHOLD = 5e-6
+ def make_npu_fp8(shape: tuple[int, ...], seed: int) -> tuple[torch.Tensor, torch.Tensor]:
+     torch.npu.manual_seed(seed)
+     data = (torch.randn(shape, dtype=torch.bfloat16, device='npu') * 32).to(torch.float8_e4m3fn)
+-    sf_exponent = torch.randint(123, 131, (shape[0], shape[1] // 32),
++    sf_exponent = torch.randint(123, 131, (*shape[:-1], shape[-1] // 32),
+                                 dtype=torch.uint8, device='npu')
+     return data, sf_exponent.view(torch.int16)
+
+@@ -52,16 +52,17 @@ class MegaMoECase:
+
+     def __init__(self, group, hidden, intermediate_hidden, num_experts, num_topk,
+                  num_max_tokens_per_rank, num_shared_experts=0, activation_clamp=7.0,
+-                 with_baseline=True, base=None):
++                 with_baseline=True, base=None, weight_format="fp4"):
+         rank_idx, num_ranks = group.rank(), group.size()
+         num_experts_per_rank = num_experts // num_ranks
+         self.buffer = deep_gemm.SymmBuffer(
+             group, num_experts, num_max_tokens_per_rank, num_topk, hidden, intermediate_hidden,
+-            num_shared_experts=num_shared_experts, base=base)
++            num_shared_experts=num_shared_experts, base=base, mma_type="fp8x" + weight_format)
+         # Match the BF16 clamp consumed by the fused kernel.
+         self.activation_clamp = torch.tensor(activation_clamp, dtype=torch.bfloat16, device='cpu').item()
+-        self.l1_weights = make_npu_fp4((num_experts_per_rank, 2 * intermediate_hidden, hidden), 20000 + rank_idx)
+-        self.l2_weights = make_npu_fp4((num_experts_per_rank, hidden, intermediate_hidden), 21000 + rank_idx)
++        make_weights = make_npu_fp8 if weight_format == "fp8" else make_npu_fp4
++        self.l1_weights = make_weights((num_experts_per_rank, 2 * intermediate_hidden, hidden), 20000 + rank_idx)
++        self.l2_weights = make_weights((num_experts_per_rank, hidden, intermediate_hidden), 21000 + rank_idx)
+         self.transformed_l1_weights, self.transformed_l2_weights = deep_gemm.transform_weights_for_mega_moe(
+             self.l1_weights, self.l2_weights)
+         self.shared_l1_weights = self.shared_l2_weights = None
+@@ -221,7 +222,8 @@ def benchmark(case):
+     flops = 6 * hidden * intermediate * (num_recv_tokens + num_tokens * shared)
+     # CUDA's logical HBM model: weights once per active expert + activation reads/writes + BF16 output
+     # Excludes SFs, metadata, reduction traffic and cache/reload effects; divide by full kernel time
+-    num_hbm_bytes = 3 * hidden * intermediate * num_touched_experts / 2
++    weight_bytes = 1 if buffer.mma_type == "fp8xfp8" else 0.5
++    num_hbm_bytes = 3 * hidden * intermediate * num_touched_experts * weight_bytes
+     num_hbm_bytes += num_recv_tokens * (3 * hidden + 2 * intermediate)
+     if shared and num_tokens:
+         num_hbm_bytes += 3 * hidden * intermediate * shared
+@@ -250,12 +252,12 @@ def test(local_rank, args):
+         (hidden, intermediate), experts, topk, tokens, shared, capacity, _ = config
+         return deep_gemm._C.get_symm_buffer_size_for_mega_moe(
+             num_ranks, experts, max(tokens, 1) if capacity is None else capacity, topk,
+-            hidden, intermediate, 'fp8xfp4', 'swiglu', shared)[0]
++            hidden, intermediate, 'fp8x' + args.weight_format, 'swiglu', shared)[0]
+
+     # Register once at the largest required capacity; each case gets its own layout views
+     (hidden, intermediate), experts, topk, tokens, shared, capacity, _ = max(args.configs, key=buffer_size)
+     base = deep_gemm.SymmBuffer(group, experts, max(tokens, 1) if capacity is None else capacity,
+-                                topk, hidden, intermediate, num_shared_experts=shared)
++                                topk, hidden, intermediate, num_shared_experts=shared, mma_type="fp8x" + args.weight_format)
+     case_width = len(str(len(args.configs)))
+     for case_idx, ((hidden, intermediate_hidden), num_experts, num_topk, num_tokens, shared, capacity, clamp) in enumerate(args.configs, 1):
+         capacity = max(num_tokens, 1) if capacity is None else capacity
+@@ -264,9 +266,10 @@ def test(local_rank, args):
+         if local_rank == 0:
+             print(f'{config} | ', end='', flush=True)
+         case = MegaMoECase(group, hidden, intermediate_hidden, num_experts, num_topk, capacity, shared,
+-                           activation_clamp=clamp, with_baseline=not args.skip_baseline and num_ranks > 1, base=base)
++                           activation_clamp=clamp, with_baseline=not args.skip_baseline and num_ranks > 1, base=base, weight_format=args.weight_format)
+         try:
+-            case.create_inputs(num_tokens)
++            local_tokens = 0 if args.empty_rank == local_rank else num_tokens
++            case.create_inputs(local_tokens)
+             if not args.skip_correctness:
+                 check_correctness(case, args.num_correctness_tests)
+             if not args.skip_prof:
+@@ -287,6 +290,8 @@ if __name__ == '__main__':
+
+     # Resource settings
+     parser.add_argument('--num-processes', type=int, default=8)
++    parser.add_argument('--weight-format', choices=('fp4', 'fp8'), default='fp4')
++    parser.add_argument('--empty-rank', type=int, default=-1, help='one empty rank while peers have tokens')
+
+     # H/I pair by position; singleton lists broadcast, other model lists form a Cartesian product
+     parser.add_argument('--hidden', type=int, nargs='+', default=[5120, 7168])
+diff --git a/tests/test_mega_moe_host.py b/tests/test_mega_moe_host.py
+new file mode 100644
+index 0000000..361fda7
+--- /dev/null
++++ b/tests/test_mega_moe_host.py
+@@ -0,0 +1,77 @@
++"""CPU tests of real weight conversion; native dispatch is not executed."""
++import importlib.util
++from pathlib import Path
++import sys
++from types import ModuleType, SimpleNamespace
++from unittest.mock import Mock, patch
++
++import pytest
++import torch
++
++
++@pytest.fixture
++def mega():
++    # Load the actual Python module without importing the unavailable NPU extension.
++    parent = ModuleType('_host_deepgemm')
++    parent._C = SimpleNamespace(_mega_moe_block_n=256, fp8_fp4_mega_moe=Mock())
++    path = Path(__file__).parents[1] / 'deep_gemm/mega/__init__.py'
++    spec = importlib.util.spec_from_file_location('_host_deepgemm.mega', path)
++    module = importlib.util.module_from_spec(spec)
++    with patch.dict(sys.modules, {'_host_deepgemm': parent}):
++        spec.loader.exec_module(module)
++    return module
++
++
++@pytest.mark.parametrize('experts', [1, 2])
++def test_routed_fp8_bytes_and_scales(mega, experts):
++    hidden, intermediate = 256, 512
++    def pair(n, k):
++        data = (torch.arange(experts*n*k).reshape(experts,n,k) % 127).to(torch.uint8)
++        sf = (torch.arange(experts*n*(k//32)).reshape(experts,n,k//32) % 256).to(torch.uint8)
++        return data.view(torch.float8_e4m3fn), sf.view(torch.int16)
++    a, b = pair(2*intermediate,hidden), pair(hidden,intermediate)
++    original = [(w.view(torch.uint8).clone(), sf.view(torch.uint8).clone()) for w,sf in (a,b)]
++    converted = mega.transform_weights_for_mega_moe(a,b)
++    for linear, ((w,sf),(raw,raw_sf)) in enumerate(zip(converted,original)):
++        n,k = raw.shape[-2:]
++        assert w.dtype == torch.float8_e4m3fn and sf.dtype == torch.int16
++        for e in range(experts):
++            for row in range(n):
++                if linear == 0:
++                    half = n//2
++                    destination = (row%half//128)*256 + (row//half)*128 + row%128
++                else:
++                    destination = row
++                block,lane = divmod(destination,256)
++                # Independent decode of physical NZ bytes and packed exponent pairs.
++                nz = w[e,block].view(torch.uint8).flatten().reshape(k//32,256,32)
++                assert torch.equal(nz[:,lane,:].flatten(),raw[e,row])
++                restored_sf = sf[e,block,:,lane].contiguous().view(torch.uint8)
++                assert torch.equal(restored_sf,raw_sf[e,row])
++        assert torch.equal((a,b)[linear][0].view(torch.uint8),raw)
++        assert torch.equal((a,b)[linear][1].view(torch.uint8),raw_sf)
++
++
++def test_fp4_scale_compensation_is_preserved(mega):
++    w = torch.zeros((1,512,128),dtype=torch.int8)
++    sf = torch.full((1,512,8),127,dtype=torch.uint8).view(torch.int16)
++    result,_ = mega.transform_weights_for_mega_moe((w,sf),(w,sf))
++    assert torch.all(result[1].view(torch.uint8) == 133)
++
++
++@pytest.mark.parametrize('bad_layer', [0,1])
++def test_weight_format_mismatch_fails_before_native_call(mega,bad_layer):
++    buffer=SimpleNamespace(mma_type='fp8xfp8')
++    weights=[(torch.zeros(1,dtype=torch.float8_e4m3fn),None) for _ in range(2)]
++    weights[bad_layer]=(torch.zeros(1,dtype=torch.int8),None)
++    with pytest.raises(ValueError,match='dtype'):
++        mega.fp8_fp4_mega_moe(None,*weights,buffer)
++    mega._C.fp8_fp4_mega_moe.assert_not_called()
++
++
++def test_old_native_extension_does_not_advertise_fp8(mega):
++    assert mega.SymmBuffer.supports_mma_type('fp8xfp4')
++    assert not mega.SymmBuffer.supports_mma_type('fp8xfp8')
++    mega._C._mega_moe_routed_fp8 = True
++    assert mega.SymmBuffer.supports_mma_type('fp8xfp8')
++    assert not mega.SymmBuffer.supports_mma_type('bf16xbf16')

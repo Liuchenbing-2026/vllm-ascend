@@ -15,6 +15,26 @@ concurrent microbatches or weight hot reload; disable it for those workflows.
 The ordinary MoE backend remains selected when the option is false.
 The MLA lifetime adjustment below also applies with ordinary MoE selected.
 
+## Experimental DSV4 routed FP8 extension
+
+The DSV4 extension also accepts `deepseek_v4` with `expert_dtype="fp8"`.
+It resolves checkpoint FP32 block scales through the existing block-FP8 scheme,
+requantizes weights to per-32 MXFP8, and selects `mma_type="fp8xfp8"`.
+The patched native kernel stages routed FP8 NZ bytes directly through AIV0
+instead of unpacking FP4. Shared FP32 block scales are also requantized instead
+of being reinterpreted as exponent bytes. The TP1/linear-EP8 restrictions remain.
+
+The pinned source patch is applied **before** building both the native binding
+and device headers; the wheel manifest records its SHA-256. An older external
+NPU package is rejected for FP8 with an explicit rebuild error. FP4 keeps the
+existing path. Remove the patch after pinning an upstream revision containing
+the equivalent feature, and rerun both format regressions.
+
+This extension has host-only tests; 950DT compilation, numerical accuracy,
+graph execution and performance acceptance are pending. Earlier V4.1 hardware
+results below do not validate this FP8 extension. See
+[the implementation and reproduction record](../../../../tools/deepgemm/README.md).
+
 ## Relationship to vLLM's DeepGEMM backend
 
 The reference is vLLM's `DeepGemmMegaMoEExperts` in

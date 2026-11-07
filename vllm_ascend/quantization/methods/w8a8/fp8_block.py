@@ -339,6 +339,11 @@ class AscendFp8BlockFusedMoEMethod(AscendMoEScheme):
             )
             self.mxfp8_method = None
 
+        # The runner transfers shared-expert execution to MegaMoE when it
+        # installs this marker. A BF16 fallback would silently omit that work.
+        if self.mxfp8_method is None and hasattr(layer, "_deepgemm_v41_routed_scaling_factor"):
+            raise ValueError("FP8 DeepGEMM MegaMoE requires Ascend 950 and MXFP8-aligned expert dimensions")
+
         for weight_name in weight_names:
             scale_name = f"{weight_name}_scale_inv"
             if self.mxfp8_method is None:

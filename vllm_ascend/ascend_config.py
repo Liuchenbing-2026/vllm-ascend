@@ -612,7 +612,7 @@ class AscendConfig:
 
     # ---- A-family (envs fallback): default = envs module value, before-validator injects ----
     enable_fused_mc2: int = 0
-    # DeepSeek V4.1 FP8 x FP4 backend from DeepGEMM-Ascend (950, TP1/EP8).
+    # DeepSeek V4/V4.1 FP8 x FP4 or FP8 backend from DeepGEMM-Ascend (950, TP1/EP8).
     deepgemm_mega_moe: bool = False
     enable_mlapo: bool = True
     # When True, keep MLAPO prefill weights on NPU instead of freeing them

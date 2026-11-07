@@ -9,6 +9,7 @@ from vllm.model_executor.layers.vocab_parallel_embedding import VocabParallelEmb
 from tests.ut.base import TestBase
 from vllm_ascend.ops.linear import AscendUnquantizedLinearMethod
 from vllm_ascend.quantization.configs.fp8_config import AscendDeepseekV4FP8Config, AscendFp8Config
+from vllm_ascend.utils import FP8_METHOD
 
 
 class TestAscendDeepseekV4FP8Config(TestBase):
@@ -92,15 +93,27 @@ class TestAscendDeepseekV4FP8Config(TestBase):
         mock_scheme_class.assert_called_once_with()
         self.assertIs(method, mock_ascend_moe)
 
-    def test_get_quant_method_for_moe_non_fp4_raises(self):
-        """MoE layer with non-fp4 expert_dtype raises NotImplementedError."""
-        moe_config = MagicMock()
+    def test_get_quant_method_for_moe_fp8_uses_block_scales(self):
         moe_layer = MagicMock(spec=MoERunner)
-        moe_layer.moe_config = moe_config
-
+        moe_layer.moe_config = MagicMock()
         self.config._resolved_expert_dtype = "fp8"
+        self.config.activation_scheme = "dynamic"
+        scheme = MagicMock()
+        with (
+            patch("vllm_ascend.quantization.configs.fp8_config.get_scheme_class", return_value=scheme) as lookup,
+            patch("vllm_ascend.quantization.method_adapters.AscendFusedMoEMethod") as adapter,
+        ):
+            result = self.config.get_quant_method(moe_layer, "model.layers.0.mlp")
+        lookup.assert_called_once_with(FP8_METHOD, "moe")
+        scheme.assert_called_once_with((128, 128), moe_layer.moe_config)
+        self.assertIs(result, adapter.return_value)
 
-        with self.assertRaises(NotImplementedError):
+    def test_fp8_rejects_missing_block_scales(self):
+        moe_layer = MagicMock(spec=MoERunner)
+        moe_layer.moe_config = MagicMock()
+        self.config._resolved_expert_dtype = "fp8"
+        self.config.weight_block_size = None
+        with self.assertRaisesRegex(ValueError, "block weights"):
             self.config.get_quant_method(moe_layer, "model.layers.0.mlp")
 
     def test_get_quant_method_for_other_layer_returns_none(self):

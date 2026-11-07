@@ -46,6 +46,18 @@ def prepare_source(source):
             raise RuntimeError(f"Unpinned dependency: {line}")
 
 
+def stage_source(source, destination):
+    """Apply the pinned routed-FP8 change before compiling the native binding."""
+    shutil.copytree(
+        source, destination, ignore=shutil.ignore_patterns(".git", "__pycache__", "build", "dist", "*.egg-info")
+    )
+    run("git", "init", "--quiet", str(destination))
+    patch = Path(__file__).resolve().parent / "patches/routed-fp8.patch"
+    run("git", "apply", "--check", str(patch), cwd=destination)
+    run("git", "apply", str(patch), cwd=destination)
+    return {patch.name: hashlib.sha256(patch.read_bytes()).hexdigest()}
+
+
 def vendor_wheel(wheel, destination):
     """Install only the package payload; never install its top-level dist-info."""
     with zipfile.ZipFile(wheel) as archive:
@@ -127,10 +139,13 @@ def build(source, work_dir, destination):
     for key in tuple(env):
         if key.startswith("DG_JIT_"):
             del env[key]
+    env["DG_USE_LOCAL_VERSION"] = "0"
     # DeepInfer builds operators through their native setup.py. The selected
     # compiler and Torch ABI are owned by that build, not CUDA CMake rules.
     with tempfile.TemporaryDirectory(prefix="wheel-", dir=work_dir) as temporary:
         wheel_dir = Path(temporary)
+        staged = wheel_dir / "source"
+        source_patch_hashes = stage_source(source, staged)
         run(
             sys.executable,
             "setup.py",
@@ -140,7 +155,7 @@ def build(source, work_dir, destination):
             "bdist_wheel",
             "--dist-dir",
             str(wheel_dir),
-            cwd=source,
+            cwd=staged,
             env=env,
         )
         wheels = list(wheel_dir.glob("*.whl"))
@@ -163,6 +178,8 @@ def build(source, work_dir, destination):
         "platform": "ascend",
         "repository": REPOSITORY,
         "revision": REVISION,
+        "source_patches": source_patch_hashes,
+        "mma_types": ["fp8xfp4", "fp8xfp8"],
         "submodules": git(source, "submodule", "status", "--recursive", *SUBMODULES).splitlines(),
         "torch": torch.__version__,
         "torch_npu": torch_npu.__version__,

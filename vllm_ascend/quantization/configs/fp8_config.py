@@ -137,8 +137,16 @@ class AscendDeepseekV4FP8Config(DeepseekV4FP8Config):
             if self.expert_dtype == "fp4":
                 scheme_class = get_scheme_class(FP8_METHOD, "ds_w4a8_moe")
                 assert scheme_class is not None, f"No scheme registered for {FP8_METHOD}/ds_w4a8_moe"
+            elif self.expert_dtype == "fp8":
+                if self.weight_block_size is None or self.activation_scheme != "dynamic":
+                    raise ValueError("DSV4 FP8 experts require block weights and dynamic activations")
+                scheme_class = get_scheme_class(FP8_METHOD, "moe")
+                assert scheme_class is not None, f"No scheme registered for {FP8_METHOD}/moe"
+                return AscendFusedMoEMethod(
+                    scheme_class(self.weight_block_size, layer.moe_config), layer.moe_config, tid2eid=tid2eid
+                )
             else:
-                raise NotImplementedError
+                raise NotImplementedError(f"Unsupported DSV4 expert dtype: {self.expert_dtype}")
             quant_method = AscendFusedMoEMethod(scheme_class(), layer.moe_config, tid2eid=tid2eid)
             return quant_method
         return None

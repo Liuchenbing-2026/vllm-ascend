@@ -344,6 +344,16 @@ class TestAscendFp8BlockFusedMoEMethod(TestBase):
         )
         return layer
 
+    def test_megamoe_cannot_fall_back_to_bf16_and_drop_shared_experts(self):
+        for is_950, intermediate in ((False, 32), (True, 8)):
+            scheme = self.build_scheme(is_950=is_950)
+            layer = self._make_moe_layer(intermediate=intermediate)
+            layer._deepgemm_v41_routed_scaling_factor = 1.0
+            with self.assertRaisesRegex(ValueError, "requires Ascend 950"):
+                scheme.process_weights_after_loading(layer)
+            self.assertEqual(layer.w13_weight.dtype, torch.float8_e4m3fn)
+            self.assertTrue(hasattr(layer, "w13_weight_scale_inv"))
+
     def test_resolves_every_expert_off_950(self):
         scheme = self.build_scheme(is_950=False)
         layer = self._make_moe_layer(intermediate=32)

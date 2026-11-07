@@ -346,6 +346,9 @@ class AscendW8A8MXFP8DynamicFusedMoEMethod(AscendMoEScheme):
         if topk_weights is None or topk_ids is None:
             raise RuntimeError("topk_weights and topk_ids must be set before fused MoE execution.")
 
+        backend = getattr(layer, "_deepgemm_v41", None)
+        if backend is not None:
+            return backend.apply(layer, x, topk_weights, topk_ids)
         moe_comm_method = _EXTRA_CTX.moe_comm_method
         return moe_comm_method.fused_experts(
             fused_experts_input=build_fused_experts_input(
@@ -423,6 +426,13 @@ class AscendW8A8MXFP8DynamicFusedMoEMethod(AscendMoEScheme):
         Use restore_weights_for_rl_loading() before weight reload, then call this
         method again after loading.
         """
+
+        if get_ascend_config().deepgemm_mega_moe:
+            from vllm_ascend.ops.fused_moe.deepgemm_v41 import DeepGemmV41Experts
+
+            if not hasattr(layer, "_deepgemm_v41"):
+                layer._deepgemm_v41 = DeepGemmV41Experts(layer, mma_type="fp8xfp8")
+            return
 
         # Check if already transformed to avoid double transformation
         if getattr(layer, "_mxfp8_transformed", False):
