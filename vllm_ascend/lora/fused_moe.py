@@ -64,8 +64,22 @@ def _debug_trace(site: str, message: str, limit: int = 3) -> None:
 
 
 def has_lora(lora_context) -> bool:
-    """Return whether the current batch contains at least one LoRA token."""
-    return lora_context is not None and not lora_context.punica_wrapper.no_lora
+    """Return whether this MoE layer has a LoRA delta to add.
+
+    A batch can carry adapter tokens while the adapter itself targets no
+    routed expert (e.g. attention-only adapters). ``punica_wrapper.no_lora``
+    is a batch-level flag, so without the per-layer check every MoE layer
+    would switch to the LoRA schedule for such adapters: the fused
+    gate/up + activation + quant kernel is replaced by three separate ops,
+    which perturbs the base numerics and costs throughput while adding an
+    exact zero.
+    """
+    if lora_context is None or lora_context.punica_wrapper.no_lora:
+        return False
+    slots = getattr(lora_context, "layer_lora_slots", None)
+    if slots is not None and not slots:
+        return False
+    return True
 
 
 def reset_lora_indices(lora_context) -> None:
@@ -469,15 +483,33 @@ class AscendFusedMoEWithLoRA(FusedMoEWithLoRA):
         # `create_lora_weights`) so `create_dummy_lora`'s n_slices fallback
         # matches `lora_a_stacked` length under EP.
         self.n_slices = self.local_num_experts * (self._w13_slices + 1)
+        # Slots that actually carry expert weights for this layer. Published
+        # to the MoE LoRA context so `has_lora` can keep the fused quantized
+        # base kernel for layers without an expert delta.
+        self._lora_slots: set[int] = set()
         # Preserve the model-manager-visible module path used to discover and
         # wrap shared_experts.{gate_up,down}_proj as ordinary dense LoRA.
         shared_experts = getattr(base_layer, "_shared_experts", None)
         if shared_experts is not None:
             self._shared_experts = shared_experts
 
+    def reset_lora(self, index: int) -> None:
+        super().reset_lora(index)
+        self._lora_slots.discard(index)
+
+    def set_lora(
+        self,
+        index: int,
+        lora_a: torch.Tensor | list[torch.Tensor],
+        lora_b: torch.Tensor | list[torch.Tensor],
+    ) -> None:
+        super().set_lora(index, lora_a, lora_b)
+        self._lora_slots.add(index)
+
     def _build_lora_context(self):
         lora_context = super()._build_lora_context()
         lora_context.use_ep = self.use_ep
+        lora_context.layer_lora_slots = self._lora_slots
         return lora_context
 
     # ------------------------------------------------------------------

@@ -196,6 +196,18 @@ def test_has_lora_follows_batch_metadata() -> None:
     assert not has_lora(None)
     assert not has_lora(SimpleNamespace(punica_wrapper=SimpleNamespace(no_lora=True)))
     assert has_lora(SimpleNamespace(punica_wrapper=SimpleNamespace(no_lora=False)))
+    # Batch-level adapter tokens alone are not enough: a layer whose adapter
+    # set carries no routed-expert weights must keep the fused base kernel.
+    assert not has_lora(
+        SimpleNamespace(
+            punica_wrapper=SimpleNamespace(no_lora=False), layer_lora_slots=set()
+        )
+    )
+    assert has_lora(
+        SimpleNamespace(
+            punica_wrapper=SimpleNamespace(no_lora=False), layer_lora_slots={0}
+        )
+    )
 
 
 def test_reset_lora_indices_drops_only_present_fields() -> None:

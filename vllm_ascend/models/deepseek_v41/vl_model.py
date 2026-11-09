@@ -14,7 +14,7 @@ from vllm.model_executor.models.interfaces import (
     SupportsMultiModal,
     SupportsPP,
 )
-from vllm.model_executor.models.utils import maybe_prefix
+from vllm.model_executor.models.utils import WeightsMapper, maybe_prefix
 
 # Upstream #56741 normalized the V4.1 model package name from deepseek_v4_1
 # to deepseek_v41.
@@ -69,6 +69,18 @@ class AscendDeepseekV41ForCausalLM(
     is_3d_moe_weight = language_model_cls.is_3d_moe_weight
     is_non_gated_moe = language_model_cls.is_non_gated_moe
     lora_skip_prefixes = [*language_model_cls.lora_skip_prefixes, "vision.", "aligner."]
+    # PEFT adapters trained on the text backbone (including text-only
+    # checkpoints served through this wrapper) are keyed in the HF text-model
+    # namespace, e.g. ``model.layers.0.self_attn.wq_a``, while the wrapper
+    # exposes the backbone as ``language_model.<text-model-name>``. Without
+    # this rename the LoRA loader keys never match the engine module names
+    # and every adapter silently falls back to the base weights.
+    hf_to_vllm_mapper = WeightsMapper(
+        orig_to_new_prefix={
+            "model.": "language_model.model.",
+            "lm_head.": "language_model.lm_head.",
+        }
+    )
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:

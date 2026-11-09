@@ -31,6 +31,7 @@ from vllm_ascend.ops.fused_moe.dataclass.fused_experts import MoEWeights, build_
 from vllm_ascend.ops.fused_moe.dataclass.moe_mlp import MoEMlpComputeInput
 from vllm_ascend.ops.fused_moe.routed_experts import AscendRoutedExperts  # noqa: F401
 from vllm_ascend.utils import (
+    ACL_FORMAT_FRACTAL_NZ,
     ASCEND_QUANTIZATION_METHOD,
     COMPRESSED_TENSORS_METHOD,
     dispose_tensor,
@@ -220,6 +221,7 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
         shared_experts: Any | None,
         shared_experts_input: torch.Tensor | None,
     ) -> torch.Tensor:
+        lora_context = getattr(layer, "_ascend_moe_lora_context", None)
         moe_comm_method = _EXTRA_CTX.moe_comm_method
         return moe_comm_method.fused_experts(
             fused_experts_input=build_fused_experts_input(
@@ -236,6 +238,7 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
                 pertoken_scale=layer.ascend_pertoken_scale,
                 activation=layer.activation,
                 is_per_channel_weight=self.is_per_channel_weight,
+                lora_context=lora_context,
             ),
             quant_method=self,
         )
@@ -310,8 +313,10 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
             self.process_weights_after_loading_compressed_tensors(layer)
         else:
             self.process_weights_after_loading_modelslim(layer)
-        layer.w13_weight.data = maybe_trans_nz(layer.w13_weight.data)
-        layer.w2_weight.data = maybe_trans_nz(layer.w2_weight.data)
+        # The W4A8 MoE kernels require NZ, including in batch-invariant mode.
+        # Keep this operator requirement local; other weights retain their policy.
+        layer.w13_weight.data = torch_npu.npu_format_cast(layer.w13_weight.data, ACL_FORMAT_FRACTAL_NZ)
+        layer.w2_weight.data = torch_npu.npu_format_cast(layer.w2_weight.data, ACL_FORMAT_FRACTAL_NZ)
         tensor_names = (
             "w13_weight",
             "w2_weight",
@@ -402,6 +407,23 @@ class AscendW4A8DynamicFusedMoEMethod(AscendMoEScheme):
         if w2_scale_bias is not None:
             w2_scale_bias = [w2_scale_bias]
         return w1_scale_bias, w2_scale_bias
+
+    def get_mlp_weights(self, layer: torch.nn.Module) -> MoEWeights:
+        """Standard MLP-layout weights plus the INT4 scale-bias used as gmm bias."""
+        w1, w1_scale, w2, w2_scale = self._get_mlp_weights(layer)
+        w1_scale_bias, w2_scale_bias = self._get_mlp_scale_bias(layer)
+        return MoEWeights(
+            w1=w1,
+            w2=w2,
+            w1_scale=w1_scale,
+            w2_scale=w2_scale,
+            w1_scale_bias=w1_scale_bias,
+            w2_scale_bias=w2_scale_bias,
+        )
+
+    def get_mlp_group_list(self, mlp_compute_input: MoEMlpComputeInput) -> tuple[torch.Tensor, int]:
+        """Group list layout consumed by this scheme's grouped-matmul calls."""
+        return self._maybe_convert_group_list(mlp_compute_input)
 
     def _maybe_convert_group_list(self, mlp_compute_input):
         """scale_bias prelude: group_list 0->1 conversion and output dtype."""
