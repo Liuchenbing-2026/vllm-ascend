@@ -10,6 +10,51 @@ import vllm_ascend.models.glm5next.ops.kda as kda
 import vllm_ascend.ops.kda as kda_ops
 
 
+def test_wide_recurrent_window_uses_triton_with_raw_gates(monkeypatch):
+    q = torch.ones(1, 18, 1, 4, dtype=torch.bfloat16)
+    k = q + 1
+    v = q + 2
+    gate = q + 3
+    beta = torch.full((1, 18, 1), 0.5, dtype=torch.bfloat16)
+    state = torch.zeros(19, 1, 4, 4)
+    starts = torch.tensor([0, 9, 18], dtype=torch.int32)
+    slots = torch.arange(1, 19, dtype=torch.int32).view(2, 9)
+    accepted = torch.tensor([1, 5], dtype=torch.int32)
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("wide recurrent KDA windows must not call AscendC")
+
+    def triton(q_arg, k_arg, v_arg, gate_arg, beta_arg, **kwargs):
+        assert q_arg is q and k_arg is k and v_arg is v
+        assert gate_arg is gate and beta_arg is beta
+        assert kwargs["initial_state"] is state
+        assert kwargs["use_qk_l2norm_in_kernel"]
+        assert kwargs["cu_seqlens"] is starts
+        torch.testing.assert_close(kwargs["ssm_state_indices"], slots)
+        torch.testing.assert_close(kwargs["num_accepted_tokens"], accepted)
+        assert kwargs["sigmoid_beta"] and kwargs["compute_gate"]
+        assert kwargs["lower_bound"] == -4.0
+        return q_arg.clone(), None
+
+    monkeypatch.setattr(kda, "fused_recurrent_kda", triton)
+    monkeypatch.setattr(kda, "run_recurrent_kda", unexpected)
+    out = kda.recurrent_kda(
+        q,
+        k,
+        v,
+        gate,
+        beta,
+        state,
+        starts,
+        slots,
+        torch.zeros(1),
+        torch.zeros(4),
+        -4,
+        accepted,
+    )
+    torch.testing.assert_close(out, q)
+
+
 @pytest.mark.parametrize(
     "accepted,qkv_padding,direct_output",
     [(None, 0, False), (None, 64, False), ([1, 2, 1], 0, False), ([1, 2, 1], 64, False), (None, 64, True)],

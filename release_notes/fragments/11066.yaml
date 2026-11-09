@@ -1,0 +1,7 @@
+pr: 11066
+entries:
+  - category: bugfix
+    text: >-
+      Extended GLM-5.3-Flash DSpark verification beyond seven speculative
+      tokens by routing wider recurrent KDA windows through the Triton path
+      while retaining AscendC for supported narrow windows.

@@ -32,7 +32,7 @@ from vllm_ascend.attention.utils import (
 from vllm_ascend.core.kv_cache_interface import MambaStateSharding
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.attention_fence import record_attention_compute_start
 from vllm_ascend.models.glm5next.ops.causal_conv1d import causal_conv1d
-from vllm_ascend.models.glm5next.ops.kda import KDA_MAX_RECURRENT_TOKENS, chunk_kda, recurrent_kda
+from vllm_ascend.models.glm5next.ops.kda import chunk_kda, recurrent_kda
 from vllm_ascend.models.glm5next.recoverssm_config import use_glm_recoverssm
 from vllm_ascend.ops.gdn_attn_builder import AscendGDNHostMetadataBackend
 from vllm_ascend.ops.triton.kda.recoverssm import kda_recoverssm_verify
@@ -267,8 +267,6 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
         if config.linear_head_dim != 128 or vllm_config.model_config.dtype != torch.bfloat16:
             raise ValueError("GLM AscendC KDA requires BF16 activations and head_dim=128.")
         num_spec = vllm_config.speculative_config.num_speculative_tokens if vllm_config.speculative_config else 0
-        if num_spec + 1 > KDA_MAX_RECURRENT_TOKENS:
-            raise ValueError("GLM AscendC KDA supports at most seven speculative tokens.")
         if not 2 <= config.linear_conv_kernel_dim <= 4:
             raise ValueError("GLM AscendC causal-conv requires a kernel width in [2, 4].")
         if num_spec and config.linear_conv_kernel_dim != 4:

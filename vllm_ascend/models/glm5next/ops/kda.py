@@ -4,6 +4,7 @@
 
 from vllm_ascend.models.glm5next.ops.state_ops import gather_initial_states, scatter_states
 from vllm_ascend.ops.kda import run_chunk_kda, run_recurrent_kda
+from vllm_ascend.ops.triton.kda.kda import fused_recurrent_kda
 from vllm_ascend.ops.triton.kda.output_writeback import write_recurrent_output
 
 KDA_MAX_RECURRENT_TOKENS = 8
@@ -26,24 +27,44 @@ def recurrent_kda(
 ):
     """Update the selected VK state slots, including MTP rejection rollback."""
     num_seqs = cu_seqlens.numel() - 1
+    use_triton = state_indices.ndim == 2 and state_indices.shape[1] > KDA_MAX_RECURRENT_TOKENS
     state_indices = state_indices[:num_seqs]
     if num_accepted_tokens is not None:
         num_accepted_tokens = num_accepted_tokens[:num_seqs]
-    output = run_recurrent_kda(
-        q,
-        k,
-        v,
-        raw_gate,
-        raw_beta,
-        state,
-        cu_seqlens,
-        state_indices,
-        a_log,
-        dt_bias,
-        lower_bound=lower_bound,
-        beta_is_preprocessed=False,
-        num_accepted_tokens=num_accepted_tokens,
-    )
+    if use_triton:
+        output, _ = fused_recurrent_kda(
+            q,
+            k,
+            v,
+            raw_gate,
+            raw_beta,
+            initial_state=state,
+            use_qk_l2norm_in_kernel=True,
+            cu_seqlens=cu_seqlens,
+            ssm_state_indices=state_indices,
+            num_accepted_tokens=num_accepted_tokens,
+            sigmoid_beta=True,
+            a_log=a_log,
+            g_bias=dt_bias,
+            compute_gate=True,
+            lower_bound=lower_bound,
+        )
+    else:
+        output = run_recurrent_kda(
+            q,
+            k,
+            v,
+            raw_gate,
+            raw_beta,
+            state,
+            cu_seqlens,
+            state_indices,
+            a_log,
+            dt_bias,
+            lower_bound=lower_bound,
+            beta_is_preprocessed=False,
+            num_accepted_tokens=num_accepted_tokens,
+        )
     if output_buffer is not None:
         write_recurrent_output(output, output_buffer, cu_seqlens)
         return output_buffer
