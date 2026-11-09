@@ -165,24 +165,36 @@ def causal_conv1d_update(
     conv_state_indices: torch.Tensor | None = None,
     num_accepted_tokens: torch.Tensor | None = None,
     query_start_loc: torch.Tensor | None = None,
+    max_query_len: int | None = None,
     pad_slot_id: int = PAD_SLOT_ID,
 ):
-    """
-    PyTorch implementation of causal_conv1d_update.
+    """Batched causal depthwise conv update (Ascend).
+
+    Replaces the previous per-request Python loop (which performed up to four
+    device-to-host ``.item()`` synchronisations per sequence per layer) with a
+    fully vectorised implementation:
+
+    1. gather the owning conv state for every sequence in one ``index_select``;
+    2. rebuild the ``[B, width - 1 + L, dim]`` sliding window with a single
+       gather (no per-sequence slicing);
+    3. run one grouped ``conv1d`` for the whole batch;
+    4. roll the recurrent state forward with a single ``gather`` + one
+       ``index_copy_``, using ``num_accepted_tokens`` as a row offset.
 
     Args:
-        x: Input tensor
-        conv_state: (..., dim, state_len)
-        weight: (dim, width)
-        bias: (dim,)
-        activation: str
-        conv_state_indices: (batch,) int32
-        num_accepted_tokens: (batch,) int32
-        query_start_loc: (batch + 1,) int32
-        pad_slot_id: int
+        x: ``[num_tokens, dim]`` for the varlen path (``query_start_loc`` given),
+            ``[B, dim]`` or ``[B, L, dim]`` otherwise.
+        conv_state: ``[num_slots, dim, state_len]`` (``state_len`` may be padded).
+        weight: ``[dim, width]`` (or ``[width, dim]``).
+        conv_state_indices: ``[B]`` slot ids for the state cache.
+        num_accepted_tokens: ``[B]`` number of tokens to commit per sequence.
+        query_start_loc: ``[B + 1]`` varlen offsets (exclusive prefix sum).
+        max_query_len: upper bound of the per-sequence token count. When not
+            given it is derived from the input shape / offsets.
+        pad_slot_id: slot id meaning "no state"; such rows are read-only.
 
     Returns:
-        out: same shape as x
+        Tensor with the same shape/dtype as ``x``.
     """
     if isinstance(activation, bool):
         activation = "silu" if activation is True else None
@@ -190,108 +202,133 @@ def causal_conv1d_update(
         assert activation in ["silu", "swish"]
 
     original_x_dtype = x.dtype
-    x = x.to(conv_state.dtype)
+    x_work = x.to(conv_state.dtype)
 
-    feature_dim = x.shape[-1] if query_start_loc is None else x.shape[1]
-    if weight.shape[0] != feature_dim and weight.shape[1] == feature_dim:
+    if weight.shape[0] != x_work.shape[-1] and weight.shape[1] == x_work.shape[-1]:
         weight = weight.transpose(0, 1)
-    weight = weight.contiguous()
+    weight = weight.contiguous().to(conv_state.dtype)
     dim, width = weight.shape
-    if dim != feature_dim:
-        raise RuntimeError(
-            f"causal_conv1d_update: weight dim mismatch, feature_dim={feature_dim}, weight.shape={tuple(weight.shape)}"
-        )
+    state_len = width - 1
 
     if conv_state.shape[-2] != dim and conv_state.shape[-1] == dim:
         # Accept both (..., dim, state_len) and (..., state_len, dim) inputs.
         conv_state = conv_state.transpose(-1, -2)
     if conv_state.shape[-2] != dim:
         raise RuntimeError(
-            f"causal_conv1d_update: conv_state dim mismatch, "
+            "causal_conv1d_update: conv_state dim mismatch, "
             f"expected dim={dim}, conv_state.shape={tuple(conv_state.shape)}"
         )
-
-    state_len = width - 1
     if conv_state.shape[-1] < state_len:
         raise RuntimeError(
-            f"causal_conv1d_update: conv_state too short, need >= {state_len}, got {conv_state.shape[-1]}"
+            "causal_conv1d_update: conv_state too short, "
+            f"need >= {state_len}, got {conv_state.shape[-1]}"
         )
 
-    out = x.clone()
+    device = x_work.device
 
-    def _select_state(i: int) -> torch.Tensor | None:
-        if conv_state_indices is not None:
-            idx = int(conv_state_indices[i].item())
-            if idx == pad_slot_id:
-                return None
-            state = conv_state[idx]
-        else:
-            state = conv_state[i]
-        return state
-
-    def _run_one(seq_tokens: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
-        # seq_tokens: [L, dim] -> [1, dim, L]
-        x_ref = seq_tokens.transpose(0, 1).unsqueeze(0)
-        init_state = state[..., :state_len].unsqueeze(0)
-        out_ref, final_state = causal_conv1d_ref(
-            x_ref,
-            weight,
-            bias,
-            initial_states=init_state,
-            return_final_states=True,
-            activation=activation,
-        )
-        state[..., :state_len].copy_(final_state.squeeze(0))
-        # [1, dim, L] -> [L, dim]
-        return out_ref.squeeze(0).transpose(0, 1)
-
-    if query_start_loc is None:
-        if x.dim() == 2:
-            batch = x.shape[0]
-            for i in range(batch):
-                state = _select_state(i)
-                if state is None:
-                    continue
-                seq_tokens = x[i : i + 1]
-                if num_accepted_tokens is not None:
-                    accepted = int(num_accepted_tokens[i].item())
-                    if accepted <= 0:
-                        continue
-                    seq_tokens = seq_tokens[:accepted]
-                out_i = _run_one(seq_tokens, state)
-                out[i : i + out_i.shape[0]] = out_i
-        else:
-            batch = x.shape[0]
-            for i in range(batch):
-                state = _select_state(i)
-                if state is None:
-                    continue
-                seq_tokens = x[i]
-                if num_accepted_tokens is not None:
-                    accepted = int(num_accepted_tokens[i].item())
-                    if accepted <= 0:
-                        continue
-                    seq_tokens = seq_tokens[:accepted]
-                out_i = _run_one(seq_tokens, state)
-                out[i, : out_i.shape[0]] = out_i
-    else:
+    # ---- 1. normalise x to [B, Lp, dim] plus a flat index map -----------------
+    flat_index = None
+    valid_mask = None
+    if query_start_loc is not None:
         assert conv_state_indices is not None
-        batch = conv_state_indices.size(0)
-        for i in range(batch):
-            start = int(query_start_loc[i].item())
-            end = int(query_start_loc[i + 1].item())
-            if end <= start:
-                continue
-            state = _select_state(i)
-            if state is None:
-                continue
-            seq_tokens = x[start:end]
-            if num_accepted_tokens is not None:
-                accepted = int(num_accepted_tokens[i].item())
-                if accepted <= 0:
-                    continue
-                seq_tokens = seq_tokens[:accepted]
-            out_i = _run_one(seq_tokens, state)
-            out[start : start + out_i.shape[0]] = out_i
+        batch = conv_state_indices.numel()
+        starts = query_start_loc[:batch].to(device=device, dtype=torch.int64)
+        ends = query_start_loc[1 : batch + 1].to(device=device, dtype=torch.int64)
+        lens = ends - starts
+        if max_query_len is None:
+            max_query_len = int(lens.max().item())
+        lp = int(max_query_len)
+        offs = torch.arange(lp, device=device, dtype=torch.long).unsqueeze(0)
+        flat_index = starts.unsqueeze(1) + offs
+        valid_mask = flat_index < ends.unsqueeze(1)
+        gather_index = torch.where(valid_mask, flat_index, torch.zeros_like(flat_index))
+        x_win = x_work.index_select(0, gather_index.reshape(-1)).reshape(batch, lp, dim)
+    elif x_work.dim() == 3:
+        batch, lp, _ = x_work.shape
+        x_win = x_work
+    else:
+        batch = x_work.shape[0]
+        lp = 1
+        x_win = x_work.unsqueeze(1)
 
-    return out.to(original_x_dtype)
+    # ---- 2. gather the per-sequence conv state -------------------------------
+    if conv_state_indices is not None:
+        slot_ids = conv_state_indices[:batch].to(device=device, dtype=torch.long)
+        is_pad = slot_ids == pad_slot_id
+        safe_slots = torch.where(is_pad, torch.zeros_like(slot_ids), slot_ids)
+    else:
+        slot_ids = None
+        is_pad = None
+        safe_slots = None
+    init_state = (
+        conv_state.index_select(0, safe_slots)
+        if safe_slots is not None
+        else conv_state[:batch]
+    )  # [B, dim, state_len]
+    init_state = init_state[..., :state_len].transpose(1, 2).contiguous()  # [B, state_len, dim]
+
+    # ---- 3. one grouped conv1d over the whole batch --------------------------
+    window = torch.cat([init_state, x_win], dim=1)  # [B, state_len + Lp, dim]
+    conv_out = F.conv1d(
+        window.transpose(1, 2),
+        weight.unsqueeze(1),
+        bias.to(conv_state.dtype) if bias is not None else None,
+        groups=dim,
+    ).transpose(1, 2)  # [B, Lp, dim]
+    if activation is not None:
+        conv_out = F.silu(conv_out)
+
+    # ---- 4. roll the state forward by num_accepted_tokens --------------------
+    if num_accepted_tokens is not None:
+        committed = (
+            num_accepted_tokens[:batch]
+            .to(device=device, dtype=torch.long)
+            .clamp_(0, lp)
+        )
+    else:
+        committed = torch.full((batch,), lp, device=device, dtype=torch.long)
+    # The recurrent state is the last ``state_len`` tokens consumed, i.e.
+    # ``window[committed : committed + state_len]`` once ``committed`` tokens of
+    # this step have been accepted.
+    base = committed.unsqueeze(1)
+    ar = torch.arange(state_len, device=device, dtype=torch.long).unsqueeze(0)
+    state_index = (
+        (base + ar).unsqueeze(-1).expand(batch, state_len, dim)
+    )  # [B, state_len, dim]
+    new_state = window.gather(1, state_index)  # [B, state_len, dim]
+    # Padded state caches expose more than ``state_len`` columns; only the
+    # leading ``state_len`` columns are meaningful (same as the reference
+    # implementation, which writes ``state[..., :state_len]``).
+    state_view = conv_state[..., :state_len]
+    if slot_ids is not None:
+        # Pad rows must not touch their slot. Sending every pad row to a real
+        # row's slot *with that row's value* keeps the scatter duplicate-free
+        # in value, so the (unspecified) write order cannot corrupt a slot.
+        ref = torch.argmax((~is_pad).to(torch.int64))
+        ref_slot = safe_slots[ref]
+        ref_value = torch.where(is_pad[ref], init_state[ref], new_state[ref])
+        write_slots = torch.where(is_pad, ref_slot, safe_slots)
+        write_state = torch.where(
+            is_pad.reshape(batch, 1, 1), ref_value.expand_as(new_state), new_state
+        )
+        state_view.index_copy_(
+            0, write_slots, write_state.transpose(1, 2).to(conv_state.dtype)
+        )
+    else:
+        state_view[:batch] = new_state.transpose(1, 2).to(conv_state.dtype)
+
+    # ---- 5. scatter the outputs back into the caller's layout ----------------
+    # Only accepted tokens carry a real conv result; everything else keeps the
+    # caller's own values, exactly like the per-request loop that skipped them.
+    keep = torch.arange(lp, device=device).unsqueeze(0) < committed.unsqueeze(1)
+    if is_pad is not None:
+        keep = keep & ~is_pad.unsqueeze(1)
+    if flat_index is not None:
+        keep = keep & valid_mask
+        out = x_work.clone()
+        out[flat_index[keep]] = conv_out.reshape(-1, dim)[keep.reshape(-1)]
+        return out.to(original_x_dtype)
+    conv_out = torch.where(keep.unsqueeze(-1), conv_out, x_win)
+    if x.dim() == 3:
+        return conv_out.to(original_x_dtype)
+    return conv_out.reshape(batch, dim).to(original_x_dtype)

@@ -338,7 +338,7 @@ class AscendSpecDecodeBaseProposer(SpecDecodeBaseProposer):
 
     def _maybe_remove_d2t(self, draft_model: nn.Module) -> None:
         """Drop the identity d2t mapping of a full-vocab EAGLE3 draft."""
-        if self.method != "eagle3":
+        if self.method not in ("eagle3", "eagle4"):
             return
         target_vocab_size = self.speculative_config.draft_model_config.get_vocab_size()
         draft_vocab_size = draft_model.config.draft_vocab_size

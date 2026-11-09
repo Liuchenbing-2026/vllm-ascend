@@ -114,6 +114,7 @@ from vllm_ascend.worker.utils import disable_compilation
 from vllm_ascend.worker.v2.aclgraph_utils import ModelAclGraphManager
 from vllm_ascend.worker.v2.attn_utils import (
     build_attn_state,
+    draft_attn_layer_scope,
     skip_ring_state_update,
 )
 from vllm_ascend.worker.v2.eplb import AscendEPLBController
@@ -409,8 +410,12 @@ class NPUModelRunner(GPUModelRunner):
         return output
 
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
+        # Draft layers share the target's forward context in MRV2, but they
+        # must stay out of the target's hybrid Attention/Mamba page alignment.
+        with draft_attn_layer_scope(getattr(self.speculator, "draft_attn_layer_names", None)):
+            specs = super().get_kv_cache_spec()
         return apply_dspark_resident_kv_specs(
-            super().get_kv_cache_spec(),
+            specs,
             self.vllm_config,
             self.speculator,
             sparse_offload_enabled=self.ascend_config.sparse_kv_offload_config.enabled,

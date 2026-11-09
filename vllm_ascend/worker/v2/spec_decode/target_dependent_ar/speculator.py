@@ -179,7 +179,7 @@ class AscendTargetDependentARSpeculator(LmheadTPDraftSamplingMixin, TargetDepend
     # equivalent upstream fix is merged.
     def _maybe_remove_d2t(self, draft_model: torch.nn.Module) -> None:
         """Drop the identity d2t mapping of a full-vocab EAGLE3 draft."""
-        if self.method != "eagle3":
+        if self.method not in ("eagle3", "eagle4"):
             return
         target_vocab_size = self.draft_model_config.get_vocab_size()
         draft_vocab_size = draft_model.config.draft_vocab_size
@@ -379,7 +379,12 @@ class AscendTargetDependentARSpeculator(LmheadTPDraftSamplingMixin, TargetDepend
             # Use the first executable draft attention layer as the architecture
             # discriminator and cache it for ACL graph parameter updates.
             self.attn_backend = _get_graph_update_backend(self.attn_groups)
-        from vllm_ascend.models.qwen4_exp.qsa import AscendQSABackend
+        try:
+            from vllm_ascend.models.qwen4_exp.qsa import AscendQSABackend
+        except ImportError:
+            # Older transformers releases lack Qwen4ExpTextConfig; the QSA
+            # backend cannot exist in that environment either.
+            AscendQSABackend = None
 
         if issubclass(self.attn_backend, AscendDSABackend):
             self.attn_architecture = "DSA"
@@ -387,7 +392,7 @@ class AscendTargetDependentARSpeculator(LmheadTPDraftSamplingMixin, TargetDepend
             self.attn_architecture = "MLA"
         elif issubclass(self.attn_backend, (AscendSFABackend, AscendSFAIndexerBackend)):
             self.attn_architecture = "SFA"
-        elif issubclass(self.attn_backend, AscendQSABackend):
+        elif AscendQSABackend is not None and issubclass(self.attn_backend, AscendQSABackend):
             self.attn_architecture = "QSA"
         elif issubclass(self.attn_backend, AscendAttentionBackend):
             self.attn_architecture = "GQA"

@@ -151,6 +151,25 @@ def ring_state_update_skipped() -> bool:
     return _SKIP_RING_STATE_UPDATE.get()
 
 
+# MRV2 builds the speculative draft model inside the target's vLLM config, so
+# draft attention layers land in the target's static forward context too. They
+# live in their own KV cache group and must keep their own page geometry
+# instead of being padded to the target's shared Attention/Mamba page.
+_DRAFT_ATTN_LAYER_NAMES: ContextVar[frozenset[str]] = ContextVar(
+    "_DRAFT_ATTN_LAYER_NAMES", default=frozenset()
+)
+
+
+@contextmanager
+def draft_attn_layer_scope(layer_names):
+    """Mark speculative draft attention layers for the KV spec build."""
+    token = _DRAFT_ATTN_LAYER_NAMES.set(frozenset(layer_names or ()))
+    try:
+        yield
+    finally:
+        _DRAFT_ATTN_LAYER_NAMES.reset(token)
+
+
 def unwrap_mamba_kv_cache_groups(kv_cache_config: KVCacheConfig) -> KVCacheConfig:
     """Expose homogeneous Mamba specs to the upstream MRV2 initializer.
 
@@ -220,6 +239,7 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
     kv_cache_spec: dict[str, KVCacheSpec] = {}
     attention_layer_names: list[str] = []
     mamba_specs: dict[str, MambaSpec] = {}
+    draft_layer_names = _DRAFT_ATTN_LAYER_NAMES.get()
     layer_type = AttentionLayerBase
     attn_layers = get_layers_from_vllm_config(vllm_config, layer_type)
     sfa_dcp_replicated_indexer_size = (
@@ -369,11 +389,22 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
         if not vllm_version_is("0.32.0") and getattr(attn_module, "is_draft_layer", False):
             spec = replace(spec, is_draft=True)
         kv_cache_spec[layer_name] = spec
-        if isinstance(spec, AttentionSpec) and getattr(attn_module, "align_kv_cache_with_mamba", True):
+        if (
+            isinstance(spec, AttentionSpec)
+            and getattr(attn_module, "align_kv_cache_with_mamba", True)
+            and layer_name not in draft_layer_names
+        ):
             attention_layer_names.append(layer_name)
             continue
 
     if mamba_specs:
+        # Draft pages keep their own geometry: padding them to the target's
+        # hybrid page is not expressible in the shared contiguous Ascend cache.
+        deferred_draft_specs = {
+            name: kv_cache_spec.pop(name)
+            for name in list(kv_cache_spec)
+            if name in draft_layer_names
+        }
         # QSA/CSA hybrid models (descriptor-native cache owners) need
         # the descriptor-native cache alignment: every align_kv_cache_with_mamba
         # attention layer (including the QSA main owners) pads its page up
@@ -406,6 +437,7 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
                 if spec.page_size_bytes < common_page_size:
                     mamba_specs[layer_name] = replace(spec, page_size_padded=common_page_size)
             kv_cache_spec.update(mamba_specs)
+        kv_cache_spec.update(deferred_draft_specs)
 
     return kv_cache_spec
 

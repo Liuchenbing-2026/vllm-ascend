@@ -1349,7 +1349,7 @@ class NPUWorker(WorkerBase):
         needs_mrv1_mamba_eagle_zeroing = (
             kv_cache_config.has_mamba_layers
             and speculative_config is not None
-            and speculative_config.method == "eagle3"
+            and speculative_config.method in ("eagle3", "eagle4")
             and speculative_config.num_speculative_tokens > 1
         )
         should_init_kv_zeroer = kv_cache_config.needs_kv_cache_zeroing and (
