@@ -21,6 +21,7 @@ from vllm.v1.kv_cache_interface import (
     KVCacheTensor,
     MambaSpec,
     MLAAttentionSpec,
+    SlidingWindowSpec,
     UniformTypeKVCacheSpecs,
 )
 
@@ -63,6 +64,10 @@ class _Glm5NextCacheLayout:
 
 def _is_glm5_next_spec(spec: KVCacheSpec) -> bool:
     return getattr(spec, "model_version", None) == "glm5_next"
+
+
+def _is_glm5_next_draft_spec(spec: KVCacheSpec) -> bool:
+    return isinstance(spec, SlidingWindowSpec) and not _is_glm5_next_spec(spec)
 
 
 def _unpadded_page_size(spec: KVCacheSpec) -> int:
@@ -159,8 +164,17 @@ def _create_glm5_next_attention_groups(
     tail_names = _sorted_layer_names([name for name, spec in kv_cache_spec.items() if _is_glm5_next_tail_spec(spec)])
 
     classified_names = {*main_names, *indexer_names, *tail_names}
+    unclassified_names = set(kv_cache_spec) - classified_names
+    invalid_names = sorted(
+        name for name in unclassified_names if not _is_glm5_next_draft_spec(kv_cache_spec[name])
+    )
+    if invalid_names:
+        raise ValueError(
+            "GLM-Next KV cache specs contain an unsupported cache role: "
+            + ", ".join(invalid_names)
+        )
     draft_names = _sorted_layer_names(
-        [name for name in set(kv_cache_spec) - classified_names]
+        list(unclassified_names)
     )
     if not (len(main_names) == len(indexer_names) == len(tail_names) > 0):
         raise ValueError(
@@ -243,7 +257,7 @@ def _get_glm5_next_cache_layout(
             mamba_groups.append(group)
             continue
         if not isinstance(group_spec, UniformTypeKVCacheSpecs):
-            if not _is_glm5_next_spec(group_spec):
+            if _is_glm5_next_draft_spec(group_spec):
                 draft_groups.append(group)
             continue
 
@@ -257,7 +271,7 @@ def _get_glm5_next_cache_layout(
             full_groups.append(group)
         elif values and all(_is_glm5_next_tail_spec(spec) for spec in values):
             tail_groups.append(group)
-        elif values and all(not _is_glm5_next_spec(spec) for spec in values):
+        elif values and all(_is_glm5_next_draft_spec(spec) for spec in values):
             draft_groups.append(group)
 
     has_glm5_next_group = bool(full_groups or tail_groups)

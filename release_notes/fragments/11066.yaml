@@ -1,5 +1,10 @@
 pr: 11066
 entries:
+  - category: feature
+    text: >-
+      Add GLM-5.3-Flash DSpark speculative decoding support by exposing
+      EAGLE-3 auxiliary hidden states and allocating independent sliding-window
+      draft KV cache groups.
   - category: bugfix
     text: >-
       Extended GLM-5.3-Flash DSpark verification beyond seven speculative

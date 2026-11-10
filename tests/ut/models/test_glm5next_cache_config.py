@@ -335,6 +335,23 @@ def test_sliding_window_draft_caches_use_independent_physical_tensors():
     assert all((name,) in tensor_layers for name in draft_names)
 
 
+def test_unsupported_attention_cache_role_is_rejected():
+    config = make_config()
+    specs = make_specs()
+    name = "model.layers.10.self_attn.attn"
+    specs[name] = SlidingWindowSpec(
+        block_size=16,
+        num_kv_heads=1,
+        head_size=8,
+        dtype=torch.bfloat16,
+        sliding_window=16,
+    )
+    object.__setattr__(specs[name], "model_version", "glm5_next")
+
+    with pytest.raises(ValueError, match="unsupported cache role"):
+        get_glm5_next_kv_cache_groups(config, specs)
+
+
 def test_misaligned_logical_block_is_rejected():
     specs = make_specs(pool=16)
     object.__setattr__(
