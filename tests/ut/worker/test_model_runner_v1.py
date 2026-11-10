@@ -327,6 +327,36 @@ class TestDPPaddingPolicy(unittest.TestCase):
                     self.assertEqual(synced_mode, graph_mode)
                     self.assertEqual(across_dp.tolist(), [32, 32] if should_pad else [8, 32])
 
+    def test_moe_lora_alltoall_pads_across_dp(self):
+        """LoRA + EP runs AlltoAll with splits derived from the local token
+        count, so DP ranks must agree on one padded width."""
+
+        tokens = ((0, 32), (1, 5), (8, 32))
+        for local_tokens in tokens:
+            for dp_rank in range(2):
+                with self.subTest(tokens=local_tokens, dp_rank=dp_rank):
+                    runner = self._make_runner(dp_rank)
+                    runner.vllm_config.lora_config = SimpleNamespace()
+                    runner.vllm_config.parallel_config = SimpleNamespace(enable_expert_parallel=True)
+                    maximum, across_dp, _ = self._run_sync(runner, tokens=local_tokens)
+                    self.assertEqual(maximum, max(local_tokens))
+                    self.assertEqual(across_dp.tolist(), [max(local_tokens)] * 2)
+
+    def test_alltoall_without_moe_lora_keeps_local_token_counts(self):
+        cases = (
+            ("no_lora", False, True),
+            ("lora_without_ep", True, False),
+        )
+        for name, has_lora, enable_ep in cases:
+            for dp_rank in range(2):
+                with self.subTest(name=name, dp_rank=dp_rank):
+                    runner = self._make_runner(dp_rank)
+                    if has_lora:
+                        runner.vllm_config.lora_config = SimpleNamespace()
+                    runner.vllm_config.parallel_config = SimpleNamespace(enable_expert_parallel=enable_ep)
+                    _, across_dp, _ = self._run_sync(runner, tokens=(1, 5))
+                    self.assertEqual(across_dp.tolist(), [1, 5])
+
     def test_each_finegrained_tp_field_requires_uniform_inputs(self):
         for field in fields(FinegrainedTPConfig):
             for size in (0, 1, 2):
@@ -4070,6 +4100,7 @@ class TestNPUModelRunnerDebugger(unittest.TestCase):
         runner = self._build_runner(MagicMock(spec=["start", "stop", "step"]))
         runner.vllm_config = MagicMock()
         runner.vllm_config.aux_output_config.enable_return_routed_experts = False
+        runner.vllm_config.lora_config = None
         runner.ascend_config = SimpleNamespace(
             scheduler_config=SimpleNamespace(profiling_chunk_config=SimpleNamespace(enabled=False, need_timing=False))
         )
@@ -4439,6 +4470,86 @@ class TestC8MXFPVScaleCacheFill(unittest.TestCase):
         self.assertEqual(k.storage_offset(), 128)
         self.assertTrue(all(view.stride(0) == spec.page_size_bytes // 2 for view in (k, v, ks, vs)))
         group.backend.get_kv_cache_shape.assert_not_called()
+
+
+def test_prepare_decoder_replay_skips_idle_dummy_batch():
+    """An idle DP rank must not enter replay for its dummy batch.
+
+    ``execute_dummy_batch`` runs without attention metadata, so the cut layer
+    would ask ``dsa_v41_write_kv`` for a bundle that was never built and the
+    idle rank would additionally inherit its peer's trim decision.
+    """
+    runner = object.__new__(NPUModelRunner)
+    runner.decoder_replay = SimpleNamespace(rows=torch.tensor([0]), context_factory=lambda: nullcontext())
+    runner.parallel_config = SimpleNamespace(data_parallel_size=2)
+    runner.vllm_config = SimpleNamespace(parallel_config=runner.parallel_config)
+    runner._decoder_replay_common_metadata = None
+    runner._decoder_replay_num_tokens = 4
+    runner._decoder_replay_counts = None
+    runner.input_batch = SimpleNamespace(num_reqs=0)
+    context = SimpleNamespace(
+        cudagraph_runtime_mode=CUDAGraphMode.NONE,
+        in_profile_run=False,
+        capturing=False,
+        attn_metadata=None,
+    )
+    with (
+        patch("vllm_ascend.worker.v1.model_runner.get_forward_context", return_value=context),
+        patch("vllm_ascend.worker.v1.model_runner.should_skip_allreduce_across_dp_group", return_value=False),
+        patch(
+            "vllm_ascend.worker.v1.model_runner.get_dp_group",
+            return_value=SimpleNamespace(rank_in_group=0, cpu_group=None),
+        ),
+        patch("vllm_ascend.worker.v1.model_runner.dist.all_reduce"),
+    ):
+        NPUModelRunner._prepare_decoder_replay(runner, 4, True)
+    assert runner.decoder_replay.rows is None
+    assert runner.decoder_replay.context_factory is None
+
+
+def test_prepare_decoder_replay_drops_trim_when_a_dp_peer_is_idle():
+    """A peer running an idle dummy batch blocks trimming for the whole group.
+
+    The local row count feeds the MoE AlltoAll splits, so a rank that trims
+    while its peer keeps the un-compacted batch would advertise different split
+    lists for the same collective.
+    """
+    runner = object.__new__(NPUModelRunner)
+    runner.decoder_replay = SimpleNamespace(rows=torch.tensor([0]), context_factory=lambda: nullcontext())
+    runner.parallel_config = SimpleNamespace(data_parallel_size=2)
+    runner.vllm_config = SimpleNamespace(parallel_config=runner.parallel_config)
+    runner._decoder_replay_common_metadata = None
+    runner._decoder_replay_num_tokens = 5
+    runner._decoder_replay_counts = None
+    runner.input_batch = SimpleNamespace(num_reqs=0)
+    context = SimpleNamespace(
+        cudagraph_runtime_mode=CUDAGraphMode.NONE,
+        in_profile_run=False,
+        capturing=False,
+        attn_metadata=None,
+    )
+
+    def fake_all_reduce(tensor, group=None):
+        # Peer rank 1 trimmed and is running a dummy batch.
+        tensor[0, 1] = 1
+        tensor[1, 1] = 3
+        tensor[2, 1] = 1
+
+    with (
+        patch("vllm_ascend.worker.v1.model_runner.get_forward_context", return_value=context),
+        patch("vllm_ascend.worker.v1.model_runner.should_skip_allreduce_across_dp_group", return_value=False),
+        patch("vllm_ascend.worker.v1.model_runner.should_skip_dp_coordination", return_value=False),
+        patch(
+            "vllm_ascend.worker.v1.model_runner.get_dp_group",
+            return_value=SimpleNamespace(rank_in_group=0, cpu_group=None),
+        ),
+        patch("vllm_ascend.worker.v1.model_runner.dist.all_reduce", side_effect=fake_all_reduce),
+    ):
+        NPUModelRunner._prepare_decoder_replay(runner, 5, False)
+
+    assert runner.decoder_replay.rows is None
+    assert runner.decoder_replay.context_factory is None
+    torch.testing.assert_close(runner._decoder_replay_counts, torch.tensor([5, 3], dtype=torch.int32))
 
 
 if __name__ == "__main__":

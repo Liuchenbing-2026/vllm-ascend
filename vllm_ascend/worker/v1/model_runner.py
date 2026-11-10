@@ -890,6 +890,20 @@ class NPUModelRunner(GPUModelRunner):
         # Create a tensor for num_tokens_after_padding
         comm_method = select_moe_comm_method(max_tokens_across_dp, self.vllm_config)
         needs_uniform_moe_input = comm_method in {MoECommType.ALLGATHER, MoECommType.MC2}
+        # LoRA with expert parallelism is pinned to the AlltoAll dispatcher
+        # (see ``select_moe_comm_method``).  Unlike the MC2/AllGather paths its
+        # split sizes are derived from the local token count, so two DP ranks
+        # that schedule a different number of tokens would hand HCCL
+        # mismatched all_to_all splits and hang on the first MoE layer.  Force
+        # the same padded width as the other uniform-input paths, otherwise an
+        # idle DP rank (dummy batch of width 1) never pairs with a peer that
+        # has real tokens.
+        lora_pins_alltoall = (
+            comm_method == MoECommType.ALLTOALL
+            and getattr(self.vllm_config, "lora_config", None) is not None
+            and self.vllm_config.parallel_config.enable_expert_parallel
+        )
+        needs_uniform_moe_input = needs_uniform_moe_input or lora_pins_alltoall
         needs_uniform_mega_moe_input = comm_method == MoECommType.FUSED_MC2 and use_cann_megamoe(self.vllm_config)
         finegrained_tp = self.ascend_config.finegrained_tp_config
         needs_finegrained_tp = any(
@@ -3385,13 +3399,34 @@ class NPUModelRunner(GPUModelRunner):
         self._decoder_replay_num_tokens = self._decoder_replay_num_actual_tokens
         self._decoder_replay_counts = None
         if self.parallel_config.data_parallel_size > 1:
-            agreed = torch.zeros((2, self.parallel_config.data_parallel_size), dtype=torch.int32)
-            agreed[:, get_dp_group().rank_in_group] = torch.tensor([trims, self._decoder_replay_num_tokens])
+            agreed = torch.zeros((3, self.parallel_config.data_parallel_size), dtype=torch.int32)
+            agreed[:, get_dp_group().rank_in_group] = torch.tensor(
+                [trims, self._decoder_replay_num_tokens, int(is_dummy)]
+            )
             if not should_skip_dp_coordination():
                 dist.all_reduce(agreed, group=get_dp_group().cpu_group)
             trims = bool(agreed[0].any())
+            # The MoE AlltoAll dispatcher derives its splits from the local row
+            # count, so every rank has to route the same number of rows.  An
+            # idle DP peer runs ``execute_dummy_batch`` and keeps its
+            # un-compacted token count, while a rank that trimmed would feed a
+            # shorter batch into the same collective: the split lists then
+            # disagree and the dispatch stalls.  Trimming is a throughput
+            # optimisation, so give it up for the whole group as soon as one
+            # peer is idle instead of letting the two sides diverge.
+            trims = trims and not bool(agreed[2].any())
             self._decoder_replay_counts = agreed[1]
         if not trims:
+            return
+        # An idle DP rank runs ``execute_dummy_batch`` without attention
+        # metadata.  It still had to join the agreement above, otherwise a
+        # compacting peer would block on the collective forever, but it owns no
+        # real tokens: replay must not engage here, since the cut layer would
+        # ask ``dsa_v41_write_kv`` for a layer bundle that was never built and
+        # the idle rank would inherit its peer's trim decision.  Mirrors
+        # ``DeepseekV41DecoderReplayState.prepare`` where a dummy batch keeps
+        # the original execution context.
+        if is_dummy:
             return
         if real_batch:
             self._decoder_replay_metadata = self._build_decoder_replay_metadata(kept_lens)

@@ -505,7 +505,15 @@ class TokenDispatcherWithAll2AllV(MoETokenDispatcher[MoEAllToAllCombineMetadata]
     ):
         use_mxfp_quant = token_dispatch_input.quant.is_mxfp
         with_quant = token_dispatch_input.quant.dispatch_with_quant
-        if has_moe_lora(self.lora_context) and token_dispatch_input.quant.is_quant:
+        # This decision selects how many AlltoAll exchanges the dispatch issues
+        # (the quantized path sends the token scale in a second exchange), so it
+        # must be identical on every rank that joins the group. ``has_moe_lora``
+        # is a *local* question -- it also reports False for a rank whose batch
+        # carries no adapter tokens (e.g. an idle DP peer padding to the peer's
+        # token count) -- and gating the dispatch shape on it let such a rank
+        # issue one extra exchange and hang HCCL. Base it on whether the layer is
+        # LoRA-capable at all, which every rank answers the same way.
+        if self.lora_context is not None and token_dispatch_input.quant.is_quant:
             validate_quant_moe_lora_activation_input(
                 quant_type=token_dispatch_input.quant.quant_type,
                 hidden_states=token_dispatch_input.hidden_states,
