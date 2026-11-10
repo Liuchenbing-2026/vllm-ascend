@@ -34,6 +34,9 @@ def _stub_model(*, mhc: bool) -> Glm5NextModel:
         mhc=mhc,
         hc_mult=N_STREAMS,
     )
+    model.start_layer = 0
+    model.end_layer = 1
+    model.aux_hidden_state_layers = []
     model.is_sequence_parallel = False
     return model
 
