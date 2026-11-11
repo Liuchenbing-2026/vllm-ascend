@@ -1,0 +1,126 @@
+From 24c1e1a1b79b414cd296207231af1f78945e579f Mon Sep 17 00:00:00 2001
+From: FZ <2865713811@qq.com>
+Date: Tue, 10 Nov 2026 22:38:45 -0500
+Subject: [PATCH 3/3] docs: add FlashStates Ascend port notes
+
+---
+ FLASHSTATE_ASCEND.md | 106 +++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 106 insertions(+)
+ create mode 100644 FLASHSTATE_ASCEND.md
+
+diff --git a/FLASHSTATE_ASCEND.md b/FLASHSTATE_ASCEND.md
+new file mode 100644
+index 0000000..654de37
+--- /dev/null
++++ b/FLASHSTATE_ASCEND.md
+@@ -0,0 +1,106 @@
++# FlashStates on Ascend 910B — vLLM 0.32.0 port
++
++This branch backports the **hybrid-state frontier checkpoint** feature of
++[FlashStates](https://github.com/FutureMLS-Lab/FlashStates) to **vLLM v0.32.0**
++for Ascend 910B, on top of the `vllm-ascend` nightly image
++(`quay.io/ascend/vllm-ascend:nightly-releases-v0.32.0rc`, vLLM 0.32.0 +
++vllm-ascend 0.19.1rc2).
++
++Upstream source: `FutureMLS-Lab/vllm@3cfd432` (based on vLLM v0.33.0,
++24,642 lines / 114 files). This port keeps the Python scheduler/KV-cache
++logic and leaves the CUDA-only kernels out.
++
++## Supported
++
++- `--mamba-frontier-checkpoint`: keep a finished request's recurrent state at
++  its exact end (inside a block) and at the last block boundary its output
++  crossed; the next turn resumes there.
++- `--prefix-cache-eviction gds` + `--prefill-cost-coefficients` +
++  `--prefix-cache-leaf-last` / `--prefix-cache-leaf-idle-seconds`: evict
++  hybrid states whole by prefill seconds saved per block.
++- Requirements: `--enable-prefix-caching --mamba-cache-mode align`,
++  Model Runner V2 (`VLLM_USE_V2_MODEL_RUNNER=1`),
++  `--prefix-cache-retention-interval 0`, no context parallelism,
++  no KV cache events (unless recovery-unit events are on).
++
++## Not ported
++
++| Feature | Reason |
++| --- | --- |
++| `mamba_prefill_export` | needs FlashKDA / FlashInfer GDN CUDA kernels (`csrc/flashkda_export`, `vllm/third_party/flashinfer_gdn`) |
++| `mamba_spec_state_layout=compact` | needs CUDA + Triton Mamba backend |
++| Mooncake store frontier (`frontier_write_through`) | Mooncake store frontier protocol not adapted |
++| GDN export path (Qwen3.8-Flash-Next) | CUDA-only export kernels |
++
++Keep `--mamba-prefill-export` off; the scheduler refuses it when the backend
++cannot write prefill checkpoints.
++
++## Ascend-specific changes
++
++1. `vllm/v1/worker/gpu/input_batch.py`: add
++   `prefill_checkpoint_positions: dict[str, int] | None = None`.
++   `mamba_hybrid.py` reads it unconditionally; without the field MRV2 raises
++   `AttributeError` at runtime (even when export is off).
++2. `vllm/v1/core/hybrid_checkpoint/manager.py` `layout_groups`:
++   - classify managers with `isinstance` so subclasses such as
++     `AscendCircularBufferManager(CircularBufferManager)` are treated as rings;
++   - skip `KpoolTailManager` (`FullAttentionManager` subclass) — Ascend
++     GLM5next's per-request indexer K-pool tail, with
++     `prefix_cacheable=False` and `find_longest_cache_hit` always empty.
++     The frontier's main indexer pages are still checkpointed; the tail is
++     rebuilt per request. Validating this on real weights is a remaining task.
++3. `vllm/v1/worker/utils.py` keeps the view-geometry dedup for
++   `copy_kv_cache_blocks_inplace`, which matters for hybrid models where
++   attention and Mamba state views share one allocation.
++
++## Running on Ascend
++
++```bash
++# 8×910B4, GLM-5.3-Flash W8A8 (311 GB), TP8
++docker run -d --name fs-full --net=host --ipc=host --privileged \
++  --device=/dev/davinci0 ... --device=/dev/davinci7 \
++  --device=/dev/davinci_manager --device=/dev/devmm_svm --device=/dev/hisi_hdc \
++  -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
++  -v /usr/local/Ascend/firmware:/usr/local/Ascend/firmware \
++  -v /usr/local/sbin:/usr/local/sbin -v /usr/local/dcmi:/usr/local/dcmi \
++  -v /etc/hccn.conf:/etc/hccn.conf -v /etc/ascend_install.info:/etc/ascend_install.info \
++  -v <this-repo>:/vllm-workspace/vllm \
++  -e ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
++  -e VLLM_USE_V2_MODEL_RUNNER=1 \
++  quay.io/ascend/vllm-ascend:nightly-releases-v0.32.0rc \
++  vllm serve /data02/GLM-5.3-Flash-w8a8-b0829 \
++    --trust-remote-code --enable-prefix-caching \
++    --mamba-cache-mode align --mamba-frontier-checkpoint \
++    --max-model-len 8192 --max-num-seqs 4 --tensor-parallel-size 8 \
++    --enforce-eager --prefix-cache-eviction lru
++```
++
++For a functional test without loading the (old-format) tiny checkpoint, add
++`--load-format dummy` and point `--model` at a GLM5next config directory.
++
++## Measured (GLM-5.3-Flash W8A8, TP8, 8K, 4 seqs, eager)
++
++- `/health` 200; 311 GB / 85 shards load in ~8–10 min.
++- Two-turn test (18-token second prompt): frontier serves **12 tokens/turn**,
++  `prefix_cache_frontier_hits_total = 24`.
++- Frontier off vs on: uncached prompt tokens **18 → 6 (−66.7%)**, cache hit
++  rate **0% → 66.7%**; total latency 1.97/1.98 s vs 1.99/1.92 s (no measurable
++  difference at 18 tokens — decode dominates).
++- HBM ~60.7/64 GB per card at 8192 context / 4 seqs; 32K or 1M context is not
++  feasible on 910B4 without reducing concurrency/context.
++
++## Known limitations
++
++- Output-level A/B correctness is confounded by model nondeterminism
++  (MoE / sparse-attention kernels): the same prompt on the same server can
++  produce different 8-token continuations across runs. The first token is
++  stable; CPU state-level tests (`tests/v1/core/hybrid_checkpoint/`) pass.
++  A deterministic-kernel or logits-level comparison is the next step.
++- The included CPU suite is the four portable files (checkpoint graph,
++  frontier checkpoints, GDS eviction, recovery-unit events; 51 tests).
++  Speculative-frontier and prefill-export tests are omitted because those
++  CUDA-only paths are not ported.
++- The K-pool tail is not included in frontier checkpoints (see above).
++- No long-context / 48-session benchmark yet; the paper's 3.14× prefill /
++  3.02× decode numbers are B200, NVFP4, 1M context, 48 sessions and are not
++  directly comparable to 910B4 / W8A8 / 8K / 4 seqs.
+\ No newline at end of file
+-- 
+2.53.0.windows.2
+
