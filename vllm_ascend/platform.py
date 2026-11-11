@@ -1427,6 +1427,12 @@ def _maybe_disable_cudagraph_for_moe_lora(vllm_config: VllmConfig) -> None:
         return
     if compilation_config.cudagraph_mode == CUDAGraphMode.NONE:
         return
+    from vllm_ascend.ascend_forward_context import _lora_ep_keeps_alltoall
+
+    if not _lora_ep_keeps_alltoall(vllm_config):
+        # LoRA + EP runs the ALLGATHER dispatcher, which is fully device side
+        # and therefore ACL-graph capturable. Keep the graph.
+        return
     parallel_config = vllm_config.parallel_config
     if not parallel_config.enable_expert_parallel:
         return
