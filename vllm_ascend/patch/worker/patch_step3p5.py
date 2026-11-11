@@ -54,10 +54,6 @@ from vllm.model_executor.models.step3p5 import (
     Step3p5DecoderLayer,
     Step3p5MLP,
     Step3p5Model,
-    _get_layer_type,
-    _get_num_attention_heads,
-    _get_rope_parameters,
-    _is_moe_layer,
 )
 from vllm.model_executor.models.utils import (
     extract_layer_index,
@@ -215,6 +211,16 @@ def _patched_decoder_layer_init(
     vllm_config: VllmConfig,
     prefix: str = "",
 ) -> None:
+    # These helpers were introduced with the newer Step attention API. Load
+    # them only when constructing Step so unrelated v0.32 models can import
+    # the worker patches; this does not backport Step support to v0.32.
+    from vllm.model_executor.models.step3p5 import (
+        _get_layer_type,
+        _get_num_attention_heads,
+        _get_rope_parameters,
+        _is_moe_layer,
+    )
+
     # Module-level replacement: zero-arg super() is unavailable outside a
     # class body, so call the base explicitly.
     nn.Module.__init__(self)

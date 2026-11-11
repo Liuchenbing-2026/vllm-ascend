@@ -7,8 +7,10 @@ from dataclasses import replace
 import torch
 from vllm.config import VllmConfig
 
-# Both supported versions expose planning helpers in kv_cache_planning.
-from vllm.v1.core.kv_cache_planning import may_override_num_blocks
+try:
+    from vllm.v1.core.kv_cache_utils import may_override_num_blocks
+except ImportError:
+    from vllm.v1.core.kv_cache_planning import may_override_num_blocks
 from vllm.v1.kv_cache_interface import (
     CircularBufferSpec,
     KVCacheConfig,

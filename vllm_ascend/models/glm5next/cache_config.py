@@ -15,11 +15,10 @@ from vllm.config import VllmConfig
 from vllm.model_executor.models.utils import extract_layer_index
 from vllm.utils.torch_utils import get_dtype_size
 
-# Both supported versions expose planning helpers in kv_cache_planning.
-from vllm.v1.core.kv_cache_planning import (
-    create_kv_cache_group_specs,
-    may_override_num_blocks,
-)
+try:
+    from vllm.v1.core.kv_cache_utils import create_kv_cache_group_specs, may_override_num_blocks
+except ImportError:
+    from vllm.v1.core.kv_cache_planning import create_kv_cache_group_specs, may_override_num_blocks
 from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
     KVCacheGroupSpec,

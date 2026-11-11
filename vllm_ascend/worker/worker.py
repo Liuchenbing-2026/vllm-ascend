@@ -57,8 +57,11 @@ from vllm.tasks import SupportedTask
 from vllm.utils.mem_constants import GiB_bytes
 from vllm.utils.mem_utils import MemorySnapshot, format_gib, memory_profiling
 from vllm.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
-from vllm.v1.core.kv_cache_config_builder import get_kv_cache_config_builder
-from vllm.v1.core.kv_cache_planning import unify_hybrid_kv_cache_specs
+
+try:
+    from vllm.v1.core.kv_cache_utils import unify_hybrid_kv_cache_specs
+except ImportError:
+    from vllm.v1.core.kv_cache_planning import unify_hybrid_kv_cache_specs
 from vllm.v1.core.sched.output import GrammarOutput, SchedulerOutput
 from vllm.v1.kv_cache_interface import (
     AttentionSpec,
@@ -125,6 +128,15 @@ def get_kv_cache_groups(
     vllm_config: VllmConfig,
     kv_cache_spec: dict[str, KVCacheSpec],
 ) -> list[KVCacheGroupSpec]:
+    try:
+        from vllm.v1.core.kv_cache_config_builder import get_kv_cache_config_builder
+    except ModuleNotFoundError as exc:
+        if exc.name != "vllm.v1.core.kv_cache_config_builder":
+            raise
+        # v0.32 invokes the patched planner directly, before the builder API.
+        from vllm.v1.core.kv_cache_utils import get_kv_cache_groups
+
+        return get_kv_cache_groups(vllm_config, kv_cache_spec)
     return get_kv_cache_config_builder(vllm_config).get_kv_cache_groups(vllm_config, kv_cache_spec)
 
 

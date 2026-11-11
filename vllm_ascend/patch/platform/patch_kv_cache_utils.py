@@ -4,11 +4,18 @@
 from collections import defaultdict
 from typing import Any
 
-# Both supported versions use the KV-cache planner and builder API from #61183/#42309.
-import vllm.v1.core.kv_cache_planning as _kv_cache_planning
+try:
+    import vllm.v1.core.kv_cache_planning as _kv_cache_planning
+    from vllm.v1.core.kv_cache_planning import _approximate_gcd, may_override_num_blocks
+except ModuleNotFoundError as exc:
+    if exc.name != "vllm.v1.core.kv_cache_planning":
+        raise
+    # v0.32 keeps these functions in kv_cache_utils. Patch the real module,
+    # not copied aliases, so the planner sees the Ascend overrides.
+    import vllm.v1.core.kv_cache_utils as _kv_cache_planning
+    from vllm.v1.core.kv_cache_utils import _approximate_gcd, may_override_num_blocks
 from vllm.config import VllmConfig
 from vllm.utils.math_utils import cdiv, round_up
-from vllm.v1.core.kv_cache_planning import _approximate_gcd, may_override_num_blocks
 from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
     KVCacheGroupSpec,

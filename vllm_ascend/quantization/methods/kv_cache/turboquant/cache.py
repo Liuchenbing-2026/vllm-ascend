@@ -12,8 +12,10 @@ from vllm.logger import logger
 from vllm.utils.math_utils import round_up
 from vllm.utils.torch_utils import get_dtype_size
 
-# Both supported versions expose planning helpers in kv_cache_planning.
-from vllm.v1.core.kv_cache_planning import may_override_num_blocks
+try:
+    from vllm.v1.core.kv_cache_utils import may_override_num_blocks
+except ImportError:
+    from vllm.v1.core.kv_cache_planning import may_override_num_blocks
 from vllm.v1.kv_cache_interface import (
     KVCacheGroupSpec,
     KVCacheSpec,

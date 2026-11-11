@@ -120,7 +120,6 @@ from vllm_ascend.utils import (
     is_c8_mxfp_kv_quant,
     is_hidden_state_cache_spec,
     kv_cache_spec_uses_packed_sfa_main_cache,
-    vllm_version_is,
 )
 from vllm_ascend.worker.kvpp_cache import allocate_kvpp_cache
 from vllm_ascend.worker.utils import (
@@ -131,11 +130,13 @@ from vllm_ascend.worker.utils import (
 if TYPE_CHECKING:
     from vllm_ascend.worker.v2.pcp_manager import AscendPCPAttentionContext
 
-if vllm_version_is("0.33.0"):
+try:
     import vllm.models.qwen4_exp.common.qsa_cache as qsa_cache  # type: ignore[import-not-found]
 
     QSAMetadataBuilder = qsa_cache.QSAMetadataBuilder
-else:
+except ModuleNotFoundError as exc:
+    if exc.name != "vllm.models.qwen4_exp.common.qsa_cache":
+        raise
     import vllm.models.qwen4_exp.common.qsa_indexer as qsa_indexer  # type: ignore[import-not-found]
 
     QSAMetadataBuilder = qsa_indexer.QSAIndexerMetadataBuilder

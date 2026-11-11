@@ -169,6 +169,9 @@ def test_v2_flash_attn_uses_exact_lengths_after_rejection_and_reordering(monkeyp
     speculator.arange_np = torch.arange(5, dtype=torch.int32).numpy()
     # vLLM main exposes max_model_len as a read-only view of vllm_config.
     speculator.vllm_config = SimpleNamespace(model_config=SimpleNamespace(max_model_len=1024))
+    if not hasattr(speculator, "max_model_len"):
+        # v0.32 sets this instance field in the constructor bypassed above.
+        speculator.max_model_len = speculator.vllm_config.model_config.max_model_len
     speculator.draft_max_seq_len = 1024
     speculator.dcp_size = 1
     speculator.input_buffers = SimpleNamespace(
