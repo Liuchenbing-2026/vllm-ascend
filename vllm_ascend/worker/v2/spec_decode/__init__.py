@@ -59,6 +59,14 @@ def init_speculator(
         )
 
         return ExtractHiddenStatesSpeculator(vllm_config, device)
+    speculator_config = getattr(speculative_config, "speculator_config", None)
+    speculator_class = getattr(speculator_config, "speculator_class", "") or ""
+    if speculative_config.method == "dspine" or speculator_class.endswith(".DSpineSpeculator"):
+        from vllm_ascend.worker.v2.spec_decode.dspine.speculator import (
+            AscendDSpineSpeculator,
+        )
+
+        return AscendDSpineSpeculator(vllm_config, device)
     if speculative_config.use_dspark():
         from vllm_ascend.worker.v2.spec_decode.dspark.speculator import (
             AscendDSparkSpeculator,
@@ -66,6 +74,12 @@ def init_speculator(
 
         return AscendDSparkSpeculator(vllm_config, device)
     if speculative_config.use_dflash():
+        if "DSpineDraftModel" in speculative_config.draft_model_config.architectures:
+            from vllm_ascend.worker.v2.spec_decode.dspine.speculator import (
+                AscendDSpineSpeculator,
+            )
+
+            return AscendDSpineSpeculator(vllm_config, device)
         if "LiLiCorrDraftModel" in speculative_config.draft_model_config.architectures:
             from vllm_ascend.worker.v2.spec_decode.lilicorr.speculator import (
                 AscendLiLiCorrSpeculator,

@@ -1,0 +1,4 @@
+pr: 19682
+entries:
+  - category: feature
+    text: Added DSpine speculative decoding support for the vLLM v0.33 Model Runner V2 on Ascend.

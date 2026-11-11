@@ -1154,7 +1154,7 @@ def test_init_without_speculation(use_pp):
         assert runner.pp_handler is None
 
 
-@pytest.mark.parametrize("method", ["mtp", "ngram", "ngram_gpu"])
+@pytest.mark.parametrize("method", ["mtp", "ngram", "ngram_gpu", "dspine"])
 def test_init_spec_pp_full_graph_and_speculator(method):
     vllm_config = SimpleNamespace(parallel_config=SimpleNamespace(enable_eplb=True, pipeline_parallel_size=2))
     ascend_config = SimpleNamespace(eplb_config=SimpleNamespace(load_collection_phase="decode"), dump_config_path=None)
