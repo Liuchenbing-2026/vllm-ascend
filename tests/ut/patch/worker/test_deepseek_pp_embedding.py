@@ -10,7 +10,7 @@ from safetensors.torch import save_file
 from vllm.distributed import parallel_state
 from vllm.model_executor.layers import vocab_parallel_embedding
 from vllm.model_executor.models import deepseek_v2
-from vllm.model_executor.models.utils import PPMissingLayer
+from vllm.model_executor.models.utils import AutoWeightsLoader, PPMissingLayer
 from vllm.v1.worker.gpu.spec_decode.eagle import utils as eagle_utils
 
 from vllm_ascend.models import qwen3_dflash2, qwen3_dspark
@@ -105,6 +105,50 @@ def test_deepseek_v4_target_embedding_scope(monkeypatch, is_first_rank, needs_ta
         lambda _: needs_target_embed,
     )
     assert deepseek_v4_model._needs_input_embedding(SimpleNamespace()) is expected
+
+
+@pytest.mark.parametrize("tp_rank", [0, 1])
+def test_kimi_target_embedding_uses_loader_before_dspark_sharing(monkeypatch, tp_rank):
+    monkeypatch.setattr(vocab_parallel_embedding, "get_tensor_model_parallel_rank", lambda: tp_rank)
+    monkeypatch.setattr(vocab_parallel_embedding, "get_tensor_model_parallel_world_size", lambda: 2)
+    monkeypatch.setattr(ascend_vocab, "enable_pcp_embedding_lmhead_weight_sharding", lambda: False)
+    monkeypatch.setattr(ascend_vocab, "embedding_tp_enable", lambda: False)
+    monkeypatch.setattr(
+        ascend_vocab,
+        "get_tp_group",
+        lambda: SimpleNamespace(rank_in_group=tp_rank, world_size=2),
+    )
+    monkeypatch.setattr(
+        eagle_utils,
+        "get_pp_group",
+        lambda: SimpleNamespace(world_size=2),
+    )
+
+    target = torch.nn.Module()
+    target.embed_tokens = vocab_parallel_embedding.VocabParallelEmbedding(
+        65,
+        2,
+        prefix="model.embed_tokens",
+    )
+    checkpoint_weight = torch.arange(130, dtype=torch.float32).reshape(65, 2)
+    loaded = AutoWeightsLoader(target).load_weights([("embed_tokens.weight", checkpoint_weight)])
+    assert loaded == {"embed_tokens.weight"}
+
+    indices = target.embed_tokens.shard_indices
+    expected = torch.zeros_like(target.embed_tokens.weight)
+    shard = checkpoint_weight[indices.org_vocab_start_index : indices.org_vocab_end_index]
+    expected[: len(shard)] = shard
+    torch.testing.assert_close(target.embed_tokens.weight, expected)
+
+    draft = AscendQwen3DSparkForCausalLM.__new__(AscendQwen3DSparkForCausalLM)
+    torch.nn.Module.__init__(draft)
+    draft.model = torch.nn.Module()
+    draft.model.embed_tokens = torch.nn.Embedding(65, 2)
+    draft.has_own_embed_tokens = False
+    eagle_utils.maybe_share_target_embed(draft, draft.model, target)
+
+    assert draft.model.embed_tokens is target.embed_tokens
+    torch.testing.assert_close(draft.model.embed_tokens.weight, expected)
 
 
 @pytest.mark.parametrize("tp_rank", [0, 1])
