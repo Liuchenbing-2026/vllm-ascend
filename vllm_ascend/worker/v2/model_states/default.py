@@ -555,6 +555,7 @@ class AscendModelState(DefaultModelState):
             # Same wiring as model_runner_v1
             full_graph_mode=cudagraph_mode == CUDAGraphMode.FULL,
             model_specific_attn_metadata=model_specific_attn_metadata,
+            mm_prefix_ranges=self.get_mm_prefix_ranges(input_batch),
             req_ids_tensor=offload_req_ids.gpu[:num_reqs] if offload_req_ids is not None else None,
             token_to_req=offload_token_to_req.gpu[:num_input_tokens] if offload_token_to_req is not None else None,
             offload_dummy=getattr(input_batch, "is_dummy", False),
