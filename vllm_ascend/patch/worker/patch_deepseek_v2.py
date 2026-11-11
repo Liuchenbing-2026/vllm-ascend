@@ -32,7 +32,6 @@ from vllm.model_executor.models.deepseek_v2 import (
     _get_llama_4_scaling,
     yarn_get_mscale,
 )
-from vllm.model_executor.models.interfaces import EagleModelMixin
 from vllm.model_executor.models.utils import PPMissingLayer, extract_layer_index, spec_decode_needs_target_embed
 from vllm.sequence import IntermediateTensors
 from vllm.v1.attention.backends.mla.index_group import SparseMLAIndexGroupBuilder
@@ -339,17 +338,7 @@ def _patched_deepseek_v2_model_init(self, *args, **kwargs):
 DeepseekV2Model.__init__ = _patched_deepseek_v2_model_init
 
 
-# Reuse upstream slot bookkeeping; Ascend owns capture and TP gathering.
-for _member in (
-    "AUX_HIDDEN_STATE_KEY",
-    "_aux_slot_base_cached",
-    "_aux_upstream_total_cached",
-    "_set_aux_hidden_state_layers",
-    "_cache_aux_pp_layout",
-    "pack_local_aux_hidden_states",
-    "collect_remote_aux_hidden_states",
-):
-    setattr(DeepseekV2Model, _member, getattr(EagleModelMixin, _member))
+# Slot bookkeeping is inherited from the core EagleModelMixin.
 DeepseekV2Model.supports_aux_hidden_states_over_pp = True
 
 
@@ -366,7 +355,7 @@ DeepseekV2ForCausalLM.set_aux_hidden_state_layers = _set_aux_hidden_state_layers
 def _capture_aux_hidden_state(self, aux_hidden_states, layer_id, hidden_states, residual, positions):
     if layer_id not in self.aux_hidden_state_layers:
         return
-    aux_hidden_state = hidden_states if residual is None else hidden_states + residual
+    aux_hidden_state = hidden_states.clone() if residual is None else hidden_states + residual
     if aux_hidden_state.shape[0] != positions.shape[0]:
         aux_hidden_state = tensor_model_parallel_all_gather(aux_hidden_state, 0)
         aux_hidden_state = aux_hidden_state[: positions.shape[0]]
@@ -395,7 +384,7 @@ def _patched_forward(
         hidden_states = intermediate_tensors["hidden_states"]
         residual = intermediate_tensors["residual"]
         if self._use_upstream_aux_relay:
-            aux_hidden_states = self.collect_remote_aux_hidden_states(intermediate_tensors)
+            aux_hidden_states = []  # The runner adds earlier stages once on the last rank.
         else:
             aux_hidden_states = pp_transport.get_pp_transport_tensors(
                 intermediate_tensors,
