@@ -1,0 +1,7 @@
+pr: 21537
+entries:
+  - category: bugfix
+    text: >-
+      Fixed DSpark initialization with pipeline parallelism by provisioning
+      target input embeddings on the last stage when a draft reuses them, then
+      removing the PP-specific sharing and unrotated reload fallbacks.

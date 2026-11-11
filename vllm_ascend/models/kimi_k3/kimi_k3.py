@@ -52,6 +52,7 @@ from vllm.model_executor.models.utils import (
     init_vllm_registered_model,
     make_layers,
     maybe_prefix,
+    spec_decode_needs_target_embed,
 )
 from vllm.model_executor.models.vision import is_vit_use_data_parallel
 from vllm.models.common.ops.sequence_parallel import (
@@ -976,7 +977,11 @@ class AscendKimiLinearModel(UpstreamKimiLinearModel):
             and parallel_config.tensor_parallel_size > 1
         )
 
-        if get_pp_group().is_first_rank:
+        # Qwen3 GQA DSpark drafts do not own an input embedding and reuse the
+        # target's embedding on the last PP stage. K3 MLA DSpark checkpoints
+        # already own theirs, so do not materialize a redundant target copy.
+        needs_shared_target_embed = self.dspark_aux_capture_materialized and spec_decode_needs_target_embed(vllm_config)
+        if get_pp_group().is_first_rank or needs_shared_target_embed:
             self.embed_tokens = VocabParallelEmbedding(
                 config.vocab_size,
                 config.hidden_size,

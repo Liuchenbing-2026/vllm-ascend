@@ -446,12 +446,79 @@ def test_aux_contract_selected_before_draft_load(runtime, stage, runner_v2, draf
         RMSNorm=lambda *args, **kwargs: nn.Identity(),
         ReplicatedLinear=lambda *args, **kwargs: nn.Identity(),
         make_layers=lambda *args, **kwargs: (stage * 2, stage * 2 + 2, nn.ModuleList()),
+        spec_decode_needs_target_embed=lambda _: False,
     )
     # AST extraction retains methods only, so supply the production class default.
     namespace["AscendKimiLinearModel"].dspark_aux_capture_materialized = False
     model = namespace["AscendKimiLinearModel"](vllm_config=cfg)
     assert model.dspark_aux_capture_materialized is materialized
     assert model.use_sequence_parallel is runner_v2
+
+
+@pytest.mark.parametrize(
+    "stage,world_size,draft_type,draft_arch,expected",
+    [
+        (0, 2, "qwen3", "Qwen3DSparkModel", True),
+        (1, 2, "qwen3", "Qwen3DSparkModel", True),
+        (1, 3, "qwen3", "Qwen3DSparkModel", False),
+        (1, 2, "kimi_k3", "K3DSparkModel", False),
+        (0, 2, "kimi_k3", "K3DSparkModel", True),
+        (1, 2, None, None, False),
+    ],
+)
+def test_target_embedding_scope_for_dspark(runtime, stage, world_size, draft_type, draft_arch, expected):
+    namespace, context = runtime
+    context.tp = 2
+    context.pp = SimpleNamespace(
+        is_first_rank=stage == 0,
+        is_last_rank=stage == world_size - 1,
+        world_size=world_size,
+    )
+    cfg = config(tp=2, pp=world_size)
+    cfg.model_config.hf_text_config = SimpleNamespace(
+        vocab_size=16,
+        hidden_size=3,
+        num_hidden_layers=8,
+        num_attention_heads=2,
+        attn_res_block_size=2,
+        rms_norm_eps=1e-5,
+    )
+    cfg.speculative_config = (
+        SimpleNamespace(
+            method="dspark",
+            draft_model_config=SimpleNamespace(
+                hf_config=SimpleNamespace(model_type=draft_type, architectures=[draft_arch])
+            ),
+        )
+        if draft_type is not None
+        else None
+    )
+
+    class Embedding(nn.Module):
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+
+    class MissingLayer(nn.Module):
+        pass
+
+    namespace.update(
+        VocabParallelEmbedding=Embedding,
+        PPMissingLayer=MissingLayer,
+        RMSNorm=lambda *args, **kwargs: nn.Identity(),
+        ReplicatedLinear=lambda *args, **kwargs: nn.Identity(),
+        make_layers=lambda *args, **kwargs: (0, 0, nn.ModuleList()),
+        spec_decode_needs_target_embed=lambda received: (
+            received.speculative_config is not None
+            and received.parallel_config.pipeline_parallel_size > 1
+            and context.pp.is_last_rank
+        ),
+    )
+    namespace["AscendKimiLinearModel"].dspark_aux_capture_materialized = False
+
+    model = namespace["AscendKimiLinearModel"](vllm_config=cfg)
+
+    assert isinstance(model.embed_tokens, Embedding) is expected
+    assert isinstance(model.embed_tokens, MissingLayer) is not expected
 
 
 @pytest.mark.parametrize("owns_embed", [False, True])

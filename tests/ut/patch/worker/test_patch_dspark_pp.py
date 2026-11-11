@@ -23,10 +23,9 @@ def test_dspark_draft_partition_isolation(monkeypatch, inherits_quant, pp_size, 
         ),
         quant_config=object(),
     )
-    get_pp_group = lambda: SimpleNamespace(world_size=pp_size)
-    monkeypatch.setattr(patch_dspark.dspark_utils, "get_pp_group", get_pp_group, raising=False)
     monkeypatch.setattr(vllm_envs, "VLLM_PP_LAYER_PARTITION", "42,36")
     should_share = eagle_utils._should_share
+    maybe_share_target_embed = eagle_utils.maybe_share_target_embed
     get_quant_config = patch_dspark.model_utils.get_draft_quant_config
     assert "_should_share" not in vars(patch_dspark.dspark_utils)
 
@@ -36,11 +35,10 @@ def test_dspark_draft_partition_isolation(monkeypatch, inherits_quant, pp_size, 
         assert config.parallel_config.pipeline_parallel_size == pp_size
         expected_partition = None if pp_size > 1 else "42,36"
         assert expected_partition == vllm_envs.VLLM_PP_LAYER_PARTITION
-        assert patch_dspark.dspark_utils.get_pp_group().world_size == pp_size
-        # Native PP loading and sharing are not overridden.
-        from vllm.v1.worker.gpu.spec_decode.eagle.utils import _should_share
-
-        assert _should_share is should_share
+        assert eagle_utils._should_share is should_share
+        # DSpark uses the upstream sharing implementation directly; target
+        # constructors now provision the final-stage embedding it consumes.
+        assert eagle_utils.maybe_share_target_embed is maybe_share_target_embed
         assert "_should_share" not in vars(patch_dspark.dspark_utils)
         if inherits_quant:
             assert patch_dspark.model_utils.get_draft_quant_config(config) is config.quant_config
@@ -61,6 +59,6 @@ def test_dspark_draft_partition_isolation(monkeypatch, inherits_quant, pp_size, 
     assert not is_draft_config_context()
     assert vllm_envs.VLLM_PP_LAYER_PARTITION == "42,36"
     assert eagle_utils._should_share is should_share
+    assert eagle_utils.maybe_share_target_embed is maybe_share_target_embed
     assert patch_dspark.model_utils.get_draft_quant_config is get_quant_config
-    assert patch_dspark.dspark_utils.get_pp_group is get_pp_group
     assert "_should_share" not in vars(patch_dspark.dspark_utils)
