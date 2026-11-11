@@ -22,6 +22,7 @@ from vllm_ascend.worker.v1.spec_decode.dflash2_proposer import AscendDflash2Prop
 from vllm_ascend.worker.v1.spec_decode.dflash_proposer import AscendDflashProposer
 from vllm_ascend.worker.v1.spec_decode.draft_proposer import AscendDraftModelProposer
 from vllm_ascend.worker.v1.spec_decode.dspark_proposer import AscendDSparkProposer
+from vllm_ascend.worker.v1.spec_decode.dspine_proposer import AscendDspineProposer, is_dspine_draft
 from vllm_ascend.worker.v1.spec_decode.eagle_proposer import AscendEagleProposer
 from vllm_ascend.worker.v1.spec_decode.extract_hidden_states_proposer import (
     AscendExtractHiddenStatesProposer,
@@ -60,6 +61,11 @@ def get_spec_decode_method(method, vllm_config, device, runner):
     elif method == "dflash":
         if "LiLiCorrDraftModel" in (vllm_config.speculative_config.draft_model_config.architectures or []):
             raise NotImplementedError("LiLiCorr requires Model Runner V2 on Ascend; set VLLM_USE_V2_MODEL_RUNNER=1.")
+        if is_dspine_draft(vllm_config.speculative_config):
+            # DSpine checkpoints are DFlash drafts with a code bridge; they reuse
+            # the whole DFlash input/context-KV path and only replace the draft
+            # sampling tail, so they are served through the "dflash" method.
+            return AscendDspineProposer(vllm_config, device, runner)
         if is_dflash2_draft(vllm_config.speculative_config):
             return AscendDflash2Proposer(vllm_config, device, runner)
         return AscendDflashProposer(vllm_config, device, runner)

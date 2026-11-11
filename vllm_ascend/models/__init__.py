@@ -113,3 +113,10 @@ def register_model():
     ModelRegistry.register_model(
         "LlamaForCausalLMEagle3", "vllm_ascend.models.llama_eagle3:AscendEagle3LlamaForCausalLM"
     )
+    # DSpine draft model: a DFlash backbone plus a per-layer code bridge. The
+    # speculative-config patch rewrites the architecture of DSpine checkpoints to
+    # this name (kept "DFlash"-prefixed so the core dflash rename leaves it alone).
+    ModelRegistry.register_model(
+        "DFlashDSpineDraftModel",
+        "vllm_ascend.models.qwen3_dspine:DSpineQwen3ForCausalLM",
+    )

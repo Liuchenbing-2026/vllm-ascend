@@ -83,6 +83,22 @@ def _normalize_kimi_dflash_rope(hf_config: PretrainedConfig) -> None:
     setattr(hf_config, rope_field, {**rope_params, "attention_factor": legacy_attention_factor})
 
 
+def _is_dspine_hf_config(hf_config: PretrainedConfig) -> bool:
+    """Detect a DSpine draft checkpoint.
+
+    A DSpine draft is a DFlash draft plus a per-layer code bridge, declared inside
+    ``dflash_config.selected_prefix_code_bridge``. The checkpoint architecture is
+    ``DFlashDraftModel``, so the marker is the config field.
+    """
+    if hf_config is None:
+        return False
+    dflash = getattr(hf_config, "dflash_config", None)
+    if not isinstance(dflash, dict):
+        inner = getattr(hf_config, "model", None)
+        dflash = getattr(inner, "dflash_config", None)
+    return isinstance(dflash, dict) and isinstance(dflash.get("selected_prefix_code_bridge"), dict)
+
+
 def _normalize_legacy_qwen3_dspark_config(
     hf_config: PretrainedConfig,
     transformers_mtp_overrides: dict[str, Any] | None = None,
@@ -95,6 +111,11 @@ def _normalize_legacy_qwen3_dspark_config(
         )
     hf_config = _orig_hf_config_override(hf_config)
     _normalize_kimi_dflash_rope(hf_config)
+    if _is_dspine_hf_config(hf_config):
+        # Route the checkpoint to the DSpine implementation and force causal draft
+        # attention: DSpine is trained with ``draft_block_causal``, which the core
+        # DFlash model resolves from ``is_causal`` / layer types.
+        hf_config.update({"architectures": ["DFlashDSpineDraftModel"], "is_causal": True})
     architectures = hf_config.architectures or ()
     if hf_config.model_type == "qwen3" and "DSparkDraftModel" in architectures:
         dflash_config = hf_config.dflash_config
