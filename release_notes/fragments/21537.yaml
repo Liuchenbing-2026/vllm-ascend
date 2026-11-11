@@ -1,0 +1,7 @@
+pr: 21537
+entries:
+  - category: bugfix
+    text: >-
+      Fixed GLM5Next MTP with pipeline parallelism by provisioning the target
+      embedding on the last stage, sharing it with the draft, and preserving
+      MTP-specific embedding precedence.
