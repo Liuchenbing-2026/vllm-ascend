@@ -167,22 +167,21 @@ def test_aux_relay_matches_unpartitioned_forward(monkeypatch, native, boundaries
                 # PP cut belongs to the upstream stage, including boundary38.
                 expected_incoming = 0 if first else sum(idx <= start for idx in aux_layers)
                 assert model._aux_slot_base_cached == expected_incoming
-                assert model._aux_upstream_total_cached == (expected_incoming if last else 0)
+                assert model._aux_first_local_layer == (0 if first else start + 1)
+                handler = SimpleNamespace()
+                PPHandler.configure_aux_hidden_state_relay(handler, SimpleNamespace(model=model))
             output = patch_deepseek_v2._patched_forward(model, ids if first else None, ids, incoming)
             if not last:
                 if native:
                     # Use the actual upstream relay, without creating streams or process groups.
-                    handler = SimpleNamespace(
-                        aux_hidden_state_relay_keys=[
-                            f"aux_hidden_states_{i}" for i in range(model._aux_slot_base_cached)
-                        ]
-                    )
                     output = PPHandler.relay_aux_hidden_states(handler, incoming, output)
                 prefix = "aux_hidden_states_" if native else "pp_transport_aux_hidden_states_"
                 expected_count = sum(idx <= end for idx in aux_layers)
                 assert set(output.tensors) == {"hidden_states", "residual"} | {
                     f"{prefix}{idx}" for idx in range(expected_count)
                 }
+            elif native:
+                output = PPHandler.add_upstream_aux_hidden_states(handler, incoming, output)
             incoming = output
         return output
 
@@ -389,3 +388,12 @@ def test_make_empty_intermediate_tensors_aux_and_topk(monkeypatch, topk_mode):
     topk = get_pp_transport_tensors(result, PPTransportDataType.TOPK_INDICES)
     assert len(aux) == 2 and len(topk) == 1
     assert topk[0].data_ptr() == topk_buffer.data_ptr()
+
+
+def test_aux_capture_keeps_embedding_before_inplace_layer():
+    hidden = torch.tensor([[1.0, 2.0]])
+    states = []
+    model = SimpleNamespace(aux_hidden_state_layers=(0,))
+    patch_deepseek_v2._capture_aux_hidden_state(model, states, 0, hidden, None, torch.zeros(1))
+    hidden.add_(10)
+    torch.testing.assert_close(states[0], torch.tensor([[1.0, 2.0]]), rtol=0, atol=0)

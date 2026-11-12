@@ -2,7 +2,6 @@
 
 import torch
 from vllm.v1.worker import mamba_utils
-from vllm.v1.worker.mamba_utils import MambaCopyBuffers
 
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.ops.triton.batch_memcpy import batch_memcpy_kernel
@@ -44,20 +43,25 @@ if _can_launch_triton_batch_memcpy():
     mamba_utils.batch_memcpy = _batch_memcpy_triton
     mamba_utils.postprocess_mamba_fused_kernel = postprocess_mamba_fused_kernel
 
-# Ascend NPU does not support DT_UINT64 in aclnnInplaceZero.
-# MambaCopyBuffers.create() uses torch.uint64 for src_ptrs/dst_ptrs,
-# which triggers a runtime error. Remap to int64 at the source.
-_original_create = MambaCopyBuffers.create
+
+def _patch_legacy_copy_buffers(copy_buffers_cls):
+    # New upstream contexts allocate address buffers as int64 directly and no
+    # longer expose MambaCopyBuffers. Older cores still need the uint64 fix.
+    if copy_buffers_cls is None:
+        return
+
+    original_create = copy_buffers_cls.create
+
+    @classmethod
+    def create(cls, max_num_reqs, kv_cache_config, copy_funcs, make_buffer):
+        return original_create(
+            max_num_reqs,
+            kv_cache_config,
+            copy_funcs,
+            lambda n, dtype: make_buffer(n, dtype=torch.int64 if dtype == torch.uint64 else dtype),
+        )
+
+    copy_buffers_cls.create = create
 
 
-@classmethod
-def _patched_create(cls, max_num_reqs, kv_cache_config, copy_funcs, make_buffer):
-    return _original_create(
-        max_num_reqs,
-        kv_cache_config,
-        copy_funcs,
-        lambda n, dtype: make_buffer(n, dtype=torch.int64 if dtype == torch.uint64 else dtype),
-    )
-
-
-MambaCopyBuffers.create = _patched_create
+_patch_legacy_copy_buffers(getattr(mamba_utils, "MambaCopyBuffers", None))
