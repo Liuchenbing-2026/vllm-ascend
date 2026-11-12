@@ -738,6 +738,25 @@ def test_projector_applies_optional_modelslim_rotation():
         torch.testing.assert_close(projector(image_features), image_features)
 
 
+@pytest.mark.parametrize("has_rot_proj", [False, True])
+def test_k3_target_skips_stale_rot_proj_only_without_rotation(monkeypatch, has_rot_proj):
+    loader = MagicMock()
+    constructor = MagicMock(return_value=loader)
+    monkeypatch.setattr(kimi_k3, "AutoWeightsLoader", constructor)
+
+    model_class = kimi_k3.AscendKimiK3ForConditionalGeneration
+    model = model_class.__new__(model_class)
+    nn.Module.__init__(model)
+    model.mm_projector = nn.Module()
+    model.mm_projector.rot_proj = nn.Linear(2, 2, bias=False) if has_rot_proj else None
+
+    assert model.load_weights([]) is loader.load_weights.return_value
+    loader.load_weights.assert_called_once_with([], mapper=model.hf_to_vllm_mapper)
+    assert constructor.call_args.kwargs["ignore_unexpected_prefixes"] == (
+        [] if has_rot_proj else ["mm_projector.rot_proj."]
+    )
+
+
 def test_k3_dspark_post_process_rotates_projection_and_target_boundaries(tmp_path, monkeypatch):
     model = AscendK3DSparkForCausalLM.__new__(AscendK3DSparkForCausalLM)
     nn.Module.__init__(model)

@@ -48,6 +48,7 @@ from vllm.model_executor.models.kimi_k25_vit import (
     MoonViT3dPretrainedModel,
 )
 from vllm.model_executor.models.utils import (
+    AutoWeightsLoader,
     PPMissingLayer,
     init_vllm_registered_model,
     make_layers,
@@ -1423,6 +1424,18 @@ class AscendKimiK3MultiModalProjector(KimiK25MultiModalProjector):
 )
 class AscendKimiK3ForConditionalGeneration(UpstreamKimiK3ForConditionalGeneration):
     """Upstream Kimi K3 multimodal wrapper with Ascend text/projector layers."""
+
+    def load_weights(self, weights):
+        # ModelSlim can leave an identity projector-rotation weight in an
+        # otherwise unrotated checkpoint. Skip only that stale key when the
+        # optional projector module was not constructed.
+        ignore_unexpected_prefixes = (
+            ["mm_projector.rot_proj."]
+            if getattr(self.mm_projector, "rot_proj", None) is None
+            else []
+        )
+        loader = AutoWeightsLoader(self, ignore_unexpected_prefixes=ignore_unexpected_prefixes)
+        return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 
     @classmethod
     def get_mamba_state_shape_from_config(cls, vllm_config):
