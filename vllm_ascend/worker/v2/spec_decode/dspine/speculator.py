@@ -22,7 +22,6 @@ class AscendDSpineSpeculator(DSpineSpeculator, AscendDFlashSpeculator):
             raise ValueError("DSpine MRV2 on Ascend currently requires draft enforce_eager=True")
         parallel = vllm_config.parallel_config
         for name in (
-            "tensor_parallel_size",
             "pipeline_parallel_size",
             "prefill_context_parallel_size",
             "decode_context_parallel_size",
