@@ -86,6 +86,19 @@ class AscendRMSNorm(RMSNorm):
         import torch_npu
 
         if residual is not None:
+            import os
+
+            if os.environ.get("VLLM_ASCEND_DISABLE_FUSED_ADD_RMSNORM_BIAS") == "1":
+                # CANN builds without aclnnAddRmsNormBias (e.g. 9.2.1) cannot run
+                # the fused op; fall back to the plain math path.
+                hidden = x + residual
+                hf = hidden.float()
+                normed = (
+                    hf * torch.rsqrt(hf.pow(2).mean(dim=-1, keepdim=True) + self.variance_epsilon)
+                ).to(hidden.dtype) * self.weight
+                if self.bias_loaded and self.bias is not None:
+                    normed = normed + self.bias
+                return normed, hidden
             import vllm_ascend.vllm_ascend_C  # type: ignore[import-untyped]  # noqa: F401, PLC0415
 
             enable_custom_op()
