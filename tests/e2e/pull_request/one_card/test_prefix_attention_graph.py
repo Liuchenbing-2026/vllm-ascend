@@ -44,7 +44,7 @@ def test_prefix_attention_changed_boundary_replay(dtype, num_heads, num_kv_heads
     lengths = [17, 48]
     cpu = [torch.randn(48 + padding, heads, head_size).to(dtype) for heads in (num_heads, num_kv_heads, num_kv_heads)]
     device = [x.npu() for x in cpu]
-    expected, masks = prefix_reference(*cpu, lengths, [8, 19])
+    expected, masks = prefix_reference(cpu[0], cpu[1], cpu[2], lengths, [8, 19])
     metadata = AscendMetadata(actual_seq_lengths_q=lengths, prefix_masks=[m.npu() for m in masks])
     impl = AscendAttentionBackendImpl.__new__(AscendAttentionBackendImpl)
     impl.num_heads, impl.num_kv_heads, impl.scale = num_heads, num_kv_heads, head_size**-0.5
@@ -68,7 +68,7 @@ def test_prefix_attention_changed_boundary_replay(dtype, num_heads, num_kv_heads
     for seed, boundaries in [(41, [3, 7]), (43, [15, 23])]:
         torch.manual_seed(seed)
         cpu = [torch.randn_like(x) for x in cpu]
-        expected, masks = prefix_reference(*cpu, lengths, boundaries)
+        expected, masks = prefix_reference(cpu[0], cpu[1], cpu[2], lengths, boundaries)
         for static, changed in zip(device, cpu):
             static.copy_(changed)
         for static, changed in zip(metadata.prefix_masks, masks):
