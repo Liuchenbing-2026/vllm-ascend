@@ -12,9 +12,9 @@ from unittest.mock import patch
 import torch
 import torch_npu
 import vllm.envs as envs
+from vllm.compilation import monitor
 from vllm.compilation.counter import compilation_counter
 from vllm.compilation.cuda_graph import CUDAGraphOptions
-from vllm.compilation.monitor import validate_cudagraph_capturing_enabled
 from vllm.config import CUDAGraphMode, VllmConfig
 from vllm.forward_context import BatchDescriptor, get_forward_context, is_forward_context_available
 from vllm.logger import logger
@@ -37,6 +37,15 @@ _STREAM_RESOURCE_ERROR_MARKERS = (
     "stream resources are insufficient",
 )
 _OLD_HDK_CAPTURE_ERROR_MARKERS = ("alloc sq cq fail",)
+
+
+def validate_cudagraph_capturing_enabled() -> None:
+    """Honor the legacy guard when the paired core still provides it."""
+    # Core removed this monitor together with Model Runner V1. Its graph
+    # wrapper no longer checks it; older cores still own the enable state.
+    validate_capture = getattr(monitor, "validate_cudagraph_capturing_enabled", None)
+    if validate_capture is not None:
+        validate_capture()
 
 
 def _is_stream_resource_capture_error(exc: RuntimeError) -> bool:
