@@ -41,8 +41,9 @@ pin bump has to re-check that this still holds: a resumed request whose fresh
 admission did not rewind again has to end up with a zero replay start, or the
 worker would pad slots that were never replayed.
 
-Nothing here is Ascend-specific beyond the V1 payload it targets, so the patch
-is inert on a pin that predates #56227 -- see ``_upstream_carries_replay_start``.
+Nothing here is Ascend-specific beyond the V1 payload it targets. The patch
+is inert before the replay feature and after the cached resume protocol is
+removed; new-request replay metadata is already provided upstream.
 """
 
 import dataclasses
@@ -50,7 +51,7 @@ import functools
 import inspect
 
 from vllm.logger import logger
-from vllm.v1.core.sched.output import CachedRequestData
+from vllm.v1.core.sched.output import CachedRequestData, NewRequestData
 from vllm.v1.core.sched.scheduler import Scheduler
 
 _EXPECTED_PARAMETERS = (
@@ -74,6 +75,34 @@ def _upstream_carries_replay_start() -> bool:
     nothing to fill.
     """
     return hasattr(Scheduler, "_mark_prefix_replay")
+
+
+def _needs_cached_replay_patch() -> bool:
+    if not _upstream_carries_replay_start():
+        return False
+    parameters = tuple(inspect.signature(Scheduler._make_cached_request_data).parameters)
+    if parameters == _EXPECTED_PARAMETERS:
+        return True
+    # Runner V1 removal also removes resumed requests from the cached payload.
+    # They are now admitted through NewRequestData, which carries replay_start.
+    if (
+        parameters
+        == (
+            "self",
+            "running_reqs",
+            "num_scheduled_tokens",
+            "spec_decode_tokens",
+            "req_to_new_blocks",
+            "iteration_details",
+        )
+        and "resumed_req_ids" not in CachedRequestData.__dataclass_fields__
+        and "replay_start" in NewRequestData.__dataclass_fields__
+    ):
+        return False
+    raise RuntimeError(
+        "Cannot apply the SWA bounded replay resume patch: unexpected "
+        f"Scheduler._make_cached_request_data signature or payload contract {parameters}"
+    )
 
 
 def _add_dataclass_field(cls: type, name: str, factory: type, annotation: type) -> None:
@@ -150,7 +179,7 @@ def _patch_make_cached_request_data() -> None:
     Scheduler._make_cached_request_data = _make_cached_request_data
 
 
-if _upstream_carries_replay_start():
+if _needs_cached_replay_patch():
     # vLLM loads general plugins in the engine-core process and in every worker
     # (``load_general_plugins``), so this module reaches both sides of the
     # msgpack boundary -- the encoder needs the field declared to write it, the
@@ -159,6 +188,4 @@ if _upstream_carries_replay_start():
     _patch_make_cached_request_data()
     logger.debug_once("SWA bounded replay: CachedRequestData.replay_start declared and filled from resumed requests.")
 else:
-    logger.debug_once(
-        "SWA bounded replay: this vLLM pin predates the feature; the resumed-request replay start is not patched."
-    )
+    logger.debug_once("SWA bounded replay: no legacy cached-request replay patch is needed for this payload protocol.")
