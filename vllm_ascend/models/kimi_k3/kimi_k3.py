@@ -1430,9 +1430,7 @@ class AscendKimiK3ForConditionalGeneration(UpstreamKimiK3ForConditionalGeneratio
         # otherwise unrotated checkpoint. Skip only that stale key when the
         # optional projector module was not constructed.
         ignore_unexpected_prefixes = (
-            ["mm_projector.rot_proj."]
-            if getattr(self.mm_projector, "rot_proj", None) is None
-            else []
+            ["mm_projector.rot_proj."] if getattr(self.mm_projector, "rot_proj", None) is None else []
         )
         loader = AutoWeightsLoader(self, ignore_unexpected_prefixes=ignore_unexpected_prefixes)
         return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
