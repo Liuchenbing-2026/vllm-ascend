@@ -4,16 +4,9 @@ import torch
 import torch.nn as nn
 from vllm.compilation.decorators import support_torch_compile
 from vllm.config import VllmConfig
-from vllm.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding
 from vllm.model_executor.models.deepseek_mtp import DeepSeekMTP
 from vllm.model_executor.models.deepseek_v2 import GlmMoeDsaForCausalLM
-from vllm.model_executor.models.utils import (
-    AutoWeightsLoader,
-    PPMissingLayer,
-    WeightsMapper,
-    maybe_prefix,
-    spec_decode_needs_target_embed,
-)
+from vllm.model_executor.models.utils import AutoWeightsLoader, WeightsMapper
 from vllm.sequence import IntermediateTensors
 
 from vllm_ascend.utils import is_rot_weight_used
@@ -81,15 +74,6 @@ class AscendDeepSeekMTP(DeepSeekMTP):
 class AscendGlmMoeDsaForCausalLM(GlmMoeDsaForCausalLM):
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__(vllm_config=vllm_config, prefix=prefix)
-        if spec_decode_needs_target_embed(vllm_config) and isinstance(self.model.embed_tokens, PPMissingLayer):
-            # GLM MoE DSA DSpark checkpoints may omit the draft embedding and
-            # reuse the target vocabulary shard loaded on the last PP stage.
-            self.model.embed_tokens = VocabParallelEmbedding(
-                self.config.vocab_size,
-                self.config.hidden_size,
-                quant_config=vllm_config.quant_config,
-                prefix=maybe_prefix(prefix, "model.embed_tokens"),
-            )
         if vllm_config.use_v2_model_runner and vllm_config.parallel_config.pipeline_parallel_size > 1:
             # EPLB maps and expert weights must describe the same local layers.
             self.num_moe_layers = len(self.moe_layers)
