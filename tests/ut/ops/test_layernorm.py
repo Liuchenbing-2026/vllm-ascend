@@ -10,6 +10,7 @@ from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_
 from vllm_ascend.ops import layernorm as ascend_layernorm
 from vllm_ascend.ops.layernorm import (
     AscendFusedRMSNormGated,
+    AscendRMSNorm,
     AscendRMSNormGated,
     LayerNormFn,
 )
@@ -88,6 +89,39 @@ def test_RMSNorm_creates_bias_from_quant_description(default_vllm_config):
 
     assert layer.bias is not None
     assert not layer.bias.requires_grad
+
+
+@patch("torch.ops._C_ascend.npu_add_rms_norm_bias", create=True, side_effect=mock_add_rms_norm_bias)
+@patch("torch_npu.npu_add_rms_norm", create=True, side_effect=mock_add_rms_norm)
+def test_RMSNorm_residual_without_bias_uses_native_op(mock_native, mock_bias_op, dummy_tensor, default_vllm_config):
+    """A3 lacks the A5-only bias fusion, so the no-bias path must stay native."""
+    layer = AscendRMSNorm(hidden_size=8, eps=1e-05)
+    residual = torch.randn_like(dummy_tensor)
+
+    out_x, out_residual = layer.forward_oot(dummy_tensor, residual)
+
+    mock_native.assert_called_once_with(dummy_tensor, residual, layer.weight, layer.variance_epsilon)
+    mock_bias_op.assert_not_called()
+    assert torch.allclose(out_x, 2 * dummy_tensor)
+    assert torch.allclose(out_residual, 2 * residual)
+
+
+@patch("vllm_ascend.ops.layernorm.enable_custom_op", return_value=True)
+@patch("torch.ops._C_ascend.npu_add_rms_norm_bias", create=True, side_effect=mock_add_rms_norm_bias)
+@patch("torch_npu.npu_add_rms_norm", create=True, side_effect=mock_add_rms_norm)
+def test_RMSNorm_residual_with_bias_keeps_fused_op(
+    mock_native, mock_bias_op, _custom_op_enabled, dummy_tensor, default_vllm_config
+):
+    layer = AscendRMSNorm(hidden_size=8, eps=1e-05)
+    layer.bias = torch.nn.Parameter(torch.zeros(8, dtype=dummy_tensor.dtype), requires_grad=False)
+    residual = torch.randn_like(dummy_tensor)
+
+    out_x, out_residual = layer.forward_oot(dummy_tensor, residual)
+
+    mock_bias_op.assert_called_once_with(dummy_tensor, residual, layer.weight, layer.bias, layer.variance_epsilon)
+    mock_native.assert_not_called()
+    assert torch.allclose(out_x, 2 * dummy_tensor)
+    assert torch.allclose(out_residual, 2 * residual)
 
 
 @patch("vllm_ascend.ops.layernorm.enable_custom_op", return_value=True)
