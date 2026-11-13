@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
+from vllm.config import CompilationConfig, CUDAGraphMode
 from vllm.v1.core.kv_cache_utils import KVCacheBlockCopy
 from vllm.v1.kv_cache_interface import KVCacheConfig
 from vllm.v1.worker.gpu import model_runner as upstream
@@ -21,6 +22,7 @@ def test_initialize_preserves_connector_containers_and_flattens_runner_cache(is_
     caches = {"attention": (k, None, v), "mamba": [conv, ssm], "single": single, "other": other}
     runner = MagicMock()
     runner.device = torch.device("cpu")
+    runner.compilation_config = CompilationConfig(cudagraph_mode=CUDAGraphMode.NONE)
     runner.is_encoder_decoder = False
     runner.speculator = None
     runner.vocab_size = 16
@@ -52,6 +54,7 @@ def test_initialize_preserves_connector_containers_and_flattens_runner_cache(is_
     ):
         upstream.GPUModelRunner.initialize_kv_cache(runner, config, is_profiling=is_profiling)
 
+    assert runner.compilation_config.cudagraph_mode == CUDAGraphMode.NONE
     assert [id(tensor) for tensor in runner.kv_caches] == [id(tensor) for tensor in (k, v, conv, ssm, single)]
     runner._register_sparse_kv_caches.assert_called_once_with(caches)
     if is_profiling:
