@@ -346,6 +346,7 @@ class Glm5NextMTP(nn.Module, DeepseekV2MixtureOfExperts):
 
         params_dict = dict(self.named_parameters())
         loaded_params: set[str] = set()
+        loaded_mtp_embedding = False
         # Reordering loaders can split an FP8 indexer wk weight/scale pair
         # across load_weights() calls; keep the pending buffer on the model.
         _pending_wk_fp8 = getattr(self, "_pending_indexer_wk_fp8", {})
@@ -366,15 +367,12 @@ class Glm5NextMTP(nn.Module, DeepseekV2MixtureOfExperts):
             # prefix to match.
             if name.startswith("model.language_model."):
                 name = name.replace("model.language_model.", "model.", 1)
-            # The target embedding is absent on the last PP stage. Load a
-            # local copy before filtering for MTP layers, while allowing an
-            # MTP-specific embedding to take precedence in either file order.
+            # The target loader provisions the global embedding on every PP
+            # stage where speculative decoding needs it. Leave that checkpoint
+            # copy to the target model and share the loaded module after draft
+            # loading. An MTP-specific embedding is rewritten below and loaded
+            # into this draft, taking precedence regardless of file order.
             if name == "model.embed_tokens.weight":
-                if name not in loaded_params:
-                    param = params_dict[name]
-                    weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                    weight_loader(param, loaded_weight)
-                    loaded_params.add(name)
                 continue
             spec_layer = get_spec_layer_idx_from_weight_name(self.config, name)
             if spec_layer is None:
@@ -441,6 +439,8 @@ class Glm5NextMTP(nn.Module, DeepseekV2MixtureOfExperts):
                     weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, loaded_weight)
             loaded_params.add(name)
+            if name == "model.embed_tokens.weight":
+                loaded_mtp_embedding = True
 
         loaded_layers: set[int] = set()
         for param_name in loaded_params:
@@ -455,6 +455,6 @@ class Glm5NextMTP(nn.Module, DeepseekV2MixtureOfExperts):
                 raise ValueError(f"MTP speculative decoding layer {layer_idx} weights missing from checkpoint.")
         if self.is_rot_weight_used and "rot.weight" not in loaded_params:
             raise ValueError("GLM5-Next MTP requires rot.weight when the quantization config sets is_rot_used.")
-        self.has_own_embed_tokens = "model.embed_tokens.weight" in loaded_params
+        self.has_own_embed_tokens = loaded_mtp_embedding
         self._maybe_set_own_lm_head(loaded_params)
         return loaded_params
