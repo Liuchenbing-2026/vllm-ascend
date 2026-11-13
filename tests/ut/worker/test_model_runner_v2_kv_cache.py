@@ -23,6 +23,9 @@ def test_initialize_preserves_connector_containers_and_flattens_runner_cache(is_
     runner = MagicMock()
     runner.device = torch.device("cpu")
     runner.compilation_config = CompilationConfig(cudagraph_mode=CUDAGraphMode.NONE)
+    runner.decode_query_len = 3
+    query_lens = {1: 2, 3: 1}
+    runner.vllm_config.get_decode_cudagraph_query_lens.return_value = query_lens
     runner.is_encoder_decoder = False
     runner.speculator = None
     runner.vocab_size = 16
@@ -47,7 +50,7 @@ def test_initialize_preserves_connector_containers_and_flattens_runner_cache(is_
         patch.object(upstream, "maybe_build_ubatch_runner", return_value=None),
         patch.object(upstream, "initialize_mamba_ssu_backend"),
         patch.object(upstream, "has_compiled_submodule", return_value=False),
-        patch.object(upstream, "ModelCudaGraphManager"),
+        patch.object(upstream, "ModelCudaGraphManager", autospec=True) as graph_manager,
         patch.object(upstream, "check_attention_cp_compatibility"),
         patch.object(upstream, "init_kv_cache", return_value=caches),
         patch.object(upstream, "get_kv_connector", side_effect=register_connector) as connector,
@@ -55,6 +58,8 @@ def test_initialize_preserves_connector_containers_and_flattens_runner_cache(is_
         upstream.GPUModelRunner.initialize_kv_cache(runner, config, is_profiling=is_profiling)
 
     assert runner.compilation_config.cudagraph_mode == CUDAGraphMode.NONE
+    runner.vllm_config.get_decode_cudagraph_query_lens.assert_called_once_with(3)
+    assert graph_manager.call_args.kwargs["decode_query_lens"] is query_lens
     assert [id(tensor) for tensor in runner.kv_caches] == [id(tensor) for tensor in (k, v, conv, ssm, single)]
     runner._register_sparse_kv_caches.assert_called_once_with(caches)
     if is_profiling:
