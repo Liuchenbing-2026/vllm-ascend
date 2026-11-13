@@ -1,0 +1,9 @@
+pr: 21537
+entries:
+  - category: bugfix
+    text: >-
+      Removed the DSpark pipeline-parallel embedding fallbacks. Target models
+      that share a draft embedding now provision the last-stage vocabulary shard
+      before draft loading; unrotated drafts keep that shared module, while
+      QuaRot drafts still create private rotation-aligned embedding and LM-head
+      copies.

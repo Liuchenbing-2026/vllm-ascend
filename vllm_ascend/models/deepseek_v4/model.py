@@ -73,6 +73,7 @@ from vllm.model_executor.models.utils import (
     is_pp_missing_parameter,
     make_layers,
     maybe_prefix,
+    spec_decode_needs_target_embed,
 )
 from vllm.platforms import current_platform
 from vllm.sequence import IntermediateTensors
@@ -112,6 +113,11 @@ from vllm_ascend.worker.v2.pp_transport import (
 )
 
 sequence_parallel_chunk = sp_shard
+
+
+def _needs_input_embedding(vllm_config: VllmConfig) -> bool:
+    """Whether this PP rank needs the target vocabulary embedding."""
+    return get_pp_group().is_first_rank or spec_decode_needs_target_embed(vllm_config)
 
 
 class AscendDeepseekV4SWACache(VllmDeepseekV4SWACache):
@@ -856,7 +862,7 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
         # this buffer with the MTP draft via attribute replacement.
         self.topk_indices_buffer = topk_indices_buffer
 
-        if get_pp_group().is_first_rank:
+        if _needs_input_embedding(vllm_config):
             self.embed_tokens = VocabParallelEmbedding(
                 config.vocab_size,
                 config.hidden_size,
