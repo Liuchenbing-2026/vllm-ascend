@@ -59,6 +59,8 @@ def test_initialize_preserves_connector_containers_and_flattens_runner_cache(is_
 
     assert runner.compilation_config.cudagraph_mode == CUDAGraphMode.NONE
     runner.vllm_config.get_decode_cudagraph_query_lens.assert_called_once_with(3)
+    runner.model_state.initialize_kv_cache.assert_called_once_with(runner.kv_cache_config, runner.block_tables)
+    assert runner.replayssm_block_copy_tensors == []
     assert graph_manager.call_args.kwargs["decode_query_lens"] is query_lens
     assert [id(tensor) for tensor in runner.kv_caches] == [id(tensor) for tensor in (k, v, conv, ssm, single)]
     runner._register_sparse_kv_caches.assert_called_once_with(caches)
@@ -69,6 +71,7 @@ def test_initialize_preserves_connector_containers_and_flattens_runner_cache(is_
     else:
         assert registration_order == ["offload", "connector"]
         assert connector.call_args.args[1] is caches
+        assert runner.kv_caches_by_layer is caches
         assert type(caches["attention"]) is tuple
         assert type(caches["mamba"]) is list
         assert caches["attention"][2] is v

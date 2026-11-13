@@ -205,9 +205,14 @@ def initialize_kv_cache(
         for tensor in (cache if isinstance(cache, (tuple, list)) else (cache,))
         if tensor is not None and tensor.device == self.device
     ]
+    self.model_state.initialize_kv_cache(self.kv_cache_config, self.block_tables)
+    self.replayssm_block_copy_tensors = upstream.get_replayssm_block_copy_tensors(
+        self.compilation_config.static_forward_context
+    )
     if is_profiling:
         self.kv_connector = upstream.NO_OP_KV_CONNECTOR
     else:
+        self.kv_caches_by_layer = kv_caches_dict
         self.kv_connector = upstream.get_kv_connector(self.vllm_config, kv_caches_dict)
         # vLLM main carries routed-experts output through the AuxOutput
         # connector, which the V2 NPUModelRunner relies on via super().
