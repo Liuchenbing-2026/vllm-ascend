@@ -14,6 +14,7 @@ from vllm_ascend.ops import linear
 from vllm_ascend.ops.linear import (
     AscendDCPGroupColumnParallelLinear,
     AscendMergedColumnParallelLinear,
+    AscendQKVParallelLinear,
     AscendReplicatedLinear,
     AscendRowParallelLinear,
     AscendUnquantizedLinearMethod,
@@ -227,6 +228,56 @@ class TestAscendRowParallelLinear(BaseLinearTest):
 
 
 class TestAscendMergedColumnParallelLinear(BaseLinearTest):
+    @unittest.skipUnless(
+        hasattr(AscendMergedColumnParallelLinear, "pop_missing_shards"), "Requires stacked shard tracking"
+    )
+    def test_custom_allocations_preserve_missing_shards(self):
+        layers = (
+            AscendMergedColumnParallelLinear(input_size=8, output_sizes=[4, 4], bias=False, disable_tp=True),
+            AscendQKVParallelLinear(hidden_size=8, head_size=2, total_num_heads=2, bias=False, disable_tp=True),
+        )
+        for layer in layers:
+            with self.subTest(layer=type(layer).__name__):
+                shards = layer.shard_ids
+                first = shards[0]
+                size = layer._get_shard_size_mapping(first)
+                layer.weight_loader(layer.weight, torch.ones(size, 8), first)
+                self.assertEqual(layer.pop_missing_shards(), [f"weight.{shard}" for shard in shards[1:]])
+                for shard in shards:
+                    size = layer._get_shard_size_mapping(shard)
+                    layer.weight_loader(layer.weight, torch.full((size, 8), 2.0), shard)
+                self.assertEqual(layer.pop_missing_shards(), [])
+                torch.testing.assert_close(layer.weight, torch.full_like(layer.weight, 2.0))
+                with self.assertRaises(ValueError):
+                    layer.validate_shard_id("invalid", layer.weight)
+
+    @unittest.skipUnless(
+        hasattr(AscendMergedColumnParallelLinear, "pop_missing_shards"), "Requires stacked shard tracking"
+    )
+    def test_fused_and_consecutive_shard_loading(self):
+        layer = AscendMergedColumnParallelLinear(input_size=8, output_sizes=[4, 4, 4], bias=False, disable_tp=True)
+        values = torch.arange(96, dtype=layer.weight.dtype).reshape(12, 8)
+        layer.weight_loader(layer.weight, values, None)
+        self.assertEqual(layer.pop_missing_shards(), [])
+        torch.testing.assert_close(layer.weight, values)
+        layer.weight_loader(layer.weight, values[:8], (0, 1))
+        self.assertEqual(layer.pop_missing_shards(), ["weight.2"])
+        before = layer.weight.detach().clone()
+        with self.assertRaises(ValueError, msg="Nonconsecutive fused shards must remain invalid"):
+            layer.weight_loader(layer.weight, values[:8], (0, 2))
+        torch.testing.assert_close(layer.weight, before)
+
+    @unittest.skipUnless(
+        hasattr(AscendMergedColumnParallelLinear, "pop_missing_shards"), "Requires stacked shard tracking"
+    )
+    def test_shard_tracking_is_per_layer(self):
+        first = AscendMergedColumnParallelLinear(input_size=8, output_sizes=[4, 4], bias=False, disable_tp=True)
+        second = AscendMergedColumnParallelLinear(input_size=8, output_sizes=[4, 4], bias=False, disable_tp=True)
+        first.weight_loader(first.weight, torch.ones(4, 8), 0)
+        self.assertEqual(second.pop_missing_shards(), [])
+        self.assertEqual(first.pop_missing_shards(), ["weight.1"])
+        self.assertEqual(first.pop_missing_shards(), [])
+
     def test_merged_mlp_tp_init(self):
         ascend_config._ASCEND_CONFIG = MagicMock()
         ascend_config._ASCEND_CONFIG.scheduler_config.recompute_scheduler_enable = False
