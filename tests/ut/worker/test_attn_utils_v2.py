@@ -3247,3 +3247,39 @@ def test_combined_mla_cache_nonzero_offset_preserves_guards_and_slot_padding(dty
     assert k_cache.storage_offset() * k_cache.element_size() == raw_offset_bytes
     assert v_cache.storage_offset() * v_cache.element_size() == raw_offset_bytes + k_block_bytes
     assert k_cache.untyped_storage().data_ptr() == v_cache.untyped_storage().data_ptr() == backing.data_ptr()
+
+
+def test_main_allocator_accepts_explicit_default_allocator(monkeypatch):
+    config = KVCacheConfig(num_blocks=0, kv_cache_tensors=[], kv_cache_groups=[])
+    vllm_config = SimpleNamespace(cache_config=SimpleNamespace(cache_dtype="auto"))
+    raw = {}
+    expected = {}
+    calls = []
+    monkeypatch.setattr(attn_utils, "get_current_vllm_config", lambda: vllm_config)
+    monkeypatch.setattr(attn_utils, "get_layers_from_vllm_config", lambda *_args: {})
+
+    def allocate_default(*args, **kwargs):
+        calls.append((args, kwargs))
+        return raw
+
+    def reshape(**kwargs):
+        assert kwargs["kv_cache_raw_tensors"] is raw
+        assert kwargs["kv_cache_config"] is config
+        return expected
+
+    monkeypatch.setattr(attn_utils, "_allocate_kv_cache", allocate_default)
+    monkeypatch.setattr(attn_utils, "_reshape_kv_cache_v2", reshape)
+    assert attn_utils.allocate_kv_cache_main(config, torch.device("cpu"), None, [], allocate=None) is expected
+    assert calls == [((config,), {"shared_layers": {}, "device": torch.device("cpu")})]
+
+
+def test_main_allocator_rejects_custom_allocator_before_allocation(monkeypatch):
+    config = KVCacheConfig(num_blocks=0, kv_cache_tensors=[], kv_cache_groups=[])
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Unsupported allocation must fail before calling either allocator")
+
+    monkeypatch.setattr(attn_utils, "get_current_vllm_config", unexpected)
+    monkeypatch.setattr(attn_utils, "_allocate_kv_cache", unexpected)
+    with pytest.raises(NotImplementedError, match="Extensible KV cache allocation"):
+        attn_utils.allocate_kv_cache_main(config, torch.device("cpu"), None, [], allocate=unexpected)
