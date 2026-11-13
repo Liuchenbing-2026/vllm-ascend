@@ -25,6 +25,7 @@ before consuming the older output, so updating ``request.spec_token_ids`` from
 from __future__ import annotations
 
 import copy
+import inspect
 from functools import wraps
 from itertools import chain
 
@@ -162,16 +163,13 @@ def _patch_scheduler_make_cached_request_data() -> None:
         return
 
     original_make_cached = Scheduler._make_cached_request_data
+    cached_signature = inspect.signature(original_make_cached)
 
     @wraps(original_make_cached)
-    def _patched_make_cached_request_data(
-        self,
-        running_reqs,
-        resumed_reqs,
-        num_scheduled_tokens,
-        spec_decode_tokens,
-        req_to_new_blocks,
-    ):
+    def _patched_make_cached_request_data(self, *args, **kwargs):
+        bound = cached_signature.bind(self, *args, **kwargs)
+        running_reqs = bound.arguments["running_reqs"]
+        resumed_reqs = bound.arguments.get("resumed_reqs", ())
         saved_async = self.scheduler_config.async_scheduling
         use_pp_ipc_runtime_patch = _use_pp_ipc_runtime_patch(
             getattr(self, "vllm_config", None),
@@ -180,14 +178,7 @@ def _patch_scheduler_make_cached_request_data() -> None:
         try:
             if use_pp_ipc_runtime_patch:
                 self.scheduler_config.async_scheduling = False
-            cached_reqs_data = original_make_cached(
-                self,
-                running_reqs,
-                resumed_reqs,
-                num_scheduled_tokens,
-                spec_decode_tokens,
-                req_to_new_blocks,
-            )
+            cached_reqs_data = original_make_cached(self, *args, **kwargs)
         finally:
             self.scheduler_config.async_scheduling = saved_async
 

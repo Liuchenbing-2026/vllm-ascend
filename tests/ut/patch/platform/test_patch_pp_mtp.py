@@ -379,3 +379,61 @@ def test_pp_ipc_cached_request_data_skips_empty_output_tokens():
         req_to_new_blocks={"req-0": blocks},
     )
     assert cached.new_token_ids == [[]]
+
+
+@pytest.mark.parametrize("use_keywords", [False, True])
+def test_cached_data_forwards_current_iteration_details(use_keywords):
+    scheduler = SimpleNamespace(
+        use_pp=False, vllm_config=None, scheduler_config=SimpleNamespace(async_scheduling=False)
+    )
+    request = SimpleNamespace(
+        request_id="decode",
+        is_prefill_chunk=False,
+        num_computed_tokens=8,
+        num_output_tokens=2,
+        num_output_placeholders=1,
+    )
+    details = SimpleNamespace(num_decode_requests=0, num_decode_tokens=0)
+    blocks = SimpleNamespace(get_block_ids=lambda **kwargs: ([1],))
+    arguments = dict(
+        running_reqs=[request],
+        num_scheduled_tokens={"decode": 3},
+        spec_decode_tokens={},
+        req_to_new_blocks={"decode": blocks},
+    )
+    if use_keywords:
+        cached = Scheduler._make_cached_request_data(scheduler, **arguments, iteration_details=details)
+    else:
+        cached = Scheduler._make_cached_request_data(scheduler, *arguments.values(), iteration_details=details)
+    assert cached.req_ids == ["decode"]
+    assert cached.num_output_tokens == [3]
+    assert details.num_decode_requests == 1
+    assert details.num_decode_tokens == 3
+    assert scheduler.scheduler_config.async_scheduling is False
+
+
+@pytest.mark.parametrize("raises", [False, True])
+def test_cached_data_preserves_legacy_resume_and_restores_async(monkeypatch, raises):
+    from vllm_ascend.patch.platform import patch_pp_mtp
+
+    request = SimpleNamespace(num_output_tokens=1, all_token_ids=[7])
+    result = SimpleNamespace(new_token_ids=[[], []])
+    scheduler = SimpleNamespace(use_pp=True, vllm_config=None, scheduler_config=SimpleNamespace(async_scheduling=True))
+
+    def legacy(self, running_reqs, resumed_reqs, num_scheduled_tokens, spec_decode_tokens, req_to_new_blocks):
+        assert self.scheduler_config.async_scheduling is False
+        assert resumed_reqs == [request]
+        if raises:
+            raise ValueError("upstream failure")
+        return result
+
+    monkeypatch.setattr(Scheduler, "_make_cached_request_data", legacy)
+    monkeypatch.setattr(patch_pp_mtp, "_use_pp_ipc_runtime_patch", lambda *_args: True)
+    _patch_scheduler_make_cached_request_data()
+    if raises:
+        with pytest.raises(ValueError, match="upstream failure"):
+            Scheduler._make_cached_request_data(scheduler, [request], [request], {}, {}, {})
+    else:
+        assert Scheduler._make_cached_request_data(scheduler, [request], [request], {}, {}, {}) is result
+        assert result.new_token_ids == [[7], [7]]
+    assert scheduler.scheduler_config.async_scheduling is True
