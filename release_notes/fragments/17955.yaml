@@ -1,0 +1,4 @@
+pr: 17955
+entries:
+  - category: bugfix
+    text: Updated StartLux deployment launchers to use the native decision service while preserving full-prompt scheduling.
