@@ -76,8 +76,9 @@ def check_file(path: str) -> int:
     try:
         with open(path, encoding="utf-8") as f:
             content = f.read()
-    except (OSError, UnicodeDecodeError):
-        return []
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"{path}: error: unable to read source file: {exc}", file=sys.stderr)
+        return 1
 
     return_code = 0
     for import_name, forbidden_import in CHECK_IMPORTS.items():
