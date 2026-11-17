@@ -99,6 +99,16 @@ def _mamba_block_aligned_split(
     suppress the backoff too: the coordinator never drops there, so backing
     the split off would only erase cacheable hit length.
     """
+    checkpoints = getattr(self, "mamba_checkpoints", None)
+    if checkpoints is not None:
+        start = request.num_computed_tokens + num_new_local_computed_tokens + num_external_computed_tokens
+        if start < max(request.num_prompt_tokens, request.num_tokens - 1) and checkpoints.catching_up(
+            request.request_id, start
+        ):
+            # The restored ring may end inside a compression group. Preserve
+            # Core's one-token catch-up before either Ascend early-return path.
+            return min(num_new_tokens, 1)
+
     kv_transfer_config = self.vllm_config.kv_transfer_config
     # A consumer only needs the unsplit verifier window after some prefix has
     # already been computed locally or loaded from the connector.  ``kv_both``

@@ -16,6 +16,7 @@ from vllm.v1.kv_cache_interface import KVCacheSpec
 from vllm.v1.request import Request
 
 from vllm_ascend.core.kv_cache_interface import (
+    AscendFrontierKPoolTailSpec,
     AscendIndexerKPoolTailSpec,
     AscendMLAAttentionSpec,
 )
@@ -164,8 +165,12 @@ class Glm5NextTailCache(nn.Module, AttentionLayerBase):
         static_context[prefix] = self
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
-        del vllm_config
-        return AscendIndexerKPoolTailSpec(
+        spec_cls = (
+            AscendFrontierKPoolTailSpec
+            if getattr(vllm_config.cache_config, "mamba_frontier_checkpoint", False)
+            else AscendIndexerKPoolTailSpec
+        )
+        return spec_cls(
             block_size=self.compress_ratio,
             ring_capacity=self.ring_capacity,
             num_kv_heads=1,

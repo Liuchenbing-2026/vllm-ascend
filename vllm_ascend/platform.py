@@ -1554,6 +1554,13 @@ def _setup_worker_and_scheduler(
     vllm_config: VllmConfig,
     ascend_config,
 ) -> None:
+    if getattr(vllm_config.cache_config, "mamba_frontier_checkpoint", False):
+        # These modes replace Core's schedule body and bypass checkpoint
+        # admission/snapshot hooks, just as they bypass bounded replay.
+        mode = _swa_bounded_replay_unsupported_mode(ascend_config)
+        if mode is not None:
+            raise ValueError(f"mamba_frontier_checkpoint is not supported with Ascend {mode}")
+
     # Select worker class and refresh block size.
     # Decode sharding is derived by is_pcp_decode_sharding_enabled(); do not
     # store it on ParallelConfig. Draft replace() rejects undeclared fields.

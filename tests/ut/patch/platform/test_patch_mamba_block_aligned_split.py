@@ -40,6 +40,7 @@ def _scheduler(
     scheduler_kwargs["mamba_has_prefill_checkpoint_blocks"] = False
     scheduler_kwargs["mamba_fine_grained_prefix_cache"] = False
     scheduler_kwargs["mamba_shared_prefix_checkpoint"] = False
+    scheduler_kwargs["mamba_checkpoints"] = None
     indexer_config = {"index_topk": 2048, "index_kpool": 4} if uses_sparse_index_kpool else {}
     return SimpleNamespace(
         vllm_config=SimpleNamespace(
@@ -312,3 +313,13 @@ def test_producer_handles_missing_drop_attributes(monkeypatch):
     assert result == 42
     assert not hasattr(scheduler, "use_eagle")
     assert not hasattr(scheduler, "use_eagle_block_drop")
+
+
+@pytest.mark.parametrize("consumer", [None, True])
+def test_frontier_ring_catchup_precedes_ascend_early_returns(consumer):
+    """A restored partial ring must not enter a multi-token prefill."""
+    scheduler = _scheduler(is_kv_consumer=consumer, uses_sparse_index_kpool=True)
+    scheduler.mamba_checkpoints = SimpleNamespace(catching_up=lambda req_id, start: start % 4 != 0)
+    request = _request(num_computed_tokens=379, num_prompt_tokens=480)
+    request.request_id = "resumed"
+    assert _mamba_block_aligned_split(scheduler, request, 20) == 1
