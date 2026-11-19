@@ -94,7 +94,6 @@ def test_post_process_aligns_weights_without_modifying_target(
     rotation = torch.tensor([[0.0, -1.0], [1.0, 0.0]], dtype=torch.float64)
     monkeypatch.setattr(quarot_utils, "get_rotation_path", lambda received: "/rotation" if rotated else None)
     monkeypatch.setattr(qwen3_dflash2, "get_rotation_path", lambda received: "/rotation" if rotated else None)
-    monkeypatch.setattr(quarot_utils, "get_pp_group", lambda: SimpleNamespace(world_size=pp_size))
     loader = MagicMock(return_value=rotation)
     monkeypatch.setattr(quarot_utils, "get_rotation_matrix", loader)
     created = []
@@ -126,8 +125,9 @@ def test_post_process_aligns_weights_without_modifying_target(
     else:
         loader.assert_not_called()
         torch.testing.assert_close(projection.weight, original_projection)
-    # DFlash2 only invokes weight alignment for rotated targets.
-    reload_embed = rotated or (pp_size > 1 and model_cls is not DFlash2Qwen3ForCausalLM)
+    # Target-side provisioning lets unrotated drafts keep the shared embedding;
+    # QuaRot still builds private rotated embedding and head copies.
+    reload_embed = rotated
     assert len(created) == int(not own_embed and reload_embed) + int(not own_head and rotated)
     for layer in created:
         layer.quant_method.process_weights_after_loading.assert_called_once_with(layer)

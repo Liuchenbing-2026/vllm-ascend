@@ -14,7 +14,6 @@ from pathlib import Path
 import torch
 from safetensors import safe_open
 from torch import nn
-from vllm.distributed import get_pp_group
 from vllm.model_executor.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 
 from vllm_ascend.utils import (
@@ -133,30 +132,20 @@ def process_weight(linear_weight: torch.Tensor, rotation_weight: torch.Tensor):
 
 @torch.no_grad()
 def align_draft_weights(model, projection, vllm_config):
-    """Align draft inputs with the rotated target without modifying shared weights."""
+    """Align draft inputs with a QuaRot target without modifying shared weights."""
     rotation_path = get_rotation_path(vllm_config)
-    if rotation_path is not None:
-        rotation = get_rotation_matrix(rotation_path).cpu()
-        weight = projection.weight
-        weight.copy_(process_weight(weight.cpu(), rotation).to(weight.device))
-    else:
-        if get_pp_group().world_size == 1:
-            return
-        # PP stages past the first cannot alias the target's stage-0
-        # embedding; load this rank's vocab shard from the target
-        # checkpoint unrotated so the draft owns its copy.
-        rotation = None
-        weight = projection.weight
+    if rotation_path is None:
+        return
+
+    rotation = get_rotation_matrix(rotation_path).cpu()
+    weight = projection.weight
+    weight.copy_(process_weight(weight.cpu(), rotation).to(weight.device))
     target_config = vllm_config.model_config.hf_text_config
     for owner, name, layer_cls, weight_names, own_flag in (
         (model.model, "embed_tokens", VocabParallelEmbedding, TARGET_EMBED_WEIGHT_NAMES, "has_own_embed_tokens"),
         (model, "lm_head", ParallelLMHead, TARGET_LM_HEAD_WEIGHT_NAMES, "has_own_lm_head"),
     ):
         if getattr(model, own_flag, False):
-            continue
-        if rotation is None and name != "embed_tokens":
-            # The target lm_head lives on the last PP stage and can still
-            # be aliased; only the embedding needs its own copy.
             continue
         prefix = ""
         # Rebuilt draft heads opt into fine-grained TP only; without it,

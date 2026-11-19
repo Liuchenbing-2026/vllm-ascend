@@ -14,6 +14,8 @@ from vllm.model_executor.models.utils import PPMissingLayer
 from vllm.v1.worker.gpu.spec_decode.eagle import utils as eagle_utils
 
 from vllm_ascend.models import quarot_utils, qwen3_dflash2
+from vllm_ascend.models.deepseek_v4 import model as deepseek_v4_model
+from vllm_ascend.models.qwen3_dspark import AscendQwen3DSparkForCausalLM
 from vllm_ascend.ops import vocab_parallel_embedding as ascend_vocab
 from vllm_ascend.patch.worker import patch_deepseek_v2
 from vllm_ascend.utils import vllm_version_is
@@ -75,6 +77,7 @@ def _make_target(monkeypatch, pp_size, pp_rank, method, *, existing=False, quant
     "pp_size,pp_rank,method,existing,create_embedding",
     [
         pytest.param(2, 1, "dflash", False, True, id="create-missing-last-stage-embedding"),
+        pytest.param(2, 1, "dspark", False, True, id="create-missing-dspark-target-embedding"),
         pytest.param(2, 1, "dflash", True, False, id="preserve-existing-embedding"),
         pytest.param(3, 1, "dflash", False, False, id="skip-middle-stage"),
         pytest.param(2, 1, None, False, False, id="skip-without-speculative-decoding"),
@@ -96,9 +99,50 @@ def test_target_embedding_provisioning_scope(monkeypatch, pp_size, pp_rank, meth
         assert model.embed_tokens is initial
 
 
+@pytest.mark.parametrize(
+    ("pp_size", "pp_rank", "method", "expected"),
+    [
+        (2, 0, None, True),
+        (2, 1, "dspark", True),
+        (3, 1, "dspark", False),
+        (2, 1, None, False),
+    ],
+)
+def test_deepseek_v4_target_embedding_scope(monkeypatch, pp_size, pp_rank, method, expected):
+    group = SimpleNamespace(
+        world_size=pp_size,
+        is_first_rank=pp_rank == 0,
+        is_last_rank=pp_rank == pp_size - 1,
+    )
+    monkeypatch.setattr(deepseek_v4_model, "get_pp_group", lambda: group)
+    monkeypatch.setattr(parallel_state, "get_pp_group", lambda: group)
+    assert AscendQwen3DSparkForCausalLM.has_own_embed_tokens is False
+    vllm_config = SimpleNamespace(
+        speculative_config=None
+        if method is None
+        else SimpleNamespace(
+            method=method,
+            uses_target_hidden_states=True,
+            draft_model_config=SimpleNamespace(
+                may_use_target_embed=hasattr(AscendQwen3DSparkForCausalLM, "has_own_embed_tokens"),
+            ),
+        )
+    )
+    assert deepseek_v4_model._needs_input_embedding(vllm_config) is expected
+
+
 @pytest.mark.parametrize("tp_rank", [0, 1])
 @pytest.mark.parametrize("rotated", [False, True])
-def test_pp_target_embedding_uses_normal_weight_loader_before_dflash_sharing(monkeypatch, tmp_path, tp_rank, rotated):
+@pytest.mark.parametrize(
+    ("draft_cls", "method"),
+    [
+        (qwen3_dflash2.DFlash2Qwen3ForCausalLM, "dflash"),
+        (AscendQwen3DSparkForCausalLM, "dspark"),
+    ],
+)
+def test_pp_target_embedding_uses_normal_weight_loader_before_draft_sharing(
+    monkeypatch, tmp_path, tp_rank, rotated, draft_cls, method
+):
     # Exercise the real embedding factory, TP shard loader, target load_weights
     # and upstream sharing check. Only distributed setup and unrelated MoE /
     # transformer-layer construction are replaced for this CPU regression.
@@ -111,7 +155,7 @@ def test_pp_target_embedding_uses_normal_weight_loader_before_dflash_sharing(mon
     monkeypatch.setattr(ascend_vocab, "lmhead_tp_enable", lambda: False)
     monkeypatch.setattr(quarot_utils, "lmhead_tp_enable", lambda: False)
     monkeypatch.setattr(ascend_vocab, "get_tp_group", lambda: SimpleNamespace(rank_in_group=tp_rank, world_size=2))
-    target, _ = _make_target(monkeypatch, 2, 1, "dflash")
+    target, _ = _make_target(monkeypatch, 2, 1, method)
     assert isinstance(target.embed_tokens, vocab_parallel_embedding.VocabParallelEmbedding)
     checkpoint_weight = torch.arange(130, dtype=torch.float32).reshape(65, 2)
     loaded = target.load_weights([("embed_tokens.weight", checkpoint_weight)])
@@ -122,7 +166,7 @@ def test_pp_target_embedding_uses_normal_weight_loader_before_dflash_sharing(mon
     expected[: len(shard)] = shard
     torch.testing.assert_close(target.embed_tokens.weight, expected)
 
-    draft = qwen3_dflash2.DFlash2Qwen3ForCausalLM.__new__(qwen3_dflash2.DFlash2Qwen3ForCausalLM)
+    draft = draft_cls.__new__(draft_cls)
     torch.nn.Module.__init__(draft)
     draft.model = torch.nn.Module()
     draft.model.embed_tokens = torch.nn.Embedding(65, 2)

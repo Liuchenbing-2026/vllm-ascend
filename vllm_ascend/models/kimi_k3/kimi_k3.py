@@ -52,6 +52,7 @@ from vllm.model_executor.models.utils import (
     init_vllm_registered_model,
     make_layers,
     maybe_prefix,
+    spec_decode_needs_target_embed,
 )
 from vllm.model_executor.models.vision import is_vit_use_data_parallel
 from vllm.models.common.ops.sequence_parallel import (
@@ -926,6 +927,31 @@ class AscendKimiDecoderLayer(UpstreamKimiDecoderLayer):
         return prefix_sum, block_residual, hidden_states
 
 
+def _draft_needs_target_embed(vllm_config: VllmConfig) -> bool:
+    """Whether this PP stage must provision the target input embedding for a draft.
+
+    Excludes K3DSparkModel (which allocates its own embedding under PP) and
+    drafts whose vocabulary exceeds the target's (skipped by load_dspark_model).
+    QuaRot targets still provision the shard so upstream maybe_share_target_embed
+    succeeds before post_process builds private rotated weights.
+    """
+    if not spec_decode_needs_target_embed(vllm_config):
+        return False
+    spec_config = vllm_config.speculative_config
+    if spec_config is None or spec_config.draft_model_config is None:
+        return False
+    draft_model_config = spec_config.draft_model_config
+    draft_architectures = draft_model_config.hf_config.architectures or ()
+    if "K3DSparkModel" in draft_architectures:
+        return False
+    return draft_model_config.get_vocab_size() <= vllm_config.model_config.get_vocab_size()
+
+
+def _embed_weight_loaded(loaded_params: set[str]) -> bool:
+    """Whether a loaded-params set contains the target input embedding weight."""
+    return any(name == "embed_tokens.weight" or name.endswith(".embed_tokens.weight") for name in loaded_params)
+
+
 class AscendKimiLinearModel(UpstreamKimiLinearModel):
     """Kimi text model assembled from the Ascend decoder layer."""
 
@@ -979,7 +1005,8 @@ class AscendKimiLinearModel(UpstreamKimiLinearModel):
             and parallel_config.tensor_parallel_size > 1
         )
 
-        if get_pp_group().is_first_rank:
+        provision_for_draft = not get_pp_group().is_first_rank and _draft_needs_target_embed(vllm_config)
+        if get_pp_group().is_first_rank or provision_for_draft:
             self.embed_tokens = VocabParallelEmbedding(
                 config.vocab_size,
                 config.hidden_size,
@@ -987,6 +1014,7 @@ class AscendKimiLinearModel(UpstreamKimiLinearModel):
             )
         else:
             self.embed_tokens = PPMissingLayer()
+        self._draft_embed_provisioned = provision_for_draft
 
         topk_indices_buffer = (
             torch.empty(
@@ -1130,6 +1158,12 @@ class AscendKimiLinearModel(UpstreamKimiLinearModel):
         loaded_params = super().load_weights(
             load_eplb_expert_weights(self, remap_mixed_gate_weights(), self.n_redundant_experts)
         )
+        if getattr(self, "_draft_embed_provisioned", False) and not _embed_weight_loaded(loaded_params):
+            raise RuntimeError(
+                "Kimi K3 provisioned the last-stage input embedding for a draft, "
+                "but the checkpoint loader loaded no *embed_tokens.weight tensor on "
+                f"this stage. Loaded parameter names: {sorted(loaded_params)[:8]}"
+            )
         return loaded_params | standalone_gate_params
 
     def forward(

@@ -6,6 +6,11 @@ from vllm_ascend.models.quarot_utils import align_draft_weights
 
 
 class AscendQwen3DSparkForCausalLM(Qwen3DSparkForCausalLM):
+    # Explicit declaration mirroring upstream drafter classes so
+    # ModelRegistry._ModelInfo.may_use_target_embed stays True regardless of
+    # MRO changes. A checkpoint-owned embedding overrides this on the instance.
+    has_own_embed_tokens: bool = False
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__(vllm_config=vllm_config, prefix=prefix)
 

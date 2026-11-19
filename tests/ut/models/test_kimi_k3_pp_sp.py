@@ -227,6 +227,7 @@ def runtime(monkeypatch):
         # BaseModel above models the release's cumulative aux protocol.
         # Native main's centralized relay is covered separately with its real mixin/PPHandler.
         "vllm_version_is": lambda _: True,
+        "_draft_needs_target_embed": lambda _cfg: False,
     }
     # Transport and sharding use the repository implementations, including
     # multi-dimensional residuals and zero-length token tensors.
