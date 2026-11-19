@@ -69,14 +69,14 @@ vllm serve /path/to/Qwen3.5-27B \
 
 To use the fully sharded path, add `--fully-sharded-loras` on the same command.
 
-### DeepSeek-V4.1
+### DeepSeek-V4 and DeepSeek-V4.1
 
-This path enables language-model LoRA projections (`wq_a`, `wq_b`, `wkv`, `wo_a`, `wo_b`, `gate_up_proj`, `down_proj`, and shared experts) on DeepSeek-V4.1:
+This path enables language-model LoRA projections (`wq_a`, `wq_b`, `wkv`, `wo_a`, `wo_b`, `gate_up_proj`, `down_proj`, and shared experts) on DeepSeek-V4 and DeepSeek-V4.1:
 
-- HF text-backbone `.attn.` names are mapped to `self_attn` and re-rooted under `language_model.`. Vision and aligner modules stay frozen and are excluded.
+- HF text-backbone `.attn.` names are mapped to `self_attn` (and re-rooted under `language_model.` for DeepSeek-V4.1). Vision and aligner modules stay frozen and are excluded.
 - LoRA with expert parallelism uses AllGather when ACL graph capture is enabled and All-to-All under `--enforce-eager`. MC2 and Fused MC2 are not supported.
 - Active `wo_a` adapters require a single local output-projection group per rank (`n_local_groups == 1`), no fine-grained output-projection TP, and `--fully-sharded-loras` left off.
-- W4A8 MoE LoRA requires per-channel weight scales without antiquant offsets or dynamic EPLB.
+- W4A8 MoE LoRA requires per-channel weight scales without antiquant offsets or dynamic EPLB. `W4A8_MXFP` and fused DeepSeek-V4 `compressor` (`wkv`/`wgate`) adapters are outside the current scope.
 - Under `DP=1`, layers with no active expert slot keep the fused base kernel; under `EP` with `DP>1`, layers with loaded expert slots conservatively use the LoRA path because remote ranks may route adapter tokens.
 
 Set `WEIGHTS_DIR` and `ADAPTER_ROOT` to compatible local artifacts before launching:
