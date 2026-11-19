@@ -4,7 +4,7 @@
 import inspect
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, Literal
 
 import torch
 from typing_extensions import Self
@@ -546,6 +546,33 @@ class AscendIndexerKPoolTailSpec(SlidingWindowSpec):
 
 
 @dataclass(frozen=True, kw_only=True)
+class AscendFrontierKPoolTailSpec(AscendIndexerKPoolTailSpec, CircularBufferSpec):
+    """K-pool tail restored with an exact-end recurrent checkpoint.
+
+    Preserve the Ascend ring layout and metadata while using Core's circular
+    manager for copy-on-write. The open compression group catches up one token
+    at a time before regular prefill resumes.
+    """
+
+    resume_catchup: Literal["decode", "prefill"] | None = "decode"
+    compression_ratio: int | None = None
+
+    @property
+    def uses_slot_mapping(self) -> bool:
+        # Ascend's K-pool backend writes the ring through token slot mappings.
+        return True
+
+    @property
+    def group_size(self) -> int:
+        return self.compress_ratio
+
+    def is_uniform_with_collection(self, kv_cache_specs: dict[str, KVCacheSpec]) -> bool:
+        return all(type(spec) is type(self) for spec in kv_cache_specs.values()) and (
+            super().is_uniform_with_collection(kv_cache_specs)
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
 class AscendCircularBufferSpec(CircularBufferSpec):
     """Circular state whose physical pages participate in Ascend KV zeroing."""
 
@@ -557,6 +584,11 @@ def register_ascend_kv_cache_specs() -> None:
     from vllm_ascend.core.single_type_kv_cache_manager import AscendCircularBufferManager
     from vllm_ascend.models.glm5next.kv_cache import KpoolTailManager
 
+    KVCacheSpecRegistry.register(
+        kvcache_spec_cls=AscendFrontierKPoolTailSpec,
+        manager_class=AscendCircularBufferManager,
+        uniform_type_base_spec=AscendFrontierKPoolTailSpec,
+    )
     KVCacheSpecRegistry.register(
         kvcache_spec_cls=AscendCircularBufferSpec,
         manager_class=AscendCircularBufferManager,

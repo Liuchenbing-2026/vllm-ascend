@@ -360,6 +360,17 @@
 #       Remove together with fix 8.2 once upstream splits mamba-align pages
 #       without the EAGLE backoff on PD producers.
 #
+#   3. Frontier checkpoint ring recovery and mid-block k-pool alignment:
+#    Why: Ascend's sparse K-pool and consumer branches return before Core's
+#       one-token catch-up for a restored partial compression group, and the
+#       k-pool branch aligned chunk length rather than chunk end when resuming
+#       mid-block.
+#    How: Honor the active checkpoint manager before those early returns and
+#       cap mid-block k-pool chunks at the next block boundary; no change when
+#       frontier checkpoints are disabled and requests start block-aligned.
+#    Future Plan: Remove this addition with the wrapper when all chunk-boundary
+#       decisions delegate to the upstream implementation.
+#
 # ** 10a. File: platform/patch_mamba_config.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.model_executor.models.config.HybridAttentionMambaModelConfig.verify_and_update_config`

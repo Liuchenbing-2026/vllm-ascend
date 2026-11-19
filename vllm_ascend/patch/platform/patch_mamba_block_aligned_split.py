@@ -99,10 +99,20 @@ def _mamba_block_aligned_split(
     suppress the backoff too: the coordinator never drops there, so backing
     the split off would only erase cacheable hit length.
     """
+    num_computed_tokens = request.num_computed_tokens + num_new_local_computed_tokens + num_external_computed_tokens
+    checkpoints = getattr(self, "mamba_checkpoints", None)
+    if (
+        checkpoints is not None
+        and num_computed_tokens < max(request.num_prompt_tokens, request.num_tokens - 1)
+        and checkpoints.catching_up(request.request_id, num_computed_tokens)
+    ):
+        # The restored ring may end inside a compression group. Preserve
+        # Core's one-token catch-up before either Ascend early-return path.
+        return min(num_new_tokens, 1)
+
     kv_transfer_config = self.vllm_config.kv_transfer_config
     # Extra verifier or asynchronous output rows need an unsplit window.
     # Ordinary prefills must still stop at reusable checkpoints.
-    num_computed_tokens = request.num_computed_tokens + num_new_local_computed_tokens + num_external_computed_tokens
     remaining_tokens = max(request.num_tokens - num_computed_tokens, 0)
     if (
         kv_transfer_config is not None
@@ -126,12 +136,18 @@ def _mamba_block_aligned_split(
             if self.use_eagle and not _skips_eagle_block_drop(kv_transfer_config):
                 last_cache_position = max(last_cache_position - block_size, 0)
             scheduled_end = num_computed_tokens + num_new_tokens
+            next_block_boundary = (num_computed_tokens // block_size + 1) * block_size
             if scheduled_end < last_cache_position:
-                chunked_tokens = num_new_tokens // block_size * block_size
-                if chunked_tokens > 0:
-                    num_new_tokens = chunked_tokens
+                aligned_end = scheduled_end // block_size * block_size
+                if aligned_end > num_computed_tokens:
+                    scheduled_end = aligned_end
+            # A chunk starting mid-block stops at the next block boundary rather
+            # than straddling it and leaving that block's recurrent state unmaterialized.
+            if num_computed_tokens % block_size != 0 and next_block_boundary < scheduled_end:
+                scheduled_end = next_block_boundary
             elif num_computed_tokens < last_cache_position < scheduled_end:
-                num_new_tokens = last_cache_position - num_computed_tokens
+                scheduled_end = last_cache_position
+            num_new_tokens = max(scheduled_end - num_computed_tokens, 0)
         return num_new_tokens
 
     if not _skips_eagle_block_drop(kv_transfer_config):

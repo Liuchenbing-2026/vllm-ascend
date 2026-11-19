@@ -21,15 +21,15 @@ class AscendCircularBufferManager(CircularBufferManager):
         max_admission_blocks_per_request: int | None = None,
     ) -> None:
         super().__init__(
-            kv_cache_spec,
-            block_pool,
-            enable_caching,
-            kv_cache_group_id,
-            scheduler_block_size,
-            dcp_world_size,
-            pcp_world_size,
-            needs_kv_cache_zeroing,
-            max_admission_blocks_per_request,
+            kv_cache_spec=kv_cache_spec,
+            block_pool=block_pool,
+            enable_caching=enable_caching,
+            kv_cache_group_id=kv_cache_group_id,
+            scheduler_block_size=scheduler_block_size,
+            dcp_world_size=dcp_world_size,
+            pcp_world_size=pcp_world_size,
+            needs_kv_cache_zeroing=needs_kv_cache_zeroing,
+            max_admission_blocks_per_request=max_admission_blocks_per_request,
         )
         # Ascend zeroes every physical backing of a recycled block ID. Ring
         # allocations must report IDs too, even when the last owner was an

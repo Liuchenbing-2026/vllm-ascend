@@ -1581,6 +1581,18 @@ def _setup_worker_and_scheduler(
     vllm_config: VllmConfig,
     ascend_config,
 ) -> None:
+    if getattr(vllm_config.cache_config, "mamba_frontier_checkpoint", False):
+        # These modes replace Core's schedule body and bypass checkpoint
+        # admission/snapshot hooks, just as they bypass bounded replay.
+        mode = _swa_bounded_replay_unsupported_mode(ascend_config)
+        if mode is not None:
+            raise ValueError(f"mamba_frontier_checkpoint is not supported with Ascend {mode}")
+        scheduler_cls = _frontier_unsupported_scheduler_cls(vllm_config)
+        if scheduler_cls is not None:
+            raise ValueError(
+                f"mamba_frontier_checkpoint is not supported with scheduler_cls={scheduler_cls!r}"
+            )
+
     # Select worker class and refresh block size.
     # Decode sharding is derived by is_pcp_decode_sharding_enabled(); do not
     # store it on ParallelConfig. Draft replace() rejects undeclared fields.
@@ -1620,6 +1632,32 @@ def _setup_worker_and_scheduler(
             )
 
     _downgrade_swa_bounded_replay(vllm_config, ascend_config)
+
+
+_FRONTIER_COMPATIBLE_SCHEDULER_CLS = frozenset(
+    {
+        "vllm.v1.core.sched.scheduler.Scheduler",
+        "vllm.v1.core.sched.async_scheduler.AsyncScheduler",
+        "vllm_ascend.core.batch_job_aware_scheduler.BatchJobAwareScheduler",
+        "vllm_ascend.core.batch_job_aware_scheduler.BatchJobAwareAsyncScheduler",
+        "vllm_ascend.core.short_request_first_scheduler.ShortRequestFirstAsyncScheduler",
+    }
+)
+
+
+def _frontier_unsupported_scheduler_cls(vllm_config: VllmConfig) -> str | None:
+    scheduler_config = getattr(vllm_config, "scheduler_config", None)
+    scheduler_cls = getattr(scheduler_config, "scheduler_cls", None)
+    if scheduler_cls is None:
+        return None
+    qualname = (
+        scheduler_cls
+        if isinstance(scheduler_cls, str)
+        else f"{scheduler_cls.__module__}.{scheduler_cls.__qualname__}"
+    )
+    if qualname in _FRONTIER_COMPATIBLE_SCHEDULER_CLS:
+        return None
+    return qualname
 
 
 def _swa_bounded_replay_unsupported_mode(ascend_config) -> str | None:
