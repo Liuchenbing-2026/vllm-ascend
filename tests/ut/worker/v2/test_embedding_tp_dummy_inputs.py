@@ -1,5 +1,6 @@
 """Idle inputs-embeds batches must join the target's embedding exchange."""
 
+import inspect
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -142,3 +143,29 @@ def test_other_embedding_plans_do_not_join(monkeypatch, mode):
     assert events == []
     assert state._embedding_tp_dummy_join is None
     state.model.modules.assert_called_once()
+
+
+@pytest.mark.parametrize("supports_mm_inputs", [False, True])
+def test_dummy_inputs_embeds_signature_and_input_ids_forwarding(monkeypatch, supports_mm_inputs):
+    from vllm.v1.worker.gpu.model_states.default import DefaultModelState
+
+    ascend_params = inspect.signature(default.AscendModelState.dummy_inputs_embeds).parameters
+    parent_params = inspect.signature(DefaultModelState.dummy_inputs_embeds).parameters
+    assert list(ascend_params) == list(parent_params) == ["self", "num_tokens", "input_ids"]
+    assert ascend_params["input_ids"].default is None
+
+    monkeypatch.setattr(default, "embedding_tp_enable", lambda: True)
+    events: list[tuple[int, str, tuple[int, ...]]] = []
+    layer, _ = _make_embedding(0, events)
+    state = _make_state(supports_mm_inputs, layer)
+    embedded = torch.tensor([[10.0, 11.0, 12.0, 13.0], [20.0, 21.0, 22.0, 23.0]])
+    state.model.embed_input_ids = Mock(return_value=embedded)
+
+    input_ids = torch.tensor([1, 5], dtype=torch.int32)
+    result = state.dummy_inputs_embeds(4, input_ids)
+    assert result.shape == (4, 4)
+    assert result.data_ptr() == state.inputs_embeds.data_ptr()
+    torch.testing.assert_close(result[:2], embedded)
+    state.model.embed_input_ids.assert_called_once_with(input_ids)
+    assert events == []
+    state.model.modules.assert_not_called()
