@@ -30,6 +30,7 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector import
     MooncakeConnectorMetadata,
     MooncakeConnectorScheduler,
     MooncakeConnectorWorker,
+    SizedDict,
     _reconstruct_shared_pages,
 )
 
@@ -1053,16 +1054,17 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         thread.vllm_config = types.SimpleNamespace(
             speculative_config=types.SimpleNamespace(method=local_spec_method) if local_spec_method else None
         )
-        thread.kv_caches_base_addr = {"decode-engine": {32000: list(local_addrs)}}
+        thread.kv_caches_base_addr = SizedDict()
+        thread.kv_caches_base_addr["decode-engine"][32000] = list(local_addrs)
         thread.block_len_per_addr = list(local_block_lens)
         thread.block_stride_per_addr = list(local_block_lens)
         thread.addr_group_idx = list(addr_group_idx) if addr_group_idx is not None else []
         thread.local_entry_layer_names = [list(names) for names in local_entry_layer_names]
         thread.local_spec_method = local_spec_method
-        thread.remote_te_port = {}
-        thread.remote_block_lens = {}
-        thread.remote_entry_layer_names = {}
-        thread.remote_spec_method = {}
+        thread.remote_te_port = SizedDict()
+        thread.remote_block_lens = SizedDict()
+        thread.remote_entry_layer_names = SizedDict()
+        thread.remote_spec_method = SizedDict()
         thread.remote_metadata_lock = threading.Lock()
         thread.encoder = msgspec.msgpack.Encoder()
         thread.decoder = msgspec.msgpack.Decoder(MooncakeAgentMetadata)
