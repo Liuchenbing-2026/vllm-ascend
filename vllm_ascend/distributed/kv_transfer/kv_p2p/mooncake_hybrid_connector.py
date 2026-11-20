@@ -83,6 +83,7 @@ DONE_RECVING_MSG = b"done_recving_msg"
 # number of peers is larger than max_workers. Yield after a small FIFO batch so
 # other peers already waiting in the global executor queue can make progress.
 MAX_REQUESTS_PER_PEER_HANDLER = 5
+_MAX_REPORTED_MISMATCH_LAYERS = 8
 
 
 class RemotePortInfo(TypedDict):
@@ -99,6 +100,185 @@ class MooncakeAgentMetadata(msgspec.Struct, omit_defaults=True, dict=True):
     block_lens: list[int]
     ssm_sizes: tuple[int, int]
     local_ip: str = ""
+    entry_layer_names: list[list[str]] = msgspec.field(default_factory=list)
+    spec_method: str = ""
+
+
+def _get_spec_method(vllm_config: Any) -> str:
+    """Return the configured speculative decoding method name, or an empty string."""
+    spec_config = getattr(vllm_config, "speculative_config", None)
+    method = getattr(spec_config, "method", None)
+    return method if isinstance(method, str) else ""
+
+
+def _format_layer_summary(layers: list[str]) -> str:
+    """Format a bounded list of layer names for mismatch diagnostics."""
+    if len(layers) <= _MAX_REPORTED_MISMATCH_LAYERS:
+        return str(layers)
+    preview = ", ".join(repr(layer) for layer in layers[:_MAX_REPORTED_MISMATCH_LAYERS])
+    return f"[{preview}, ... ({len(layers)} total)]"
+
+
+def _lookup_remote_cache(
+    cache: dict[str, dict[int, Any]] | None,
+    remote_engine_id: str,
+    remote_handshake_port: int,
+    default: Any = None,
+) -> Any:
+    """Read a nested remote cache entry without mutating SizedDict on missing keys."""
+    if not isinstance(cache, dict) or remote_engine_id not in cache:
+        return default
+    engine_cache = cache[remote_engine_id]
+    if not isinstance(engine_cache, dict) or remote_handshake_port not in engine_cache:
+        return default
+    return engine_cache[remote_handshake_port]
+
+
+def _validate_remote_metadata_consistency(
+    agent_meta: MooncakeAgentMetadata,
+    remote_handshake_port: int,
+) -> None:
+    """Validate internal field length consistency of decoded remote metadata."""
+    peer_desc = f"engine_id={agent_meta.engine_id!r}, port={remote_handshake_port}"
+    num_remote_addrs = len(agent_meta.kv_caches_base_addr)
+    if len(agent_meta.block_lens) != num_remote_addrs:
+        raise ValueError(
+            f"Mooncake producer ({peer_desc}) sent inconsistent metadata: "
+            f"len(block_lens)={len(agent_meta.block_lens)} != "
+            f"len(kv_caches_base_addr)={num_remote_addrs}."
+        )
+    if agent_meta.entry_layer_names and len(agent_meta.entry_layer_names) != num_remote_addrs:
+        raise ValueError(
+            f"Mooncake producer ({peer_desc}) sent inconsistent metadata: "
+            f"len(entry_layer_names)={len(agent_meta.entry_layer_names)} != "
+            f"len(kv_caches_base_addr)={num_remote_addrs}."
+        )
+
+
+def _format_peer_and_spec_context(
+    remote_engine_id: str,
+    remote_handshake_port: int | None,
+    local_spec_method: str,
+    remote_spec_method: str,
+) -> tuple[str, str]:
+    peer_parts: list[str] = []
+    if remote_engine_id:
+        peer_parts.append(f"engine_id={remote_engine_id!r}")
+    if remote_handshake_port is not None:
+        peer_parts.append(f"port={remote_handshake_port}")
+    peer_desc = ", ".join(peer_parts) if peer_parts else "remote peer"
+    spec_detail = ""
+    if local_spec_method or remote_spec_method:
+        spec_detail = (
+            f" Speculative methods: producer={remote_spec_method or 'none'!r}, "
+            f"consumer={local_spec_method or 'none'!r}."
+        )
+    return peer_desc, spec_detail
+
+
+def _validate_remote_kv_layout(
+    *,
+    local_addrs: list[int],
+    remote_addrs: list[int],
+    local_block_lens: list[int],
+    remote_block_lens: list[int] | None,
+    local_entry_layer_names: list[list[str]] | None = None,
+    remote_entry_layer_names: list[list[str]] | None = None,
+    local_spec_method: str = "",
+    remote_spec_method: str = "",
+    remote_engine_id: str = "",
+    remote_handshake_port: int | None = None,
+    tp_num_need_pulls: int = 1,
+) -> None:
+    """Verify remote KV entries match local layout before positional pairing."""
+    peer_desc, spec_detail = _format_peer_and_spec_context(
+        remote_engine_id,
+        remote_handshake_port,
+        local_spec_method,
+        remote_spec_method,
+    )
+    if remote_block_lens is not None and len(remote_block_lens) != len(remote_addrs):
+        raise ValueError(
+            f"Mooncake producer ({peer_desc}) metadata mismatch: "
+            f"len(block_lens)={len(remote_block_lens)} != "
+            f"len(kv_caches_base_addr)={len(remote_addrs)}."
+        )
+    if remote_entry_layer_names and len(remote_entry_layer_names) != len(remote_addrs):
+        raise ValueError(
+            f"Mooncake producer ({peer_desc}) metadata mismatch: "
+            f"len(entry_layer_names)={len(remote_entry_layer_names)} != "
+            f"len(kv_caches_base_addr)={len(remote_addrs)}."
+        )
+
+    if len(remote_addrs) != len(local_addrs):
+        layer_diff_detail = ""
+        if (
+            local_entry_layer_names
+            and remote_entry_layer_names
+            and len(local_entry_layer_names) == len(local_addrs)
+        ):
+            local_layers = {layer for entry in local_entry_layer_names for layer in entry}
+            remote_layers = {layer for entry in remote_entry_layer_names for layer in entry}
+            missing_on_remote = sorted(local_layers - remote_layers)
+            extra_on_remote = sorted(remote_layers - local_layers)
+            if missing_on_remote:
+                layer_diff_detail += f" Missing on producer: {_format_layer_summary(missing_on_remote)}."
+            if extra_on_remote:
+                layer_diff_detail += f" Extra on producer: {_format_layer_summary(extra_on_remote)}."
+        raise ValueError(
+            f"Mooncake producer ({peer_desc}) published {len(remote_addrs)} KV address entries, "
+            f"but this worker expects {len(local_addrs)}.{spec_detail}{layer_diff_detail} "
+            "The usual cause is an unmatched --speculative-config or pipeline-parallel layout: "
+            "with MTP/Eagle/DFlash/DSpark, draft layers are transferred as extra KV entries, "
+            "so prefill and decode engines must register matching KV cache layers."
+        )
+
+    if (
+        local_entry_layer_names
+        and remote_entry_layer_names
+        and len(local_entry_layer_names) == len(local_addrs)
+        and remote_entry_layer_names != local_entry_layer_names
+    ):
+        for idx, (remote_entry, local_entry) in enumerate(
+            zip(remote_entry_layer_names, local_entry_layer_names, strict=True)
+        ):
+            if remote_entry != local_entry:
+                raise ValueError(
+                    f"Mooncake producer ({peer_desc}) KV entry layer mapping differs at index {idx}: "
+                    f"producer={remote_entry!r}, consumer={local_entry!r}.{spec_detail} "
+                    "Ensure prefill and decode engines use matching model, parallelism, "
+                    "and speculative KV layer registration."
+                )
+
+    if remote_block_lens is not None:
+        if len(local_block_lens) != len(local_addrs):
+            raise ValueError(
+                f"Local block_len_per_addr length {len(local_block_lens)} does not match "
+                f"local address entries {len(local_addrs)}."
+            )
+        if tp_num_need_pulls <= 0:
+            raise ValueError(f"tp_num_need_pulls must be positive, got {tp_num_need_pulls}.")
+        if tp_num_need_pulls == 1:
+            expected_remote_block_lens = local_block_lens
+        else:
+            for idx, local_len in enumerate(local_block_lens):
+                if local_len % tp_num_need_pulls != 0:
+                    raise ValueError(
+                        f"Local KV entry block length {local_len} at index {idx} is not divisible by "
+                        f"tp_num_need_pulls={tp_num_need_pulls}."
+                    )
+            expected_remote_block_lens = [local_len // tp_num_need_pulls for local_len in local_block_lens]
+        if remote_block_lens != expected_remote_block_lens:
+            for idx, (remote_len, expected_len) in enumerate(
+                zip(remote_block_lens, expected_remote_block_lens, strict=True)
+            ):
+                if remote_len != expected_len:
+                    raise ValueError(
+                        f"Mooncake producer ({peer_desc}) KV entry byte length differs at index {idx}: "
+                        f"producer={remote_len}, expected={expected_len}.{spec_detail} "
+                        "Check that prefill and decode use the same --kv-cache-dtype, "
+                        "attention head dimension, and page layout."
+                    )
 
 
 @dataclass(frozen=True)
@@ -484,6 +664,7 @@ class KVCacheRecvingThread(threading.Thread):
         kv_cache_config: KVCacheConfig,
         kv_caches: dict[str, Any],
         prefill_pp_layer_partition: str | None = None,
+        entry_layer_names: list[list[str]] | None = None,
     ):
         super().__init__(daemon=True, name="KVCacheRecvingThread")
         self.tp_rank = tp_rank
@@ -503,7 +684,12 @@ class KVCacheRecvingThread(threading.Thread):
         self.addr_group_idx = addr_group_idx
         self.hma_group_size = hma_group_size
         self.mamba_ssm_size = mamba_ssm_size
+        self.local_entry_layer_names: list[list[str]] = list(entry_layer_names) if entry_layer_names else []
+        self.local_spec_method: str = _get_spec_method(vllm_config)
         self.remote_te_port: dict[str, dict[int, int]] = SizedDict()
+        self.remote_block_lens: dict[str, dict[int, list[int]]] = SizedDict()
+        self.remote_entry_layer_names: dict[str, dict[int, list[list[str]]]] = SizedDict()
+        self.remote_spec_method: dict[str, dict[int, str]] = SizedDict()
         self.remote_metadata_lock = threading.Lock()
 
         self.request_queue: queue.Queue[Any] = queue.Queue()
@@ -764,6 +950,22 @@ class KVCacheRecvingThread(threading.Thread):
             remote_kv_caches_base_addrs = self.kv_caches_base_addr[remote_engine_id][remote_handshake_port]
             local_kv_caches_base_addrs = self.kv_caches_base_addr[self.local_engine_id][self.local_handshake_port]
             remote_transfer_port = self.remote_te_port[remote_engine_id][remote_handshake_port]
+            remote_block_lens = _lookup_remote_cache(
+                getattr(self, "remote_block_lens", None),
+                remote_engine_id,
+                remote_handshake_port,
+            )
+            remote_entry_layer_names = _lookup_remote_cache(
+                getattr(self, "remote_entry_layer_names", None),
+                remote_engine_id,
+                remote_handshake_port,
+            )
+            remote_spec_method = _lookup_remote_cache(
+                getattr(self, "remote_spec_method", None),
+                remote_engine_id,
+                remote_handshake_port,
+                "",
+            )
         session_id = f"{remote_host}:{remote_transfer_port}"
 
         # With P-side PP the remote worker only owns its stage's
@@ -774,6 +976,7 @@ class KVCacheRecvingThread(threading.Thread):
         block_len_arr = self.block_len_per_addr
         block_stride_arr = self.block_stride_per_addr
         addr_group_arr = self.addr_group_idx
+        local_entry_layers = getattr(self, "local_entry_layer_names", None)
         if self._prefill_pp_size > 1:
             tp_num_need_pulls = req_meta["tp_num_need_pulls"]
             remote_pp_rank = req_meta["offset"] // tp_num_need_pulls
@@ -791,6 +994,8 @@ class KVCacheRecvingThread(threading.Thread):
             block_stride_arr = self.block_stride_per_addr[start:end]
             if addr_group_arr:
                 addr_group_arr = self.addr_group_idx[start:end]
+            if local_entry_layers:
+                local_entry_layers = local_entry_layers[start:end]
             logger.debug(
                 "Cross-PP pull alignment: remote_port=%d -> pp_rank=%d local_addrs[%d:%d]=%d remote=%d",
                 remote_handshake_port,
@@ -799,6 +1004,26 @@ class KVCacheRecvingThread(threading.Thread):
                 end,
                 len(local_addrs),
                 len(remote_kv_caches_base_addrs),
+            )
+
+        _validate_remote_kv_layout(
+            local_addrs=local_addrs,
+            remote_addrs=remote_kv_caches_base_addrs,
+            local_block_lens=block_len_arr,
+            remote_block_lens=remote_block_lens,
+            local_entry_layer_names=local_entry_layers,
+            remote_entry_layer_names=remote_entry_layer_names or None,
+            local_spec_method=getattr(self, "local_spec_method", ""),
+            remote_spec_method=remote_spec_method,
+            remote_engine_id=remote_engine_id,
+            remote_handshake_port=remote_handshake_port,
+        )
+        if len(local_block_ids) != self.hma_group_size or len(remote_block_ids) != self.hma_group_size:
+            raise ValueError(
+                f"Mooncake KV cache group count mismatch for request {remote_request_id}: "
+                f"expected hma_group_size={self.hma_group_size}, "
+                f"got remote={len(remote_block_ids)}, local={len(local_block_ids)}. "
+                "Verify that prefill and decode use compatible KV cache group and speculative layouts."
             )
 
         req_start_time = time.perf_counter()
@@ -816,7 +1041,7 @@ class KVCacheRecvingThread(threading.Thread):
                 cur_remote_block_ids, cur_local_block_ids
             )
             for k, (src_layer_base_addr, dst_layer_base_addr) in enumerate(
-                zip(local_addrs, remote_kv_caches_base_addrs)
+                zip(local_addrs, remote_kv_caches_base_addrs, strict=True)
             ):
                 if addr_group_arr and i not in addr_group_arr[k]:
                     continue
@@ -901,26 +1126,66 @@ class KVCacheRecvingThread(threading.Thread):
             remote_kv_caches_base_addrs = self.kv_caches_base_addr[remote_engine_id][remote_handshake_port]
             local_kv_caches_base_addrs_all = self.kv_caches_base_addr[self.local_engine_id][self.local_handshake_port]
             remote_transfer_port = self.remote_te_port[remote_engine_id][remote_handshake_port]
-        first_layer_index, end_layer_index = self.pp_layer_indices[prefill_pp_rank]
-        # support MTP layer kv transfer
-        if self.vllm_config.speculative_config is not None:
-            # all MTP layer use the same kv cache layer, so only need to transfer once
+            remote_block_lens = _lookup_remote_cache(
+                getattr(self, "remote_block_lens", None),
+                remote_engine_id,
+                remote_handshake_port,
+            )
+            remote_entry_layer_names = _lookup_remote_cache(
+                getattr(self, "remote_entry_layer_names", None),
+                remote_engine_id,
+                remote_handshake_port,
+            )
+            remote_spec_method = _lookup_remote_cache(
+                getattr(self, "remote_spec_method", None),
+                remote_engine_id,
+                remote_handshake_port,
+                "",
+            )
+        if self._prefill_pp_size == 1:
+            start = 0
+            end = len(local_kv_caches_base_addrs_all)
+        else:
+            first_layer_index, end_layer_index = self.pp_layer_indices[prefill_pp_rank]
+            num_cache_per_layer = len(list(self.kv_caches.values())[0])  # Number of KV caches per layer
+            start = first_layer_index * num_cache_per_layer
             if prefill_pp_rank == self._prefill_pp_size - 1:
-                end_layer_index = end_layer_index + 1
-        num_cache_per_layer = len(list(self.kv_caches.values())[0])  # Number of KV caches per layer
-        local_kv_caches_base_addrs = local_kv_caches_base_addrs_all[
-            first_layer_index * num_cache_per_layer : end_layer_index * num_cache_per_layer
-        ]
-        logger.debug("transfer kv cache first_layer_index:%s , end_layer_index:%s", first_layer_index, end_layer_index)
+                # Last PP stage retains all trailing target and speculative draft layers.
+                end = len(local_kv_caches_base_addrs_all)
+            else:
+                end = end_layer_index * num_cache_per_layer
+            logger.debug(
+                "transfer kv cache first_layer_index:%s , end_layer_index:%s",
+                first_layer_index,
+                end_layer_index,
+            )
+        local_kv_caches_base_addrs = local_kv_caches_base_addrs_all[start:end]
+        local_block_lens = self.block_len_per_addr[start:end]
+        local_entry_layers = getattr(self, "local_entry_layer_names", None)
+        if local_entry_layers:
+            local_entry_layers = local_entry_layers[start:end]
+        _validate_remote_kv_layout(
+            local_addrs=local_kv_caches_base_addrs,
+            remote_addrs=remote_kv_caches_base_addrs,
+            local_block_lens=local_block_lens,
+            remote_block_lens=remote_block_lens,
+            local_entry_layer_names=local_entry_layers,
+            remote_entry_layer_names=remote_entry_layer_names or None,
+            local_spec_method=getattr(self, "local_spec_method", ""),
+            remote_spec_method=remote_spec_method,
+            remote_engine_id=remote_engine_id,
+            remote_handshake_port=remote_handshake_port,
+            tp_num_need_pulls=tp_num_need_pulls,
+        )
         num_blocks = len(local_block_ids)
         session_id = f"{remote_host}:{remote_transfer_port}"
 
         req_start_time = time.perf_counter()
         src_list, dst_list, length_list = [], [], []
         for k, (src_layer_base_addr, dst_layer_base_addr) in enumerate(
-            zip(local_kv_caches_base_addrs, remote_kv_caches_base_addrs)
+            zip(local_kv_caches_base_addrs, remote_kv_caches_base_addrs, strict=True)
         ):
-            block_len = self.block_len_per_addr[k]
+            block_len = local_block_lens[k]
             inner_block_len = block_len // tp_num_need_pulls
             for remote_block_id, local_block_id in zip(grouped_remote_block_ids, grouped_local_block_ids):
                 src = src_layer_base_addr + local_block_id[0] * block_len + inner_offset * inner_block_len
@@ -1089,6 +1354,32 @@ class KVCacheRecvingThread(threading.Thread):
         )
         torch_npu.npu_scatter_pa_kv_cache(k_buffer, v_buffer, k_cache_layer, v_cache_layer, slot_mapping)
 
+    def _validate_handshake_metadata(self, agent_meta: MooncakeAgentMetadata, remote_handshake_port: int) -> None:
+        """Validate decoded remote metadata against this worker's KV layout."""
+        _validate_remote_metadata_consistency(agent_meta, remote_handshake_port)
+        local_addrs = self.kv_caches_base_addr[self.local_engine_id][self.local_handshake_port]
+        if self._prefill_pp_size > 1:
+            if len(agent_meta.kv_caches_base_addr) > len(local_addrs):
+                raise ValueError(
+                    f"Mooncake producer (engine_id={agent_meta.engine_id!r}, port={remote_handshake_port}) "
+                    f"published {len(agent_meta.kv_caches_base_addr)} KV address entries for a single "
+                    f"pipeline stage, exceeding this worker's full-model {len(local_addrs)} entries."
+                )
+            return
+
+        _validate_remote_kv_layout(
+            local_addrs=local_addrs,
+            remote_addrs=agent_meta.kv_caches_base_addr,
+            local_block_lens=self.block_len_per_addr,
+            remote_block_lens=agent_meta.block_lens if self.use_hybrid else None,
+            local_entry_layer_names=getattr(self, "local_entry_layer_names", None),
+            remote_entry_layer_names=agent_meta.entry_layer_names or None,
+            local_spec_method=getattr(self, "local_spec_method", ""),
+            remote_spec_method=agent_meta.spec_method,
+            remote_engine_id=agent_meta.engine_id,
+            remote_handshake_port=remote_handshake_port,
+        )
+
     def _get_remote_metadata(self, remote_host: str, remote_handshake_port: int) -> None:
         """Get the metadata from the remote host."""
         sock: zmq.Socket | None = None  # type: ignore
@@ -1101,9 +1392,16 @@ class KVCacheRecvingThread(threading.Thread):
             assert engine_id != self.local_engine_id, (
                 f"Conflict engine id {engine_id} with local engine id {self.local_engine_id}."
             )
+            self._validate_handshake_metadata(agent_meta, remote_handshake_port)
             with self.remote_metadata_lock:
                 self.kv_caches_base_addr[engine_id][remote_handshake_port] = agent_meta.kv_caches_base_addr
                 self.remote_te_port[engine_id][remote_handshake_port] = agent_meta.te_rpc_port
+                if hasattr(self, "remote_block_lens"):
+                    self.remote_block_lens[engine_id][remote_handshake_port] = agent_meta.block_lens
+                if hasattr(self, "remote_entry_layer_names"):
+                    self.remote_entry_layer_names[engine_id][remote_handshake_port] = agent_meta.entry_layer_names
+                if hasattr(self, "remote_spec_method"):
+                    self.remote_spec_method[engine_id][remote_handshake_port] = agent_meta.spec_method
         except Exception:
             if isinstance(sock, zmq.Socket):  # type: ignore
                 sock.close()
@@ -1803,6 +2101,7 @@ class MooncakeConnectorWorker:
         self.block_len_per_addr: list[int] = []
         self.block_stride_per_addr: list[int] = []
         self.addr_group_idx: list[list[int]] = []
+        self.entry_layer_names: list[list[str]] = []
         ptrs = []
         lengths = []
         if not self.use_hybrid:
@@ -1817,16 +2116,22 @@ class MooncakeConnectorWorker:
                         single_kv_cache.element_size() * math.prod(block_shape) * block_size_scale
                     )
                     self.kv_caches_base_addr.append(single_kv_cache.data_ptr())
+                    self.entry_layer_names.append([layer_name])
                     ptrs.append(single_kv_cache.data_ptr())
                     lengths.append(single_kv_cache.element_size() * math.prod(single_kv_cache.shape))
         elif self.use_mamba:
+            addr_to_entry_idx: dict[int, int] = {}
             for kv_cache_tensor in self.kv_cache_config.kv_cache_tensors:
                 for layer_name in get_kv_cache_tensor_layers(kv_cache_tensor):
                     kv_cache_tuple = kv_caches[layer_name]
                     if isinstance(kv_cache_tuple, (list, tuple)) is False:
                         kv_cache_tuple = [kv_cache_tuple]
                     for single_kv_cache in kv_cache_tuple:
-                        if single_kv_cache.data_ptr() in self.kv_caches_base_addr:
+                        data_ptr = single_kv_cache.data_ptr()
+                        existing_idx = addr_to_entry_idx.get(data_ptr)
+                        if existing_idx is not None:
+                            if layer_name not in self.entry_layer_names[existing_idx]:
+                                self.entry_layer_names[existing_idx].append(layer_name)
                             continue
                         tensor_num_blocks = single_kv_cache.shape[0]
                         block_size_scale = tensor_num_blocks // self.num_blocks
@@ -1834,7 +2139,9 @@ class MooncakeConnectorWorker:
                         self.block_len_per_addr.append(
                             single_kv_cache.element_size() * math.prod(block_shape) * block_size_scale
                         )
-                        self.kv_caches_base_addr.append(single_kv_cache.data_ptr())
+                        addr_to_entry_idx[data_ptr] = len(self.kv_caches_base_addr)
+                        self.kv_caches_base_addr.append(data_ptr)
+                        self.entry_layer_names.append([layer_name])
             self.block_stride_per_addr.extend(self.block_len_per_addr)
         elif self.use_compress:
             layer_group_idx = dict[str, int]()
@@ -1866,6 +2173,7 @@ class MooncakeConnectorWorker:
                     page_base_addr = layer_page_base
                 assert page_base_addr is not None
                 self.kv_caches_base_addr.append(page_base_addr)
+                self.entry_layer_names.append(shared_by)
                 self.addr_group_idx.append(sorted(page_groups))
                 self.block_stride_per_addr.append(shared_page.block_stride)
                 self.block_len_per_addr.append(shared_page.block_stride)
@@ -1889,6 +2197,8 @@ class MooncakeConnectorWorker:
             block_lens=self.block_len_per_addr,
             ssm_sizes=self._mamba_ssm_size,
             local_ip=get_ip(),
+            entry_layer_names=self.entry_layer_names,
+            spec_method=_get_spec_method(self.vllm_config),
         )
         self.xfer_handshake_metadata = metadata
 
@@ -1929,6 +2239,7 @@ class MooncakeConnectorWorker:
                 self.kv_cache_config,
                 self.kv_caches,
                 self._prefill_pp_layer_partition,
+                self.entry_layer_names,
             )
             self.kv_recv_thread.start()
 

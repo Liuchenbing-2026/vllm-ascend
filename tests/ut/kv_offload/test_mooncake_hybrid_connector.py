@@ -9,7 +9,9 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import msgspec
 import torch
+import zmq
 
 fake_engine = types.ModuleType("mooncake.engine")
 fake_engine.TransferEngine = MagicMock()  # type: ignore[attr-defined]
@@ -1015,3 +1017,803 @@ class TestMooncakeHybridConnectorScheduler(unittest.TestCase):
 class TestMooncakeHybridConnectorLoadedGroups(unittest.TestCase):
     def test_loaded_group_ids_hook_is_version_gated(self):
         self.assertIn("get_loaded_kv_cache_group_ids", MooncakeConnector.__dict__)
+
+
+class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
+    """Verify handshake and transfer layout validation for MooncakeHybridConnector."""
+
+    def _make_recv_thread(
+        self,
+        *,
+        local_addrs: list[int],
+        local_block_lens: list[int],
+        local_entry_layer_names: list[list[str]],
+        local_spec_method: str = "",
+        use_hybrid: bool = True,
+        prefill_pp_size: int = 1,
+        hma_group_size: int = 2,
+        addr_group_idx: list[list[int]] | None = None,
+        pp_layer_indices: dict[int, tuple[int, int]] | None = None,
+        kv_cache_tensors: list[Any] | None = None,
+        kv_caches: dict[str, Any] | None = None,
+    ) -> KVCacheRecvingThread:
+        thread = object.__new__(KVCacheRecvingThread)
+        thread.tp_rank = 0
+        thread.tp_size = 1
+        thread._prefill_pp_size = prefill_pp_size
+        thread.local_engine_id = "decode-engine"
+        thread.side_channel_port = 32000
+        thread.local_handshake_port = 32000
+        thread.use_hybrid = use_hybrid
+        thread.hma_group_size = hma_group_size
+        thread.kv_cache_specs = [MagicMock() for _ in range(hma_group_size)]
+        thread.kv_cache_config = types.SimpleNamespace(kv_cache_tensors=kv_cache_tensors or [])
+        thread.kv_caches = kv_caches or {"model.layers.0.self_attn": (MagicMock(), MagicMock())}
+        thread.pp_layer_indices = pp_layer_indices or {0: (0, len(local_addrs))}
+        thread.vllm_config = types.SimpleNamespace(
+            speculative_config=types.SimpleNamespace(method=local_spec_method) if local_spec_method else None
+        )
+        thread.kv_caches_base_addr = {"decode-engine": {32000: list(local_addrs)}}
+        thread.block_len_per_addr = list(local_block_lens)
+        thread.block_stride_per_addr = list(local_block_lens)
+        thread.addr_group_idx = list(addr_group_idx) if addr_group_idx is not None else []
+        thread.local_entry_layer_names = [list(names) for names in local_entry_layer_names]
+        thread.local_spec_method = local_spec_method
+        thread.remote_te_port = {}
+        thread.remote_block_lens = {}
+        thread.remote_entry_layer_names = {}
+        thread.remote_spec_method = {}
+        thread.remote_metadata_lock = threading.Lock()
+        thread.encoder = msgspec.msgpack.Encoder()
+        thread.decoder = msgspec.msgpack.Decoder(MooncakeAgentMetadata)
+        thread.engine = MagicMock()
+        thread.engine.batch_transfer_sync_read.return_value = 0
+        thread.task_tracker = KVCacheTaskTracker()
+        thread.request_queue = queue.Queue()
+        thread.proc_not_transfer_request = {}
+        thread.proc_not_transfer_request_lock = threading.Lock()
+        thread.request_task_counts = defaultdict(int)
+        thread.finished_request_markers = set()
+        thread.request_task_counts_lock = threading.Lock()
+        return thread
+
+    def _fetch_metadata(
+        self,
+        thread: KVCacheRecvingThread,
+        encoded_meta: bytes,
+        *,
+        remote_host: str = "192.0.2.1",
+        remote_handshake_port: int = 31000,
+    ) -> tuple[MagicMock, MagicMock]:
+        sock = MagicMock(spec=zmq.Socket)
+        sock.recv.return_value = encoded_meta
+        with (
+            patch.object(thread, "_get_remote_socket", return_value=sock),
+            patch.object(thread, "_return_remote_socket") as return_sock,
+        ):
+            thread._get_remote_metadata(remote_host, remote_handshake_port)
+        return sock, return_sock
+
+    def _make_req_meta(
+        self,
+        *,
+        request_id: str = "req-1",
+        local_block_ids: tuple[list[int], ...] = ([1], [2]),
+        remote_block_ids: tuple[list[int], ...] = ([3], [4]),
+        remote_engine_id: str = "prefill-engine",
+        remote_host: str = "192.0.2.1",
+        remote_handshake_port: int = 31000,
+        offset: int = 0,
+        tp_num_need_pulls: int = 1,
+    ) -> dict[str, Any]:
+        return {
+            "request_id": request_id,
+            "remote_request_id": f"remote-{request_id}",
+            "local_block_ids": local_block_ids,
+            "remote_block_ids": remote_block_ids,
+            "remote_engine_id": remote_engine_id,
+            "remote_host": remote_host,
+            "remote_handshake_port": remote_handshake_port,
+            "offset": offset,
+            "tp_num_need_pulls": tp_num_need_pulls,
+            "remote_port_send_num": {},
+            "all_task_done": True,
+        }
+
+    def test_symmetric_pd_handshake_and_transfer_succeeds(self):
+        layer_names = [["target.0"], ["target.1"], ["dspark.draft.0"]]
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000, 0x3000],
+            local_block_lens=[64, 64, 32],
+            local_entry_layer_names=layer_names,
+            local_spec_method="dspark",
+            addr_group_idx=[[0], [0], [1]],
+        )
+        remote_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x4000, 0x5000, 0x6000],
+            num_blocks=4,
+            block_lens=[64, 64, 32],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=layer_names,
+            spec_method="dspark",
+        )
+        sock, return_sock = self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(remote_meta))
+
+        sock.close.assert_not_called()
+        return_sock.assert_called_once_with(sock, "192.0.2.1", 31000)
+        self.assertEqual(thread.remote_block_lens["prefill-engine"][31000], [64, 64, 32])
+        self.assertEqual(thread.remote_entry_layer_names["prefill-engine"][31000], layer_names)
+        self.assertEqual(thread.remote_spec_method["prefill-engine"][31000], "dspark")
+
+        with patch(
+            "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+            return_value="127.0.0.1",
+        ):
+            thread._transfer_kv_cache_all_groups(self._make_req_meta())
+
+        thread.engine.batch_transfer_sync_read.assert_called_once_with(
+            "192.0.2.1:7777",
+            [0x1040, 0x2040, 0x3040],
+            [0x40C0, 0x50C0, 0x6080],
+            [64, 64, 32],
+        )
+
+    def test_handshake_rejects_dspark_asymmetry_consumer_more_entries_than_producer(self):
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000, 0x3000, 0x4000],
+            local_block_lens=[64, 32, 32, 32],
+            local_entry_layer_names=[["target.0"], ["dspark.0"], ["dspark.1"], ["dspark.2"]],
+            local_spec_method="dspark",
+            addr_group_idx=[[0], [1], [1], [1]],
+        )
+        remote_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x5000],
+            num_blocks=4,
+            block_lens=[64],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=[["target.0"]],
+            spec_method="",
+        )
+        encoded = msgspec.msgpack.Encoder().encode(remote_meta)
+        sock = MagicMock(spec=zmq.Socket)
+        sock.recv.return_value = encoded
+
+        with (
+            patch.object(thread, "_get_remote_socket", return_value=sock),
+            patch.object(thread, "_return_remote_socket") as return_sock,
+            self.assertRaises(ValueError) as ctx,
+        ):
+            thread._get_remote_metadata("192.0.2.1", 31000)
+
+        msg = str(ctx.exception)
+        self.assertIn("published 1 KV address entries", msg)
+        self.assertIn("expects 4", msg)
+        self.assertIn("dspark.0", msg)
+        self.assertIn("dspark", msg)
+        sock.close.assert_called_once()
+        return_sock.assert_not_called()
+        self.assertNotIn("prefill-engine", thread.kv_caches_base_addr)
+
+        # Verify request execution aborts before RDMA read when handshake rejects.
+        thread.task_tracker.add_req_to_process("req-asym")
+        thread.add_request(
+            request_id="req-asym",
+            remote_request_id="remote-req-asym",
+            local_block_ids=([1], [2]),
+            remote_block_ids=([3], [4]),
+            remote_engine_id="prefill-engine",
+            remote_host="192.0.2.1",
+            remote_handshake_port=31000,
+            offset=0,
+            tp_num_need_pulls=1,
+            all_task_done=True,
+        )
+        req_meta = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(req_meta)
+        with (
+            patch.object(thread, "_get_remote_socket", return_value=sock),
+            patch.object(thread, "_send_done_recv_signal"),
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.logger.exception") as log_exc,
+        ):
+            thread._handle_request(req_meta)
+        log_exc.assert_called_once()
+        thread.engine.batch_transfer_sync_read.assert_not_called()
+
+    def test_transfer_rejects_reverse_asymmetry_producer_more_entries_than_consumer(self):
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000],
+            local_block_lens=[64],
+            local_entry_layer_names=[["target.0"]],
+            local_spec_method="",
+            hma_group_size=1,
+            addr_group_idx=[[0]],
+        )
+        remote_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x5000, 0x6000],
+            num_blocks=4,
+            block_lens=[64, 32],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=[["target.0"], ["dspark.0"]],
+            spec_method="dspark",
+        )
+        with self.assertRaises(ValueError) as ctx:
+            self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(remote_meta))
+
+        msg = str(ctx.exception)
+        self.assertIn("published 2 KV address entries", msg)
+        self.assertIn("expects 1", msg)
+        self.assertIn("Extra on producer", msg)
+        self.assertIn("dspark.0", msg)
+        thread.engine.batch_transfer_sync_read.assert_not_called()
+
+    def test_transfer_rejects_equal_count_with_mismatched_block_lens(self):
+        layer_names = [["target.0"], ["target.1"], ["dspark.0"]]
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000, 0x3000],
+            local_block_lens=[64, 64, 32],
+            local_entry_layer_names=layer_names,
+            local_spec_method="dspark",
+            addr_group_idx=[[0], [0], [1]],
+        )
+        remote_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x4000, 0x5000, 0x6000],
+            num_blocks=4,
+            block_lens=[64, 64, 16],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=layer_names,
+            spec_method="dspark",
+        )
+        with self.assertRaises(ValueError) as ctx:
+            self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(remote_meta))
+
+        msg = str(ctx.exception)
+        self.assertIn("index 2", msg)
+        self.assertIn("producer=16", msg)
+        self.assertIn("expected=32", msg)
+
+        # Also validate at transfer boundary if stale/unvalidated metadata was cached.
+        thread.kv_caches_base_addr["prefill-engine"] = {31000: [0x4000, 0x5000, 0x6000]}
+        thread.remote_te_port["prefill-engine"] = {31000: 7777}
+        thread.remote_block_lens["prefill-engine"] = {31000: [64, 64, 16]}
+        thread.remote_entry_layer_names["prefill-engine"] = {31000: layer_names}
+        with self.assertRaises(ValueError) as transfer_ctx:
+            thread._transfer_kv_cache_all_groups(self._make_req_meta())
+        self.assertIn("index 2", str(transfer_ctx.exception))
+        thread.engine.batch_transfer_sync_read.assert_not_called()
+
+    def test_transfer_rejects_equal_count_with_misaligned_entry_layer_names(self):
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000],
+            local_block_lens=[64, 64],
+            local_entry_layer_names=[["target.0"], ["dspark.0"]],
+            local_spec_method="dspark",
+            addr_group_idx=[[0], [1]],
+        )
+        remote_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x4000, 0x5000],
+            num_blocks=4,
+            block_lens=[64, 64],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=[["dspark.0"], ["target.0"]],
+            spec_method="dspark",
+        )
+        with self.assertRaises(ValueError) as ctx:
+            self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(remote_meta))
+
+        msg = str(ctx.exception)
+        self.assertIn("index 0", msg)
+        self.assertIn("producer=['dspark.0']", msg)
+        self.assertIn("consumer=['target.0']", msg)
+
+    def test_backward_compatible_with_legacy_producer_metadata(self):
+        legacy_payload = msgspec.msgpack.Encoder().encode(
+            {
+                "engine_id": "legacy-prefill",
+                "te_rpc_port": 8888,
+                "block_size": 128,
+                "kv_caches_base_addr": [0x4000, 0x5000],
+                "num_blocks": 4,
+                "block_lens": [64, 32],
+                "ssm_sizes": (0, 0),
+                "local_ip": "192.0.2.2",
+            }
+        )
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000],
+            local_block_lens=[64, 32],
+            local_entry_layer_names=[["target.0"], ["dspark.0"]],
+            local_spec_method="dspark",
+            addr_group_idx=[[0], [1]],
+        )
+        self._fetch_metadata(thread, legacy_payload)
+        with patch(
+            "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+            return_value="127.0.0.1",
+        ):
+            thread._transfer_kv_cache_all_groups(self._make_req_meta(remote_engine_id="legacy-prefill"))
+        thread.engine.batch_transfer_sync_read.assert_called_once()
+
+        # Legacy producer with mismatched entry count must still fail fast.
+        thread_asym = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000, 0x3000],
+            local_block_lens=[64, 32, 32],
+            local_entry_layer_names=[["target.0"], ["dspark.0"], ["dspark.1"]],
+            local_spec_method="dspark",
+            addr_group_idx=[[0], [1], [1]],
+        )
+        with self.assertRaises(ValueError) as asym_ctx:
+            self._fetch_metadata(thread_asym, legacy_payload)
+        self.assertIn("published 2 KV address entries", str(asym_ctx.exception))
+        self.assertIn("expects 3", str(asym_ctx.exception))
+
+        # Legacy producer with matching count but mismatched block_lens must fail fast.
+        bad_lens_payload = msgspec.msgpack.Encoder().encode(
+            {
+                "engine_id": "legacy-prefill",
+                "te_rpc_port": 8888,
+                "block_size": 128,
+                "kv_caches_base_addr": [0x4000, 0x5000],
+                "num_blocks": 4,
+                "block_lens": [64, 16],
+                "ssm_sizes": (0, 0),
+                "local_ip": "192.0.2.2",
+            }
+        )
+        with self.assertRaises(ValueError) as lens_ctx:
+            self._fetch_metadata(thread, bad_lens_payload)
+        self.assertIn("index 1", str(lens_ctx.exception))
+
+    def test_non_kv_speculative_method_ngram_does_not_false_reject(self):
+        layer_names = [["target.0"], ["target.1"]]
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000],
+            local_block_lens=[64, 64],
+            local_entry_layer_names=layer_names,
+            local_spec_method="ngram",
+            addr_group_idx=[[0], [1]],
+        )
+        remote_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x4000, 0x5000],
+            num_blocks=4,
+            block_lens=[64, 64],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=layer_names,
+            spec_method="",
+        )
+        self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(remote_meta))
+        with patch(
+            "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+            return_value="127.0.0.1",
+        ):
+            thread._transfer_kv_cache_all_groups(self._make_req_meta())
+        thread.engine.batch_transfer_sync_read.assert_called_once()
+
+    def test_prefill_pp_gt_1_validates_after_stage_slice(self):
+        tensors = [MagicMock(), MagicMock(), MagicMock(), MagicMock()]
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000, 0x3000, 0x4000],
+            local_block_lens=[64, 64, 64, 32],
+            local_entry_layer_names=[["target.0"], ["target.1"], ["target.2"], ["dspark.0"]],
+            local_spec_method="dspark",
+            prefill_pp_size=2,
+            addr_group_idx=[[0], [0], [0], [1]],
+            kv_cache_tensors=tensors,
+        )
+        # Stage 1 matching slice succeeds (indices 2..4).
+        stage1_meta = MooncakeAgentMetadata(
+            engine_id="prefill-stage-1",
+            te_rpc_port=7778,
+            block_size=128,
+            kv_caches_base_addr=[0x7000, 0x8000],
+            num_blocks=4,
+            block_lens=[64, 32],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.2",
+            entry_layer_names=[["target.2"], ["dspark.0"]],
+            spec_method="dspark",
+        )
+        self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(stage1_meta), remote_handshake_port=31001)
+        with patch(
+            "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+            return_value="127.0.0.1",
+        ):
+            thread._transfer_kv_cache_all_groups(
+                self._make_req_meta(remote_engine_id="prefill-stage-1", remote_handshake_port=31001, offset=1)
+            )
+        thread.engine.batch_transfer_sync_read.assert_called_once()
+
+        # Stage 1 missing draft entry must fail fast after stage slicing.
+        stage1_missing_draft = MooncakeAgentMetadata(
+            engine_id="prefill-stage-1-no-draft",
+            te_rpc_port=7779,
+            block_size=128,
+            kv_caches_base_addr=[0x9000],
+            num_blocks=4,
+            block_lens=[64],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.3",
+            entry_layer_names=[["target.2"]],
+            spec_method="",
+        )
+        self._fetch_metadata(
+            thread,
+            msgspec.msgpack.Encoder().encode(stage1_missing_draft),
+            remote_handshake_port=31002,
+        )
+        with self.assertRaises(ValueError) as stage_ctx:
+            thread._transfer_kv_cache_all_groups(
+                self._make_req_meta(
+                    remote_engine_id="prefill-stage-1-no-draft",
+                    remote_handshake_port=31002,
+                    offset=1,
+                )
+            )
+        self.assertIn("published 1 KV address entries", str(stage_ctx.exception))
+        self.assertIn("expects 2", str(stage_ctx.exception))
+        self.assertIn("dspark.0", str(stage_ctx.exception))
+
+        # Oversized single-stage metadata exceeding local full-model entries fails at handshake.
+        oversized_meta = MooncakeAgentMetadata(
+            engine_id="prefill-oversized",
+            te_rpc_port=7780,
+            block_size=128,
+            kv_caches_base_addr=[0x1, 0x2, 0x3, 0x4, 0x5],
+            num_blocks=4,
+            block_lens=[64, 64, 64, 32, 32],
+            ssm_sizes=(0, 0),
+        )
+        with self.assertRaises(ValueError) as over_ctx:
+            self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(oversized_meta), remote_handshake_port=31003)
+        self.assertIn("exceeding this worker's full-model 4 entries", str(over_ctx.exception))
+
+    def test_non_hybrid_transfer_validates_entries_gqa_scaling_and_multi_draft_layers(self):
+        # Two target layers + two draft layers (each with K,V -> 8 entries), GQA tp_num_need_pulls=2.
+        local_layers = [
+            ["target.0"],
+            ["target.0"],
+            ["target.1"],
+            ["target.1"],
+            ["draft.0"],
+            ["draft.0"],
+            ["draft.1"],
+            ["draft.1"],
+        ]
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000 + i * 0x100 for i in range(8)],
+            local_block_lens=[128] * 8,
+            local_entry_layer_names=local_layers,
+            local_spec_method="dspark",
+            use_hybrid=False,
+            prefill_pp_size=2,
+            hma_group_size=1,
+            pp_layer_indices={0: (0, 1), 1: (1, 2)},
+        )
+        # Last PP stage (offset=2, tp_num_need_pulls=2 -> prefill_pp_rank=1) owns target.1 + draft.0 + draft.1 (6).
+        stage1_addrs = [0x9000 + i * 0x100 for i in range(6)]
+        stage1_layers = local_layers[2:]
+        stage1_meta = MooncakeAgentMetadata(
+            engine_id="prefill-gqa-stage1",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=stage1_addrs,
+            num_blocks=4,
+            block_lens=[64] * 6,
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=stage1_layers,
+            spec_method="dspark",
+        )
+        self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(stage1_meta))
+        with (
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ascend_config",
+                return_value=types.SimpleNamespace(enable_kv_nz=False, enable_transpose_kv_cache_by_block=False),
+            ),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                return_value="127.0.0.1",
+            ),
+        ):
+            thread._transfer_kv_cache(
+                self._make_req_meta(
+                    local_block_ids=([1],),
+                    remote_block_ids=([2],),
+                    remote_engine_id="prefill-gqa-stage1",
+                    offset=2,
+                    tp_num_need_pulls=2,
+                )
+            )
+        # All 6 entries (target.1 + both draft layers) must be scheduled, not truncated to +1 layer.
+        call_args = thread.engine.batch_transfer_sync_read.call_args.args
+        self.assertEqual(len(call_args[1]), 6)
+        self.assertEqual(call_args[3], [64] * 6)
+
+        # Missing second draft layer on producer must fail fast.
+        thread.kv_caches_base_addr["prefill-gqa-missing"] = {31000: stage1_addrs[:4]}
+        thread.remote_te_port["prefill-gqa-missing"] = {31000: 7777}
+        thread.remote_block_lens["prefill-gqa-missing"] = {31000: [64] * 4}
+        thread.remote_entry_layer_names["prefill-gqa-missing"] = {31000: stage1_layers[:4]}
+        with self.assertRaises(ValueError) as missing_ctx:
+            thread._transfer_kv_cache(
+                self._make_req_meta(
+                    local_block_ids=([1],),
+                    remote_block_ids=([2],),
+                    remote_engine_id="prefill-gqa-missing",
+                    offset=2,
+                    tp_num_need_pulls=2,
+                )
+            )
+        self.assertIn("draft.1", str(missing_ctx.exception))
+
+        # Wrong GQA block_lens scaling (unscaled 128 instead of 64) must fail fast.
+        thread.kv_caches_base_addr["prefill-gqa-bad-len"] = {31000: stage1_addrs}
+        thread.remote_te_port["prefill-gqa-bad-len"] = {31000: 7777}
+        thread.remote_block_lens["prefill-gqa-bad-len"] = {31000: [128] * 6}
+        thread.remote_entry_layer_names["prefill-gqa-bad-len"] = {31000: stage1_layers}
+        with self.assertRaises(ValueError) as bad_len_ctx:
+            thread._transfer_kv_cache(
+                self._make_req_meta(
+                    local_block_ids=([1],),
+                    remote_block_ids=([2],),
+                    remote_engine_id="prefill-gqa-bad-len",
+                    offset=2,
+                    tp_num_need_pulls=2,
+                )
+            )
+        self.assertIn("expected=64", str(bad_len_ctx.exception))
+
+    def test_register_kv_caches_records_entry_layer_names_and_spec_method_in_metadata(self):
+        # 1) Non-hybrid path.
+        worker = MooncakeConnectorWorker.__new__(MooncakeConnectorWorker)
+        worker.vllm_config = types.SimpleNamespace(
+            model_config=types.SimpleNamespace(is_deepseek_mla=False, hf_text_config=types.SimpleNamespace()),
+            speculative_config=types.SimpleNamespace(method="dspark"),
+        )
+        worker.kv_cache_config = types.SimpleNamespace(num_blocks=2)
+        worker.use_hybrid = False
+        worker.use_mamba = False
+        worker.use_compress = False
+        worker.engine_id = "producer-1"
+        worker.te_rpc_port = 7000
+        worker.block_size = 16
+        worker._mamba_ssm_size = (0, 0)
+        worker.kv_role = "kv_producer"
+        worker.tp_rank = 0
+        worker._prefill_tp_size = 1
+        worker.side_channel_host = "127.0.0.1"
+        worker.side_channel_port = 31000
+        worker.pcp_rank = 0
+
+        def fake_thread_init(*args, **kwargs):
+            ready_event = args[7] if len(args) > 7 else kwargs["ready_event"]
+            ready_event.set()
+            return MagicMock(is_alive=MagicMock(return_value=True))
+
+        non_hybrid_caches = {
+            "target.0": (torch.empty((2, 4), dtype=torch.uint8), torch.empty((2, 4), dtype=torch.uint8)),
+            "dspark.0": torch.empty((2, 4), dtype=torch.uint8),
+        }
+        with (
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.global_te"),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                return_value="127.0.0.1",
+            ),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.KVCacheSendingThread",
+                side_effect=fake_thread_init,
+            ),
+        ):
+            worker.register_kv_caches(non_hybrid_caches)
+
+        assert worker.xfer_handshake_metadata is not None
+        self.assertEqual(worker.entry_layer_names, [["target.0"], ["target.0"], ["dspark.0"]])
+        self.assertEqual(
+            worker.xfer_handshake_metadata.entry_layer_names,
+            [["target.0"], ["target.0"], ["dspark.0"]],
+        )
+        self.assertEqual(worker.xfer_handshake_metadata.spec_method, "dspark")
+
+        # 2) Mamba hybrid path (including shared data_ptr deduplication and consumer wiring).
+        shared_tensor = torch.empty((2, 8), dtype=torch.uint8)
+        mamba_draft = torch.empty((2, 8), dtype=torch.uint8)
+        mamba_caches = {
+            "target.0": [shared_tensor],
+            "shared.mtp.0": [shared_tensor],
+            "dspark.0": [mamba_draft],
+        }
+        mamba_worker = MooncakeConnectorWorker.__new__(MooncakeConnectorWorker)
+        mamba_worker.vllm_config = types.SimpleNamespace(
+            model_config=types.SimpleNamespace(is_deepseek_mla=False, hf_text_config=types.SimpleNamespace()),
+            speculative_config=types.SimpleNamespace(method="mtp"),
+        )
+        mamba_worker.kv_cache_config = types.SimpleNamespace(
+            num_blocks=2,
+            kv_cache_tensors=[
+                types.SimpleNamespace(size=16, layers=["target.0", "shared.mtp.0"], layer_stride=0, block_stride=8),
+                types.SimpleNamespace(size=16, layers=["dspark.0"], layer_stride=0, block_stride=8),
+            ],
+        )
+        mamba_worker.use_hybrid = True
+        mamba_worker.use_mamba = True
+        mamba_worker.use_compress = False
+        mamba_worker.engine_id = "consumer-1"
+        mamba_worker.te_rpc_port = 7001
+        mamba_worker.block_size = 16
+        mamba_worker._mamba_ssm_size = (0, 0)
+        mamba_worker.kv_role = "kv_consumer"
+        mamba_worker.tp_rank = 0
+        mamba_worker.tp_size = 1
+        mamba_worker._prefill_pp_size = 1
+        mamba_worker.engine = MagicMock()
+        mamba_worker.handshake_port = 32000
+        mamba_worker.side_channel_port = 32000
+        mamba_worker.hma_group_size = 2
+        mamba_worker._prefill_pp_layer_partition = None
+
+        def fake_recv_init(*args, **kwargs):
+            ready_event = args[15]
+            ready_event.set()
+            return MagicMock(is_alive=MagicMock(return_value=True))
+
+        with (
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.global_te"),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                return_value="127.0.0.1",
+            ),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.validate_register_region_count"
+            ),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.KVCacheRecvingThread",
+                side_effect=fake_recv_init,
+            ) as recv_cls,
+        ):
+            mamba_worker.register_kv_caches(mamba_caches)
+
+        assert mamba_worker.xfer_handshake_metadata is not None
+        self.assertEqual(mamba_worker.entry_layer_names, [["target.0", "shared.mtp.0"], ["dspark.0"]])
+        self.assertEqual(
+            mamba_worker.xfer_handshake_metadata.entry_layer_names,
+            [["target.0", "shared.mtp.0"], ["dspark.0"]],
+        )
+        self.assertEqual(mamba_worker.xfer_handshake_metadata.spec_method, "mtp")
+        self.assertEqual(recv_cls.call_args.args[-1], [["target.0", "shared.mtp.0"], ["dspark.0"]])
+
+        # 3) Compressed shared-page path.
+        page_tensor = torch.empty((2, 16), dtype=torch.uint8)
+        compress_caches = {"long.0": page_tensor, "state.0": page_tensor}
+        compress_worker = MooncakeConnectorWorker.__new__(MooncakeConnectorWorker)
+        compress_worker.vllm_config = types.SimpleNamespace(
+            model_config=types.SimpleNamespace(is_deepseek_mla=True, hf_text_config=types.SimpleNamespace()),
+            speculative_config=types.SimpleNamespace(method="dspark"),
+        )
+        compress_worker.kv_cache_config = types.SimpleNamespace(
+            num_blocks=2,
+            kv_cache_groups=[
+                types.SimpleNamespace(layer_names=["long.0"]),
+                types.SimpleNamespace(layer_names=["state.0"]),
+            ],
+            kv_cache_tensors=[
+                types.SimpleNamespace(size=32, layers=["long.0", "state.0"], layer_stride=0, block_stride=16, offset=0)
+            ],
+        )
+        compress_worker.use_hybrid = True
+        compress_worker.use_mamba = False
+        compress_worker.use_compress = True
+        compress_worker.engine_id = "producer-2"
+        compress_worker.te_rpc_port = 7002
+        compress_worker.block_size = 16
+        compress_worker._mamba_ssm_size = (0, 0)
+        compress_worker.kv_role = "kv_producer"
+        compress_worker.tp_rank = 0
+        compress_worker._prefill_tp_size = 1
+        compress_worker.side_channel_host = "127.0.0.1"
+        compress_worker.side_channel_port = 31000
+        compress_worker.pcp_rank = 0
+
+        with (
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.global_te"),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                return_value="127.0.0.1",
+            ),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.validate_register_region_count"
+            ),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.KVCacheSendingThread",
+                side_effect=fake_thread_init,
+            ),
+        ):
+            compress_worker.register_kv_caches(compress_caches)
+
+        assert compress_worker.xfer_handshake_metadata is not None
+        self.assertEqual(compress_worker.entry_layer_names, [["long.0", "state.0"]])
+        self.assertEqual(compress_worker.xfer_handshake_metadata.spec_method, "dspark")
+
+    def test_hybrid_group_count_mismatch_fails_fast(self):
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000],
+            local_block_lens=[64, 32],
+            local_entry_layer_names=[["target.0"], ["dspark.0"]],
+            local_spec_method="dspark",
+            hma_group_size=2,
+            addr_group_idx=[[0], [1]],
+        )
+        thread.kv_caches_base_addr["prefill-engine"] = {31000: [0x4000, 0x5000]}
+        thread.remote_te_port["prefill-engine"] = {31000: 7777}
+        thread.remote_block_lens["prefill-engine"] = {31000: [64, 32]}
+        thread.remote_entry_layer_names["prefill-engine"] = {31000: [["target.0"], ["dspark.0"]]}
+
+        with self.assertRaises(ValueError) as ctx:
+            thread._transfer_kv_cache_all_groups(
+                self._make_req_meta(local_block_ids=([1], [2]), remote_block_ids=([3],))
+            )
+
+        msg = str(ctx.exception)
+        self.assertIn("hma_group_size=2", msg)
+        self.assertIn("remote=1", msg)
+        self.assertIn("local=2", msg)
+        thread.engine.batch_transfer_sync_read.assert_not_called()
+
+    def test_malformed_remote_metadata_inconsistent_field_lengths_rejected(self):
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000],
+            local_block_lens=[64],
+            local_entry_layer_names=[["target.0"]],
+            hma_group_size=1,
+        )
+        bad_block_lens_meta = MooncakeAgentMetadata(
+            engine_id="prefill-bad-lens",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x4000, 0x5000],
+            num_blocks=4,
+            block_lens=[64],
+            ssm_sizes=(0, 0),
+        )
+        with self.assertRaises(ValueError) as lens_ctx:
+            self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(bad_block_lens_meta))
+        self.assertIn("len(block_lens)=1 != len(kv_caches_base_addr)=2", str(lens_ctx.exception))
+        self.assertNotIn("prefill-bad-lens", thread.kv_caches_base_addr)
+
+        bad_layer_names_meta = MooncakeAgentMetadata(
+            engine_id="prefill-bad-names",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x4000],
+            num_blocks=4,
+            block_lens=[64],
+            ssm_sizes=(0, 0),
+            entry_layer_names=[["target.0"], ["extra.0"]],
+        )
+        with self.assertRaises(ValueError) as names_ctx:
+            self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(bad_layer_names_meta))
+        self.assertIn("len(entry_layer_names)=2 != len(kv_caches_base_addr)=1", str(names_ctx.exception))
+        self.assertNotIn("prefill-bad-names", thread.kv_caches_base_addr)
