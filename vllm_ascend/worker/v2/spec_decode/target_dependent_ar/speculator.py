@@ -42,6 +42,11 @@ from vllm_ascend.ascend_config import draft_config_context, get_ascend_config
 from vllm_ascend.attention.attention_v1 import AscendAttentionBackend, AscendAttentionState
 from vllm_ascend.attention.dsa_v1 import AscendDSABackend
 from vllm_ascend.attention.indexer import AscendSFAIndexerBackend
+from vllm_ascend.attention.large_head_paged_verify import (
+    AscendLargeHeadPagedMetadata,
+    large_head_decode_graph_params,
+    large_head_verify_graph_params,
+)
 from vllm_ascend.attention.mla_v1 import AscendMLABackend, AscendMLAMetadata
 from vllm_ascend.attention.sfa_v1 import AscendSFABackend
 from vllm_ascend.utils import model_supports_dcp, vllm_version_is
@@ -709,7 +714,15 @@ class AscendTargetDependentARSpeculator(LmheadTPDraftSamplingMixin, TargetDepend
         seq_lens_cpu = self._get_seq_lens_cpu(num_reqs_padded)
         if num_reqs is None:
             num_reqs = num_reqs_padded
-        next_seq_lens_cpu = self._calc_next_seq_lens_cpu(seq_lens_cpu, num_reqs, num_reqs_padded, step)
+        # Query-only drafters (such as Gemma4 MTP) read the shared target KV
+        # cache at a fixed length across draft steps instead of advancing +1.
+        step_offset = step if self.advance_draft_positions else 0
+        next_seq_lens_cpu = self._calc_next_seq_lens_cpu(seq_lens_cpu, num_reqs, num_reqs_padded, step_offset)
+        if not self.advance_draft_positions:
+            # Capture warmups can leave active request lengths at zero before a
+            # real batch populates seq_lens_cpu; keep active rows >= 1 while
+            # leaving padded rows at zero.
+            next_seq_lens_cpu[:num_reqs].clamp_(min=1)
 
         dcp_local_seq_lens_cpu = None
         if self.use_dcp:
@@ -748,10 +761,14 @@ class AscendTargetDependentARSpeculator(LmheadTPDraftSamplingMixin, TargetDepend
         is_draft_model_prefill: bool,
     ) -> list[dict[str, Any]]:
         """Build all draft steps' FIA parameters for a single graph update."""
-        block_table = next(iter(draft_attn_metadata.values())).block_tables
         if is_draft_model_prefill:
             prefill_fia_params: list[dict[str, Any]] = []
             for layer_name, metadata in draft_attn_metadata.items():
+                if isinstance(metadata, AscendLargeHeadPagedMetadata):
+                    prefill_fia_params.append(
+                        {"layer_name": layer_name, **large_head_verify_graph_params(layer_name, metadata)}
+                    )
+                    continue
                 is_mla = isinstance(metadata, AscendMLAMetadata)
                 prefill_metadata = metadata.decode if is_mla else metadata
                 assert prefill_metadata is not None
@@ -771,12 +788,20 @@ class AscendTargetDependentARSpeculator(LmheadTPDraftSamplingMixin, TargetDepend
         num_reqs = self.input_batch.num_reqs
         query_start_loc = list(range(1, num_reqs_padded + 1))
         fia_params: list[dict[str, Any]] = []
+        step_offset = 1 if self.advance_draft_positions else 0
         for step in range(1, self.num_speculative_steps):
+            delta = step * step_offset
             seq_lens = [
-                min(int(seq_len) + step, self.max_model_len) for seq_len in self.input_batch.seq_lens_np[:num_reqs]
+                min(int(seq_len) + delta, self.max_model_len) for seq_len in self.input_batch.seq_lens_np[:num_reqs]
             ]
             seq_lens.extend([0] * (num_reqs_padded - num_reqs))
-            for layer_name in self.draft_attn_layer_names:
+            for layer_name, metadata in draft_attn_metadata.items():
+                if isinstance(metadata, AscendLargeHeadPagedMetadata):
+                    fia_params.append({"layer_name": layer_name, **large_head_decode_graph_params(metadata, seq_lens)})
+                    continue
+                is_mla = isinstance(metadata, AscendMLAMetadata)
+                decode_metadata = metadata.decode if is_mla else metadata
+                assert decode_metadata is not None
                 fia_params.append(
                     {
                         "layer_name": layer_name,
@@ -784,7 +809,7 @@ class AscendTargetDependentARSpeculator(LmheadTPDraftSamplingMixin, TargetDepend
                         "actual_seq_lengths_kv": seq_lens,
                         "actual_seq_qlen": query_start_loc,
                         "actual_seq_kvlen": seq_lens,
-                        "block_table": block_table,
+                        "block_table": decode_metadata.block_table if is_mla else metadata.block_tables,
                     }
                 )
         return fia_params

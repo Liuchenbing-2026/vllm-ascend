@@ -24,8 +24,10 @@ from vllm.v1.worker.gpu.spec_decode.target_dependent_ar.speculator import (
     TargetDependentARSpeculator,
 )
 
-from vllm_ascend.attention.attention_v1 import AscendAttentionState
+from vllm_ascend.attention.attention_v1 import AscendAttentionState, AscendMetadata
+from vllm_ascend.attention.large_head_paged_verify import AscendLargeHeadPagedMetadata
 from vllm_ascend.worker.v2 import spec_decode as v2_spec_decode
+from vllm_ascend.worker.v2.input_batch import AscendInputBuffers
 from vllm_ascend.worker.v2.spec_decode.gemma4.speculator import (
     AscendGemma4Speculator,
 )
@@ -149,3 +151,84 @@ def test_prefill_keeps_cache_reading_states():
         speculator._prefill(2, 8, original, None)
 
     assert parent_prefill.call_args[0][2] is original
+
+
+def test_build_fia_params_keeps_per_layer_block_tables_across_kv_groups():
+    """Sliding (256-dim) and global (512-dim) groups must each receive their own block_table."""
+    speculator = AscendGemma4Speculator.__new__(AscendGemma4Speculator)
+    speculator.use_dcp = False
+    speculator.max_model_len = 8192
+    speculator.num_speculative_steps = 3
+    speculator.draft_attn_layer_names = ["draft.swa.0", "draft.global.0"]
+    speculator.input_batch = SimpleNamespace(num_reqs=1, seq_lens_np=[10])
+
+    bt_swa = torch.tensor([[1, 2], [0, 0]], dtype=torch.int32)
+    bt_global = torch.tensor([[7, 8], [0, 0]], dtype=torch.int32)
+    mask_global = torch.zeros((2, 1, 4, 256), dtype=torch.bool)
+
+    swa_meta = AscendMetadata(
+        block_tables=bt_swa,
+        actual_seq_lengths_q=[4, 8],
+        seq_lens_list=[10, 1],
+    )
+    global_meta = AscendLargeHeadPagedMetadata(
+        block_tables=bt_global,
+        actual_seq_lengths_q=[4, 8],
+        seq_lens_list=[10, 1],
+        paged_verify_mask=mask_global,
+        use_pa_graph=False,
+    )
+    draft_meta = {"draft.swa.0": swa_meta, "draft.global.0": global_meta}
+
+    prefill_params = speculator.build_fia_params(2, draft_meta, is_draft_model_prefill=True)
+    by_layer_prefill = {p["layer_name"]: p for p in prefill_params}
+    assert by_layer_prefill["draft.swa.0"]["block_table"] is bt_swa
+    assert by_layer_prefill["draft.global.0"]["block_table"] is bt_global
+    assert by_layer_prefill["draft.global.0"]["atten_mask"] is mask_global
+    assert by_layer_prefill["draft.global.0"]["actual_seq_kvlen"] == [10, 1]
+
+    decode_params = speculator.build_fia_params(2, draft_meta, is_draft_model_prefill=False)
+    swa_decode = [p for p in decode_params if p["layer_name"] == "draft.swa.0"]
+    global_decode = [p for p in decode_params if p["layer_name"] == "draft.global.0"]
+    assert len(swa_decode) == 2 and len(global_decode) == 2
+    assert all(p["block_table"] is bt_swa for p in swa_decode)
+    # Per-layer slicing produces a view sharing storage with bt_global, never bt_swa.
+    assert all(p["block_table"].data_ptr() == bt_global.data_ptr() for p in global_decode)
+    # Gemma4 advance_draft_positions is False: KV length stays at 10 across steps.
+    assert all(p["actual_seq_lengths_kv"] == [10, 0] for p in swa_decode)
+    assert all(p["actual_seq_kvlen"] == [10, 0] for p in global_decode)
+
+
+def test_update_decode_attn_metadata_respects_advance_draft_positions():
+    """Gemma4 (Q-only) freezes draft KV length and clamps warmup zeros; Eagle still advances."""
+    target_buffers = AscendInputBuffers.__new__(AscendInputBuffers)
+    target_buffers.seq_lens_cpu = torch.tensor([0, 0, 0, 0], dtype=torch.int32)
+
+    gemma_spec = AscendGemma4Speculator.__new__(AscendGemma4Speculator)
+    gemma_spec.use_dcp = False
+    gemma_spec.attn_architecture = "GQA"
+    gemma_spec.max_num_reqs = 4
+    gemma_spec.max_model_len = 8192
+    gemma_spec.target_input_buffers = target_buffers
+
+    gemma_meta = {"draft.0": AscendMetadata(seq_lens_cpu=torch.zeros(4, dtype=torch.int32))}
+    gemma_spec._update_decode_attn_metadata(gemma_meta, step=2, num_reqs=2)
+    # Warmup active rows [0, 1] clamp to 1; padded rows [2, 3] remain 0.
+    assert gemma_meta["draft.0"].seq_lens_list == [1, 1, 0, 0]
+    assert gemma_meta["draft.0"].seq_lens_cpu.tolist() == [1, 1, 0, 0]
+
+    # With populated seq_lens, Gemma4 stays fixed while Eagle advances +step.
+    target_buffers.seq_lens_cpu.copy_(torch.tensor([12, 20, 0, 0], dtype=torch.int32))
+    gemma_spec._update_decode_attn_metadata(gemma_meta, step=2, num_reqs=2)
+    assert gemma_meta["draft.0"].seq_lens_list == [12, 20, 0, 0]
+
+    eagle_spec = AscendTargetDependentARSpeculator.__new__(AscendTargetDependentARSpeculator)
+    eagle_spec.use_dcp = False
+    eagle_spec.attn_architecture = "GQA"
+    eagle_spec.max_num_reqs = 4
+    eagle_spec.max_model_len = 8192
+    eagle_spec.target_input_buffers = target_buffers
+
+    eagle_meta = {"draft.0": AscendMetadata(seq_lens_cpu=torch.zeros(4, dtype=torch.int32))}
+    eagle_spec._update_decode_attn_metadata(eagle_meta, step=2, num_reqs=2)
+    assert eagle_meta["draft.0"].seq_lens_list == [14, 22, 0, 0]
