@@ -247,6 +247,8 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
         """Stop store users before closing the backend's native resources."""
         try:
             if self.connector_scheduler is not None:
+                if hasattr(self.connector_scheduler, "shutdown_async_lookup"):
+                    self.connector_scheduler.shutdown_async_lookup()
                 client = self.connector_scheduler.client
                 try:
                     if client is not None:
@@ -271,7 +273,7 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
         """Ignore P/D handshake metadata because AscendStore handles PP via pool keys."""
         pass
 
-    def get_num_new_matched_tokens(self, request: "Request", num_computed_tokens: int) -> tuple[int, bool]:
+    def get_num_new_matched_tokens(self, request: "Request", num_computed_tokens: int) -> tuple[int | None, bool]:
         assert self.connector_scheduler is not None
         return self.connector_scheduler.get_num_new_matched_tokens(request, num_computed_tokens)
 

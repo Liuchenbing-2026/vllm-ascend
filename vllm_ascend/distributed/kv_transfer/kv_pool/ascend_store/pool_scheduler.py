@@ -1,5 +1,6 @@
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any
 
 from vllm.config import VllmConfig
@@ -7,6 +8,7 @@ from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorMetadat
 from vllm.logger import logger
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_manager import KVCacheBlocks, KVCacheManager
+from vllm.v1.core.kv_cache_utils import BlockHash
 from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
 from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
@@ -23,7 +25,14 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import (
 )
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.coordinator import AscendStoreCoordinator
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.in_flight_save_blocks import InFlightSaveBlockTracker
-from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key import LookupKeyClient
+from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key import (
+    AsyncLookupManager,
+    LookupConfig,
+    LookupKeyClient,
+    LookupSignature,
+    make_lookup_signature,
+    parse_lookup_config,
+)
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     AscendConnectorMetadata,
     AscendStoreKVConnectorWorkerMetadata,
@@ -50,6 +59,9 @@ def _new_req_prefill_tokens(request: NewRequestData) -> list[int]:
 
 class BaseKVPoolScheduler(ABC):
     """Shared request tracking, metadata, and cache lifecycle for pool schedulers."""
+
+    _lookup_config: LookupConfig = LookupConfig()
+    _async_lookup: AsyncLookupManager | None = None
 
     def __init__(
         self,
@@ -192,6 +204,15 @@ class BaseKVPoolScheduler(ABC):
         self.model_name = model_config.model.split("/")[-1]
 
         self.client: LookupKeyClient | None = None
+        self._lookup_config = parse_lookup_config(extra_config)
+        self._async_lookup = (
+            AsyncLookupManager(
+                timeout_ms=self._lookup_config.lookup_timeout_ms,
+                max_inflight=self._lookup_config.lookup_max_inflight,
+            )
+            if self._lookup_config.lookup_async
+            else None
+        )
 
     def _use_hybrid(self, vllm_config: VllmConfig, kv_cache_groups: list[Any] | None) -> bool:
         return uses_hybrid_kv_cache(vllm_config.scheduler_config, kv_cache_groups)
@@ -244,11 +265,37 @@ class BaseKVPoolScheduler(ABC):
                 num_speculative_blocks_by_group[group_id] = kv_cache_spec.num_speculative_blocks
         return num_speculative_blocks_by_group
 
+    def _discard_async_lookup(self, req_id: str) -> None:
+        if self._async_lookup is not None:
+            self._async_lookup.discard(req_id)
+
+    def shutdown_async_lookup(self) -> None:
+        if self._async_lookup is not None:
+            self._async_lookup.shutdown()
+
+    def _prepare_async_lookup(
+        self,
+        request: "Request",
+        num_computed_tokens: int,
+    ) -> tuple[LookupSignature, Callable[[], Callable[[float], int]]] | None:
+        del request, num_computed_tokens
+        return None
+
+    def _resolve_external_hit_tokens(self, request: "Request", num_computed_tokens: int) -> int | None:
+        if self._async_lookup is None:
+            hit = self._lookup_external_hit_tokens(request, num_computed_tokens)
+            return 0 if not hit else hit
+        prepared = self._prepare_async_lookup(request, num_computed_tokens)
+        if prepared is None:
+            return 0
+        signature, submit_factory = prepared
+        return self._async_lookup.poll_or_submit(request.request_id, signature, submit_factory)
+
     def get_num_new_matched_tokens(
         self,
         request: "Request",
         num_computed_tokens: int,
-    ) -> tuple[int, bool]:
+    ) -> tuple[int | None, bool]:
         """
         Check for external KV cache hit.
 
@@ -259,15 +306,19 @@ class BaseKVPoolScheduler(ABC):
 
         Returns:
             the number of tokens that can be loaded from the
-            external KV cache beyond what is already computed.
+            external KV cache beyond what is already computed, or
+            ``(None, False)`` when an async lookup is still in flight.
         """
         # A waiting request can be looked up again before it is admitted.
         # Never retain a load plan from an earlier hit across a miss/early return.
         self.load_specs.pop(request.request_id, None)
         if self.kv_role == "kv_consumer" and not self.consumer_is_to_load:
+            self._discard_async_lookup(request.request_id)
             return 0, False
 
-        num_external_hit_tokens = self._lookup_external_hit_tokens(request, num_computed_tokens)
+        num_external_hit_tokens = self._resolve_external_hit_tokens(request, num_computed_tokens)
+        if num_external_hit_tokens is None:
+            return None, False
         if not num_external_hit_tokens:
             return 0, False
 
@@ -359,6 +410,7 @@ class BaseKVPoolScheduler(ABC):
         For SharedStorageConnector, update _request_needs_load
         if the CacheManager this allocated blocks for us.
         """
+        self._discard_async_lookup(request.request_id)
         local_block_ids: list[list[int]] = [[] for _ in self.kv_cache_group_ids]
         if num_external_tokens > 0:
             local_block_ids = normalize_block_ids_by_group(blocks.get_block_ids())
@@ -638,12 +690,14 @@ class BaseKVPoolScheduler(ABC):
             self._request_trackers.pop(finished_req_id, None)
             self._unfinished_requests.pop(finished_req_id, None)
             self._preempted_req_ids.discard(finished_req_id)
+            self._discard_async_lookup(finished_req_id)
 
         for req_id in scheduler_output.preempted_req_ids:
             self._preempted_req_ids.update(scheduler_output.preempted_req_ids)
             self._request_trackers.pop(req_id, None)
             self._unfinished_requests.pop(req_id, None)
             self._async_loading_req_ids.discard(req_id)
+            self._discard_async_lookup(req_id)
 
         meta = AscendConnectorMetadata(
             scheduler_output.preempted_req_ids,
@@ -770,6 +824,8 @@ class BaseKVPoolScheduler(ABC):
             return False
         if stale_ids:
             self._async_loading_req_ids.clear()
+        if self._async_lookup is not None and not self._async_lookup.wait_and_clear():
+            logger.warning("Timed out waiting for background KV lookup before reset_store.")
 
         if self.client is None:
             self.client = LookupKeyClient(self.vllm_config)
@@ -821,24 +877,72 @@ class KVPoolScheduler(BaseKVPoolScheduler):
         """Keep Mamba source blocks alive until bulk save completes."""
         self._in_flight_save_blocks.retain(req_meta, self.num_speculative_blocks_by_group, self._block_pool)
 
-    def _lookup_external_hit_tokens(self, request: Request, num_computed_tokens: int) -> int | None:
+    def _resolve_lookup_token_len(self, request: Request) -> int:
         prompt_token_len = len(request.prompt_token_ids)
         if len(self.cacheable_group_ids) != len(self.original_block_size):
             # Private compressor state is rebuilt from a whole token page.
-            token_len = self._floor_to_cache_transfer_granularity(max(prompt_token_len - 1, 0))
-        else:
-            token_len = (
-                self._floor_to_cache_transfer_granularity(prompt_token_len)
-                if self._discard_partial_chunks
-                else prompt_token_len
-            )
-        if token_len < self.cache_transfer_granularity or num_computed_tokens >= token_len:
-            return None
+            return self._floor_to_cache_transfer_granularity(max(prompt_token_len - 1, 0))
+        if self._discard_partial_chunks:
+            return self._floor_to_cache_transfer_granularity(prompt_token_len)
+        return prompt_token_len
+
+    def _execute_client_lookup(
+        self,
+        token_len: int,
+        block_hashes: list[BlockHash],
+        group_ids: list[int],
+        hbm_hit_tokens: int,
+        *,
+        deadline: float | None = None,
+    ) -> int:
         if self.client is None or self.client.closed:
             self.client = LookupKeyClient(self.vllm_config)
+        if deadline is None:
+            return self.client.lookup(
+                token_len,
+                block_hashes,
+                group_ids,
+                hbm_hit_tokens=hbm_hit_tokens,
+            )
         return self.client.lookup(
+            token_len,
+            block_hashes,
+            group_ids,
+            hbm_hit_tokens=hbm_hit_tokens,
+            deadline=deadline,
+        )
+
+    def _lookup_external_hit_tokens(self, request: Request, num_computed_tokens: int) -> int | None:
+        token_len = self._resolve_lookup_token_len(request)
+        if token_len < self.cache_transfer_granularity or num_computed_tokens >= token_len:
+            return None
+        return self._execute_client_lookup(
             token_len,
             request.block_hashes,
             self.kv_cache_group_ids,
-            hbm_hit_tokens=num_computed_tokens,
+            num_computed_tokens,
         )
+
+    def _prepare_async_lookup(
+        self,
+        request: Request,
+        num_computed_tokens: int,
+    ) -> tuple[LookupSignature, Callable[[], Callable[[float], int]]] | None:
+        token_len = self._resolve_lookup_token_len(request)
+        if token_len < self.cache_transfer_granularity or num_computed_tokens >= token_len:
+            return None
+        block_hashes = request.block_hashes
+        signature = make_lookup_signature(token_len, num_computed_tokens, block_hashes)
+
+        def submit_factory() -> Callable[[float], int]:
+            hashes_snapshot = list(block_hashes)
+            group_ids_snapshot = list(self.kv_cache_group_ids)
+            return lambda deadline: self._execute_client_lookup(
+                token_len,
+                hashes_snapshot,
+                group_ids_snapshot,
+                num_computed_tokens,
+                deadline=deadline,
+            )
+
+        return signature, submit_factory

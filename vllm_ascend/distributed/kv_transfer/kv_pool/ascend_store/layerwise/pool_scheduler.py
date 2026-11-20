@@ -1,10 +1,12 @@
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
+from types import SimpleNamespace
 from typing import Any
 
 from vllm.config import VllmConfig
 from vllm.logger import logger
 from vllm.v1.core.kv_cache_utils import BlockHash
-from vllm.v1.kv_cache_interface import KVCacheConfig
+from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, RSWASpec
 from vllm.v1.request import Request
 
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import (
@@ -13,6 +15,10 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import (
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.dspark_prefix_cache import DSparkPrefixKeys
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.layerwise_cache_layout import (
     get_layerwise_reuse_backing_bytes,
+)
+from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key import (
+    LookupSignature,
+    make_lookup_signature,
 )
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     LoadSpec,
@@ -99,7 +105,12 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
             self.use_block_key_layerwise and kv_cache_groups is not None and len(kv_cache_groups) > 1
         )
 
-    def _lookup_external_hit_tokens(self, request: Request, num_computed_tokens: int) -> int | None:
+    def _resolve_layerwise_lookup_deadline(self, deadline: float | None = None) -> float:
+        if deadline is not None:
+            return deadline
+        return time.monotonic() + self._lookup_config.lookup_timeout_ms / 1000.0
+
+    def _resolve_layerwise_lookup_token_len(self, request: Request) -> int | None:
         prompt_token_len = len(request.prompt_token_ids)
         if self.use_block_key_layerwise:
             token_len = self._floor_to_cache_transfer_granularity(prompt_token_len)
@@ -107,20 +118,69 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
                 token_len = self._floor_to_cache_transfer_granularity(max(prompt_token_len - 1, 0))
             if token_len < self.cache_transfer_granularity:
                 return None
-            return self._get_block_key_layerwise_hit_tokens(request, token_len, num_computed_tokens)
-
+            return token_len
         if self.use_layerwise_transfer:
-            return self._get_layerwise_hit_tokens(request, prompt_token_len, num_computed_tokens)
-
+            return prompt_token_len
         raise RuntimeError(f"Unsupported layerwise data plane: {self.layerwise_data_plane!r}")
+
+    def _lookup_external_hit_tokens(self, request: Request, num_computed_tokens: int) -> int | None:
+        token_len = self._resolve_layerwise_lookup_token_len(request)
+        if token_len is None:
+            return None
+        if self.use_block_key_layerwise:
+            return self._get_block_key_layerwise_hit_tokens(request, token_len, num_computed_tokens)
+        return self._get_layerwise_hit_tokens(request, token_len, num_computed_tokens)
+
+    def _prepare_async_lookup(
+        self,
+        request: Request,
+        num_computed_tokens: int,
+    ) -> tuple[LookupSignature, Callable[[], Callable[[float], int]]] | None:
+        token_len = self._resolve_layerwise_lookup_token_len(request)
+        if token_len is None:
+            return None
+        if self.use_layerwise_transfer:
+            self._get_or_create_request_tracker(request.request_id)
+        block_hashes = request.block_hashes
+        signature = make_lookup_signature(token_len, num_computed_tokens, block_hashes)
+        req_id = request.request_id
+        num_tokens = request.num_tokens
+        use_block_key = self.use_block_key_layerwise
+
+        def submit_factory() -> Callable[[float], int]:
+            snapshot = SimpleNamespace(
+                request_id=req_id,
+                num_tokens=num_tokens,
+                block_hashes=list(block_hashes),
+            )
+            if use_block_key:
+                return lambda deadline: self._get_block_key_layerwise_hit_tokens(
+                    snapshot,  # type: ignore[arg-type]
+                    token_len,
+                    num_computed_tokens,
+                    deadline=deadline,
+                )
+            return lambda deadline: self._get_layerwise_hit_tokens(
+                snapshot,  # type: ignore[arg-type]
+                token_len,
+                num_computed_tokens,
+                deadline=deadline,
+                create_tracker=False,
+            )
+
+        return signature, submit_factory
 
     def _get_layerwise_hit_tokens(
         self,
         request: "Request",
         token_len: int,
         num_computed_tokens: int,
+        *,
+        deadline: float | None = None,
+        create_tracker: bool = True,
     ) -> int:
-        self._get_or_create_request_tracker(request.request_id)
+        if create_tracker:
+            self._get_or_create_request_tracker(request.request_id)
         if self.cache_coordinator is not None:
             if self.use_eagle:
                 final_block_start = (request.num_tokens - 1) // self.lcm_block_size * self.lcm_block_size
@@ -128,25 +188,32 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
                 if token_len <= 0:
                     return 0
             return self._lookup_layerwise_with_coordinator(
-                request, token_len, 0 if self.layerwise_offload else num_computed_tokens
+                request,
+                token_len,
+                0 if self.layerwise_offload else num_computed_tokens,
+                deadline=deadline,
             )
-        return self._lookup_layerwise_contiguous(request, token_len, num_computed_tokens)
+        return self._lookup_layerwise_contiguous(request, token_len, num_computed_tokens, deadline=deadline)
 
     def _get_block_key_layerwise_hit_tokens(
         self,
         request: "Request",
         token_len: int,
         num_computed_tokens: int,
+        *,
+        deadline: float | None = None,
     ) -> int:
         if self.block_key_hybrid:
-            return self._lookup_layerwise_with_coordinator(request, token_len)
-        return self._lookup_block_key_contiguous(request, token_len, num_computed_tokens)
+            return self._lookup_layerwise_with_coordinator(request, token_len, deadline=deadline)
+        return self._lookup_block_key_contiguous(request, token_len, num_computed_tokens, deadline=deadline)
 
     def _lookup_layerwise_with_coordinator(
         self,
         request: "Request",
         token_len: int,
         num_computed_tokens: int = 0,
+        *,
+        deadline: float | None = None,
     ) -> int:
         """Reachability-aware hit check for hybrid models.
 
@@ -158,6 +225,8 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
         """
         coordinator = self.cache_coordinator
         assert coordinator is not None
+        effective_deadline = self._resolve_layerwise_lookup_deadline(deadline)
+        specs = getattr(coordinator, "group_effective_specs", ())
 
         def query_group_hits(
             group_id: int,
@@ -174,7 +243,17 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
                     continue
                 keys_by_block.append(self._make_layerwise_hit_check_keys(group_id, block_hash_to_str(block_hash)))
                 allowed_hashes.append(block_hash)
-            block_hits = self._query_layerwise_block_hits(keys_by_block)
+            is_continuous_spec = (
+                isinstance(specs, Sequence)
+                and group_id < len(specs)
+                and isinstance(specs[group_id], FullAttentionSpec)
+                and not isinstance(specs[group_id], RSWASpec)
+            )
+            block_hits = self._query_layerwise_block_hits(
+                keys_by_block,
+                stop_on_miss=(lookup_mask is None and is_continuous_spec),
+                deadline=effective_deadline,
+            )
             return [block_hash for block_hash, hit in zip(allowed_hashes, block_hits) if hit]
 
         return coordinator.find_reachable_hit_tokens(
@@ -191,6 +270,8 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
         token_len: int,
         group_block_sizes: Sequence[int],
         skip_tokens: int,
+        *,
+        deadline: float | None = None,
     ) -> list[tuple[int, int, int]]:
         """Contiguous hit scan shared by both layerwise data planes.
 
@@ -208,6 +289,7 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
         num_hash_blocks = token_len // self.hash_block_size
         block_hashes_to_check = request.block_hashes[:num_hash_blocks]
         results: list[tuple[int, int, int]] = []
+        effective_deadline = self._resolve_layerwise_lookup_deadline(deadline)
 
         for group_id, effective_block_size in enumerate(group_block_sizes):
             group_block_hashes = get_block_hashes(block_hashes_to_check, effective_block_size, self.hash_block_size)
@@ -223,7 +305,11 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
             ]
             if not keys_by_block:
                 continue
-            block_hits = self._query_layerwise_block_hits(keys_by_block)
+            block_hits = self._query_layerwise_block_hits(
+                keys_by_block,
+                stop_on_miss=True,
+                deadline=effective_deadline,
+            )
             num_hit_blocks = 0
             for hit in block_hits:
                 if hit:
@@ -246,6 +332,8 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
         request: "Request",
         token_len: int,
         num_computed_tokens: int,
+        *,
+        deadline: float | None = None,
     ) -> int:
         # Layer reuse can evict earlier layers from HBM. Otherwise, only
         # probe blocks beyond the complete local prefix to avoid rewarming it.
@@ -253,7 +341,7 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
         hits_per_group = [
             hit_tokens
             for hit_tokens, _, _ in self._query_contiguous_group_hits(
-                request, token_len, self.grouped_block_size, skip_tokens
+                request, token_len, self.grouped_block_size, skip_tokens, deadline=deadline
             )
         ]
 
@@ -279,12 +367,14 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
         request: "Request",
         token_len: int,
         num_computed_tokens: int,
+        *,
+        deadline: float | None = None,
     ) -> int:
         # The block-key plane stores one hash-addressed object per block and
         # keeps no per-group local-prefix state: scan the first group only,
         # with nothing to skip.
         del num_computed_tokens
-        results = self._query_contiguous_group_hits(request, token_len, [self._block_size], 0)
+        results = self._query_contiguous_group_hits(request, token_len, [self._block_size], 0, deadline=deadline)
         if not results:
             return 0
         hit_tokens, num_hit_blocks, num_probed_blocks = results[0]
@@ -318,29 +408,62 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
             keys.extend(draft_keys.make_hit_check_keys(block_hash_hex))
         return keys
 
-    def _query_layerwise_block_hits(self, keys_by_block: list[list[str]]) -> list[bool]:
+    def _resolve_layerwise_key_budget(self, keys_per_block: int) -> int:
+        transfer_budget = (
+            self.layerwise_max_transfer_blocks * keys_per_block if self.layerwise_max_transfer_blocks > 0 else 0
+        )
+        lookup_budget = self._lookup_config.lookup_batch_size
+        if transfer_budget > 0 and lookup_budget > 0:
+            return min(transfer_budget, lookup_budget)
+        return max(transfer_budget, lookup_budget)
+
+    def _query_layerwise_block_hits(
+        self,
+        keys_by_block: list[list[str]],
+        *,
+        stop_on_miss: bool = False,
+        deadline: float | None = None,
+    ) -> list[bool]:
         """Probe backend readability and fold physical keys into block hits."""
-        all_keys = [key for block_keys in keys_by_block for key in block_keys]
-        if not all_keys:
+        if not keys_by_block or not any(keys_by_block):
             return []
 
         keys_per_block = max(len(block_keys) for block_keys in keys_by_block)
-        batch_size = (
-            self.layerwise_max_transfer_blocks * keys_per_block
-            if self.layerwise_max_transfer_blocks > 0
-            else len(all_keys)
-        )
-        readable: list[bool] = []
-        for start in range(0, len(all_keys), batch_size):
-            batch = all_keys[start : start + batch_size]
-            batch_readable = self.store_scheduler.batch_is_readable(batch)
-            if len(batch_readable) != len(batch) or any(type(state) is not bool for state in batch_readable):
-                raise RuntimeError("Layerwise readability probe returned invalid results")
-            readable.extend(batch_readable)
+        key_budget = self._resolve_layerwise_key_budget(keys_per_block)
+        block_hits: list[bool] = []
+        batch_start = 0
 
-        block_hits = []
-        offset = 0
-        for block_keys in keys_by_block:
-            block_hits.append(all(readable[offset : offset + len(block_keys)]))
-            offset += len(block_keys)
+        while batch_start < len(keys_by_block):
+            if deadline is not None and time.monotonic() >= deadline:
+                logger.warning(
+                    "Layerwise KV pool lookup timed out after %d/%d blocks",
+                    batch_start,
+                    len(keys_by_block),
+                )
+                break
+
+            batch_keys: list[str] = []
+            batch_end = batch_start
+            while batch_end < len(keys_by_block):
+                block_keys = keys_by_block[batch_end]
+                if batch_end > batch_start and key_budget > 0 and len(batch_keys) + len(block_keys) > key_budget:
+                    break
+                batch_keys.extend(block_keys)
+                batch_end += 1
+
+            batch_readable = self.store_scheduler.batch_is_readable(batch_keys)
+            if len(batch_readable) != len(batch_keys) or any(type(state) is not bool for state in batch_readable):
+                raise RuntimeError("Layerwise readability probe returned invalid results")
+
+            offset = 0
+            for block_idx in range(batch_start, batch_end):
+                key_len = len(keys_by_block[block_idx])
+                hit = all(batch_readable[offset : offset + key_len])
+                offset += key_len
+                block_hits.append(hit)
+                if stop_on_miss and not hit:
+                    return block_hits
+
+            batch_start = batch_end
+
         return block_hits

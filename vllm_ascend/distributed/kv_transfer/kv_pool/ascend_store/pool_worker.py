@@ -22,8 +22,10 @@ from vllm.logger import logger
 from vllm.model_executor.model_loader.utils import get_model_cls
 from vllm.v1.core.kv_cache_utils import BlockHash, maybe_convert_block_hash
 from vllm.v1.kv_cache_interface import (
+    FullAttentionSpec,
     KVCacheConfig,
     MambaSpec,
+    RSWASpec,
     UniformTypeKVCacheSpecs,
 )
 from vllm.v1.worker.mamba_utils import get_mamba_groups
@@ -47,6 +49,10 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.kv_trans
 )
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.layerwise_cache_layout import (
     get_physical_layer_index,
+)
+from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key import (
+    LookupConfig,
+    parse_lookup_config,
 )
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     AscendConnectorMetadata,
@@ -77,6 +83,8 @@ SAVE_BATCH_FAILURE_POLL_INTERVAL_S = 1.0
 
 class BaseKVPoolWorker(ABC):
     """Common cache registration, metadata, lookup, and lifecycle for pool workers."""
+
+    _lookup_config: LookupConfig = LookupConfig()
 
     def __init__(
         self,
@@ -190,6 +198,7 @@ class BaseKVPoolWorker(ABC):
 
     def _init_kv_transfer_config(self, vllm_config, extra_config, use_layerwise, kv_cache_config) -> None:
         self._extra_config = extra_config
+        self._lookup_config = parse_lookup_config(extra_config)
         self.use_layerwise = use_layerwise
         self.kv_role = vllm_config.kv_transfer_config.kv_role
         self.load_async = extra_config.get("load_async", False)
@@ -959,12 +968,201 @@ class BaseKVPoolWorker(ABC):
             self.kv_send_thread.request_queue.join()
         self.m_store.remove_all()
 
+    def _get_lookup_batch_size(self) -> int:
+        return self._lookup_config.lookup_batch_size
+
+    def _resolve_lookup_deadline(self, deadline: float | None) -> float:
+        if deadline is not None:
+            return deadline
+        return time.monotonic() + self._lookup_config.lookup_timeout_ms / 1000.0
+
+    def _is_continuous_coordinator_group(
+        self,
+        coordinator: AscendStoreCoordinator,
+        group_id: int,
+        lookup_mask: Sequence[bool] | None,
+    ) -> bool:
+        if lookup_mask is not None:
+            return False
+        align_flags = getattr(self, "group_uses_align_state", ())
+        if group_id < len(align_flags) and align_flags[group_id]:
+            return False
+        specs = getattr(coordinator, "group_effective_specs", ())
+        if group_id >= len(specs):
+            return False
+        spec = specs[group_id]
+        # RSWASpec inherits from FullAttentionSpec but uses sparse rolling checkpoints.
+        return isinstance(spec, FullAttentionSpec) and not isinstance(spec, RSWASpec)
+
+    def _probe_exists_batch(
+        self,
+        batch_keys: list[str],
+        deadline: float | None,
+    ) -> tuple[list[int] | None, bool]:
+        if deadline is not None and time.monotonic() >= deadline:
+            return None, True
+        res = self.m_store.exists(batch_keys)
+        if res is None or len(res) != len(batch_keys):
+            logger.warning(
+                "KV pool exists returned mismatched results: expected=%d got=%s",
+                len(batch_keys),
+                len(res) if res is not None else None,
+            )
+            return None, False
+        return list(res), False
+
+    @staticmethod
+    def _eval_coordinator_batch(
+        res: list[int],
+        batch_chunks: list[tuple[int, BlockHash | str, int]],
+        present: list[BlockHash | str],
+        contiguous_hit_end: int,
+        stop_on_miss: bool,
+    ) -> tuple[int, bool]:
+        offset = 0
+        for chunk_end, chunk_hash, count in batch_chunks:
+            values = res[offset : offset + count]
+            offset += count
+            if values and all(value == 1 for value in values):
+                present.append(chunk_hash)
+                if stop_on_miss:
+                    contiguous_hit_end = chunk_end
+            elif stop_on_miss:
+                return contiguous_hit_end, True
+        return contiguous_hit_end, False
+
+    def _probe_coordinator_group(
+        self,
+        group_id: int,
+        token_len: int,
+        block_hashes: list[BlockHash],
+        lookup_start: int,
+        lookup_mask: Sequence[bool] | None,
+        include_all_ranks: bool,
+        stop_on_miss: bool,
+        deadline: float | None,
+    ) -> tuple[list[BlockHash | str], int, bool, int, list[str]]:
+        present: list[BlockHash | str] = []
+        contiguous_hit_end = lookup_start
+        batch_size = self._get_lookup_batch_size()
+        batch_keys: list[str] = []
+        batch_chunks: list[tuple[int, BlockHash | str, int]] = []
+        total_keys = 0
+        sample_keys: list[str] = []
+
+        def flush_batch() -> tuple[bool, bool]:
+            nonlocal batch_keys, batch_chunks, contiguous_hit_end
+            if not batch_keys:
+                return False, False
+            res, timed_out = self._probe_exists_batch(batch_keys, deadline)
+            batch_keys = []
+            chunks = batch_chunks
+            batch_chunks = []
+            if timed_out:
+                logger.warning(
+                    "KV pool coordinator lookup timed out group=%d token_len=%d probed_keys=%d",
+                    group_id,
+                    token_len,
+                    total_keys,
+                )
+                return True, True
+            if res is None:
+                return True, False
+            contiguous_hit_end, stopped = self._eval_coordinator_batch(
+                res, chunks, present, contiguous_hit_end, stop_on_miss
+            )
+            return stopped, False
+
+        for _, chunk_end, key_string, chunk_hash in self.token_database.process_token_key_strings(
+            token_len,
+            block_hashes,
+            mask_num=lookup_start,
+            kv_cache_group_id=group_id,
+            chunk_mask=lookup_mask,
+        ):
+            variants = self._expand_lookup_key_variants(key_string, group_id, include_all_ranks)
+            if batch_size > 0 and batch_keys and len(batch_keys) + len(variants) > batch_size:
+                stopped, timed_out = flush_batch()
+                if stopped:
+                    return present, contiguous_hit_end, timed_out, total_keys, sample_keys
+            if len(sample_keys) < 3:
+                sample_keys.extend(variants[: 3 - len(sample_keys)])
+            batch_keys.extend(variants)
+            total_keys += len(variants)
+            batch_chunks.append((chunk_end, chunk_hash, len(variants)))
+            if batch_size > 0 and len(batch_keys) >= batch_size:
+                stopped, timed_out = flush_batch()
+                if stopped:
+                    return present, contiguous_hit_end, timed_out, total_keys, sample_keys
+
+        _, timed_out = flush_batch()
+        return present, contiguous_hit_end, timed_out, total_keys, sample_keys
+
+    def _lookup_single_rank_group(
+        self,
+        token_len: int,
+        block_hashes: list[BlockHash],
+        group_id: int,
+        use_layerwise: bool,
+        deadline: float | None,
+    ) -> int:
+        keys, _, ends = self._build_lookup_keys(token_len, block_hashes, group_id)
+        if not keys:
+            return 0
+
+        layers_per_block = (getattr(self, "layerwise_key_layers", 0) or self.num_layers) if use_layerwise else 1
+        num_blocks = len(ends)
+        if num_blocks <= 0:
+            return 0
+
+        align_flags = getattr(self, "group_uses_align_state", ())
+        is_discontinuous = group_id < len(align_flags) and align_flags[group_id]
+        batch_size = self._get_lookup_batch_size()
+        blocks_per_batch = num_blocks if batch_size <= 0 else max(1, batch_size // layers_per_block)
+
+        max_discontinuous_hit = 0
+        last_aligned_end = 0
+        hit_end = 0
+        for batch_start in range(0, num_blocks, blocks_per_batch):
+            batch_end = min(num_blocks, batch_start + blocks_per_batch)
+            chunk_keys = keys[batch_start * layers_per_block : batch_end * layers_per_block]
+            res, timed_out = self._probe_exists_batch(chunk_keys, deadline)
+            if timed_out:
+                logger.warning(
+                    "KV pool lookup timed out group=%d probed_blocks=%d/%d",
+                    group_id,
+                    batch_start,
+                    num_blocks,
+                )
+                return max_discontinuous_hit if is_discontinuous else last_aligned_end
+            if res is None:
+                return max_discontinuous_hit if is_discontinuous else last_aligned_end
+            if use_layerwise:
+                res = self.check_all_layers_exists(res, layers_per_block)
+
+            if is_discontinuous:
+                for local_idx, value in enumerate(res):
+                    end_pos = ends[batch_start + local_idx]
+                    if value == 1 and end_pos % self.cache_transfer_granularity == 0:
+                        max_discontinuous_hit = end_pos
+            else:
+                for local_idx, value in enumerate(res):
+                    end_pos = ends[batch_start + local_idx]
+                    if value != 1:
+                        return last_aligned_end
+                    if end_pos % self.cache_transfer_granularity == 0:
+                        last_aligned_end = end_pos
+                    hit_end = end_pos
+        return max_discontinuous_hit if is_discontinuous else hit_end
+
     def lookup(
         self,
         token_len: int,
         block_hashes: list[BlockHash],
         kv_cache_group_ids: list[int] | None = None,
         use_layerwise: bool = False,
+        *,
+        deadline: float | None = None,
     ) -> int:
         """
         Checks the existence of KV cache of the tokens from the cache engine.
@@ -974,6 +1172,7 @@ class BaseKVPoolWorker(ABC):
         try:
             hits = []
             kv_cache_group_ids = kv_cache_group_ids or [0]
+            effective_deadline = self._resolve_lookup_deadline(deadline)
             coordinator_hit = (
                 None
                 if use_layerwise
@@ -982,44 +1181,21 @@ class BaseKVPoolWorker(ABC):
                     block_hashes,
                     kv_cache_group_ids,
                     include_all_ranks=False,
+                    deadline=effective_deadline,
                 )
             )
             if coordinator_hit is not None:
                 return coordinator_hit
             for group_id in kv_cache_group_ids:
-                keys, starts, ends = self._build_lookup_keys(token_len, block_hashes, group_id)
-
-                if not keys:
-                    hits.append(0)
-                    continue
-
-                res = self.m_store.exists(keys)  # type: ignore[assignment]
-
-                if use_layerwise:
-                    res = self.check_all_layers_exists(
-                        res,
-                        getattr(self, "layerwise_key_layers", 0) or self.num_layers,
+                hits.append(
+                    self._lookup_single_rank_group(
+                        token_len,
+                        block_hashes,
+                        group_id,
+                        use_layerwise,
+                        effective_deadline,
                     )
-                if group_id < len(self.group_uses_align_state) and self.group_uses_align_state[group_id]:
-                    hit_end = 0
-                    for index in range(len(ends) - 1, -1, -1):
-                        if (
-                            res[index] == 1  # type: ignore[index]
-                            and ends[index] % self.cache_transfer_granularity == 0
-                        ):
-                            hit_end = ends[index]
-                            break
-                else:
-                    hit_end = ends[-1]
-                    for index, value in enumerate(res):  # type: ignore[arg-type]
-                        if value != 1:
-                            hit_end = 0
-                            for hit_index in range(index, 0, -1):
-                                if starts[hit_index] % self.cache_transfer_granularity == 0:
-                                    hit_end = starts[hit_index]
-                                    break
-                            break
-                hits.append(hit_end)
+                )
         except Exception as e:
             logger.error(
                 "Remote connection failed in get_common_prefix_length. type=%s, error=%s. "
@@ -1087,53 +1263,56 @@ class BaseKVPoolWorker(ABC):
         kv_cache_group_ids: list[int],
         include_all_ranks: bool,
         hbm_hit_tokens: int = 0,
+        *,
+        deadline: float | None = None,
     ) -> int | None:
         if self.cache_coordinator is None:
             return None
         if sorted(kv_cache_group_ids) != list(range(self.num_kv_cache_groups)):
             return None
         coordinator = self.cache_coordinator
+        effective_deadline = self._resolve_lookup_deadline(deadline)
+        max_candidate_tokens = token_len
+        budget_exceeded = False
 
         def query_group_hits(
             group_id: int,
             group_block_hashes: Sequence[BlockHash | str],
             lookup_mask: Sequence[bool] | None,
         ) -> list[BlockHash | str]:
+            nonlocal max_candidate_tokens, budget_exceeded
+            del group_block_hashes
+            if budget_exceeded:
+                return []
             group_block_size = coordinator.group_effective_block_sizes[group_id]
-            present: list[BlockHash | str] = []
             lookup_start = hbm_hit_tokens // group_block_size * group_block_size
+            effective_token_len = min(token_len, max_candidate_tokens)
+            if effective_token_len <= lookup_start:
+                return []
 
-            keys: list[str] = []
-            chunk_hashes: list[BlockHash | str] = []
-            variant_counts: list[int] = []
-            for _, _, key_string, chunk_hash in self.token_database.process_token_key_strings(
-                token_len,
+            stop_on_miss = self._is_continuous_coordinator_group(coordinator, group_id, lookup_mask)
+            present, contiguous_hit_end, timed_out, total_keys, sample_keys = self._probe_coordinator_group(
+                group_id,
+                effective_token_len,
                 block_hashes,
-                mask_num=lookup_start,
-                kv_cache_group_id=group_id,
-                chunk_mask=lookup_mask,
-            ):
-                variants = self._expand_lookup_key_variants(key_string, group_id, include_all_ranks)
-                keys.extend(variants)
-                chunk_hashes.append(chunk_hash)
-                variant_counts.append(len(variants))
-
-            if keys:
-                res = self.m_store.exists(keys)  # type: ignore[assignment]
-                offset = 0
-                for chunk_hash, count in zip(chunk_hashes, variant_counts, strict=True):
-                    values = res[offset : offset + count]  # type: ignore[index]
-                    if values and all(value == 1 for value in values):
-                        present.append(chunk_hash)
-                    offset += count
+                lookup_start,
+                lookup_mask,
+                include_all_ranks,
+                stop_on_miss,
+                effective_deadline,
+            )
+            if timed_out:
+                budget_exceeded = True
+            if stop_on_miss:
+                max_candidate_tokens = min(max_candidate_tokens, contiguous_hit_end)
 
             logger.debug(
                 "KV pool coordinator lookup group=%d token_len=%d keys=%d exists_chunks=%d sample_keys=%s",
                 group_id,
-                token_len,
-                len(keys),
+                effective_token_len,
+                total_keys,
                 len(present),
-                keys[:3],
+                sample_keys,
             )
             return present
 
@@ -1145,6 +1324,87 @@ class BaseKVPoolWorker(ABC):
             hbm_hit_tokens=hbm_hit_tokens,
         )
 
+    def _lookup_scheduler_group(
+        self,
+        token_len: int,
+        block_hashes: list[BlockHash],
+        group_id: int,
+        use_layerwise: bool,
+        hbm_hit_tokens: int,
+        max_hit_position: int,
+        deadline: float | None,
+    ) -> list[int] | None:
+        keys, starts, ends = self._build_lookup_keys(token_len, block_hashes, group_id)
+        if not keys:
+            return None
+
+        align_flags = getattr(self, "group_uses_align_state", ())
+        is_discontinuous = group_id < len(align_flags) and align_flags[group_id]
+        layers_per_block = (getattr(self, "layerwise_key_layers", 0) or self.num_layers) if use_layerwise else 1
+        num_block = len(ends)
+        if num_block <= 0:
+            return []
+
+        probe_start = 0
+        group_hits: list[int] = []
+        if not use_layerwise and not is_discontinuous and hbm_hit_tokens > 0 and starts:
+            group_sizes = getattr(self, "grouped_block_size", ())
+            group_block_size = group_sizes[group_id] if group_id < len(group_sizes) else self.block_size
+            lookup_start = min(token_len, hbm_hit_tokens // group_block_size * group_block_size)
+            while probe_start < num_block and ends[probe_start] <= lookup_start:
+                end_pos = ends[probe_start]
+                if end_pos > max_hit_position:
+                    return group_hits
+                if end_pos % self.cache_transfer_granularity == 0:
+                    group_hits.append(end_pos)
+                probe_start += 1
+
+        probe_end = probe_start
+        while probe_end < num_block and ends[probe_end] <= max_hit_position:
+            probe_end += 1
+        if probe_start >= probe_end:
+            return group_hits
+
+        num_ranks = max(1, len(self._expand_lookup_keys_by_rank(keys[:1], group_id)))
+        keys_per_block = max(1, num_ranks * layers_per_block)
+        batch_size = self._get_lookup_batch_size()
+        blocks_per_batch = (probe_end - probe_start) if batch_size <= 0 else max(1, batch_size // keys_per_block)
+
+        for batch_start in range(probe_start, probe_end, blocks_per_batch):
+            batch_end = min(probe_end, batch_start + blocks_per_batch)
+            chunk_keys = keys[batch_start * layers_per_block : batch_end * layers_per_block]
+            multi_tp_keys = self._expand_lookup_keys_by_rank(chunk_keys, group_id)
+            res, timed_out = self._probe_exists_batch(multi_tp_keys, deadline)
+            if timed_out:
+                logger.warning(
+                    "KV pool scheduler lookup timed out group=%d probed_blocks=%d/%d",
+                    group_id,
+                    batch_start - probe_start,
+                    probe_end - probe_start,
+                )
+                break
+            if res is None:
+                break
+            if use_layerwise:
+                res = self.check_all_layers_exists(res, layers_per_block)
+            chunk_blocks = batch_end - batch_start
+            multi_tp_values = [res[i * chunk_blocks : (i + 1) * chunk_blocks] for i in range(num_ranks)]
+            chunk_ends = ends[batch_start:batch_end]
+            if is_discontinuous:
+                group_hits.extend(
+                    self.find_all_discontinuous_hit_positions(
+                        multi_tp_values, chunk_ends, chunk_blocks, max_hit_position, self.cache_transfer_granularity
+                    )
+                )
+            else:
+                for idx in range(chunk_blocks):
+                    if all(row[idx] == 1 for row in multi_tp_values):
+                        if chunk_ends[idx] % self.cache_transfer_granularity == 0:
+                            group_hits.append(chunk_ends[idx])
+                    else:
+                        return group_hits
+        return group_hits
+
     def lookup_scheduler(
         self,
         token_len: int,
@@ -1152,6 +1412,8 @@ class BaseKVPoolWorker(ABC):
         kv_cache_group_ids: list[int] | None = None,
         use_layerwise: bool = False,
         hbm_hit_tokens: int = 0,
+        *,
+        deadline: float | None = None,
     ) -> int:
         """
         Checks the existence of KV cache of the tokens from the cache engine.
@@ -1162,6 +1424,7 @@ class BaseKVPoolWorker(ABC):
             hits: list[list[int]] = []
             max_hit_position = self.max_model_len
             kv_cache_group_ids = kv_cache_group_ids or [0]
+            effective_deadline = self._resolve_lookup_deadline(deadline)
             coordinator_hit = (
                 None
                 if use_layerwise
@@ -1171,58 +1434,28 @@ class BaseKVPoolWorker(ABC):
                     kv_cache_group_ids,
                     include_all_ranks=True,
                     hbm_hit_tokens=hbm_hit_tokens,
+                    deadline=effective_deadline,
                 )
             )
             if coordinator_hit is not None:
                 return coordinator_hit
             for group_id in kv_cache_group_ids:
-                keys, starts, ends = self._build_lookup_keys(token_len, block_hashes, group_id)
-
-                if not keys:
-                    return 0
-
-                multi_tp_keys = self._expand_lookup_keys_by_rank(keys, group_id)
-                num_ranks = len(multi_tp_keys) // len(keys)
-                res = self.m_store.exists(multi_tp_keys)  # type: ignore[assignment]
-                num_block = len(keys)
-                if use_layerwise:
-                    res = self.check_all_layers_exists(
-                        res,
-                        getattr(self, "layerwise_key_layers", 0) or self.num_layers,
-                    )
-                    num_block = len(keys) // (getattr(self, "layerwise_key_layers", 0) or self.num_layers)
-                multi_tp_values = [
-                    res[i * num_block : (i + 1) * num_block]  # type: ignore[index]
-                    for i in range(num_ranks)
-                ]
-                logger.debug(
-                    "KV pool lookup request token_len=%d group=%d keys=%d multi_tp_keys=%d "
-                    "exists_count=%d/%d exists_sample=%s sample_keys=%s",
+                group_hits = self._lookup_scheduler_group(
                     token_len,
+                    block_hashes,
                     group_id,
-                    len(keys),
-                    len(multi_tp_keys),
-                    sum(1 for value in res if value == 1),  # type: ignore[union-attr]
-                    len(res),
-                    list(res[: min(12, len(res))]),  # type: ignore[index]
-                    multi_tp_keys[:3],
+                    use_layerwise,
+                    hbm_hit_tokens,
+                    max_hit_position,
+                    effective_deadline,
                 )
-                if group_id < len(self.group_uses_align_state) and self.group_uses_align_state[group_id]:
-                    group_hits = self.find_all_discontinuous_hit_positions(
-                        multi_tp_values, ends, num_block, max_hit_position, self.cache_transfer_granularity
-                    )
-                else:
-                    group_hits = self.find_all_continuous_hit_positions(
-                        multi_tp_values, ends, num_block, max_hit_position, self.cache_transfer_granularity
-                    )
                 if not group_hits:
                     return 0
                 max_hit_position = min(max_hit_position, group_hits[-1])
                 hits.append(group_hits)
                 logger.debug(
-                    "KV pool scheduler lookup group=%d keys=%d hit=%d token_len=%d",
+                    "KV pool scheduler lookup group=%d hit=%d token_len=%d",
                     group_id,
-                    len(keys),
                     max_hit_position,
                     token_len,
                 )
