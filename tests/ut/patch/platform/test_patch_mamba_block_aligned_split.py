@@ -368,3 +368,14 @@ def test_sparse_index_kpool_mid_block_resume_stops_at_block_boundary(
         num_tokens=num_tokens,
     )
     assert _mamba_block_aligned_split(scheduler, request, num_new_tokens) == expected
+
+
+def test_scheduler_stub_without_vllm_config_delegates_to_original(monkeypatch):
+    observed: dict[str, bool | None] = {}
+    monkeypatch.setattr(mod, "_original_mamba_block_aligned_split", _fake_original_recording(observed))
+    scheduler = SimpleNamespace(use_eagle=True, use_eagle_block_drop=True)
+    result = _mamba_block_aligned_split(scheduler, _request(), num_new_tokens=8)
+    assert result == 42
+    assert observed == {"use_eagle": True, "use_eagle_block_drop": True}
+    assert scheduler.use_eagle is True
+    assert scheduler.use_eagle_block_drop is True

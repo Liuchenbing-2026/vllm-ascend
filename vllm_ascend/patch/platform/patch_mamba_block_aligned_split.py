@@ -99,6 +99,16 @@ def _mamba_block_aligned_split(
     suppress the backoff too: the coordinator never drops there, so backing
     the split off would only erase cacheable hit length.
     """
+    vllm_config = getattr(self, "vllm_config", None)
+    if vllm_config is None:
+        return _original_mamba_block_aligned_split(
+            self,
+            request,
+            num_new_tokens,
+            num_new_local_computed_tokens,
+            num_external_computed_tokens,
+        )
+
     num_computed_tokens = request.num_computed_tokens + num_new_local_computed_tokens + num_external_computed_tokens
     checkpoints = getattr(self, "mamba_checkpoints", None)
     if (
@@ -110,7 +120,7 @@ def _mamba_block_aligned_split(
         # Core's one-token catch-up before either Ascend early-return path.
         return min(num_new_tokens, 1)
 
-    kv_transfer_config = self.vllm_config.kv_transfer_config
+    kv_transfer_config = getattr(vllm_config, "kv_transfer_config", None)
     # Extra verifier or asynchronous output rows need an unsplit window.
     # Ordinary prefills must still stop at reusable checkpoints.
     remaining_tokens = max(request.num_tokens - num_computed_tokens, 0)
@@ -126,7 +136,8 @@ def _mamba_block_aligned_split(
     # one-block backoff (see the docstring). The sparse index-kpool
     # early-return path below must observe it too (it previously ran under
     # a temporary bit clear from the outer producer wrapper).
-    if _get_sparse_index_kpool(self.vllm_config.model_config) is not None:
+    model_config = getattr(vllm_config, "model_config", None)
+    if model_config is not None and _get_sparse_index_kpool(model_config) is not None:
         if num_computed_tokens < max(
             request.num_prompt_tokens,
             request.num_tokens - 1,

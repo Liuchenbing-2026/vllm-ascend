@@ -1632,13 +1632,15 @@ def _setup_worker_and_scheduler(
     _downgrade_swa_bounded_replay(vllm_config, ascend_config)
 
 
-_FRONTIER_COMPATIBLE_SCHEDULER_CLS = frozenset({
-    "vllm.v1.core.sched.scheduler.Scheduler",
-    "vllm.v1.core.sched.async_scheduler.AsyncScheduler",
-    "vllm_ascend.core.batch_job_aware_scheduler.BatchJobAwareScheduler",
-    "vllm_ascend.core.batch_job_aware_scheduler.BatchJobAwareAsyncScheduler",
-    "vllm_ascend.core.short_request_first_scheduler.ShortRequestFirstAsyncScheduler",
-})
+_FRONTIER_COMPATIBLE_SCHEDULER_CLS = frozenset(
+    {
+        "vllm.v1.core.sched.scheduler.Scheduler",
+        "vllm.v1.core.sched.async_scheduler.AsyncScheduler",
+        "vllm_ascend.core.batch_job_aware_scheduler.BatchJobAwareScheduler",
+        "vllm_ascend.core.batch_job_aware_scheduler.BatchJobAwareAsyncScheduler",
+        "vllm_ascend.core.short_request_first_scheduler.ShortRequestFirstAsyncScheduler",
+    }
+)
 
 
 def _frontier_unsupported_scheduler_cls(vllm_config: VllmConfig) -> str | None:
@@ -1646,11 +1648,10 @@ def _frontier_unsupported_scheduler_cls(vllm_config: VllmConfig) -> str | None:
     scheduler_cls = getattr(scheduler_config, "scheduler_cls", None)
     if scheduler_cls is None:
         return None
-    qualname = (
-        scheduler_cls
-        if isinstance(scheduler_cls, str)
-        else f"{scheduler_cls.__module__}.{scheduler_cls.__qualname__}"
-    )
+    if isinstance(scheduler_cls, str):
+        qualname = scheduler_cls
+    else:
+        qualname = f"{scheduler_cls.__module__}.{scheduler_cls.__qualname__}"
     if qualname in _FRONTIER_COMPATIBLE_SCHEDULER_CLS:
         return None
     return qualname

@@ -159,7 +159,8 @@ def test_dummy_inputs_embeds_signature_and_input_ids_forwarding(monkeypatch, sup
     layer, _ = _make_embedding(0, events)
     state = _make_state(supports_mm_inputs, layer)
     embedded = torch.tensor([[10.0, 11.0, 12.0, 13.0], [20.0, 21.0, 22.0, 23.0]])
-    state.model.embed_input_ids = Mock(return_value=embedded)
+    embed_mock = Mock(return_value=embedded)
+    state.model = SimpleNamespace(embed_input_ids=embed_mock, modules=Mock(return_value=iter([layer])))
 
     input_ids = torch.tensor([1, 5], dtype=torch.int32)
     result = state.dummy_inputs_embeds(4, input_ids)
