@@ -291,7 +291,7 @@ class AscendDFlashSpeculator(LmheadTPDraftSamplingMixin, DFlashSpeculator):
         self._lmhead_tp_validate_draft_sampling()
 
     def init_cudagraph_manager(self, cudagraph_mode: CUDAGraphMode) -> None:
-        if self.speculative_config.enforce_eager or getattr(self, "context_kv_only", False):
+        if self.speculative_config.enforce_eager or getattr(self, "context_kv_only", False) is True:
             cudagraph_mode = CUDAGraphMode.NONE
         super().init_cudagraph_manager(cudagraph_mode)
         # The Ascend graph manager is patched onto the upstream module and

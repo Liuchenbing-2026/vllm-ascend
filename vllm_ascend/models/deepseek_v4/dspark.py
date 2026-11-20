@@ -136,7 +136,7 @@ class DeepseekV4DSparkModel(nn.Module):
             }
         )
         self._oproj_buffer_pool = OProjBufferPool()
-        if not getattr(vllm_config.speculative_config, "prefill_context_kv_only", False):
+        if getattr(vllm_config.speculative_config, "prefill_context_kv_only", False) is not True:
             for layer in self.layers.values():
                 impl = layer.self_attn.dsa_attn.dsa_attn.impl
                 if not isinstance(impl, AscendDSAImpl):

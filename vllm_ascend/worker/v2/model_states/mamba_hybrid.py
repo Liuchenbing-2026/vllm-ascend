@@ -472,6 +472,8 @@ class AscendMambaHybridModelState(MambaHybridModelState, AscendModelState):
             "num_scheduled_spec_tokens",
             self.vllm_config.num_speculative_tokens,
         )
+        if not isinstance(num_scheduled_spec_tokens, int):
+            num_scheduled_spec_tokens = self.vllm_config.num_speculative_tokens
         if not for_capture and num_scheduled_spec_tokens > 0:
             num_accepted_tokens = self.num_accepted_tokens_gpu.new_ones(num_reqs)
             num_accepted_tokens[: input_batch.num_reqs] = self.num_accepted_tokens_gpu[
@@ -488,7 +490,7 @@ class AscendMambaHybridModelState(MambaHybridModelState, AscendModelState):
             spec_decode_mask = (
                 ~is_prefilling_np
                 & (scheduled_tokens > 0)
-                & (scheduled_tokens <= self.vllm_config.num_speculative_tokens + 1)
+                & (scheduled_tokens <= num_scheduled_spec_tokens + 1)
             )
             spec_config = getattr(self.vllm_config, "speculative_config", None)
             if not (spec_config and getattr(spec_config, "enable_adaptive_verification", False)):
@@ -503,7 +505,7 @@ class AscendMambaHybridModelState(MambaHybridModelState, AscendModelState):
             )
             if cudagraph_mode == CUDAGraphMode.FULL and num_reqs > input_batch.num_reqs and spec_decode_mask.all():
                 padded_query_lens = np.diff(input_batch.query_start_loc_np[: num_reqs + 1])[input_batch.num_reqs :]
-                expected_query_len = self.vllm_config.num_speculative_tokens + 1
+                expected_query_len = num_scheduled_spec_tokens + 1
                 if np.all(padded_query_lens == expected_query_len):
                     num_decode_draft_tokens_np[input_batch.num_reqs :] = padded_query_lens - 1
             num_decode_draft_tokens_cpu = torch.from_numpy(num_decode_draft_tokens_np)

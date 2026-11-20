@@ -62,7 +62,7 @@ class LmheadTPDraftSamplingMixin:
 
     def _lmhead_tp_validate_draft_sampling(self) -> None:
         """Fail unsupported draft sampling at construction, not first use."""
-        if not lmhead_tp_enable():
+        if not lmhead_tp_enable() or getattr(self, "context_kv_only", False) is True:
             return
         if not self._lmhead_tp_sample_draft_supported:
             raise NotImplementedError(

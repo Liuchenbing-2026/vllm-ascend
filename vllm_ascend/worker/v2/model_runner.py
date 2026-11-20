@@ -200,9 +200,16 @@ class NPUModelRunner(GPUModelRunner):
         # These FIA models need post-rejection host counts on every PP stage.
         # TODO: Remove this extra PP sync when FIA and its metadata builders
         # use device lengths instead of exact CPU lengths.
+        num_scheduled_spec_tokens = getattr(
+            self.vllm_config,
+            "num_scheduled_spec_tokens",
+            self.num_speculative_steps,
+        )
+        if not isinstance(num_scheduled_spec_tokens, int):
+            num_scheduled_spec_tokens = self.num_speculative_steps
         self.sync_spec_pp_cpu_counts = (
             self.use_pp
-            and self.num_speculative_steps > 0
+            and num_scheduled_spec_tokens > 0
             and self.model_config.architecture
             in (
                 "KimiLinearForCausalLM",
@@ -1371,6 +1378,9 @@ class NPUModelRunner(GPUModelRunner):
         """Allow device lengths for supported speculative-decoding paths."""
         if self.sync_spec_pp_cpu_counts:
             return False
+
+        if getattr(self.speculator, "context_kv_only", False) is True:
+            return True
 
         if is_deepseek_v41(self.model_config.hf_config):
             return True

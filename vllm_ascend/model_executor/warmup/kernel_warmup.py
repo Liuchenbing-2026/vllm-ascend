@@ -71,8 +71,12 @@ def _register_dspark_swa_indices_warmup(worker: NPUWorker) -> int:
     rather than from the metadata builder's ``__init__``.
     """
     runner = worker.model_runner
-    if not hasattr(runner, "jit_warmup_registry") or getattr(
-        getattr(runner, "speculative_config", None), "prefill_context_kv_only", False
+    speculative_config = getattr(runner, "speculative_config", None) or getattr(
+        getattr(runner, "vllm_config", None), "speculative_config", None
+    )
+    if (
+        not hasattr(runner, "jit_warmup_registry")
+        or getattr(speculative_config, "prefill_context_kv_only", False) is True
     ):
         return 0
 

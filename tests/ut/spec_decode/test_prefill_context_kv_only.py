@@ -19,6 +19,7 @@ from vllm_ascend.models.deepseek_v4 import dspark as dsv4_dspark
 from vllm_ascend.models.kimi_k3 import kimi_k3_dspark
 from vllm_ascend.models.minimax_m3 import minimax_m3_dspark
 from vllm_ascend.models.qwen4_exp import cpu_length_sync as qwen4_cpu_sync
+from vllm_ascend.ops.triton.spec_decode import prepare_dflash_inputs as prepare_dflash_ops
 from vllm_ascend.ops.vocab_parallel_embedding import VocabParallelMode
 from vllm_ascend.patch.worker import patch_qwen3_dflash
 from vllm_ascend.worker.device_metadata import TargetDeviceMetadata
@@ -27,6 +28,7 @@ from vllm_ascend.worker.v2.model_runner import NPUModelRunner
 from vllm_ascend.worker.v2.model_states.mamba_hybrid import AscendMambaHybridModelState
 from vllm_ascend.worker.v2.spec_decode.dflash.speculator import AscendDFlashSpeculator
 from vllm_ascend.worker.v2.spec_decode.dspark.speculator import AscendDSparkSpeculator
+from vllm_ascend.worker.v2.spec_decode.lmhead_tp_utils import LmheadTPDraftSamplingMixin
 
 try:
     from vllm_ascend.models.deepseek_v41 import dspark as dsv41_dspark
@@ -603,3 +605,118 @@ def test_empty_metadata_builders_and_mamba_hybrid_zero_scheduled_spec_tokens():
     spec_meta = mock_build.call_args.kwargs["model_specific_attn_metadata"]
     assert spec_meta.num_accepted_tokens is None
     assert spec_meta.num_decode_draft_tokens_cpu is None
+
+
+def test_lmhead_tp_validate_skips_when_context_kv_only(monkeypatch):
+    class DummySpeculator(LmheadTPDraftSamplingMixin):
+        method = "lilicorr"
+        max_num_reqs = 4
+        num_speculative_steps = 3
+
+    monkeypatch.setattr("vllm_ascend.worker.v2.spec_decode.lmhead_tp_utils.lmhead_tp_enable", lambda: True)
+    spec = DummySpeculator()
+    spec._lmhead_tp_sample_draft_supported = False
+    spec.use_local_argmax_reduction = True
+    spec.context_kv_only = True
+    spec._lmhead_tp_validate_draft_sampling()
+
+    spec.context_kv_only = False
+    with pytest.raises(NotImplementedError):
+        spec._lmhead_tp_validate_draft_sampling()
+
+    spec._lmhead_tp_sample_draft_supported = True
+    with pytest.raises(NotImplementedError):
+        spec._lmhead_tp_validate_draft_sampling()
+
+
+def test_model_runner_skips_cpu_length_sync_and_ignores_magicmock():
+    runner = NPUModelRunner.__new__(NPUModelRunner)
+    runner.sync_spec_pp_cpu_counts = False
+    runner.model_config = SimpleNamespace(hf_config=SimpleNamespace())
+    runner.model_state = None
+    runner.speculative_config = SimpleNamespace()
+    runner.speculator = SimpleNamespace(context_kv_only=True)
+
+    with patch("vllm_ascend.worker.v2.model_runner.is_deepseek_v41", return_value=False):
+        assert runner._can_skip_spec_cpu_length_sync() is True
+
+        runner.speculator = MagicMock()
+        runner.speculative_config = None
+        assert runner._can_skip_spec_cpu_length_sync() is False
+
+
+def test_kernel_warmup_vllm_config_fallback_and_magicmock_safety():
+    worker = SimpleNamespace(
+        model_runner=SimpleNamespace(
+            jit_warmup_registry=SimpleNamespace(),
+            vllm_config=SimpleNamespace(speculative_config=SimpleNamespace(prefill_context_kv_only=True)),
+        )
+    )
+    assert kernel_warmup._register_dspark_swa_indices_warmup(worker) == 0
+
+    mock_registry = MagicMock()
+    mock_worker = SimpleNamespace(
+        model_runner=SimpleNamespace(
+            jit_warmup_registry=mock_registry,
+            speculative_config=MagicMock(),
+        )
+    )
+    with patch.object(kernel_warmup, "_iter_dspark_draft_groups", return_value=[]) as mock_iter:
+        assert kernel_warmup._register_dspark_swa_indices_warmup(mock_worker) == 0
+    mock_registry.activate.assert_called_once()
+    mock_iter.assert_called_once_with(mock_worker.model_runner)
+
+
+def test_prepare_dflash_inputs_clamps_overflow_query_tokens(monkeypatch):
+    monkeypatch.setattr(prepare_dflash_ops, "init_device_properties_triton", lambda: None)
+    monkeypatch.setattr(prepare_dflash_ops, "get_vectorcore_num", lambda: 16)
+    monkeypatch.setattr(prepare_dflash_ops, "_prepare_dflash_inputs_kernel", MagicMock())
+
+    max_num_tokens = 10
+    z_tok = torch.zeros(max_num_tokens, dtype=torch.int32)
+    z_req = torch.zeros(4, dtype=torch.int32)
+    bufs = SimpleNamespace(
+        input_ids=z_tok,
+        positions=z_tok,
+        query_start_loc=torch.zeros(5, dtype=torch.int32),
+        seq_lens=z_req,
+        is_padding=torch.ones(max_num_tokens, dtype=torch.bool),
+    )
+    batch = SimpleNamespace(
+        num_reqs=4,
+        num_scheduled_tokens=np.array([2, 2, 2, 2], dtype=np.int32),
+        positions=z_tok,
+        query_start_loc=torch.zeros(5, dtype=torch.int32),
+        idx_mapping=z_req,
+    )
+    prepare_dflash_ops.prepare_dflash_inputs_triton(
+        bufs,
+        z_tok,
+        z_tok,
+        z_tok,
+        z_req,
+        z_req,
+        z_req,
+        torch.zeros(4, dtype=torch.float32),
+        z_req,
+        batch,
+        z_req,
+        z_req,
+        z_req,
+        z_req,
+        torch.zeros(4, dtype=torch.float32),
+        z_req,
+        torch.zeros(4, 2, dtype=torch.int32),
+        16,
+        0,
+        1,
+        1,
+        0,
+        4,
+        3,
+        4,
+        max_num_tokens,
+        64,
+        kv_cache_block_size=16,
+    )
+    assert torch.all(~bufs.is_padding)
