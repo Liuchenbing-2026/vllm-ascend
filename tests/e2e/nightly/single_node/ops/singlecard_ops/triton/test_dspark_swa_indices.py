@@ -21,9 +21,13 @@ graph-mode specifics that the integration review called out:
 import pytest
 import torch
 
+from vllm_ascend.attention.dsa_v1 import build_dspark_swa_indices
 from vllm_ascend.device.device_config import get_ascend_device_type
 from vllm_ascend.device.hardware import AscendDeviceType
 from vllm_ascend.ops.triton.dspark_swa_indices import (
+    OUTPUT_MODE_LOGICAL,
+    OUTPUT_MODE_PHYSICAL,
+    build_dspark_swa_indices_triton,
     build_dspark_swa_slot_indices_triton,
     dspark_swa_indices_supported,
 )
@@ -40,6 +44,7 @@ def eager_dspark_swa_indices(
     seq_lens,
     num_decode_tokens=None,
     index_width=None,
+    output_mode=OUTPUT_MODE_PHYSICAL,
 ):
     """Reference implementation (mirrors dsa_v1.build_dspark_swa_indices)."""
 
@@ -55,18 +60,23 @@ def eager_dspark_swa_indices(
     cols = torch.arange(index_width, device=start_pos.device)
     col_mask = cols[None, :] < visible_lens[:, None]
     pos = start_pos[:, None] + cols[None, :]
-    block_nums = pos // block_size
-    safe_nums = block_nums.clamp(min=0, max=int(block_table.shape[1]) - 1)
-    block_offsets = pos % block_size
-    block_ids = torch.gather(block_table, 1, safe_nums)
-    slot_ids = (block_ids * block_size + block_offsets).to(torch.int32)
+    if output_mode == OUTPUT_MODE_LOGICAL:
+        slot_ids = pos.to(torch.int32)
+    else:
+        block_nums = pos // block_size
+        safe_nums = block_nums.clamp(min=0, max=int(block_table.shape[1]) - 1)
+        block_offsets = pos % block_size
+        block_ids = torch.gather(block_table, 1, safe_nums)
+        slot_ids = (block_ids * block_size + block_offsets).to(torch.int32)
     slot_ids = slot_ids.where(col_mask, torch.full_like(slot_ids, -1))
 
     if num_decode_tokens is None:
         num_decode_tokens = int(query_start_loc[-1].item())
     per_token_slots = torch.repeat_interleave(slot_ids, query_lens, dim=0, output_size=num_decode_tokens).unsqueeze(1)
     per_token_lens = torch.repeat_interleave(visible_lens, query_lens, dim=0, output_size=num_decode_tokens)
-    return per_token_slots, per_token_lens
+    if output_mode == OUTPUT_MODE_LOGICAL:
+        return per_token_slots, per_token_lens.to(torch.int32).unsqueeze(1)
+    return per_token_slots, per_token_lens.to(torch.int64)
 
 
 def _make_inputs(
@@ -121,6 +131,12 @@ def _make_inputs(
         # fault); the tail column block must store with a lane mask.
         pytest.param(8, 3, 8192, 128, 16_384, 128, id="window-8k-unaligned-width"),
         pytest.param(8, 4, 512, 128, 1200, 16, id="window-544-unaligned-width"),
+        pytest.param(4, 4, 944, 48, 3000, 64, id="non-pow2-block-size-48"),
+        pytest.param(4, 4, 944, 96, 5000, 64, id="non-pow2-block-size-96"),
+        pytest.param(4, 3, 256, 100, 2000, 32, id="non-pow2-block-size-100"),
+        pytest.param(4, 3, 128, 12, 1000, 96, id="non-pow2-block-size-12"),
+        pytest.param(4, 4, 128, 128, 1_280_000, 10_000, id="wide-table-10k-small-window"),
+        pytest.param(4, 3, 944, 128, 2_000_000, 16_384, id="wide-table-16k"),
     ],
 )
 def test_triton_matches_eager(
@@ -246,13 +262,14 @@ def test_capacity_grid_padding():
     get_ascend_device_type() not in (AscendDeviceType.A2, AscendDeviceType.A3, AscendDeviceType.A5),
     reason="Requires Ascend A2/A3/A5",
 )
+@pytest.mark.parametrize("output_mode", [OUTPUT_MODE_PHYSICAL, OUTPUT_MODE_LOGICAL])
 @pytest.mark.parametrize("use_graph", [False, True], ids=["eager-launch", "acl-graph-replay"])
 @torch.inference_mode()
-def test_reused_buffers_clear_inactive_rows(use_graph):
+def test_reused_buffers_clear_inactive_rows(use_graph, output_mode):
     """Keep six request slots and 90 output rows while active rows shrink."""
     num_reqs, num_speculative_tokens = 6, 14
     window_size, block_size, max_seq_len, max_num_blocks = 944, 128, 2000, 32
-    if not dspark_swa_indices_supported(block_size, max_num_blocks):
+    if not dspark_swa_indices_supported(block_size, max_num_blocks, output_mode=output_mode):
         pytest.skip("triton fast path not supported in this environment")
 
     qsl_cpu, seq_lens_cpu, block_table_cpu = _make_inputs(
@@ -264,10 +281,13 @@ def test_reused_buffers_clear_inactive_rows(use_graph):
     num_decode_tokens = num_reqs * (num_speculative_tokens + 1)
     index_width = ((window_size + num_speculative_tokens + 127) // 128) * 128
     slots_buf = torch.full((num_decode_tokens, 1, index_width), 12345, dtype=torch.int32, device=DEVICE)
-    lens_buf = torch.full((num_decode_tokens,), 777, dtype=torch.int64, device=DEVICE)
+    is_logical = output_mode == OUTPUT_MODE_LOGICAL
+    lens_shape = (num_decode_tokens, 1) if is_logical else (num_decode_tokens,)
+    lens_dtype = torch.int32 if is_logical else torch.int64
+    lens_buf = torch.full(lens_shape, 777, dtype=lens_dtype, device=DEVICE)
 
     def launch():
-        return build_dspark_swa_slot_indices_triton(
+        return build_dspark_swa_indices_triton(
             block_table,
             num_speculative_tokens,
             window_size,
@@ -279,6 +299,7 @@ def test_reused_buffers_clear_inactive_rows(use_graph):
             indices_output=slots_buf,
             lens_output=lens_buf,
             max_num_reqs=num_reqs,
+            output_mode=output_mode,
         )
 
     # Compile before capture, then replay using the same input/output addresses.
@@ -311,13 +332,15 @@ def test_reused_buffers_clear_inactive_rows(use_graph):
             current_seq_lens,
             num_decode_tokens=active_rows,
             index_width=index_width,
+            output_mode=output_mode,
         )
         torch.testing.assert_close(out_slots[:active_rows].cpu(), ref_slots, rtol=0, atol=0)
         torch.testing.assert_close(out_lens[:active_rows].cpu(), ref_lens, rtol=0, atol=0)
         assert torch.all(slots_buf[active_rows:] == -1)
         assert torch.all(lens_buf[active_rows:] == 0)
         assert out_slots.shape == (num_decode_tokens, 1, index_width)
-        assert out_lens.shape == (num_decode_tokens,)
+        assert out_lens.shape == lens_shape
+        assert out_lens.dtype == lens_dtype
         assert out_slots.data_ptr() == slots_buf.data_ptr()
         assert out_lens.data_ptr() == lens_buf.data_ptr()
 
@@ -741,10 +764,9 @@ def test_int32_metadata_inputs():
     get_ascend_device_type() not in (AscendDeviceType.A2, AscendDeviceType.A3, AscendDeviceType.A5),
     reason="Requires Ascend A2/A3/A5",
 )
-@pytest.mark.parametrize("bad_block_size", [100, 96, 0])
-def test_gate_rejects_non_pow2_block_size(bad_block_size):
-    """The host-side gate must reject non-power-of-two block sizes."""
-
+@pytest.mark.parametrize("bad_block_size", [0, -4])
+def test_gate_rejects_invalid_block_size(bad_block_size):
+    """The host-side gate must reject non-positive block sizes in physical mode."""
     assert not dspark_swa_indices_supported(bad_block_size, 16)
 
 
@@ -752,5 +774,195 @@ def test_gate_rejects_non_pow2_block_size(bad_block_size):
     get_ascend_device_type() not in (AscendDeviceType.A2, AscendDeviceType.A3, AscendDeviceType.A5),
     reason="Requires Ascend A2/A3/A5",
 )
-def test_gate_accepts_valid_config():
+def test_gate_accepts_non_pow2_and_wide_block_table():
     assert dspark_swa_indices_supported(128, 64)
+    assert dspark_swa_indices_supported(96, 16_384)
+    assert dspark_swa_indices_supported(100, 10_000)
+    assert dspark_swa_indices_supported(0, 0, output_mode=OUTPUT_MODE_LOGICAL)
+
+
+@pytest.mark.skipif(
+    get_ascend_device_type() not in (AscendDeviceType.A2, AscendDeviceType.A3, AscendDeviceType.A5),
+    reason="Requires Ascend A2/A3/A5",
+)
+@pytest.mark.parametrize(
+    ("num_reqs", "num_speculative_tokens", "window_size", "max_seq_len"),
+    [
+        pytest.param(1, 3, 128, 300, id="logical-single"),
+        pytest.param(5, 4, 944, 5000, id="logical-odd-reqs"),
+        pytest.param(8, 3, 8192, 16_384, id="logical-8k-unaligned"),
+    ],
+)
+def test_triton_logical_mode_matches_eager(num_reqs, num_speculative_tokens, window_size, max_seq_len):
+    if not dspark_swa_indices_supported(output_mode=OUTPUT_MODE_LOGICAL):
+        pytest.skip("triton fast path not supported in this environment")
+    query_start_loc, seq_lens, block_table = _make_inputs(
+        num_reqs, num_speculative_tokens, window_size, 128, max_seq_len, 16
+    )
+    query_start_loc = query_start_loc.to(torch.int32).to(DEVICE)
+    seq_lens = seq_lens.to(torch.int32).to(DEVICE)
+    ref_slots, ref_lens = eager_dspark_swa_indices(
+        block_table,
+        num_speculative_tokens,
+        window_size,
+        128,
+        query_start_loc.cpu(),
+        seq_lens.cpu(),
+        output_mode=OUTPUT_MODE_LOGICAL,
+    )
+    out_slots, out_lens = build_dspark_swa_indices_triton(
+        None,
+        num_speculative_tokens,
+        window_size,
+        1,
+        query_start_loc,
+        seq_lens,
+        output_mode=OUTPUT_MODE_LOGICAL,
+    )
+    assert out_lens.dtype == torch.int32
+    assert out_lens.shape == ref_lens.shape
+    torch.testing.assert_close(out_slots.cpu(), ref_slots, rtol=0, atol=0)
+    torch.testing.assert_close(out_lens.cpu(), ref_lens, rtol=0, atol=0)
+
+
+@pytest.mark.skipif(
+    get_ascend_device_type() not in (AscendDeviceType.A2, AscendDeviceType.A3, AscendDeviceType.A5),
+    reason="Requires Ascend A2/A3/A5",
+)
+def test_wide_block_table_tail_and_block_boundaries():
+    block_size = 96
+    max_num_blocks = 12_000
+    window_size = 128
+    num_spec = 3
+    # Place seq_lens across exact block boundaries near the tail of the wide table.
+    seq_lens_cpu = torch.tensor(
+        [
+            block_size * 11_900 - 1,
+            block_size * 11_900,
+            block_size * 11_900 + 1,
+            block_size * 2,
+        ],
+        dtype=torch.int32,
+    )
+    qsl_cpu = torch.tensor([0, 4, 8, 12, 16], dtype=torch.int32)
+    bt_cpu = torch.randint(0, 100_000, (4, max_num_blocks), dtype=torch.int32)
+    ref_slots, ref_lens = eager_dspark_swa_indices(
+        bt_cpu,
+        num_spec,
+        window_size,
+        block_size,
+        qsl_cpu,
+        seq_lens_cpu,
+    )
+    out_slots, out_lens = build_dspark_swa_indices(
+        bt_cpu.to(DEVICE),
+        num_spec,
+        window_size,
+        block_size,
+        qsl_cpu.to(DEVICE),
+        seq_lens_cpu.to(DEVICE),
+        num_decode_tokens=16,
+        output_mode=OUTPUT_MODE_PHYSICAL,
+    )
+    torch.testing.assert_close(out_slots.cpu(), ref_slots, rtol=0, atol=0)
+    torch.testing.assert_close(out_lens.cpu(), ref_lens, rtol=0, atol=0)
+
+
+@pytest.mark.skipif(
+    get_ascend_device_type() not in (AscendDeviceType.A2, AscendDeviceType.A3, AscendDeviceType.A5),
+    reason="Requires Ascend A2/A3/A5",
+)
+def test_capacity_boundaries_empty_overflow_and_large_q_len():
+    index_width = 256
+    # Empty batch (num_reqs == 0) with graph capacity > 0 clears all padded rows.
+    slots_buf = torch.full((12, 1, index_width), 99, dtype=torch.int32, device=DEVICE)
+    lens_buf = torch.full((12, 1), 88, dtype=torch.int32, device=DEVICE)
+    out_slots, out_lens = build_dspark_swa_indices(
+        None,
+        3,
+        128,
+        1,
+        torch.tensor([0], dtype=torch.int32, device=DEVICE),
+        torch.empty((0,), dtype=torch.int32, device=DEVICE),
+        num_decode_tokens=8,
+        index_width=index_width,
+        indices_output=slots_buf,
+        lens_output=lens_buf,
+        max_num_reqs=3,
+        num_query_per_req=4,
+        output_mode=OUTPUT_MODE_LOGICAL,
+    )
+    assert torch.all(out_slots == -1)
+    assert torch.all(out_lens == 0)
+    assert torch.all(slots_buf == -1)
+    assert torch.all(lens_buf == 0)
+
+    # num_reqs > max_num_reqs and q_len > _MAX_Q_TILE (20 > 16) both succeed.
+    qsl_cpu = torch.tensor([0, 20, 40, 60, 80, 100], dtype=torch.int32)
+    seq_lens_cpu = torch.tensor([220, 240, 260, 280, 300], dtype=torch.int32)
+    bt_cpu = torch.randint(0, 5000, (5, 16), dtype=torch.int32)
+    ref_slots, ref_lens = eager_dspark_swa_indices(
+        bt_cpu,
+        3,
+        128,
+        96,
+        qsl_cpu,
+        seq_lens_cpu,
+        index_width=index_width,
+    )
+    out_slots, out_lens = build_dspark_swa_indices(
+        bt_cpu.to(DEVICE),
+        3,
+        128,
+        96,
+        qsl_cpu.to(DEVICE),
+        seq_lens_cpu.to(DEVICE),
+        num_decode_tokens=100,
+        index_width=index_width,
+        max_num_reqs=2,
+        output_mode=OUTPUT_MODE_PHYSICAL,
+    )
+    torch.testing.assert_close(out_slots.cpu(), ref_slots, rtol=0, atol=0)
+    torch.testing.assert_close(out_lens.cpu(), ref_lens, rtol=0, atol=0)
+
+
+@pytest.mark.skipif(
+    get_ascend_device_type() not in (AscendDeviceType.A2, AscendDeviceType.A3, AscendDeviceType.A5),
+    reason="Requires Ascend A2/A3/A5",
+)
+@pytest.mark.parametrize("output_mode", [OUTPUT_MODE_PHYSICAL, OUTPUT_MODE_LOGICAL])
+def test_shared_entry_point_persistent_buffers_npu(output_mode):
+    qsl_cpu = torch.tensor([0, 4, 8], dtype=torch.int32)
+    seq_lens_cpu = torch.tensor([310, 120], dtype=torch.int32)
+    bt_cpu = torch.randint(0, 10_000, (2, 16), dtype=torch.int32)
+    index_width = 256
+    slots_buf = torch.full((12, 1, index_width), 77, dtype=torch.int32, device=DEVICE)
+    is_logical = output_mode == OUTPUT_MODE_LOGICAL
+    lens_buf = torch.full((12, 1) if is_logical else (12,), 66, dtype=torch.int32, device=DEVICE)
+    ref_slots, ref_lens = eager_dspark_swa_indices(
+        bt_cpu,
+        3,
+        128,
+        96,
+        qsl_cpu,
+        seq_lens_cpu,
+        index_width=index_width,
+        output_mode=output_mode,
+    )
+    out_slots, out_lens = build_dspark_swa_indices(
+        bt_cpu.to(DEVICE),
+        3,
+        128,
+        96,
+        qsl_cpu.to(DEVICE),
+        seq_lens_cpu.to(DEVICE),
+        num_decode_tokens=8,
+        index_width=index_width,
+        indices_output=slots_buf,
+        lens_output=lens_buf,
+        output_mode=output_mode,
+    )
+    assert out_slots.data_ptr() == slots_buf.data_ptr()
+    assert out_lens.data_ptr() == lens_buf.data_ptr()
+    torch.testing.assert_close(out_slots.cpu(), ref_slots, rtol=0, atol=0)
+    torch.testing.assert_close(out_lens.cpu(), ref_lens.to(torch.int32), rtol=0, atol=0)

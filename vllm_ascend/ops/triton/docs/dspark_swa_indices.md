@@ -2,64 +2,64 @@
 
 ## Description
 
-- **Function**: Builds the non-causal visible-slot indices and visible lengths for DSpark (DeepSeek V4.1) parallel drafting over a paged sliding-window attention (SWA) cache. It replaces the eager ~15-op torch chain (`arange` / `sub` / `clamp` / `floordiv` / `gather` / `where` / `repeat_interleave` / `copy_` ...) in `build_dspark_swa_indices` of `vllm_ascend/attention/dsa_v1.py` with a single fused Triton kernel.
+- **Function**: Unified Triton-Ascend implementation of DSpark (DeepSeek V4 / V4.1) non-causal SWA index and length construction (`build_dspark_swa_indices_triton` and shared entry point `vllm_ascend.attention.dsa_v1.build_dspark_swa_indices`). Through `output_mode`, it supports both **physical KV slots** (`"physical"`, used by `AscendDSAMetadataBuilder`) and **request-local logical sequence positions** (`"logical"`, used by `AscendDSAV41MetadataBuilder` / `SparseFlashMLA`).
 - **Formula** (per request `r`, all integer arithmetic):
-    - `q_len = query_start_loc[r + 1] - query_start_loc[r]` (uniform across requests)
+    - `q_len = query_start_loc[r + 1] - query_start_loc[r]`
     - `prefix_len = seq_lens[r] - q_len`
     - `start_pos = max(prefix_len - window_size, 0)`
     - `visible_len = seq_lens[r] - start_pos`
-    - for column `c` in `[0, index_width)`: `pos = start_pos + c`; `block_num = pos // block_size`; `block_off = pos - block_num * block_size`
-    - `slot[c] = block_table[r, block_num] * block_size + block_off` if `c < visible_len`, else `-1`
-    - every active output row of request `r` receives the same `slot` vector; `lens[row] = visible_len`; padded rows `[active_rows, num_rows_padded)` are reset to `slots = -1`, `lens = 0`
+    - for column `c` in `[0, index_width)`: `pos = start_pos + c`:
+        - in `"logical"` mode: `slot[c] = pos` if `c < visible_len`, else `-1`
+        - in `"physical"` mode: `block_num = pos // block_size`, `block_off = pos - block_num * block_size`, `slot[c] = block_table[r, block_num] * block_size + block_off` if `c < visible_len`, else `-1`
+    - every active output row `[q0, q0 + q_len)` receives the same `slot` vector and `lens[row] = visible_len`; padded rows `[active_rows, num_rows_padded)` are reset to `slots = -1`, `lens = 0` in the same launch
 - **Algorithm flow** (processed per request-column-block item, independently):
-  1. Compute grid: `grid_size = min(get_vectorcore_num(), max_num_reqs * NUM_CB)` where `NUM_CB = ceil(index_width / BLOCK_W)`; the kernel claims work items `w = pid, pid + grid_size, ...` grid-stride, with item `w` mapping to request `r = w // NUM_CB`, column block `cb = w % NUM_CB`.
-  2. Load `active_rows = query_start_loc[num_reqs]` on device. Distributed pad-row cleanup: each item resets the slice of `[active_rows, num_rows_padded)` inside its row band `[r * num_query_per_req, (r + 1) * num_query_per_req)`, so a captured ACL graph never replays stale rows.
-  3. For active items: load the request's full block-table row (up to `ROW_POW2 = next_pow2(num_blocks)` lanes) into UB, clamp column block numbers into the table range, gather physical block IDs via `tl.gather`, and compute the slot vector for the column block.
-  4. One 2D store writes the `[q_len, index_width]` output tile: the slot vector is broadcast over `Q_POW2 = next_pow2(num_speculative_tokens + 1)` rows (the uniform-query contract bounds `q_len <= Q_POW2`); the first column block also stores `visible_len` into `lens`.
-- **Supported modes**: Atlas A2 (910B series; verified on 910B4) and A3 (910C series — same kernel ISA family). 950PR&950DT Products N/A — the eager torch chain remains the fallback. Used by the DSA metadata builder for DSpark non-causal parallel drafting in both eager and graph-capture modes.
+    1. Compute grid: `grid_size = min(get_vectorcore_num(), num_slots * NUM_CB)` where `NUM_CB = ceil(index_width / BLOCK_W)` and `num_slots = max(R_alloc, ceil(num_rows_padded / num_query_per_req))`; each program claims work items `w = pid, pid + grid_size, ...` grid-stride (`r = w // NUM_CB`, `cb = w % NUM_CB`).
+    2. Load `active_rows = query_start_loc[num_reqs]` on device. Distributed pad-row cleanup: each item resets the slice of `[active_rows, num_rows_padded)` inside its row band `[r * num_query_per_req, (r + 1) * num_query_per_req)`, so a captured ACL graph never replays stale rows.
+    3. For active items (`r < num_reqs` and `q_len > 0`):
+        - `"logical"` mode sets `slot = pos`.
+        - `"physical"` mode computes `blk_base = clamp((start_pos + cb * BLOCK_W) // BLOCK_SIZE, 0, num_blocks - 1)` and loads only the bounded block-table slice `[blk_base, blk_base + BT_WIN_POW2)` into UB (`BT_WIN_POW2 = max(2, next_pow2((BLOCK_W + BLOCK_SIZE - 2) // BLOCK_SIZE + 1))`), then gathers physical block IDs via `tl.gather`. This eliminates full-row UB preloading and supports arbitrary `block_table` widths and any positive `block_size` (including non-power-of-two block sizes).
+    4. Loop over `q_off = 0, Q_POW2, ...` (`Q_POW2 = min(16, next_pow2(num_speculative_tokens + 1))`) using 2D stores to write `[q_len, index_width]` output rows and (for `cb == 0`) store `visible_len` into `lens`.
+- **Supported modes**: Atlas A2 (910B), A3 (910C), and A5 NPU paths for both `"physical"` and `"logical"` modes under eager execution and ACL graph capture/replay. Triton is required on NPU; non-NPU (CPU) unit-test harnesses use the CPU reference helper in `vllm_ascend.attention.dsa_v1`.
 
 ## Parameters
 
 | Parameter | Input/Output/Attribute | Description | Data type | Data format |
 | --- | --- | --- | --- | --- |
-| `block_table` | Input | Block table of the SWA KV cache, row-sliced to the active requests `[num_reqs, num_blocks]`; row stride passed separately so a padded/sliced table works | int32 / int64 | ND |
-| `query_start_loc` | Input | Cumulative query offsets `[num_reqs + 1]`; under the uniform-query contract each request contributes the same `q_len` | int32 / int64 | 1D |
+| `block_table` | Input | SWA KV cache block table `[num_reqs, num_blocks]` (required in `"physical"` mode; ignored/`None` in `"logical"` mode); row stride passed separately via `stride(0)` | int32 / int64 | ND |
+| `query_start_loc` | Input | Cumulative query offsets `[num_reqs + 1]` | int32 / int64 | 1D |
 | `seq_lens` | Input | Per-request context lengths `[num_reqs]` | int32 / int64 | 1D |
-| `num_speculative_tokens` | Input (attribute) | Number of draft tokens per request; output row-tile height is `next_pow2(num_speculative_tokens + 1)` | int32 | scalar |
+| `num_speculative_tokens` | Input (attribute) | Number of draft tokens per request; bounds default `Q_POW2` and index alignment | int32 | scalar |
 | `window_size` | Input (attribute) | Sliding-window size of the SWA cache (model constant) | int32 | scalar |
-| `block_size` | Input (attribute) | DSA KV-cache block size; must be a power of two | int32 | scalar |
-| `index_width` | Input (attribute) | Aligned index width of the output (`ceil((window_size + num_speculative_tokens) / 128) * 128`) | int32 | scalar |
-| `num_decode_tokens` | Input (attribute) | Fixed output row count, supplied by the caller to avoid a D2H sync; graph replay may have fewer active rows, read from `query_start_loc[num_reqs]` on device | int32 | scalar |
-| `max_num_reqs` | Input (attribute) | Capture-time request-slot capacity sizing the fixed grid; optional (defaults to `num_reqs`) | int32 | scalar |
-| `num_query_per_req` | Input (attribute) | Row-expansion factor per request slot; defaults to `num_speculative_tokens + 1`, anchor-sampling mode passes `num_speculative_tokens` | int32 | scalar |
-| `indices_output` | Output | Visible physical slot ids `[num_rows_padded, 1, index_width]`, `-1` for invisible/padded lanes; pre-allocated persistent buffer for graph capture, or freshly allocated when omitted | int32 | ND |
-| `lens_output` | Output | Visible length per row `[num_rows_padded]`, `0` on padded rows; pre-allocated persistent buffer or freshly allocated when omitted. Always int64 — an intentional API difference from the eager chain, whose lens dtype follows `seq_lens` (int32 when the runtime metadata is int32). Slot values are identical; production call sites discard the lens output | int64 | 1D |
+| `block_size` | Input (attribute) | DSA KV-cache block size in `"physical"` mode (any positive integer; normalized to `1` in `"logical"` mode) | int32 | scalar |
+| `index_width` | Input (attribute) | Aligned index width (`ceil((window_size + num_speculative_tokens) / 128) * 128` when omitted) | int32 | scalar |
+| `num_decode_tokens` | Input (attribute) | Fixed output row count supplied by the caller to avoid D2H sync; graph replay may have fewer active rows (`query_start_loc[num_reqs]` on device) | int32 | scalar |
+| `max_num_reqs` | Input (attribute) | Capture-time request-slot capacity sizing the fixed grid and pad cleanup; optional | int32 | scalar |
+| `num_query_per_req` | Input (attribute) | Row-expansion factor per request slot; defaults to `num_speculative_tokens + 1` | int32 | scalar |
+| `output_mode` | Input (attribute) | `"physical"` (KV slot IDs) or `"logical"` (request-local positions) | str | scalar |
+| `indices_output` | Output | Contiguous output buffer `[>=num_rows, 1, index_width]`, `-1` for invisible/padded lanes; persistent buffer or freshly allocated when omitted | int32 | ND |
+| `lens_output` | Output | Contiguous output buffer `[>=num_rows]` or `[>=num_rows, 1]`, `0` on padded rows; default allocation is `[alloc_rows]` int64 in `"physical"` mode and `[alloc_rows, 1]` int32 in `"logical"` mode | int32 / int64 | 1D / 2D |
 
 ## Constraints
 
-- `block_size` must be a power of two (`//` and `%` lower to shift/mask).
-- `next_pow2(num_blocks)` must not exceed 8192 (UB-preload tile cap; the host gate falls back to the eager chain beyond it).
-- `q_len <= num_speculative_tokens + 1` for every request (uniform-query contract of DSpark drafting); the 2D output tile relies on it.
-- `indices_output` must be int32. When a persistent `indices_output` is passed for graph capture, the FULL buffer (`buffer`, not `buffer[:num_rows]`) must be provided so the pad-row cleanup stays armed; a slice ending at the actual active row count leaves no room to clean trailing rows and can trigger a `UserWarning`.
-- `lens_output` / the freshly allocated lens is always int64. This is an intentional API difference: the eager chain's `per_token_lens` follows the dtype of `seq_lens` (int32 with int32 runtime metadata), while the fused kernel fixes lens at int64. Slot values are identical; production call sites currently discard the lens output.
-- Padded rows `[active_rows, num_rows_padded)` are reset to `slots = -1`, `lens = 0` in the same launch. `active_rows` comes from device metadata even when `num_decode_tokens` stays fixed across graph replays; the latter still controls the returned output extent and buffer checks.
-- `block_table` may be int32 or int64; the kernel narrows the loaded rows to int32 in-register (no-op on i32, value-preserving truncation on i64 — physical block IDs fit int32).
-- All runtime scalars (`num_blocks`, `num_reqs`, `num_rows_padded`, `num_rows`, `num_query_per_req`, `num_slots`) are `do_not_specialize`, so no recompilation is triggered by varying batch sizes; only the constexpr set (`WINDOW_SIZE`, `BLOCK_SIZE`, `INDEX_W`, `BLOCK_W`, `ROW_POW2`, `Q_POW2`) forms the JIT key, which is startup-constant for a serving run and warmed once from `model_executor/warmup` before ACL graph capture.
-- `get_vectorcore_num()` must have been initialised: the wrapper calls `init_device_properties_triton()` (idempotent) before each launch. In serving this happens during worker start-up as well; standalone callers get it implicitly.
-- Inference-only (decode, DSpark non-causal drafting); works under both eager and ACL graph-capture modes (fixed launch grid derived from `max_num_reqs`, stable tensor addresses from persistent buffers).
+- All tensor inputs and caller-supplied outputs used in a Triton launch must reside on the same accelerator device (`npu`/`cuda`); host/CPU or cross-device tensors raise `ValueError`.
+- In `"physical"` mode, `block_size` must be `> 0` (power-of-two is not required) and `block_table` must have unit column stride (`stride(1) == 1`) with `shape[1] >= 1`. There is no 8192-column limit on `block_table_width`.
+- `indices_output` must be contiguous `int32` of shape `[>=num_rows, 1, index_width]`. When `max_num_reqs` is passed for graph capture, supply the FULL persistent buffer (`indices_output=buffer`, not `buffer[:num_rows]`) so trailing padded rows `[active_rows, num_rows_padded)` are cleared in the same launch.
+- `lens_output` must be contiguous `int32` or `int64` with shape `[>=num_rows]` or `[>=num_rows, 1]`.
+- Padded rows `[active_rows, num_rows_padded)` are reset to `slots = -1`, `lens = 0` in the same launch using device-side `active_rows = query_start_loc[num_reqs]`.
+- All runtime scalars (`num_blocks`, `num_reqs`, `num_rows_padded`, `num_rows`, `num_query_per_req`, `num_slots`) are `do_not_specialize`; only the compile key (`WINDOW_SIZE`, `BLOCK_SIZE`, `INDEX_W`, `BLOCK_W`, `BT_WIN_POW2`, `Q_POW2`, `bt_stride`, `USE_LOGICAL_INDICES`, `lens_dtype`) triggers JIT compilation and is warmed up by `model_executor/warmup/kernel_warmup.py` for both DSA (`"physical"`) and DSA V4.1 (`"logical"`).
+- `get_vectorcore_num()` is initialized idempotently via `init_device_properties_triton()` before launch.
 
 ## Origin and Differences
 
-- **Origin**: Rewritten from scratch based on the eager torch implementation `build_dspark_swa_indices` in `vllm_ascend/attention/dsa_v1.py` (DSpark non-causal SWA index build), fused into a single Triton-Ascend kernel.
+- **Origin**: Consolidated from the previous physical-slot kernel, the retired separate logical-position Triton kernel, and the production PyTorch `repeat_interleave` path in `vllm_ascend/attention/dsa_v1.py`.
 - **Differences**:
-    - NPU adaptation for performance: fuses the ~15-op eager chain (device time 213-8046 us across 9 shapes) into one kernel launch (4.7-90.5 us, 45-89x per shape, ~70x geometric mean on 910B4); grid-stride claiming over a fixed capacity grid keeps the launch shape stable for ACL-graph capture; distributed pad-row cleanup parallelizes the graph-padding reset that the eager chain performs serially; `tl.gather` payload bitcasts through fp32 (bits preserved) and window arithmetic runs on int32 directly.
-    - Modified for a specific vllm-ascend logic or different input parameters: adds the capacity-grid parameters (`max_num_reqs`, `num_query_per_req`, `num_slots`) and in-place `indices_output` / `lens_output` buffers required by the device-metadata graph-capture contract of the DSA metadata builder; pad rows are explicitly reset so captured graphs never replay stale rows.
+    - Unifies physical and logical output modes into one Triton kernel and shared entry point (`output_mode`), preserving DSA (`[T]` int64 default lengths) and DSA V4.1 (`[T, 1]` int32 default lengths) contracts.
+    - Replaces full-row block-table UB preloading with bounded per-tile window loading (`BT_WIN_POW2`), removing the `next_pow2(block_table_width) <= 8192` cap and power-of-two `block_size` restriction.
+    - Supports arbitrary `q_len` via bounded `Q_POW2` tiling loops and retires the duplicate logical Triton file and production NPU PyTorch fallback.
 
 ## Test Cases
 
-Accuracy tests use the real inference shapes of DeepSeek V4.1 DSpark drafting (`window_size=944`, `block_size=128`, `index_width=1088`, the DFlash uniform-query contract `num_query_per_req = num_speculative_tokens + 1`, graph-capture pad-row cleanup, the wide-window and narrow-block-table boundary cases) plus a broader generic parameter space (varying request counts, block sizes 4-128, long contexts, 8192-wide block tables). As this is an integer index-building operator, the unified precision tolerance is bit-exact (`rtol=0, atol=0`) on the slot values; the lens output is compared as values (the eager result cast to the kernel's fixed int64) per the intentional dtype difference noted under Parameters.
-
-The fixed-row regression reuses the same 90-row buffers with six request slots for 90, 30, and zero active rows. It checks exact active values, cleared padding, and stable output addresses for both direct launches and ACL graph replay.
+Accuracy tests cover both `"physical"` and `"logical"` modes against the eager PyTorch reference with bit-exact comparison (`rtol=0, atol=0`), non-power-of-two block sizes (`12, 48, 96, 100`), wide block tables (`10000`, `12000`, `16384` columns > 8192) with small SWA windows and block boundaries, `num_reqs == 0` / `num_reqs > max_num_reqs` / `q_len > Q_POW2`, persistent-buffer direct writes via `build_dspark_swa_indices`, and shrinking reused buffers (`90 -> 30 -> 0` active rows) under direct launch and ACL graph replay.
 
 ```bash
 pytest -sv tests/e2e/nightly/single_node/ops/singlecard_ops/triton/test_dspark_swa_indices.py

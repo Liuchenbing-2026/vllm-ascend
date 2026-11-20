@@ -76,25 +76,18 @@ from vllm_ascend.worker.device_metadata import (
 
 if TYPE_CHECKING:
     from vllm_ascend.ops.triton.dspark_swa_indices import (
-        build_dspark_swa_slot_indices_triton,
-        dspark_swa_indices_supported,
+        build_dspark_swa_indices_triton,
     )
     from vllm_ascend.ops.triton.rms_norm import triton_q_rms
 
 if HAS_TRITON:
     from vllm_ascend.ops.triton.dspark_swa_indices import (  # noqa: F811
-        build_dspark_swa_slot_indices_triton,
-        dspark_swa_indices_supported,
-    )
-    from vllm_ascend.ops.triton.rms_norm import triton_q_rms  # noqa: F811
-    from vllm_ascend.ops.triton.spec_decode.dspark_swa_indices import (
         build_dspark_swa_indices_triton,
     )
+    from vllm_ascend.ops.triton.rms_norm import triton_q_rms  # noqa: F811
 else:
-    build_dspark_swa_slot_indices_triton = None  # type: ignore
-    triton_q_rms = None  # type: ignore
     build_dspark_swa_indices_triton = None  # type: ignore
-    dspark_swa_indices_supported = None  # type: ignore
+    triton_q_rms = None  # type: ignore
 
 
 # The current SparseFlashMla and MixedQuant SAS ops use 2048 int32 elements;
@@ -559,8 +552,164 @@ def _aligned_dspark_index_width(window_size: int, block_size: int, alignment: in
     return ((min_width + alignment - 1) // alignment) * alignment
 
 
+DSPARK_SWA_OUTPUT_MODE_PHYSICAL = "physical"
+DSPARK_SWA_OUTPUT_MODE_LOGICAL = "logical"
+_DSPARK_SWA_OUTPUT_MODES = (DSPARK_SWA_OUTPUT_MODE_PHYSICAL, DSPARK_SWA_OUTPUT_MODE_LOGICAL)
+
+
+def _normalize_dspark_output_mode(
+    output_mode: str | None = None,
+    *,
+    use_logical_indices: bool = False,
+) -> str:
+    if output_mode is None:
+        return DSPARK_SWA_OUTPUT_MODE_LOGICAL if use_logical_indices else DSPARK_SWA_OUTPUT_MODE_PHYSICAL
+    if output_mode not in _DSPARK_SWA_OUTPUT_MODES:
+        raise ValueError(
+            f"Unsupported DSpark SWA output_mode={output_mode!r}; expected one of {_DSPARK_SWA_OUTPUT_MODES}"
+        )
+    if use_logical_indices and output_mode != DSPARK_SWA_OUTPUT_MODE_LOGICAL:
+        raise ValueError(
+            f"Conflicting DSpark SWA mode arguments: output_mode={output_mode!r} with use_logical_indices=True"
+        )
+    return output_mode
+
+
+def _write_dspark_cpu_outputs(
+    per_token_slots: torch.Tensor,
+    per_token_lens: torch.Tensor,
+    *,
+    num_rows: int,
+    num_rows_padded: int,
+    max_num_reqs: int | None,
+    indices_output: torch.Tensor | None,
+    lens_output: torch.Tensor | None,
+    buffer: torch.Tensor | None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Write CPU-computed DSpark SWA outputs into caller buffers if provided."""
+    if indices_output is not None:
+        if indices_output.ndim != 3 or indices_output.shape[1:] != per_token_slots.shape[1:]:
+            raise ValueError(
+                "DSpark SWA indices output shape does not match active metadata: "
+                f"output={tuple(indices_output.shape)}, active={tuple(per_token_slots.shape)}"
+            )
+        if indices_output.shape[0] < num_rows:
+            raise ValueError(
+                "DSpark SWA indices output shape does not match active metadata: "
+                f"output={tuple(indices_output.shape)}, active={tuple(per_token_slots.shape)}"
+            )
+        indices_output[:num_rows].copy_(per_token_slots)
+        if max_num_reqs is not None:
+            pad_end = min(num_rows_padded, indices_output.shape[0])
+            if pad_end > num_rows:
+                indices_output[num_rows:pad_end].fill_(-1)
+        out_slots = indices_output[:num_rows]
+    elif buffer is not None:
+        assert num_rows <= buffer.shape[0], (
+            f"dspark_swa_indices needs {num_rows} rows but `buffer` only has {buffer.shape[0]}"
+        )
+        buffer[:num_rows].copy_(per_token_slots)
+        out_slots = buffer[:num_rows]
+    else:
+        out_slots = per_token_slots
+
+    if lens_output is not None:
+        valid_shape = (lens_output.ndim == 1) or (lens_output.ndim == 2 and lens_output.shape[1] == 1)
+        if not valid_shape or lens_output.shape[0] < num_rows:
+            raise ValueError(
+                "DSpark SWA lengths output shape does not match active metadata: "
+                f"output={tuple(lens_output.shape)}, active={tuple(per_token_lens.shape)}"
+            )
+        target = lens_output[:num_rows, 0] if lens_output.ndim == 2 else lens_output[:num_rows]
+        target.copy_(per_token_lens.to(lens_output.dtype))
+        if max_num_reqs is not None:
+            pad_end = min(num_rows_padded, lens_output.shape[0])
+            if pad_end > num_rows:
+                lens_output[num_rows:pad_end].zero_()
+        out_lens = lens_output[:num_rows]
+    else:
+        out_lens = per_token_lens
+    return out_slots, out_lens
+
+
+def _build_dspark_swa_indices_cpu(
+    block_table: torch.Tensor | None,
+    num_speculative_tokens: int,
+    window_size: int,
+    block_size: int,
+    query_start_loc: torch.Tensor,
+    seq_lens: torch.Tensor,
+    *,
+    num_decode_tokens: int | None,
+    index_width: int,
+    indices_output: torch.Tensor | None,
+    lens_output: torch.Tensor | None,
+    buffer: torch.Tensor | None,
+    max_num_reqs: int | None,
+    num_query_per_req: int | None,
+    use_logical: bool,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """CPU reference path for unit tests and non-NPU harnesses."""
+    num_reqs = int(query_start_loc.shape[0]) - 1
+    num_rows = int(num_decode_tokens) if num_decode_tokens is not None else int(query_start_loc[num_reqs].item())
+    nqp = int(num_speculative_tokens) + 1 if num_query_per_req is None else int(num_query_per_req)
+    r_alloc = max(int(max_num_reqs), num_reqs) if max_num_reqs is not None else num_reqs
+    num_rows_padded = max(num_rows, r_alloc * nqp) if max_num_reqs is not None else num_rows
+
+    if num_reqs == 0 or num_rows == 0:
+        per_token_slots = torch.full((num_rows, 1, index_width), -1, dtype=torch.int32, device=query_start_loc.device)
+        per_token_lens = torch.zeros((num_rows,), dtype=seq_lens.dtype, device=query_start_loc.device)
+        return _write_dspark_cpu_outputs(
+            per_token_slots,
+            per_token_lens,
+            num_rows=num_rows,
+            num_rows_padded=num_rows_padded,
+            max_num_reqs=max_num_reqs,
+            indices_output=indices_output,
+            lens_output=lens_output,
+            buffer=buffer,
+        )
+
+    query_lens = query_start_loc[1:] - query_start_loc[:-1]
+    prefix_lens = seq_lens - query_lens
+    start_pos = (prefix_lens - int(window_size)).clamp(min=0)
+    visible_lens = seq_lens - start_pos
+    cols = torch.arange(index_width, device=start_pos.device)
+    col_mask = cols[None, :] < visible_lens[:, None]
+    pos = start_pos[:, None] + cols[None, :]
+    if use_logical:
+        slot_ids = pos.to(torch.int32)
+    else:
+        assert block_table is not None
+        block_nums = pos // block_size
+        safe_nums = block_nums.clamp(min=0, max=int(block_table.shape[1]) - 1)
+        block_offsets = pos % block_size
+        block_ids = torch.gather(block_table, 1, safe_nums)
+        slot_ids = (block_ids * block_size + block_offsets).to(torch.int32)
+    slot_ids = slot_ids.where(col_mask, torch.full_like(slot_ids, -1))
+
+    active_rows = query_start_loc[-1]
+    repeats = query_lens.clone()
+    repeats[-1] += (num_rows - active_rows).clamp(min=0)
+    per_token_slots = torch.repeat_interleave(slot_ids, repeats, dim=0, output_size=num_rows).unsqueeze(1)
+    per_token_lens = torch.repeat_interleave(visible_lens, repeats, dim=0, output_size=num_rows)
+    valid_rows = torch.arange(num_rows, device=query_start_loc.device, dtype=query_start_loc.dtype) < active_rows
+    per_token_slots = per_token_slots.masked_fill(~valid_rows[:, None, None], -1)
+    per_token_lens = per_token_lens.masked_fill(~valid_rows, 0)
+    return _write_dspark_cpu_outputs(
+        per_token_slots,
+        per_token_lens,
+        num_rows=num_rows,
+        num_rows_padded=num_rows_padded,
+        max_num_reqs=max_num_reqs,
+        indices_output=indices_output,
+        lens_output=lens_output,
+        buffer=buffer,
+    )
+
+
 def build_dspark_swa_indices(
-    block_table: torch.Tensor,
+    block_table: torch.Tensor | None,
     num_speculative_tokens: int,
     window_size: int,
     block_size: int,
@@ -571,20 +720,24 @@ def build_dspark_swa_indices(
     indices_output: torch.Tensor | None = None,
     buffer: torch.Tensor | None = None,
     *,
+    lens_output: torch.Tensor | None = None,
+    max_num_reqs: int | None = None,
+    num_query_per_req: int | None = None,
+    output_mode: str | None = None,
     use_logical_indices: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Build DSpark non-causal visible slot ids for a paged SWA cache.
+    """Build DSpark non-causal visible SWA indices and lengths.
 
     Each token in a draft block sees the trailing context window plus the
-    whole current draft block. Invalid/padded rows get lens=0 and -1 slots.
-    ``use_logical_indices`` returns positions within each sequence for
-    SparseFlashMLA, which applies its own block-table lookup. The default
-    preserves physical slots for existing DSA callers.
+    whole current draft block. Invalid/padded rows receive lens=0 and -1 slots.
+    ``output_mode`` (or ``use_logical_indices=True``) selects ``"physical"`` KV
+    slots for DSA callers or ``"logical"`` sequence positions for SparseFlashMLA.
+    On NPU devices this dispatches directly to the unified Triton kernel; CPU
+    callers (unit-test harnesses) use the PyTorch reference helper.
 
-    When ``buffer`` is given, the per-token slots are copied into its leading
-    rows and the returned tensor is a slice view of ``buffer``. This keeps the
-    address stable across async ACL-graph replays, where the DSA operator
-    captures ``ori_sparse_indices``'s data pointer at capture time.
+    When ``indices_output`` or ``buffer`` is given, the results are written into
+    the caller-provided storage and active slice views are returned so ACL-graph
+    replays keep stable addresses.
     """
     if index_width is None:
         index_width = _aligned_dspark_index_width(window_size, num_speculative_tokens)
@@ -596,83 +749,53 @@ def build_dspark_swa_indices(
         )
     if query_start_loc is None or seq_lens is None:
         raise ValueError("DSpark SWA query_start_loc and seq_lens must both be provided")
+    if indices_output is not None and buffer is not None:
+        raise ValueError("DSpark SWA cannot accept both indices_output and buffer")
 
-    if (
-        use_logical_indices
-        and build_dspark_swa_indices_triton is not None
-        and query_start_loc.device.type == "npu"
-        and num_decode_tokens is not None
-        and indices_output is None
-        and buffer is None
-    ):
+    mode = _normalize_dspark_output_mode(output_mode, use_logical_indices=use_logical_indices)
+    use_logical = mode == DSPARK_SWA_OUTPUT_MODE_LOGICAL
+    if not use_logical:
+        if block_table is None:
+            raise ValueError("DSpark SWA block_table must be provided in physical output mode")
+        if int(block_size) <= 0:
+            raise ValueError(f"DSpark SWA block_size must be positive, got {block_size}")
+
+    if query_start_loc.device.type == "npu":
+        if build_dspark_swa_indices_triton is None:
+            raise RuntimeError("Triton is required for DSpark SWA index construction on NPU.")
+        target_output = indices_output if indices_output is not None else buffer
         return build_dspark_swa_indices_triton(
+            block_table,
+            num_speculative_tokens,
+            window_size,
+            block_size,
             query_start_loc,
             seq_lens,
-            num_decode_tokens,
-            index_width,
-            window_size,
+            num_decode_tokens=num_decode_tokens,
+            index_width=index_width,
+            indices_output=target_output,
+            lens_output=lens_output,
+            max_num_reqs=max_num_reqs,
+            num_query_per_req=num_query_per_req,
+            output_mode=mode,
         )
 
-    query_lens = query_start_loc[1:] - query_start_loc[:-1]
-    prefix_lens = seq_lens - query_lens
-    start_pos = (prefix_lens - int(window_size)).clamp(min=0)
-    visible_lens = seq_lens - start_pos
-
-    # Per-request visible-position grid [req_count, index_width]. Columns
-    # j >= visible_len are out of range and masked to -1 below.
-    cols = torch.arange(index_width, device=start_pos.device)
-    col_mask = cols[None, :] < visible_lens[:, None]
-    pos = start_pos[:, None] + cols[None, :]
-    if use_logical_indices:
-        slot_ids = pos.to(torch.int32)
-    else:
-        block_nums = pos // block_size
-        # Clamp out-of-range columns before gathering; col_mask discards them.
-        safe_nums = block_nums.clamp(min=0, max=int(block_table.shape[1]) - 1)
-        block_offsets = pos % block_size
-        block_ids = torch.gather(block_table, 1, safe_nums)
-        slot_ids = (block_ids * block_size + block_offsets).to(torch.int32)
-    slot_ids = slot_ids.where(col_mask, torch.full_like(slot_ids, -1))
-
-    repeats = query_lens
-    active_rows = None
-    if (indices_output is not None or buffer is not None) and num_decode_tokens is not None and query_lens.numel() > 0:
-        # Match the fixed graph row count without reading device lengths on CPU.
-        active_rows = query_start_loc[-1]
-        repeats = query_lens.clone()
-        repeats[-1] += num_decode_tokens - active_rows
-
-    per_token_slots = torch.repeat_interleave(slot_ids, repeats, dim=0, output_size=num_decode_tokens).unsqueeze(1)
-    per_token_lens = torch.repeat_interleave(visible_lens, repeats, dim=0, output_size=num_decode_tokens)
-    if active_rows is not None:
-        valid_rows = (
-            torch.arange(num_decode_tokens, device=query_start_loc.device, dtype=query_start_loc.dtype) < active_rows
-        )
-        per_token_slots = per_token_slots.masked_fill(~valid_rows[:, None, None], -1)
-        per_token_lens = per_token_lens.masked_fill(~valid_rows, 0)
-
-    if indices_output is not None:
-        if indices_output.shape != per_token_slots.shape:
-            raise ValueError(
-                "DSpark SWA indices output shape does not match active metadata: "
-                f"output={tuple(indices_output.shape)}, active={tuple(per_token_slots.shape)}"
-            )
-        indices_output.copy_(per_token_slots)
-        per_token_slots = indices_output
-
-    if buffer is not None:
-        # Copy the freshly built indices into the caller-provided buffer and hand
-        # back a zero-copy view of it: ACL graph capture freezes tensor addresses,
-        # so the DSA operator must read from the stable buffer at replay instead of
-        # a freshly allocated tensor.
-        num_rows = per_token_slots.shape[0]
-        assert num_rows <= buffer.shape[0], (
-            f"dspark_swa_indices needs {num_rows} rows but `buffer` only has {buffer.shape[0]}"
-        )
-        buffer[:num_rows].copy_(per_token_slots)
-        per_token_slots = buffer[:num_rows]
-
-    return per_token_slots, per_token_lens
+    return _build_dspark_swa_indices_cpu(
+        block_table,
+        num_speculative_tokens,
+        window_size,
+        block_size,
+        query_start_loc,
+        seq_lens,
+        num_decode_tokens=num_decode_tokens,
+        index_width=index_width,
+        indices_output=indices_output,
+        lens_output=lens_output,
+        buffer=buffer,
+        max_num_reqs=max_num_reqs,
+        num_query_per_req=num_query_per_req,
+        use_logical=use_logical,
+    )
 
 
 def build_vision_bidirectional_swa_indices(
@@ -852,7 +975,7 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
             )
             max_dspark_rows = max(
                 scheduler_config.max_num_batched_tokens,
-                scheduler_config.max_num_seqs * (self.speculative_config.num_speculative_tokens + 1),
+                self.max_num_reqs_for_dspark() * (spec_token_num + 1),
             )
             self.dspark_swa_indices_buffer = torch.zeros(
                 (max_dspark_rows, 1, _dspark_index_width),
@@ -1171,8 +1294,10 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
         """
         max_num_reqs = self.vllm_config.scheduler_config.max_num_seqs * self._request_capacity_factor
         compilation_config = self.vllm_config.compilation_config
-        if compilation_config.cudagraph_mode != CUDAGraphMode.NONE and compilation_config.cudagraph_capture_sizes:
-            max_num_reqs = max(max_num_reqs, compilation_config.max_cudagraph_capture_size)
+        if compilation_config.cudagraph_mode != CUDAGraphMode.NONE and getattr(
+            compilation_config, "cudagraph_capture_sizes", None
+        ):
+            max_num_reqs = max(max_num_reqs, compilation_config.max_cudagraph_capture_size) + 1
         return max_num_reqs
 
     def dspark_num_query_per_req(self) -> int:
@@ -1183,58 +1308,25 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
         DFlash-style ``spec + 1`` when device metadata is disabled and the
         proposer never registered the exact factor.
         """
-        if self._dspark_num_query_per_req is not None:
-            return self._dspark_num_query_per_req
+        nqp = getattr(self, "_dspark_num_query_per_req", None)
+        if nqp is not None:
+            return nqp
         return self.speculative_config.num_speculative_tokens + 1
 
     def set_dspark_num_query_per_req(self, num_query_per_req: int) -> None:
         """Register the proposer's exact per-request query count."""
         self._dspark_num_query_per_req = int(num_query_per_req)
 
-    def _dspark_swa_indices_fast_path_eligible(self, num_decode_reqs: int) -> bool:
-        """Whether the fused triton build can replace the eager torch chain."""
-        if build_dspark_swa_slot_indices_triton is None or self._dspark_index_width is None:
-            return False
-        return dspark_swa_indices_supported(self.storage_block_size, self.block_table.shape[1]) and (
-            num_decode_reqs <= self.max_num_reqs_for_dspark()
-        )
-
     def _build_dspark_swa_indices_eager(
         self, dspark_swa_args: tuple, buffer: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Eager (non-device-metadata) DSpark indices build, triton fast path first.
-
-        The eager path has no captured graph to protect, so the triton kernel
-        runs with the plain active-row allocation (no max_num_reqs capacity
-        grid) and falls back to the reference torch chain when the kernel is
-        unavailable or the shape is unsupported. ``buffer`` keeps the
-        stable-address contract of the previous eager call sites.
-        """
-        block_table, num_speculative_tokens, window_size, block_size, query_start_loc, seq_lens, num_decode_tokens = (
-            dspark_swa_args
-        )
-        if self._dspark_swa_indices_fast_path_eligible(query_start_loc.shape[0] - 1):
-            return build_dspark_swa_slot_indices_triton(
-                block_table,
-                num_speculative_tokens,
-                window_size,
-                block_size,
-                query_start_loc,
-                seq_lens,
-                num_decode_tokens=num_decode_tokens,
-                index_width=self._dspark_index_width,
-                indices_output=buffer,
-                num_query_per_req=self.dspark_num_query_per_req(),
-            )
+        """Build DSpark SWA indices through the shared physical-slot entry point."""
         return build_dspark_swa_indices(
-            block_table,
-            num_speculative_tokens,
-            window_size,
-            block_size,
-            query_start_loc,
-            seq_lens,
-            num_decode_tokens=num_decode_tokens,
+            *dspark_swa_args,
+            index_width=getattr(self, "_dspark_index_width", None),
             buffer=buffer,
+            num_query_per_req=self.dspark_num_query_per_req(),
+            output_mode=DSPARK_SWA_OUTPUT_MODE_PHYSICAL,
         )
 
     def take_device_metadata_tasks(self) -> tuple[DeviceMetadataTask, ...]:
@@ -1504,47 +1596,26 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
                         "DSpark SWA metadata rows exceed the persistent buffer capacity: "
                         f"active={self.num_actual_tokens}, capacity={self.dspark_swa_indices_buffer.shape[0]}"
                     )
-                # Fused triton fast path: capacity grid + FULL buffer. The
-                # eager torch chain needs indices_output pre-sliced to the
-                # active rows (its copy_ has a shape check), while the triton
-                # kernel writes in place and requires the full-capacity
-                # buffer so the pad-row cleanup ([T_active, T_padded)) fires
-                # and a captured graph never replays stale rows. The kernel
-                # emits physical slot ids, so the sparse (logical-index) draft
-                # path must take the buffer + lambda route below.
-                if self._dspark_swa_indices_fast_path_eligible(num_reqs):
-                    num_query_per_req = self.dspark_num_query_per_req()
-                    num_actual_tokens = self.num_actual_tokens
-                    max_num_reqs = self.max_num_reqs_for_dspark()
-                    buffer = self.dspark_swa_indices_buffer
-                    lens_scratch = self.dspark_lens_scratch
-                    window = self.model_config.hf_config.sliding_window
+                num_query_per_req = self.dspark_num_query_per_req()
+                max_num_reqs = self.max_num_reqs_for_dspark()
+                buffer = self.dspark_swa_indices_buffer
+                lens_scratch = self.dspark_lens_scratch
+                index_width = self._dspark_index_width
 
-                    def build_dspark_swa_triton():
-                        slots, _ = build_dspark_swa_slot_indices_triton(
-                            dspark_swa_args[0],
-                            dspark_swa_args[1],
-                            window,
-                            dspark_swa_args[3],
-                            dspark_swa_args[4],
-                            dspark_swa_args[5],
-                            num_decode_tokens=num_actual_tokens,
-                            index_width=self._dspark_index_width,
-                            indices_output=buffer,
-                            lens_output=lens_scratch,
-                            max_num_reqs=max_num_reqs,
-                            num_query_per_req=num_query_per_req,
-                        )
-                        return slots
-
-                    build_dspark_swa = build_dspark_swa_triton
-                    dspark_swa_indices = buffer[: self.num_actual_tokens]
-                else:
-                    dspark_swa_indices = self.dspark_swa_indices_buffer[: self.num_actual_tokens]
-                    build_dspark_swa = lambda: build_dspark_swa_indices(
+                def build_dspark_swa_fn():
+                    slots, _ = build_dspark_swa_indices(
                         *dspark_swa_args,
-                        indices_output=dspark_swa_indices,
+                        index_width=index_width,
+                        indices_output=buffer,
+                        lens_output=lens_scratch,
+                        max_num_reqs=max_num_reqs,
+                        num_query_per_req=num_query_per_req,
+                        output_mode=DSPARK_SWA_OUTPUT_MODE_PHYSICAL,
                     )
+                    return slots
+
+                build_dspark_swa = build_dspark_swa_fn
+                dspark_swa_indices = buffer[: self.num_actual_tokens]
             else:
                 dspark_swa_indices, _ = self._build_dspark_swa_indices_eager(
                     dspark_swa_args, buffer=self.dspark_swa_indices_buffer

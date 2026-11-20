@@ -30,6 +30,8 @@ from vllm_ascend.attention.context_parallel.dsa_cp import (
     AscendDSAPCPMetadataBuilder,
 )
 from vllm_ascend.attention.dsa_v1 import (
+    DSPARK_SWA_OUTPUT_MODE_LOGICAL,
+    DSPARK_SWA_OUTPUT_MODE_PHYSICAL,
     QLI_METADATA_BUFFER_SIZE,
     SAS_METADATA_BUFFER_SIZE,
     AscendDSABackend,
@@ -161,6 +163,146 @@ def test_build_dspark_swa_indices_preserves_graph_padding(output_arg, query_star
     assert indices.data_ptr() == output.data_ptr()
     if output_arg == "buffer":
         assert torch.all(output[num_decode_tokens:] == 99)
+
+
+@pytest.mark.parametrize("output_mode", [DSPARK_SWA_OUTPUT_MODE_PHYSICAL, DSPARK_SWA_OUTPUT_MODE_LOGICAL])
+def test_build_dspark_swa_indices_supports_non_pow2_and_wide_block_table(output_mode):
+    block_size = 96
+    block_table_width = 10_000
+    window_size = 100
+    num_speculative_tokens = 3
+    index_width = 128
+    seq_lens = torch.tensor([block_size * 100 + 5, block_size * 3 + 10], dtype=torch.int32)
+    query_start_loc = torch.tensor([0, 4, 8], dtype=torch.int32)
+    block_table = torch.arange(2 * block_table_width, dtype=torch.int32).view(2, block_table_width)
+
+    indices, lengths = build_dspark_swa_indices(
+        block_table=block_table,
+        num_speculative_tokens=num_speculative_tokens,
+        window_size=window_size,
+        block_size=block_size,
+        query_start_loc=query_start_loc,
+        seq_lens=seq_lens,
+        num_decode_tokens=8,
+        index_width=index_width,
+        output_mode=output_mode,
+    )
+
+    assert indices.shape == (8, 1, index_width)
+    assert lengths.tolist() == [104, 104, 104, 104, 104, 104, 104, 104]
+    # Request 0: prefix=9605-4=9601, start_pos=9501, visible_len=104 (blocks 98..100).
+    for col in range(104):
+        pos = 9501 + col
+        expected = pos
+        if output_mode == DSPARK_SWA_OUTPUT_MODE_PHYSICAL:
+            expected = int(block_table[0, pos // block_size].item()) * block_size + (pos % block_size)
+        assert indices[0, 0, col].item() == expected
+    assert torch.all(indices[0, 0, 104:] == -1)
+    # Request 1: prefix=294, start_pos=194, visible_len=104 (row 1 block IDs offset by 10_000).
+    for col in range(104):
+        pos = 194 + col
+        expected = pos
+        if output_mode == DSPARK_SWA_OUTPUT_MODE_PHYSICAL:
+            expected = int(block_table[1, pos // block_size].item()) * block_size + (pos % block_size)
+        assert indices[4, 0, col].item() == expected
+    assert torch.all(indices[4, 0, 104:] == -1)
+
+
+def test_build_dspark_swa_indices_persistent_buffers_clear_shrinking_and_empty_batches():
+    block_table = torch.tensor([[2, 4, 6], [8, 10, 12]], dtype=torch.int32)
+    seq_lens = torch.tensor([110, 80], dtype=torch.int32)
+    indices_buf = torch.full((12, 1, 128), 77, dtype=torch.int32)
+    lens_buf = torch.full((12, 1), 55, dtype=torch.int32)
+    indices_ptr = indices_buf.data_ptr()
+    lens_ptr = lens_buf.data_ptr()
+
+    for qsl in ([0, 4, 8], [0, 4, 4], [0, 0, 0]):
+        active = qsl[-1]
+        indices, lengths = build_dspark_swa_indices(
+            block_table=block_table,
+            num_speculative_tokens=3,
+            window_size=64,
+            block_size=48,
+            query_start_loc=torch.tensor(qsl, dtype=torch.int32),
+            seq_lens=seq_lens,
+            num_decode_tokens=8,
+            index_width=128,
+            indices_output=indices_buf,
+            lens_output=lens_buf,
+            max_num_reqs=3,
+            num_query_per_req=4,
+            output_mode=DSPARK_SWA_OUTPUT_MODE_LOGICAL,
+        )
+        assert indices.data_ptr() == indices_ptr
+        assert lengths.data_ptr() == lens_ptr
+        assert indices.shape == (8, 1, 128)
+        assert lengths.shape == (8, 1)
+        assert torch.all(indices_buf[active:12] == -1)
+        assert torch.all(lens_buf[active:12] == 0)
+
+
+def test_build_dspark_swa_indices_mode_validation_and_npu_dispatch():
+    with pytest.raises(ValueError, match="Unsupported DSpark SWA output_mode"):
+        build_dspark_swa_indices(
+            block_table=torch.ones((1, 2), dtype=torch.int32),
+            num_speculative_tokens=3,
+            window_size=4,
+            block_size=48,
+            query_start_loc=torch.tensor([0, 4], dtype=torch.int32),
+            seq_lens=torch.tensor([10], dtype=torch.int32),
+            output_mode="invalid",
+        )
+    with pytest.raises(ValueError, match="Conflicting DSpark SWA mode arguments"):
+        build_dspark_swa_indices(
+            block_table=torch.ones((1, 2), dtype=torch.int32),
+            num_speculative_tokens=3,
+            window_size=4,
+            block_size=48,
+            query_start_loc=torch.tensor([0, 4], dtype=torch.int32),
+            seq_lens=torch.tensor([10], dtype=torch.int32),
+            output_mode=DSPARK_SWA_OUTPUT_MODE_PHYSICAL,
+            use_logical_indices=True,
+        )
+
+    fake_qsl = MagicMock(spec=torch.Tensor)
+    fake_qsl.device = SimpleNamespace(type="npu")
+    fake_seq_lens = MagicMock(spec=torch.Tensor)
+    fake_bt = MagicMock(spec=torch.Tensor)
+    sentinel = (torch.empty((4, 1, 128), dtype=torch.int32), torch.empty((4, 1), dtype=torch.int32))
+    with patch("vllm_ascend.attention.dsa_v1.build_dspark_swa_indices_triton", return_value=sentinel) as mock_triton:
+        out = build_dspark_swa_indices(
+            fake_bt,
+            3,
+            16,
+            96,
+            fake_qsl,
+            fake_seq_lens,
+            num_decode_tokens=4,
+            output_mode=DSPARK_SWA_OUTPUT_MODE_LOGICAL,
+        )
+    assert out is sentinel
+    mock_triton.assert_called_once()
+    assert mock_triton.call_args.kwargs["output_mode"] == DSPARK_SWA_OUTPUT_MODE_LOGICAL
+
+    with (
+        patch("vllm_ascend.attention.dsa_v1.build_dspark_swa_indices_triton", None),
+        pytest.raises(RuntimeError, match="Triton is required"),
+    ):
+        build_dspark_swa_indices(fake_bt, 3, 16, 96, fake_qsl, fake_seq_lens, num_decode_tokens=4)
+
+
+def test_max_num_reqs_for_dspark_includes_fia_dummy_under_cudagraph():
+    config = _make_vllm_config(num_speculative_tokens=3)
+    config.compilation_config = SimpleNamespace(
+        cudagraph_mode=CUDAGraphMode.FULL_DECODE_ONLY,
+        cudagraph_capture_sizes=[8, 16],
+        max_cudagraph_capture_size=16,
+    )
+    with patch(f"{__name__}._make_vllm_config", return_value=config):
+        builder = _make_builder(compressor_ratio=1, num_speculative_tokens=3)
+    assert builder.max_num_reqs_for_dspark() == 17
+    assert builder.dspark_swa_indices_buffer is not None
+    assert builder.dspark_swa_indices_buffer.shape[0] == 17 * 4
 
 
 def _mock_dsa_kv_plan(**method_returns) -> MagicMock:

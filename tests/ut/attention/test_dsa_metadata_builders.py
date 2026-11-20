@@ -74,13 +74,6 @@ class TestDSAMetadataBuilders(TestCase):
     def setUp(self):
         stack = ExitStack()
         self.addCleanup(stack.close)
-        stack.enter_context(
-            patch.object(
-                dsa_v1.AscendDSAMetadataBuilder,
-                "_dspark_swa_indices_fast_path_eligible",
-                return_value=False,
-            )
-        )
         self.builder = make_builder(dsa_v1.AscendDSASWAMetadataBuilder)
         self.common = CommonMetadata(
             num_reqs=1,
