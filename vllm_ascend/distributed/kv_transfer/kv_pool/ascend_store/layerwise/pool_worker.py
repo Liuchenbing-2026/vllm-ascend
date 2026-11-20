@@ -1152,26 +1152,24 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
             except AssertionError:
                 masks = None
         align_groups = getattr(self, "group_uses_align_state", [])
-        if not any(align_groups):
+        skip_null_groups = getattr(self, "group_skips_null_blocks", align_groups)
+        if not any(skip_null_groups):
             return masks
-        # Mamba align slots can be null even when their token range is
-        # reachable. They do not contain a state snapshot. Do not allocate
-        # readable pool keys or copy block zero for these holes; the
-        # non-layerwise path applies the same skip_null_blocks rule.
+        # Mamba align slots and tail-only DFlash/SWA leading slots can be null
+        # (block 0) even inside a reachable span. Never write or read keys for holes.
         result: list[list[bool] | None] = list(masks) if masks is not None else [None] * self.num_kv_cache_groups
-        for group_id, uses_align in enumerate(align_groups):
-            if not uses_align:
+        for group_id, skip_null in enumerate(skip_null_groups):
+            if not skip_null or group_id >= len(request.block_ids_by_group):
                 continue
+            uses_align = group_id < len(align_groups) and align_groups[group_id]
             block_ids = request.block_ids_by_group[group_id]
             original_mask = result[group_id]
             num_blocks = request.save_end_token // self.grouped_block_size[group_id]
-            if self.layerwise_offload:
+            if uses_align and self.layerwise_offload:
                 num_blocks = self._layerwise_save_full_end(request, self.grouped_block_size[group_id], None)
-            # An aligned prefill chunk ends with a real recurrent checkpoint,
-            # even when it is not the final prompt replay boundary. Keep that
-            # checkpoint before the next chunk moves/reuses its state slots.
             chunk_checkpoint = (
-                request.num_prompt_tokens is not None
+                uses_align
+                and request.num_prompt_tokens is not None
                 and request.target_token_len == num_blocks * self.grouped_block_size[group_id]
                 and (self.layerwise_offload or request.save_end_token % self.cache_transfer_granularity == 0)
                 and 0 < request.target_token_len < request.num_prompt_tokens
@@ -1412,14 +1410,14 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
             except AssertionError:
                 masks = None
         if not self.layerwise_offload or request.load_spec is None or not request.load_spec.layerwise_previous_step:
-            return masks
+            return self._mask_null_load_blocks(request, masks, cached_tokens)
         reused_state_groups = [
             group_id
             for group_id, uses_align in enumerate(self.group_uses_align_state)
             if uses_align and group_id in self._reused_layers_by_group
         ]
         if not reused_state_groups:
-            return masks
+            return self._mask_null_load_blocks(request, masks, cached_tokens)
         # Preserve other groups' reachability masks. An aligned recurrent page
         # represents one endpoint; unaligned state uses the partial GVA path.
         result: list[Sequence[bool] | None] = list(masks) if masks is not None else [None] * self.num_kv_cache_groups
@@ -1431,7 +1429,40 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
             if tail_tokens == 0 and 0 <= last_full_block < len(block_ids) and block_ids[last_full_block] != 0:
                 mask[last_full_block] = True
             result[group_id] = mask
-        return tuple(result)
+        return self._mask_null_load_blocks(request, tuple(result), cached_tokens)
+
+    def _mask_null_load_blocks(
+        self,
+        request: ReqMeta,
+        masks: tuple[Sequence[bool] | None, ...] | None,
+        cached_tokens: int,
+    ) -> tuple[Sequence[bool] | None, ...] | None:
+        """Exclude unbacked block-0 placeholders on SWA/DFlash and align-state loads."""
+        align_groups = getattr(self, "group_uses_align_state", [])
+        skip_null_groups = getattr(self, "group_skips_null_blocks", align_groups)
+        if not any(skip_null_groups) or not getattr(request, "block_ids_by_group", None):
+            return masks
+        result: list[Sequence[bool] | None] = (
+            list(masks) if masks is not None else [None] * len(request.block_ids_by_group)
+        )
+        changed = False
+        for group_id, skip_null in enumerate(skip_null_groups):
+            if not skip_null or group_id >= len(request.block_ids_by_group):
+                continue
+            block_ids = request.block_ids_by_group[group_id]
+            if not any(bid == 0 for bid in block_ids):
+                continue
+            num_blocks = cached_tokens // get_group_block_size(self.grouped_block_size, group_id)
+            orig = result[group_id]
+            limit = max(num_blocks, len(orig) if orig is not None else 0)
+            result[group_id] = [
+                (orig[i] if orig is not None and i < len(orig) else (orig is None and i < num_blocks))
+                and i < len(block_ids)
+                and block_ids[i] != 0
+                for i in range(limit)
+            ]
+            changed = True
+        return tuple(result) if changed else masks
 
     def wait_for_previous_save(self) -> None:
         self._drain_deferred_last_save()

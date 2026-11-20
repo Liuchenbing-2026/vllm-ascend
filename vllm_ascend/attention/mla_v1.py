@@ -1718,8 +1718,9 @@ class AscendMLAImpl(MLAAttentionImpl):
             valid = idx >= 0
             idx, token = idx[valid], token[valid]
         if cache.is_contiguous():
-            cache.view(-1, cache.shape[-1]).index_copy_(0, idx, token)
-        else:
+            if idx.numel() > 0:
+                cache.view(-1, cache.shape[-1]).index_copy_(0, idx, token)
+        elif idx.numel() > 0:
             block_size = cache.shape[1]
             cache[idx // block_size, idx % block_size] = token.view(-1, *cache.shape[2:])
         if is_prefill:
@@ -2569,6 +2570,7 @@ class AscendMLAImpl(MLAAttentionImpl):
         slots: torch.Tensor,
         *,
         attn_metadata: AscendMLAMetadata | None = None,
+        skip_padding_slots: bool = False,
     ):
         pcp_local_range = None
         if self.use_pcp:
@@ -2618,9 +2620,13 @@ class AscendMLAImpl(MLAAttentionImpl):
             # npu_kv_rmsnorm_rope_cache needs [B, N, S, D]
             kv_no_split = kv_no_split.view(B, N, S, self.kv_lora_rank + self.qk_rope_head_dim)
             if self.qk_rope_head_dim == 0:
-                # The PCP gather carries rank padding with slot -1.
+                # Both PCP rank padding and tail-only DFlash/DSpark null prefixes emit slot -1.
                 k_pe, k_nope = self._exec_kv_mla_nope(
-                    kv_no_split, kv_cache, slots, is_prefill=True, skip_padding_slots=self.use_pcp
+                    kv_no_split,
+                    kv_cache,
+                    slots,
+                    is_prefill=True,
+                    skip_padding_slots=skip_padding_slots or self.use_pcp or attn_metadata is None,
                 )
             else:
                 cache_mode = "PA"

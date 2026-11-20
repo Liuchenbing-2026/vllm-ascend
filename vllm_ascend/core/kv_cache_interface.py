@@ -3,7 +3,7 @@
 
 import inspect
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from typing import Any
 
 import torch
@@ -421,8 +421,10 @@ class AscendSlidingWindowMLASpec(SlidingWindowMLASpec):
 
     @classmethod
     def merge(cls, specs: list[Self]) -> Self:
-        assert all(isinstance(spec, AscendSlidingWindowMLASpec) for spec in specs), (
-            "All attention layers in the same KV cache group must be AscendSlidingWindowMLASpec."
+        # Enforce exact spec class match so plain sliding-window MLA target
+        # groups never absorb tail-only DFlash/DSpark draft layers.
+        assert all(type(spec) is cls for spec in specs), (
+            f"All attention layers in the same KV cache group must be {cls.__name__}."
         )
         cache_dtype_str_set = set(spec.cache_dtype_str for spec in specs)
         compress_ratio_set = set(spec.compress_ratio for spec in specs)
@@ -455,6 +457,7 @@ class AscendSlidingWindowMLASpec(SlidingWindowMLASpec):
             carried_kwargs.update(declared_kwarg(cls, "bounded_replay", bounded_replay_set.pop()))
         if None not in extra_retained_set:
             carried_kwargs.update(declared_kwarg(cls, "extra_retained_tokens", extra_retained_set.pop()))
+        carried_kwargs.update(declared_kwarg(cls, "is_draft", all(getattr(spec, "is_draft", False) for spec in specs)))
         return cls(
             block_size=specs[0].block_size,
             dcp_sharded=specs[0].dcp_sharded,
@@ -468,6 +471,270 @@ class AscendSlidingWindowMLASpec(SlidingWindowMLASpec):
             model_version=model_version_set.pop(),
             **carried_kwargs,
         )
+
+    def is_uniform_with_collection(self, kv_cache_specs: dict[str, KVCacheSpec]) -> bool:
+        return all(
+            type(spec) is type(self)
+            and spec.sliding_window == self.sliding_window
+            and getattr(spec, "bounded_replay", False) == getattr(self, "bounded_replay", False)
+            for spec in kv_cache_specs.values()
+        )
+
+
+DFLASH_FAMILY_SPEC_METHODS = frozenset({"dflash", "dspark"})
+
+
+def is_dflash_family_speculative(vllm_config: Any) -> bool:
+    """Return whether ``vllm_config`` configures a DFlash/DSpark drafter."""
+    speculative_config = getattr(vllm_config, "speculative_config", None)
+    return getattr(speculative_config, "method", None) in DFLASH_FAMILY_SPEC_METHODS
+
+
+def get_upstream_dflash_sliding_window_manager() -> type | None:
+    """Return upstream ``DFlashSlidingWindowManager`` when available (vLLM #64109)."""
+    from vllm.v1.core import single_type_kv_cache_manager as stkm
+
+    return getattr(stkm, "DFlashSlidingWindowManager", None)
+
+
+def is_dflash_sliding_window_spec(spec: Any) -> bool:
+    """Return whether ``spec`` selects tail-only DFlash/DSpark KV management."""
+    return isinstance(spec, (AscendDFlashSlidingWindowSpec, AscendDFlashSlidingWindowMLASpec))
+
+
+def is_dflash_sliding_window_manager(manager_cls: Any) -> bool:
+    """Return whether ``manager_cls`` manages tail-only DFlash/DSpark SWA blocks."""
+    if not isinstance(manager_cls, type):
+        return False
+    from vllm_ascend.core.single_type_kv_cache_manager import AscendDFlashSlidingWindowManager
+
+    upstream_cls = get_upstream_dflash_sliding_window_manager()
+    candidates: tuple[type, ...] = (
+        (AscendDFlashSlidingWindowManager, upstream_cls)
+        if upstream_cls is not None
+        else (AscendDFlashSlidingWindowManager,)
+    )
+    return issubclass(manager_cls, candidates)
+
+
+def extract_dflash_tail_params(vllm_config: Any) -> tuple[int, int, int]:
+    """Read ``(num_speculative_tokens, max_in_flight_steps, num_lookahead_tokens)``.
+
+    Uses defensive attribute lookup so both current pinned vLLM releases and
+    post-#64109 configs resolve consistent tail bounds.
+    """
+    if vllm_config is None:
+        return 0, 1, 0
+    num_speculative_tokens = getattr(vllm_config, "num_speculative_tokens", None)
+    if num_speculative_tokens is None:
+        spec_cfg = getattr(vllm_config, "speculative_config", None)
+        num_speculative_tokens = getattr(spec_cfg, "num_speculative_tokens", 0) if spec_cfg is not None else 0
+
+    max_in_flight_steps = getattr(vllm_config, "max_concurrent_batches", None)
+    if max_in_flight_steps is None:
+        parallel_cfg = getattr(vllm_config, "parallel_config", None)
+        scheduler_cfg = getattr(vllm_config, "scheduler_config", None)
+        pp_size = getattr(parallel_cfg, "pipeline_parallel_size", 1) if parallel_cfg is not None else 1
+        async_sched = bool(getattr(scheduler_cfg, "async_scheduling", False)) if scheduler_cfg is not None else False
+        max_in_flight_steps = pp_size + (1 if async_sched else 0)
+
+    num_lookahead_tokens = getattr(vllm_config, "num_lookahead_tokens", None)
+    if num_lookahead_tokens is None:
+        spec_cfg = getattr(vllm_config, "speculative_config", None)
+        speculator_cfg = getattr(spec_cfg, "speculator_config", None) if spec_cfg is not None else None
+        num_lookahead_tokens = getattr(speculator_cfg, "num_lookahead_tokens", 0) if speculator_cfg is not None else 0
+
+    return int(num_speculative_tokens or 0), max(int(max_in_flight_steps or 1), 1), int(num_lookahead_tokens or 0)
+
+
+@dataclass(frozen=True, kw_only=True)
+class _DFlashTailMixin:
+    """Shared tail-size and bounded-admission policy for DFlash/DSpark SWA specs."""
+
+    num_speculative_tokens: int = 0
+    max_in_flight_steps: int = 1
+    num_lookahead_tokens: int = 0
+
+    @property
+    def tail_tokens(self) -> int:
+        """Tokens below ``num_tokens_main_model`` a draft step can still read."""
+        return self.sliding_window + self.num_speculative_tokens * self.max_in_flight_steps
+
+    def max_admission_blocks_per_request(self, max_in_flight_tokens: int, max_model_len: int) -> int:
+        """Cap per-request blocks to min(window bound, per-in-flight tail bound)."""
+        extra_retained = getattr(self, "extra_retained_tokens", 0)
+        super_admission = getattr(super(), "max_admission_blocks_per_request", None)
+        if callable(super_admission):
+            window_blocks = super_admission(
+                max_in_flight_tokens + self.num_lookahead_tokens,
+                max_model_len,
+            )
+        else:
+            num_tokens = min(
+                self.sliding_window - 1 + extra_retained + max_in_flight_tokens + self.num_lookahead_tokens,
+                max_model_len,
+            )
+            window_blocks = cdiv(num_tokens, self.block_size) + 1
+        tail_blocks = cdiv(self.tail_tokens + extra_retained + self.num_lookahead_tokens, self.block_size) + 1
+        return min(window_blocks, (self.max_in_flight_steps + 1) * tail_blocks)
+
+    def max_memory_usage_bytes(self, vllm_config: VllmConfig) -> int:
+        """Compute tail-bounded per-request KV pool demand for startup sizing."""
+        parallel_cfg = getattr(vllm_config, "parallel_config", None)
+        if parallel_cfg is not None:
+            assert not self.dcp_sharded or parallel_cfg.decode_context_parallel_size == 1, (
+                "DCP not support sliding window."
+            )
+        max_in_flight = getattr(vllm_config, "max_in_flight_tokens", None)
+        if max_in_flight is None:
+            scheduler_cfg = getattr(vllm_config, "scheduler_config", None)
+            max_batched = getattr(scheduler_cfg, "max_num_batched_tokens", 0) if scheduler_cfg is not None else 0
+            max_batches = getattr(vllm_config, "max_concurrent_batches", 1)
+            max_in_flight = max_batched * max_batches
+        max_model_len = vllm_config.model_config.max_model_len
+        max_blocks = self.max_admission_blocks_per_request(
+            max_in_flight_tokens=max_in_flight,
+            max_model_len=max_model_len,
+        )
+        return max_blocks * self.page_size_bytes
+
+
+def _validate_tail_params(specs: list[Any]) -> tuple[int, int, int]:
+    num_spec_set = {spec.num_speculative_tokens for spec in specs}
+    in_flight_set = {spec.max_in_flight_steps for spec in specs}
+    lookahead_set = {spec.num_lookahead_tokens for spec in specs}
+    assert len(num_spec_set) == 1 and len(in_flight_set) == 1 and len(lookahead_set) == 1, (
+        "All DFlash/DSpark draft SWA layers in the same group must share speculative tail bounds."
+    )
+    return num_spec_set.pop(), in_flight_set.pop(), lookahead_set.pop()
+
+
+@dataclass(frozen=True, kw_only=True)
+class AscendDFlashSlidingWindowSpec(_DFlashTailMixin, SlidingWindowSpec):
+    """Standard sliding-window draft spec using tail-only physical KV backing."""
+
+    @classmethod
+    def merge(cls, specs: list[Self]) -> Self:
+        assert all(type(spec) is cls for spec in specs), (
+            f"All attention layers in the same KV cache group must be {cls.__name__}."
+        )
+        num_spec, max_steps, lookahead = _validate_tail_params(specs)
+        extra_retained_set = {getattr(spec, "extra_retained_tokens", None) for spec in specs}
+        sliding_window_set = {spec.sliding_window for spec in specs}
+        assert len(sliding_window_set) == 1 and len(extra_retained_set) == 1, (
+            "All DFlash draft SWA layers in a group must match sliding_window and retained tokens."
+        )
+        first = specs[0]
+        target_names = {f.name for f in fields(cls) if f.init}
+        init_kwargs = {
+            f.name: getattr(first, f.name)
+            for f in fields(SlidingWindowSpec)
+            if f.init and f.name in target_names
+        }
+        init_kwargs.update(
+            num_speculative_tokens=num_spec,
+            max_in_flight_steps=max_steps,
+            num_lookahead_tokens=lookahead,
+        )
+        if "is_draft" in target_names:
+            init_kwargs["is_draft"] = all(getattr(spec, "is_draft", False) for spec in specs)
+        return cls(**init_kwargs)
+
+    def is_uniform_with_collection(self, kv_cache_specs: dict[str, KVCacheSpec]) -> bool:
+        return all(
+            type(spec) is type(self)
+            and spec.sliding_window == self.sliding_window
+            and spec.num_speculative_tokens == self.num_speculative_tokens
+            and spec.max_in_flight_steps == self.max_in_flight_steps
+            and spec.num_lookahead_tokens == self.num_lookahead_tokens
+            for spec in kv_cache_specs.values()
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class AscendDFlashSlidingWindowMLASpec(_DFlashTailMixin, AscendSlidingWindowMLASpec):
+    """MLA-formatted sliding-window draft spec using tail-only physical KV backing."""
+
+    @classmethod
+    def merge(cls, specs: list[Self]) -> Self:
+        assert all(type(spec) is cls for spec in specs), (
+            f"All attention layers in the same KV cache group must be {cls.__name__}."
+        )
+        num_spec, max_steps, lookahead = _validate_tail_params(specs)
+        merged = super().merge(specs)
+        return replace(
+            merged,
+            num_speculative_tokens=num_spec,
+            max_in_flight_steps=max_steps,
+            num_lookahead_tokens=lookahead,
+        )
+
+    def is_uniform_with_collection(self, kv_cache_specs: dict[str, KVCacheSpec]) -> bool:
+        return all(
+            type(spec) is type(self)
+            and spec.sliding_window == self.sliding_window
+            and getattr(spec, "bounded_replay", False) == getattr(self, "bounded_replay", False)
+            and spec.num_speculative_tokens == self.num_speculative_tokens
+            and spec.max_in_flight_steps == self.max_in_flight_steps
+            and spec.num_lookahead_tokens == self.num_lookahead_tokens
+            for spec in kv_cache_specs.values()
+        )
+
+
+def as_dflash_sliding_window_spec(
+    spec: KVCacheSpec,
+    vllm_config: Any,
+    *,
+    is_draft: bool | None = None,
+) -> KVCacheSpec:
+    """Promote a sliding-window spec into its tail-only DFlash/DSpark counterpart."""
+    if not isinstance(spec, SlidingWindowSpec) or is_dflash_sliding_window_spec(spec):
+        return spec
+    target_cls: type[SlidingWindowSpec] = (
+        AscendDFlashSlidingWindowMLASpec
+        if isinstance(spec, SlidingWindowMLASpec)
+        else AscendDFlashSlidingWindowSpec
+    )
+    target_fields = {f.name for f in fields(target_cls) if f.init}
+    kwargs = {
+        f.name: getattr(spec, f.name)
+        for f in fields(type(spec))
+        if f.init and f.name in target_fields
+    }
+    num_spec, max_steps, lookahead = extract_dflash_tail_params(vllm_config)
+    kwargs.update(
+        num_speculative_tokens=num_spec,
+        max_in_flight_steps=max_steps,
+        num_lookahead_tokens=lookahead,
+    )
+    if is_draft is not None and "is_draft" in target_fields:
+        kwargs["is_draft"] = is_draft
+    return target_cls(**kwargs)
+
+
+def build_dflash_sliding_window_layer_config(
+    spec: KVCacheSpec,
+    vllm_config: Any,
+    *,
+    sliding_window: int,
+    is_draft: bool = True,
+) -> Any | None:
+    """Build upstream ``DFlashSlidingWindowManager.layer_config`` when present."""
+    upstream_mgr = get_upstream_dflash_sliding_window_manager()
+    layer_config_fn = getattr(upstream_mgr, "layer_config", None) if upstream_mgr is not None else None
+    if not callable(layer_config_fn):
+        return None
+    num_spec, max_steps, lookahead = extract_dflash_tail_params(vllm_config)
+    layer_cfg = layer_config_fn(
+        spec,
+        sliding_window=sliding_window,
+        num_speculative_tokens=num_spec,
+        max_in_flight_steps=max_steps,
+        num_lookahead_tokens=lookahead,
+    )
+    if hasattr(layer_cfg, "is_draft"):
+        layer_cfg = replace(layer_cfg, is_draft=is_draft)
+    return layer_cfg
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -554,7 +821,10 @@ class AscendCircularBufferSpec(CircularBufferSpec):
 
 
 def register_ascend_kv_cache_specs() -> None:
-    from vllm_ascend.core.single_type_kv_cache_manager import AscendCircularBufferManager
+    from vllm_ascend.core.single_type_kv_cache_manager import (
+        AscendCircularBufferManager,
+        AscendDFlashSlidingWindowManager,
+    )
     from vllm_ascend.models.glm5next.kv_cache import KpoolTailManager
 
     KVCacheSpecRegistry.register(
@@ -577,6 +847,16 @@ def register_ascend_kv_cache_specs() -> None:
         kvcache_spec_cls=AscendSlidingWindowMLASpec,
         manager_class=SlidingWindowManager,
         uniform_type_base_spec=SlidingWindowMLASpec,
+    )
+    KVCacheSpecRegistry.register(
+        kvcache_spec_cls=AscendDFlashSlidingWindowSpec,
+        manager_class=AscendDFlashSlidingWindowManager,
+        uniform_type_base_spec=AscendDFlashSlidingWindowSpec,
+    )
+    KVCacheSpecRegistry.register(
+        kvcache_spec_cls=AscendDFlashSlidingWindowMLASpec,
+        manager_class=AscendDFlashSlidingWindowManager,
+        uniform_type_base_spec=AscendDFlashSlidingWindowMLASpec,
     )
 
     KVCacheSpecRegistry.register(

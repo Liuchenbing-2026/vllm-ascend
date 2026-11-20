@@ -20,6 +20,10 @@ from vllm.v1.kv_cache_interface import (
     UniformTypeKVCacheSpecs,
 )
 
+from vllm_ascend.core.kv_cache_interface import (
+    is_dflash_sliding_window_manager,
+    is_dflash_sliding_window_spec,
+)
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     block_hash_to_bytes,
     get_block_hashes,
@@ -36,6 +40,7 @@ _REACHABLE_MASK_BASE_KWARGS = frozenset(("start_block", "end_block", "alignment_
 _REACHABLE_MASK_OPTIONAL_KWARGS = frozenset(("retention_interval", "num_prompt_tokens", "reachable_boundaries"))
 # manager class -> accepted reachable_block_mask parameter names.
 _REACHABLE_MASK_KWARGS_CACHE: dict[type[SingleTypeKVCacheManager], frozenset[str]] = {}
+_FIND_HIT_NUM_REQ_TOKENS_CACHE: dict[type[SingleTypeKVCacheManager], bool] = {}
 
 # Per-group pool query used by the shared reachable hit lookup: returns the
 # subset of ``group_block_hashes`` present in the pool (all replicas valid).
@@ -143,9 +148,19 @@ class AscendStoreCoordinator:
                 "scheduler_block_size must be a multiple of each group's effective block_size"
             )
 
-        self.eagle_group_ids = {i for i, group in enumerate(kv_cache_groups) if group.is_eagle_group}
+        # Tail-only DFlash/DSpark groups already evaluate hits at the request's
+        # tail without dropping a trailing peek block.
+        self.eagle_group_ids = {
+            i
+            for i, group in enumerate(kv_cache_groups)
+            if group.is_eagle_group and not is_dflash_sliding_window_spec(_unwrap_spec(group.kv_cache_spec))
+        }
         if use_eagle and not self.eagle_group_ids:
-            self.eagle_group_ids = set(range(len(kv_cache_groups)))
+            self.eagle_group_ids = {
+                i
+                for i, group in enumerate(kv_cache_groups)
+                if not is_dflash_sliding_window_spec(_unwrap_spec(group.kv_cache_spec))
+            }
 
         self._verify_and_split_kv_cache_groups()
         # Do not keep the coordinator alive through its cache while GC is frozen.
@@ -179,11 +194,16 @@ class AscendStoreCoordinator:
         )
         self.eagle_attn_group_indices: set[int] = {
             index
-            for index, (_, group_ids, _) in enumerate(self.attention_groups)
+            for index, (_, group_ids, mgr_cls) in enumerate(self.attention_groups)
             if any(group_id in self.eagle_group_ids for group_id in group_ids)
+            and not is_dflash_sliding_window_manager(mgr_cls)
         }
         if self.use_eagle and not self.eagle_attn_group_indices:
-            self.eagle_attn_group_indices = set(range(len(self.attention_groups)))
+            self.eagle_attn_group_indices = {
+                index
+                for index, (_, _, mgr_cls) in enumerate(self.attention_groups)
+                if not is_dflash_sliding_window_manager(mgr_cls)
+            }
         self.eagle_reachable_group_ids: set[int] = {
             group_id for index in self.eagle_attn_group_indices for group_id in self.attention_groups[index][1]
         }
@@ -195,12 +215,14 @@ class AscendStoreCoordinator:
         cached_block_pool: ExternalCachedBlockPool,
         *,
         apply_eagle: bool = True,
+        num_request_tokens: int | None = None,
     ) -> tuple[tuple[list[bool], ...], int]:
         blocks_per_group, hit_length = self._find_hit_blocks(
             block_hashes,
             max_length,
             cached_block_pool,
             apply_eagle=apply_eagle,
+            num_request_tokens=num_request_tokens,
         )
         masks = tuple([block is not cached_block_pool.null_block for block in blocks] for blocks in blocks_per_group)
         return masks, hit_length
@@ -215,6 +237,7 @@ class AscendStoreCoordinator:
             token_len,
             ExternalCachedBlockPool(self.hash_block_size),
             apply_eagle=False,
+            num_request_tokens=token_len,
         )
         return masks
 
@@ -287,6 +310,7 @@ class AscendStoreCoordinator:
         *,
         log_context: str = "reachable_lookup",
         hbm_hit_tokens: int = 0,
+        num_request_tokens: int | None = None,
     ) -> int:
         """Reachability-aware external hit lookup shared by both transfer paths.
 
@@ -327,6 +351,7 @@ class AscendStoreCoordinator:
             token_len,
             ExternalCachedBlockPool(self.hash_block_size, exists),
             apply_eagle=False,
+            num_request_tokens=num_request_tokens,
         )
         logger.debug("%s: token_len=%d hit_tokens=%d", log_context, token_len, hit_length)
         return hit_length
@@ -343,8 +368,10 @@ class AscendStoreCoordinator:
         cached_block_pool: ExternalCachedBlockPool,
         *,
         apply_eagle: bool = True,
+        num_request_tokens: int | None = None,
     ) -> tuple[tuple[list[KVCacheBlock], ...], int]:
         eagle_indices = self.eagle_attn_group_indices if apply_eagle else set()
+        effective_num_req_tokens = max_length if num_request_tokens is None else num_request_tokens
         if len(self.attention_groups) == 1:
             spec, group_ids, manager_cls = self.attention_groups[0]
             hashes = self.block_hashes_for_spec(block_hashes, spec)
@@ -357,6 +384,7 @@ class AscendStoreCoordinator:
                 kv_cache_spec=spec,
                 drop_eagle_block=0 in eagle_indices,
                 alignment_tokens=spec.block_size,
+                num_request_tokens=effective_num_req_tokens,
             )
             blocks_by_group: list[list[KVCacheBlock]] = [[] for _ in range(len(self.kv_cache_groups))]
             for group_id, blocks in zip(group_ids, hit_blocks, strict=True):
@@ -395,6 +423,7 @@ class AscendStoreCoordinator:
                     kv_cache_spec=spec,
                     drop_eagle_block=drop_eagle_block,
                     alignment_tokens=self.lcm_block_size,
+                    num_request_tokens=effective_num_req_tokens,
                 )
                 if drop_eagle_block:
                     eagle_verified.add(index)
@@ -481,10 +510,25 @@ def _get_manager_class(spec: KVCacheSpec) -> type[SingleTypeKVCacheManager]:
     return manager_cls
 
 
+def _find_hit_accepts_num_request_tokens(manager_cls: type[SingleTypeKVCacheManager]) -> bool:
+    cached = _FIND_HIT_NUM_REQ_TOKENS_CACHE.get(manager_cls)
+    if cached is not None:
+        return cached
+    fn = getattr(manager_cls, "find_longest_cache_hit", None)
+    try:
+        accepted = fn is not None and "num_request_tokens" in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        accepted = False
+    _FIND_HIT_NUM_REQ_TOKENS_CACHE[manager_cls] = accepted
+    return accepted
+
+
 def _find_longest_cache_hit(
     manager_cls: type[SingleTypeKVCacheManager],
     **kwargs: Any,
 ) -> tuple[tuple[list[KVCacheBlock], ...], int]:
+    if not _find_hit_accepts_num_request_tokens(manager_cls):
+        kwargs.pop("num_request_tokens", None)
     hit_result = manager_cls.find_longest_cache_hit(**kwargs)
     return cast(tuple[tuple[list[KVCacheBlock], ...], int], hit_result)
 

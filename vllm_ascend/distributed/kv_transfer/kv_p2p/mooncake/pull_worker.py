@@ -772,10 +772,20 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
         elif isinstance(spec, SlidingWindowSpec):
             assert local_block_size == remote_block_size, "Mooncake SWA requires the same P/D logical block size."
             local_unhashed_start_idx = len(local_full_group_block_ids) - len(local_group_block_ids)
-            local_kernel_block_ids = self._expand_block_ids(local_group_block_ids, local_block_size_scale)
-            remote_kernel_block_ids = self._expand_block_ids(
-                remote_group_block_ids[local_unhashed_start_idx:], remote_block_size_scale
-            )
+            # Filter leading unbacked null placeholders before scaling so block 0 is never written.
+            paired_local: list[int] = []
+            paired_remote: list[int] = []
+            for local_id, remote_id in zip(local_group_block_ids, remote_group_block_ids[local_unhashed_start_idx:]):
+                if local_id == 0:
+                    continue
+                if remote_id == 0:
+                    raise ValueError(
+                        f"Mooncake SWA required remote block is not resident: request={request_id!r}"
+                    )
+                paired_local.append(local_id)
+                paired_remote.append(remote_id)
+            local_kernel_block_ids = self._expand_block_ids(paired_local, local_block_size_scale)
+            remote_kernel_block_ids = self._expand_block_ids(paired_remote, remote_block_size_scale)
         elif isinstance(spec, FullAttentionSpec):
             if is_dcp_transfer:
                 local_kernel_block_size = local_block_size // local_block_size_scale

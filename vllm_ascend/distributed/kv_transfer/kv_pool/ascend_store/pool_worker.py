@@ -24,6 +24,7 @@ from vllm.v1.core.kv_cache_utils import BlockHash, maybe_convert_block_hash
 from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
     MambaSpec,
+    SlidingWindowSpec,
     UniformTypeKVCacheSpecs,
 )
 from vllm.v1.worker.mamba_utils import get_mamba_groups
@@ -229,6 +230,7 @@ class BaseKVPoolWorker(ABC):
         self.num_kv_cache_groups = len(self.grouped_block_size)
         self.kv_cache_group_families = infer_group_cache_families(kv_cache_groups, self.compress_ratios, self.hf_config)
         self.group_uses_align_state = self._infer_group_uses_align_state()
+        self.group_skips_null_blocks = self._infer_group_skips_null_blocks()
         self.sharded_mamba_group_ids = get_sharded_mamba_group_ids(kv_cache_config)
         self.cache_transfer_granularity = infer_cache_transfer_granularity(
             self.grouped_block_size, self.lcm_block_size, self.cacheable_group_ids
@@ -436,23 +438,41 @@ class BaseKVPoolWorker(ABC):
             retention_interval=retention_interval,
         )
 
-    def _infer_group_uses_align_state(self) -> list[bool]:
+    def _iter_group_specs(self) -> list[list[object]]:
         if self.kv_cache_config is None:
-            return [False]
-
-        group_uses_align_state: list[bool] = []
+            return []
+        per_group: list[list[object]] = []
         for group in self.kv_cache_config.kv_cache_groups:
             kv_cache_spec = group.kv_cache_spec
             if isinstance(kv_cache_spec, UniformTypeKVCacheSpecs):
                 specs = [kv_cache_spec.kv_cache_specs[layer_name] for layer_name in group.layer_names]
             else:
                 specs = [kv_cache_spec]
-            group_uses_align_state.append(
-                any(
-                    isinstance(spec, MambaSpec) and getattr(spec, "mamba_cache_mode", None) == "align" for spec in specs
-                )
+            per_group.append(specs)
+        return per_group
+
+    def _infer_group_uses_align_state(self) -> list[bool]:
+        per_group = self._iter_group_specs()
+        if not per_group:
+            return [False]
+        return [
+            any(isinstance(spec, MambaSpec) and getattr(spec, "mamba_cache_mode", None) == "align" for spec in specs)
+            for specs in per_group
+        ]
+
+    def _infer_group_skips_null_blocks(self) -> list[bool]:
+        """Skip placeholder block 0 on aligned-state and sliding-window/DFlash groups."""
+        per_group = self._iter_group_specs()
+        if not per_group:
+            return [False]
+        return [
+            any(
+                isinstance(spec, SlidingWindowSpec)
+                or (isinstance(spec, MambaSpec) and getattr(spec, "mamba_cache_mode", None) == "align")
+                for spec in specs
             )
-        return group_uses_align_state
+            for specs in per_group
+        ]
 
     @staticmethod
     def _uses_mamba_kv_cache(use_hybrid: bool, kv_cache_config: KVCacheConfig | None):
@@ -1087,6 +1107,7 @@ class BaseKVPoolWorker(ABC):
         kv_cache_group_ids: list[int],
         include_all_ranks: bool,
         hbm_hit_tokens: int = 0,
+        num_request_tokens: int | None = None,
     ) -> int | None:
         if self.cache_coordinator is None:
             return None
@@ -1137,12 +1158,14 @@ class BaseKVPoolWorker(ABC):
             )
             return present
 
+        extra_kwargs = {"num_request_tokens": num_request_tokens} if num_request_tokens is not None else {}
         return coordinator.find_reachable_hit_tokens(
             block_hashes,
             token_len,
             query_group_hits,
             log_context="KV pool coordinator lookup",
             hbm_hit_tokens=hbm_hit_tokens,
+            **extra_kwargs,
         )
 
     def lookup_scheduler(
@@ -1152,6 +1175,7 @@ class BaseKVPoolWorker(ABC):
         kv_cache_group_ids: list[int] | None = None,
         use_layerwise: bool = False,
         hbm_hit_tokens: int = 0,
+        num_request_tokens: int | None = None,
     ) -> int:
         """
         Checks the existence of KV cache of the tokens from the cache engine.
@@ -1171,6 +1195,7 @@ class BaseKVPoolWorker(ABC):
                     kv_cache_group_ids,
                     include_all_ranks=True,
                     hbm_hit_tokens=hbm_hit_tokens,
+                    num_request_tokens=num_request_tokens,
                 )
             )
             if coordinator_hit is not None:
@@ -1411,7 +1436,8 @@ class KVPoolWorker(BaseKVPoolWorker):
                     "no_load_spec" if load_spec is None else f"can_load={load_spec.can_load}",
                 )
                 continue
-            request.skip_null_blocks_by_group = self.group_uses_align_state
+            skip_null_groups = getattr(self, "group_skips_null_blocks", self.group_uses_align_state)
+            request.skip_null_blocks_by_group = skip_null_groups
             load_group_ids = request.kv_cache_group_ids or [0]
             token_len = request.token_len_chunk
             if (load_spec.kvpool_cached_tokens % self.cache_transfer_granularity != 0) and (
@@ -1463,7 +1489,7 @@ class KVPoolWorker(BaseKVPoolWorker):
                 block_ids = request.block_ids_by_group[group_id]
                 group_block_size = self.grouped_block_size[group_id]
                 mask_num = load_spec.vllm_cached_tokens // group_block_size * group_block_size
-                skip_null = group_id < len(self.group_uses_align_state) and self.group_uses_align_state[group_id]
+                skip_null = group_id < len(skip_null_groups) and skip_null_groups[group_id]
 
                 def chunk_filter(start: int, group_id=group_id, load_masks=load_masks) -> bool:
                     return self.token_database.mask_allows_chunk(load_masks, group_id, start)
@@ -1575,7 +1601,8 @@ class KVPoolWorker(BaseKVPoolWorker):
             if current_event is None:
                 current_event = torch.npu.Event()
                 current_event.record()
-            request.skip_null_blocks_by_group = self.group_uses_align_state
+            skip_null_groups = getattr(self, "group_skips_null_blocks", self.group_uses_align_state)
+            request.skip_null_blocks_by_group = skip_null_groups
             request.current_event = current_event
             requests.append(request)
 

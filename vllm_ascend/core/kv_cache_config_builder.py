@@ -13,7 +13,8 @@ from collections import defaultdict
 from dataclasses import replace
 
 from vllm.config import VllmConfig
-from vllm.utils.math_utils import cdiv, round_up
+from vllm.utils.math_utils import cdiv
+from vllm.v1.core import kv_cache_planning, kv_cache_utils
 from vllm.v1.core.kv_cache_planning import (
     DefaultKVCacheConfigBuilder,
     _approximate_gcd,
@@ -31,9 +32,12 @@ from vllm.v1.kv_cache_interface import (
     KVCacheTensor,
     MLAAttentionSpec,
     SlidingWindowMLASpec,
+    SlidingWindowSpec,
     UniformTypeKVCacheSpecs,
     get_kv_cache_spec_kind,
 )
+
+from vllm_ascend.core.kv_cache_interface import is_dflash_sliding_window_spec
 
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.cache_planner import (
     get_layerwise_offload_config,
@@ -123,6 +127,10 @@ class AscendKVCacheConfigBuilder(DefaultKVCacheConfigBuilder):
         kimi_k3_groups = _get_kimi_k3_dspark_mixed_kv_cache_groups(kv_cache_spec)
         if kimi_k3_groups is not None:
             return kimi_k3_groups
+
+        no_pad_groups = _get_kv_cache_groups_without_windowed_draft_padding(vllm_config, kv_cache_spec)
+        if no_pad_groups is not None:
+            return no_pad_groups
 
         return super().get_kv_cache_groups(vllm_config, kv_cache_spec)
 
@@ -220,6 +228,112 @@ def _page_sizes(spec: UniformTypeKVCacheSpecs) -> set[int]:
     return {s.page_size_bytes for s in spec.kv_cache_specs.values()}
 
 
+def _is_windowed_draft_spec(spec: KVCacheSpec) -> bool:
+    """Return True when ``spec`` is a draft-only sliding-window spec."""
+    return isinstance(spec, SlidingWindowSpec) and (
+        is_dflash_sliding_window_spec(spec) or bool(getattr(spec, "is_draft", False))
+    )
+
+
+def _is_windowed_draft_bucket(layers: list[str], kv_cache_spec: dict[str, KVCacheSpec]) -> bool:
+    """Return True when all layers in a bucket are draft-only sliding-window specs."""
+    return bool(layers) and all(_is_windowed_draft_spec(kv_cache_spec[n]) for n in layers)
+
+
+def _is_windowed_draft_uniform_spec(group_spec: UniformTypeKVCacheSpecs) -> bool:
+    """Return True when every layer inside ``UniformTypeKVCacheSpecs`` is draft SWA."""
+    specs = tuple(group_spec.kv_cache_specs.values())
+    return bool(specs) and all(_is_windowed_draft_spec(spec) for spec in specs)
+
+
+def _resolve_planning_helper(name: str):
+    """Look up a vLLM planning helper across pre- and post-#61183 module moves."""
+    for mod in (kv_cache_planning, kv_cache_utils):
+        helper = getattr(mod, name, None)
+        if helper is not None:
+            return helper
+    return None
+
+
+def _bucket_compatible_specs(kv_cache_spec: dict[str, KVCacheSpec]) -> list[list[str]]:
+    """Bucket layers whose KV cache specs can merge into one group."""
+    same_type_layers: dict[KVCacheSpec, list[str]] = defaultdict(list)
+    for layer_name, layer_spec in kv_cache_spec.items():
+        same_type_layers[layer_spec].append(layer_name)
+
+    layer_buckets: list[list[str]] = []
+    spec_buckets: list[list[KVCacheSpec]] = []
+    for layer_spec, layer_names in same_type_layers.items():
+        for names, specs in zip(layer_buckets, spec_buckets):
+            if is_dflash_sliding_window_spec(specs[0]) != is_dflash_sliding_window_spec(layer_spec):
+                continue
+            try:
+                type(specs[0]).merge([*specs, layer_spec])
+            except (AssertionError, ValueError):
+                continue
+            names.extend(layer_names)
+            specs.append(layer_spec)
+            break
+        else:
+            layer_buckets.append(list(layer_names))
+            spec_buckets.append([layer_spec])
+    return layer_buckets
+
+
+def _get_kv_cache_groups_without_windowed_draft_padding(
+    vllm_config: VllmConfig,
+    kv_cache_spec: dict[str, KVCacheSpec],
+) -> list[KVCacheGroupSpec] | None:
+    """Exclude draft-only SWA buckets from uniform-page group sizing (vLLM #68533).
+
+    On pre-#68533 vLLM pins, a small DFlash/DSpark draft SWA bucket shrinks the
+    hybrid ``group_size`` and pads every target full-attention layer. Handle
+    pre-#61452 uniform-page-size hybrids here so target layers stay unpadded.
+    """
+    if not kv_cache_spec or not isinstance(next(iter(kv_cache_spec.values())), KVCacheSpec):
+        return None
+    if not any(_is_windowed_draft_spec(spec) for spec in kv_cache_spec.values()):
+        return None
+
+    unify_page_size = _resolve_planning_helper("unify_kv_cache_spec_page_size")
+    create_group_specs = _resolve_planning_helper("create_kv_cache_group_specs")
+    is_uniform = _resolve_planning_helper("is_kv_cache_spec_uniform")
+    if unify_page_size is None or create_group_specs is None or is_uniform is None:
+        return None
+    if is_uniform(kv_cache_spec) or any(
+        type(spec).__name__ == "HiddenStateCacheSpec" for spec in kv_cache_spec.values()
+    ):
+        return None
+    get_hisparse = _resolve_planning_helper("get_hisparse_kv_cache_groups")
+    if callable(get_hisparse) and get_hisparse(vllm_config, kv_cache_spec):
+        return None
+    get_packed = _resolve_planning_helper("_get_packed_kv_cache_groups")
+    if callable(get_packed) and get_packed(vllm_config, kv_cache_spec):
+        return None
+
+    try:
+        unified_spec = unify_page_size(kv_cache_spec)
+    except NotImplementedError:
+        return None
+
+    layer_buckets = _bucket_compatible_specs(unified_spec)
+    # Mirror vLLM #68533: exclude draft-only SWA buckets so they never pad
+    # target full-attention layers; unbounded draft buckets still size groups.
+    sizing_buckets = [
+        layers for layers in layer_buckets if not _is_windowed_draft_bucket(layers, unified_spec)
+    ] or layer_buckets
+    min_num_layers = min(len(layers) for layers in sizing_buckets)
+    max_num_layers = max(len(layers) for layers in sizing_buckets)
+    group_size = max_num_layers if max_num_layers < min_num_layers * 1.5 else min_num_layers
+
+    grouped_layers: list[list[str]] = []
+    for layers in layer_buckets:
+        num_groups = cdiv(len(layers), group_size)
+        for i in range(num_groups):
+            grouped_layers.append(layers[i::num_groups])
+    return create_group_specs(unified_spec, grouped_layers)
+
+
 def group_and_unify_kv_cache_specs(
     kv_cache_spec: dict[str, KVCacheSpec],
 ) -> list[UniformTypeKVCacheSpecs] | None:
@@ -230,10 +344,17 @@ def group_and_unify_kv_cache_specs(
         return None
 
     logical_block_specs: dict[int, dict[str, KVCacheSpec]] = defaultdict(dict)
-    grouped_swa_mla_specs: dict[int, dict[str, KVCacheSpec]] = defaultdict(dict)
+    grouped_swa_mla_specs: dict[tuple[int, bool, bool], dict[str, KVCacheSpec]] = defaultdict(dict)
     for name, spec in kv_cache_spec.items():
         if isinstance(spec, SlidingWindowMLASpec):
-            grouped_swa_mla_specs[spec.block_size][name] = spec
+            # Separate tail-only/draft SWA buckets from regular SWA buckets so
+            # UniformTypeKVCacheSpecs and group sizing keep independent ownership.
+            bucket_key = (
+                spec.block_size,
+                is_dflash_sliding_window_spec(spec),
+                bool(getattr(spec, "is_draft", False)),
+            )
+            grouped_swa_mla_specs[bucket_key][name] = spec
         elif isinstance(spec, MLAAttentionSpec):
             logical_block_specs[spec.block_size][name] = spec
 
@@ -242,7 +363,10 @@ def group_and_unify_kv_cache_specs(
         spec_dict = logical_block_specs[block_size]
         assert len(spec_dict) > 0
         mla_uniform_specs.append(UniformTypeKVCacheSpecs.from_specs(spec_dict))
-    assert mla_uniform_specs is not None
+    if not mla_uniform_specs and not any(
+        getattr(spec, "cache_dtype_str", None) == TURBOQUANT_CACHE_DTYPE for spec in kv_cache_spec.values()
+    ):
+        return None
 
     swa_uniform_specs: list[UniformTypeKVCacheSpecs] = []
     for spec_dict in grouped_swa_mla_specs.values():
@@ -279,18 +403,10 @@ def _get_kv_cache_groups_uniform_groups(
         kv_cache_spec=full_mla_c128_spec,
     )
 
-    # We define a layer tuple as a group of layers with different page sizes, and
-    # one UniformTypeKVCacheSpecs contains a list of layer tuples.
-    # For example, if we have 11 C4 layers and 10 C128 layers, we can define a layer
-    # tuple as [C4I, C4A, C128], and the full_mla_group will contain "11" layer tuples.
-    # The other uniform KV cache specs will be similarly partitioned into layer tuples.
-    # Say we have 21 SWA layers, all with the same page size, then we will have "21"
-    # layer tuples.
-    num_layer_tuples_per_group: list[int] = [g_spec.get_max_layers_per_page_size() for g_spec in grouped_specs]
-    # Choose `num_layer_tuples` to minimize total padding across groups.
-    num_layer_tuples = _approximate_gcd(num_layer_tuples_per_group, lower_bound=num_layer_tuples_per_group[0])
-    # Round up to the nearest multiple of `num_layer_tuples` (i.e., padding)
-    num_layer_tuples_per_group = [round_up(x, num_layer_tuples) for x in num_layer_tuples_per_group]
+    # Exclude draft-only SWA buckets when sizing shared tuples (#68533).
+    sizing_specs = [g for g in grouped_specs if not _is_windowed_draft_uniform_spec(g)] or grouped_specs
+    sizing_tuple_counts = [g_spec.get_max_layers_per_page_size() for g_spec in sizing_specs]
+    num_layer_tuples = _approximate_gcd(sizing_tuple_counts, lower_bound=sizing_tuple_counts[0])
 
     # TODO(cmq): this is not general enough
     swa_mla_specs = grouped_specs[2:]

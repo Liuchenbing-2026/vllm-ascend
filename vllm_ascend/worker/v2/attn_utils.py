@@ -76,11 +76,15 @@ from vllm_ascend.attention.utils import (
     supports_strided_mla_cache,
 )
 from vllm_ascend.core.kv_cache_interface import (
+    AscendDFlashSlidingWindowSpec,
     AscendIndexerKPoolTailSpec,
     AscendMLAAttentionSpec,
     AscendSFAIndexerCacheSpec,
+    as_dflash_sliding_window_spec,
     get_kv_cache_compression_ratio,
     get_storage_block_size,
+    is_dflash_family_speculative,
+    is_dflash_sliding_window_spec,
     requires_padded_page_layout,
     supports_component_major_mla_pd,
 )
@@ -164,7 +168,8 @@ def _align_hybrid_attention_page_sizes(kv_cache_specs: dict[str, KVCacheSpec], m
     attention_specs = {
         name: spec
         for name, spec in kv_cache_specs.items()
-        if type(spec) in (FullAttentionSpec, SlidingWindowSpec) and not name.endswith((".sparse_summary_cache",))
+        if type(spec) in (FullAttentionSpec, SlidingWindowSpec, AscendDFlashSlidingWindowSpec)
+        and not name.endswith((".sparse_summary_cache",))
     }
     if not attention_specs:
         return
@@ -247,6 +252,13 @@ def get_kv_cache_spec(vllm_config: VllmConfig) -> dict[str, KVCacheSpec]:
             spec = customize_attention_spec(attn_module.get_attn_backend(), spec)
         if type(spec) is FullAttentionSpec and is_c8_mxfp_kv_quant(vllm_config):
             spec = mxfp_cache_spec(spec)
+        if (
+            getattr(attn_module, "is_draft_layer", False)
+            and is_dflash_family_speculative(vllm_config)
+            and isinstance(spec, SlidingWindowSpec)
+            and not is_dflash_sliding_window_spec(spec)
+        ):
+            spec = as_dflash_sliding_window_spec(spec, vllm_config, is_draft=True)
         kv_cache_spec[layer_name] = spec
         if isinstance(spec, AttentionSpec) and getattr(attn_module, "align_kv_cache_with_mamba", True):
             attention_layer_names.append(layer_name)

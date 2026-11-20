@@ -22,6 +22,7 @@ from vllm_ascend.core.kv_cache_interface import (
     AscendMLAAttentionSpec,
     AscendSlidingWindowMLASpec,
     declared_kwarg,
+    is_dflash_sliding_window_spec,
 )
 from vllm_ascend.device.hardware_profile import (
     HardwareCapability,
@@ -158,9 +159,13 @@ def get_layer_tuples(specs):
     state = sorted((name for name, spec in specs.items() if isinstance(spec, CircularBufferSpec)), key=_layer_number)
     swa = {name for name, spec in specs.items() if isinstance(spec, AscendSlidingWindowMLASpec)}
 
+    def _is_draft_swa(name: str) -> bool:
+        spec = specs[name]
+        return is_dflash_sliding_window_spec(spec) or bool(getattr(spec, "is_draft", False)) or ".mtp." in f".{name}"
+
     full = sorted((name for name in mla if name.endswith(".long_kv_cache")), key=_layer_number)
-    target_swa = sorted((name for name in swa if ".mtp." not in f".{name}"), key=_layer_number)
-    draft_swa = sorted((name for name in swa if ".mtp." in f".{name}"), key=_draft_layer_number)
+    target_swa = sorted((name for name in swa if not _is_draft_swa(name)), key=_layer_number)
+    draft_swa = sorted((name for name in swa if _is_draft_swa(name)), key=_draft_layer_number)
 
     # A reduced backbone may contain only the initial SWA layers. Without
     # full-context source slots, each SWA layer needs its own physical slot.
@@ -177,12 +182,14 @@ def get_layer_tuples(specs):
         folded_spec = specs.get(folded_name)
         index_spec = specs[index_name]
         kv_spec = specs[kv_name]
-        aliases = ([state[slot_idx]] if slot_idx < len(state) else []) + target_swa[slot_idx :: len(full)]
+        aliases = (
+            ([state[slot_idx]] if slot_idx < len(state) else [])
+            + target_swa[slot_idx :: len(full)]
+            + draft_swa[slot_idx :: len(full)]
+        )
         kv_bytes = kv_spec.unpadded_page_size_bytes
         index_bytes = index_spec.unpadded_page_size_bytes
         folded_bytes = folded_spec.unpadded_page_size_bytes if folded_spec is not None else 0
-        if slot_idx < len(draft_swa):
-            aliases.append(draft_swa[slot_idx])
         capacity = max(
             kv_bytes + index_bytes + folded_bytes,
             *(specs[name].unpadded_page_size_bytes for name in aliases),
@@ -213,6 +220,12 @@ def group_cache_specs(specs):
             padded[folded_name] = replace(specs[folded_name], page_size_padded=page_size - kv_bytes - index_bytes)
         padded.update((name, replace(specs[name], page_size_padded=page_size)) for name in aliases)
 
+    def _is_padded_draft_swa(name: str) -> bool:
+        spec = padded[name]
+        return isinstance(spec, AscendSlidingWindowMLASpec) and (
+            is_dflash_sliding_window_spec(spec) or bool(getattr(spec, "is_draft", False)) or ".mtp." in f".{name}"
+        )
+
     mla_names = [name for name, spec in padded.items() if isinstance(spec, AscendMLAAttentionSpec)]
     state_names = [name for name, spec in padded.items() if isinstance(spec, CircularBufferSpec)]
     # A decoder-only PP stage has no compression state buffers.
@@ -228,7 +241,7 @@ def group_cache_specs(specs):
         [
             name
             for name in layer_tuple
-            if isinstance(padded[name], AscendSlidingWindowMLASpec) and ".mtp." not in f".{name}"
+            if isinstance(padded[name], AscendSlidingWindowMLASpec) and not _is_padded_draft_swa(name)
         ]
         for layer_tuple in layer_tuples
     ]
@@ -236,14 +249,16 @@ def group_cache_specs(specs):
     for names in zip_longest(*swa_columns):
         groups.append(UniformTypeKVCacheSpecs.from_specs({name: padded[name] for name in names if name is not None}))
 
-    draft_names = [
-        name
+    # Group draft SWA layers independently across slots so extra draft layers
+    # never shrink or pad target full/SWA groups (#68533).
+    draft_columns = [
+        [name for name in layer_tuple if _is_padded_draft_swa(name)]
         for layer_tuple in layer_tuples
-        for name in layer_tuple
-        if isinstance(padded[name], AscendSlidingWindowMLASpec) and ".mtp." in f".{name}"
     ]
-    if draft_names:
-        groups.append(UniformTypeKVCacheSpecs.from_specs({name: padded[name] for name in draft_names}))
+    for names in zip_longest(*draft_columns):
+        draft_group_specs = {name: padded[name] for name in names if name is not None}
+        if draft_group_specs:
+            groups.append(UniformTypeKVCacheSpecs.from_specs(draft_group_specs))
     return groups
 
 

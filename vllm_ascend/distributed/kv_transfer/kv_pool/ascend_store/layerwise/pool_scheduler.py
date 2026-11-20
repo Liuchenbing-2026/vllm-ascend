@@ -177,12 +177,18 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
             block_hits = self._query_layerwise_block_hits(keys_by_block)
             return [block_hash for block_hash, hit in zip(allowed_hashes, block_hits) if hit]
 
+        extra_kwargs = (
+            {"num_request_tokens": request.num_tokens}
+            if getattr(request, "num_tokens", None) is not None
+            else {}
+        )
         return coordinator.find_reachable_hit_tokens(
             request.block_hashes,
             token_len,
             query_group_hits,
             log_context=f"hit_check: req={request.request_id}",
             hbm_hit_tokens=num_computed_tokens,
+            **extra_kwargs,
         )
 
     def _query_contiguous_group_hits(

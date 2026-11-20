@@ -88,7 +88,12 @@ from vllm.v1.kv_cache_interface import KVCacheSpec
 
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.attention.dsa_v1 import AscendDSAImpl, OProjBufferPool
-from vllm_ascend.core.kv_cache_interface import AscendSlidingWindowMLASpec
+from vllm_ascend.core.kv_cache_interface import (
+    AscendSlidingWindowMLASpec,
+    as_dflash_sliding_window_spec,
+    build_dflash_sliding_window_layer_config,
+    is_dflash_family_speculative,
+)
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.models.common.ops.sequence_parallel import (
     sp_all_gather,
@@ -140,7 +145,7 @@ class AscendDeepseekV4SWACache(VllmDeepseekV4SWACache):
         # FP8 SWA cache row: quantMode=1 layout = 608 B/token (rope 128 +
         # nope 448 + bf16 scale 14 + pad 18), i.e. head_dim + 96.
         cached_head_size = self.head_dim + 96 if self.dtype == torch.float8_e4m3fn else self.head_dim
-        return AscendSlidingWindowMLASpec(
+        spec = AscendSlidingWindowMLASpec(
             block_size=self.block_size,
             num_kv_heads=1,
             head_size=cached_head_size,
@@ -150,6 +155,25 @@ class AscendDeepseekV4SWACache(VllmDeepseekV4SWACache):
             model_version="deepseek_v4",
             alignment=None,
         )
+        is_draft = bool(getattr(self, "is_draft_layer", False) or getattr(self, "prefix", "").startswith("mtp."))
+        if vllm_config is not None and is_draft and is_dflash_family_speculative(vllm_config):
+            return as_dflash_sliding_window_spec(spec, vllm_config, is_draft=True)
+        return spec
+
+    def get_kv_cache_config(self, vllm_config: VllmConfig):
+        """Return tail-only layer config for DSpark draft SWA layers on #64109."""
+        spec = self.get_kv_cache_spec(vllm_config)
+        is_draft = bool(getattr(self, "is_draft_layer", False) or getattr(self, "prefix", "").startswith("mtp."))
+        if vllm_config is not None and is_draft and is_dflash_family_speculative(vllm_config):
+            layer_cfg = build_dflash_sliding_window_layer_config(
+                spec,
+                vllm_config,
+                sliding_window=self.window_size,
+                is_draft=True,
+            )
+            if layer_cfg is not None:
+                return layer_cfg
+        return super().get_kv_cache_config(vllm_config) if hasattr(super(), "get_kv_cache_config") else spec
 
     def forward(self): ...
 

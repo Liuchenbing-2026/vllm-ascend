@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+import inspect
 import sys
 from collections.abc import Mapping
 from copy import copy
@@ -34,7 +35,27 @@ from vllm.v1.kv_cache_interface import (
     UniformTypeKVCacheSpecs,
 )
 
-from vllm_ascend.core.kv_cache_interface import is_prefix_cacheable
+from vllm_ascend.core.kv_cache_interface import (
+    is_dflash_sliding_window_manager,
+    is_dflash_sliding_window_spec,
+    is_prefix_cacheable,
+)
+
+
+_FIND_HIT_NUM_REQ_TOKENS_CACHE: dict[type, bool] = {}
+
+
+def _accepts_num_request_tokens(manager_cls: type) -> bool:
+    cached = _FIND_HIT_NUM_REQ_TOKENS_CACHE.get(manager_cls)
+    if cached is not None:
+        return cached
+    fn = getattr(manager_cls, "find_longest_cache_hit", None)
+    try:
+        accepted = fn is not None and "num_request_tokens" in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        accepted = False
+    _FIND_HIT_NUM_REQ_TOKENS_CACHE[manager_cls] = accepted
+    return accepted
 
 _orig_get_kv_cache_coordinator = vllm.v1.core.kv_cache_coordinator.get_kv_cache_coordinator
 
@@ -160,8 +181,12 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         )
 
         # KV cache group indices that get the EAGLE last-block drop.
+        # Tail-only DFlash/DSpark groups already evaluate hits at
+        # ``num_request_tokens`` without an extra trailing peek block.
         self.eagle_group_ids: set[int] = {  # type: ignore[no-redef]
-            i for i, g in enumerate(kv_cache_config.kv_cache_groups) if g.is_eagle_group
+            i
+            for i, g in enumerate(kv_cache_config.kv_cache_groups)
+            if g.is_eagle_group and not is_dflash_sliding_window_spec(_manager_spec(g.kv_cache_spec))
         }
         # Fall back to flagging only full-attention groups when no group is
         # flagged. Mamba/GDN state hits do not use the eagle drop (a draft
@@ -195,6 +220,12 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
             )
             for i, kv_cache_group in enumerate(self.kv_cache_config.kv_cache_groups)
         )
+        dflash_group_ids = {
+            i for i, mgr in enumerate(self.single_type_managers) if is_dflash_sliding_window_manager(mgr.__class__)
+        }
+        if dflash_group_ids:
+            self.eagle_group_ids -= dflash_group_ids
+            self.drop_eagle_group_ids = self.eagle_group_ids if use_eagle else set()
         # hash_block_size: the block size used to compute block hashes.
         # The actual block size usually equals hash_block_size, but in cases where
         # different KV cache groups have different block sizes, the actual block size
@@ -363,6 +394,7 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         self,
         block_hashes: list[BlockHash],
         max_cache_hit_length: int,
+        num_request_tokens: int | None = None,
     ) -> tuple[tuple[list[KVCacheBlock], ...], int] | tuple[tuple[list[KVCacheBlock], ...], int, int]:
         """
         Find the longest cache hit using an iterative fixed-point algorithm.
@@ -375,12 +407,15 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         Args:
             block_hashes: The block hashes of the request.
             max_cache_hit_length: The maximum length of the cache hit.
+            num_request_tokens: Request token count (for DFlash tail lookups).
 
         Returns:
             A tuple containing:
                 - A tuple of the cache hit blocks for each single type manager.
                 - The number of tokens of the longest cache hit.
         """
+        if num_request_tokens is None:
+            num_request_tokens = max_cache_hit_length + 1
 
         def _get_block_hashes(kv_cache_spec: KVCacheSpec) -> BlockHashList:
             return block_hashes
@@ -433,6 +468,9 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                         else group_block_size
                     )
                     _max_length = min(curr_hit_length + eagle_margin, max_cache_hit_length)
+                extra_hit_kwargs = (
+                    {"num_request_tokens": num_request_tokens} if _accepts_num_request_tokens(manager_cls) else {}
+                )
                 hit_result = manager_cls.find_longest_cache_hit(
                     block_hashes=_get_block_hashes(spec),
                     max_length=_max_length,
@@ -443,6 +481,7 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                     alignment_tokens=self._cache_hit_alignment_tokens,
                     dcp_world_size=self.dcp_world_size if spec.dcp_sharded else 1,
                     pcp_world_size=1,
+                    **extra_hit_kwargs,
                 )
                 hit_blocks, _new_hit_length = hit_result
                 if drop_eagle_block:
@@ -486,15 +525,21 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         self,
         block_hashes: list[BlockHash],
         max_cache_hit_length: int,
+        num_request_tokens: int | None = None,
     ) -> tuple[tuple[list[KVCacheBlock], ...], tuple[int, ...]]:
         # PD + hybrid connector path. Skip the EAGLE drop on the prefill
         # producer and on standalone instances (see
         # ``self.skips_eagle_block_drop``): matched content blocks are
         # always verified prompt blocks there.
+        if num_request_tokens is None:
+            num_request_tokens = max_cache_hit_length + 1
         num_groups = len(self.kv_cache_config.kv_cache_groups)
         hit_blocks: list[list[KVCacheBlock]] = [[] for _ in range(num_groups)]
         hit_lengths: list[int] = [0] * num_groups
         for spec, group_ids, manager_cls, use_eagle in self.attention_groups:
+            extra_hit_kwargs = (
+                {"num_request_tokens": num_request_tokens} if _accepts_num_request_tokens(manager_cls) else {}
+            )
             blocks, group_hit = manager_cls.find_longest_cache_hit(
                 block_hashes=block_hashes,
                 max_length=max_cache_hit_length,
@@ -505,6 +550,7 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                 alignment_tokens=self._cache_hit_alignment_tokens,
                 dcp_world_size=self.dcp_world_size if spec.dcp_sharded else 1,
                 pcp_world_size=1,
+                **extra_hit_kwargs,
             )
             for gid, blks in zip(group_ids, blocks):
                 hit_blocks[gid] = blks

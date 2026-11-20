@@ -37,7 +37,12 @@ from vllm.platforms import current_platform
 from vllm_ascend.attention.context_parallel.dsa_v41_cp import get_v41_cp_classes
 from vllm_ascend.attention.dsa_v1 import AscendDSAImpl, OProjBufferPool
 from vllm_ascend.attention.dsa_v41 import DeepseekV41CacheBackend, DeepseekV41CacheLayer, scatter_cache_sk
-from vllm_ascend.core.kv_cache_interface import AscendSlidingWindowMLASpec
+from vllm_ascend.core.kv_cache_interface import (
+    AscendSlidingWindowMLASpec,
+    as_dflash_sliding_window_spec,
+    build_dflash_sliding_window_layer_config,
+    is_dflash_family_speculative,
+)
 from vllm_ascend.device.device_op import DeviceOperator
 from vllm_ascend.models.common.ops.sequence_parallel import (
     sp_all_gather,
@@ -91,7 +96,7 @@ class DeepseekV41DSparkSWACache(AscendDeepseekV41SWACache):
     # TODO: Extract DeepseekV41DraftSWASpec construction from this cache subclass.
     def get_kv_cache_spec(self, vllm_config):
         spec = super().get_kv_cache_spec(vllm_config)
-        return AscendSlidingWindowMLASpec(
+        draft_spec = AscendSlidingWindowMLASpec(
             block_size=spec.block_size,
             num_kv_heads=spec.num_kv_heads,
             head_size=spec.head_size,
@@ -101,6 +106,23 @@ class DeepseekV41DSparkSWACache(AscendDeepseekV41SWACache):
             model_version=spec.model_version,
             bounded_replay=spec.bounded_replay,
         )
+        if vllm_config is not None and is_dflash_family_speculative(vllm_config):
+            return as_dflash_sliding_window_spec(draft_spec, vllm_config, is_draft=True)
+        return draft_spec
+
+    def get_kv_cache_config(self, vllm_config):
+        """Return tail-only layer config when running under post-#64109 vLLM."""
+        spec = self.get_kv_cache_spec(vllm_config)
+        if vllm_config is not None and is_dflash_family_speculative(vllm_config):
+            layer_cfg = build_dflash_sliding_window_layer_config(
+                spec,
+                vllm_config,
+                sliding_window=spec.sliding_window,
+                is_draft=True,
+            )
+            if layer_cfg is not None:
+                return layer_cfg
+        return super().get_kv_cache_config(vllm_config) if hasattr(super(), "get_kv_cache_config") else spec
 
     def get_attn_backend(self):
         return DeepseekV41CacheBackend

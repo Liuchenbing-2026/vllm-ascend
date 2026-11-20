@@ -28,6 +28,11 @@ def get_num_blocks_to_allocate(
     cap = self.max_admission_blocks_per_request
     remaining_admission_blocks = None
     if apply_admission_cap and cap is not None:
+        get_reservation = getattr(self, "get_num_blocks_to_reserve", None)
+        if callable(get_reservation):
+            reservation = get_reservation(request_id, num_tokens)
+            if reservation is not None:
+                return reservation
         blocks = self.req_to_blocks.get(request_id, ())
         if blocks:
             # Requests can hold blocks without a num_cached_block entry when
