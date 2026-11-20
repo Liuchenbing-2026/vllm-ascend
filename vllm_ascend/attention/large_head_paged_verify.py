@@ -151,7 +151,7 @@ def large_head_verify_graph_params(
         num_pa_rows = metadata.seq_lens.shape[0] if metadata.seq_lens is not None else 0
         block_table = (
             metadata.block_tables[:num_pa_rows]
-            if num_pa_rows > 0 and metadata.block_tables is not None
+            if num_pa_rows > 0 and metadata.block_tables is not None and metadata.block_tables.shape[0] > num_pa_rows
             else metadata.block_tables
         )
         return {
@@ -161,13 +161,13 @@ def large_head_verify_graph_params(
     num_reqs = len(metadata.actual_seq_lengths_q) if metadata.actual_seq_lengths_q else 0
     block_table = (
         metadata.block_tables[:num_reqs]
-        if num_reqs > 0 and metadata.block_tables is not None
+        if num_reqs > 0 and metadata.block_tables is not None and metadata.block_tables.shape[0] > num_reqs
         else metadata.block_tables
     )
     query_len = int(metadata.actual_seq_lengths_q[0]) if metadata.actual_seq_lengths_q else 0
     seq_lens_list = (
         metadata.seq_lens_list[:num_reqs]
-        if num_reqs > 0 and metadata.seq_lens_list is not None
+        if num_reqs > 0 and metadata.seq_lens_list is not None and len(metadata.seq_lens_list) > num_reqs
         else metadata.seq_lens_list
     )
     params: dict[str, Any] = {
@@ -193,7 +193,7 @@ def large_head_decode_graph_params(
     num_reqs = len(seq_lens)
     block_table = (
         metadata.block_tables[:num_reqs]
-        if num_reqs > 0 and metadata.block_tables is not None
+        if num_reqs > 0 and metadata.block_tables is not None and metadata.block_tables.shape[0] > num_reqs
         else metadata.block_tables
     )
     if getattr(metadata, "use_pa_graph", False):
