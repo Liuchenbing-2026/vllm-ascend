@@ -325,6 +325,49 @@ def in_full_cudagraph_mode(vllm_config: VllmConfig | None = None) -> bool:
     return cudagraph_mode == CUDAGraphMode.FULL
 
 
+def build_pa_per_token_rows(
+    block_tables: torch.Tensor | None,
+    actual_seq_lengths_q: list[int] | None,
+    seq_lens_list: list[int] | None,
+    *,
+    context_lens_device: torch.device | None = None,
+) -> tuple[torch.Tensor, torch.Tensor] | None:
+    """Build per-token PagedAttention ``(block_tables, context_lens)`` without mutating inputs."""
+    if block_tables is None or not actual_seq_lengths_q or not seq_lens_list:
+        return None
+    if len(seq_lens_list) < len(actual_seq_lengths_q) or block_tables.shape[0] < len(actual_seq_lengths_q):
+        return None
+
+    query_lens: list[int] = []
+    prev = 0
+    for end in actual_seq_lengths_q:
+        query_lens.append(int(end) - prev)
+        prev = int(end)
+    num_tokens = int(actual_seq_lengths_q[-1])
+    if num_tokens <= 0 or any(q < 0 for q in query_lens) or sum(query_lens) != num_tokens:
+        return None
+
+    dev = context_lens_device if context_lens_device is not None else torch.device("cpu")
+    req_block_tables = block_tables[: len(query_lens)]
+    if all(q == 1 for q in query_lens):
+        return req_block_tables, torch.tensor(seq_lens_list[: len(query_lens)], dtype=torch.int32, device=dev)
+
+    context_lens: list[int] = []
+    for query_len, seq_len in zip(query_lens, seq_lens_list):
+        if query_len <= 0:
+            continue
+        prefix = max(int(seq_len) - query_len, 0)
+        context_lens.extend(prefix + j + 1 for j in range(query_len))
+    if len(context_lens) != num_tokens:
+        return None
+
+    counts = torch.tensor(query_lens, dtype=torch.long, device=block_tables.device)
+    return (
+        req_block_tables.repeat_interleave(counts, dim=0),
+        torch.tensor(context_lens, dtype=torch.int32, device=dev),
+    )
+
+
 def expand_pa_per_token_rows(metadata: Any) -> bool:
     """Expand multi-query PagedAttention metadata into one query token per row.
 
@@ -343,32 +386,24 @@ def expand_pa_per_token_rows(metadata: Any) -> bool:
     if len(query_lengths) != len(seq_lens_list):
         return False
 
-    query_lens: list[int] = []
-    prev = 0
-    for end in query_lengths:
-        query_lens.append(int(end) - prev)
-        prev = int(end)
-    num_tokens = int(query_lengths[-1])
-    if any(q < 0 for q in query_lens) or sum(query_lens) != num_tokens:
-        return False
-    if all(q == 1 for q in query_lens):
+    if all(
+        int(end) - (int(query_lengths[i - 1]) if i > 0 else 0) == 1
+        for i, end in enumerate(query_lengths)
+    ):
         metadata.pa_rows_expanded = True
         return True
 
-    context_lens: list[int] = []
-    for query_len, seq_len in zip(query_lens, seq_lens_list):
-        if query_len <= 0:
-            continue
-        prefix = max(int(seq_len) - query_len, 0)
-        context_lens.extend(prefix + j + 1 for j in range(query_len))
-    if len(context_lens) != num_tokens:
-        return False
-
-    counts = torch.tensor(query_lens, dtype=torch.long, device=block_tables.device)
-    metadata.block_tables = block_tables.repeat_interleave(counts, dim=0)
     seq_lens_tensor = getattr(metadata, "seq_lens", None)
     seq_lens_device = seq_lens_tensor.device if isinstance(seq_lens_tensor, torch.Tensor) else torch.device("cpu")
-    metadata.seq_lens = torch.tensor(context_lens, dtype=torch.int32, device=seq_lens_device)
+    expanded = build_pa_per_token_rows(
+        block_tables,
+        query_lengths,
+        seq_lens_list,
+        context_lens_device=seq_lens_device,
+    )
+    if expanded is None:
+        return False
+    metadata.block_tables, metadata.seq_lens = expanded
     metadata.pa_rows_expanded = True
     return True
 

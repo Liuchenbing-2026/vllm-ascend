@@ -31,6 +31,7 @@ import vllm.envs as envs_vllm
 
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX
 from vllm_ascend.attention.attention_v1 import (
+    _PA_WORKSPACE_KEY,
     AscendAttentionBackend,
     AscendAttentionBackendImpl,
     AscendAttentionMetadataBuilder,
@@ -39,7 +40,7 @@ from vllm_ascend.attention.attention_v1 import (
 )
 from vllm_ascend.attention.utils import (
     FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE,
-    expand_pa_per_token_rows,
+    build_pa_per_token_rows,
     in_full_cudagraph_mode,
 )
 from vllm_ascend.compilation.updatable_graph import (
@@ -47,6 +48,10 @@ from vllm_ascend.compilation.updatable_graph import (
     register_task,
 )
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
+from vllm_ascend.device.utils import (
+    _gather_paged_kv_to_dense,
+    _run_large_head_fusion_attention,
+)
 
 _FIA_V2_WORKSPACE_KEY = "npu_fused_infer_attention_score_v2.workspace"
 _MAX_MASK_CACHE_ENTRIES = 8
@@ -127,6 +132,8 @@ class AscendLargeHeadPagedMetadata(AscendMetadata):
 
     paged_verify_mask: torch.Tensor | None = None
     use_pa_graph: bool = False
+    pa_block_tables: torch.Tensor | None = None
+    pa_context_lens: torch.Tensor | None = None
 
 
 def large_head_verify_graph_params(
@@ -135,7 +142,12 @@ def large_head_verify_graph_params(
 ) -> dict[str, Any]:
     """Return replay-time graph update kwargs for a head_dim=512 verify/draft task."""
     if getattr(metadata, "use_pa_graph", False):
-        # FULL mode may have expanded block_tables to one row per query token.
+        if metadata.pa_block_tables is not None and metadata.pa_context_lens is not None:
+            return {
+                "block_table": metadata.pa_block_tables,
+                "context_lens": metadata.pa_context_lens,
+            }
+        # FULL mode fallback when caller expanded block_tables directly.
         num_pa_rows = metadata.seq_lens.shape[0] if metadata.seq_lens is not None else 0
         block_table = (
             metadata.block_tables[:num_pa_rows]
@@ -233,6 +245,33 @@ class AscendLargeHeadPagedMetadataBuilder(AscendAttentionMetadataBuilder):
             self._qpos_cache[qlen] = qpos
         return qpos
 
+    def _attach_pa_graph_rows(self, metadata: AscendLargeHeadPagedMetadata, *, for_capture: bool) -> None:
+        metadata.use_pa_graph = True
+        if not for_capture:
+            max_capture = getattr(
+                getattr(self.vllm_config, "compilation_config", None),
+                "max_cudagraph_capture_size",
+                None,
+            )
+            if (
+                isinstance(max_capture, int)
+                and max_capture > 0
+                and metadata.actual_seq_lengths_q
+                and metadata.actual_seq_lengths_q[-1] > max_capture
+            ):
+                return
+        seq_lens_device = (
+            metadata.seq_lens.device if isinstance(metadata.seq_lens, torch.Tensor) else torch.device("cpu")
+        )
+        expanded = build_pa_per_token_rows(
+            metadata.block_tables,
+            metadata.actual_seq_lengths_q,
+            metadata.seq_lens_list,
+            context_lens_device=seq_lens_device,
+        )
+        if expanded is not None:
+            metadata.pa_block_tables, metadata.pa_context_lens = expanded
+
     def build(
         self,
         common_prefix_len: int,
@@ -246,8 +285,7 @@ class AscendLargeHeadPagedMetadataBuilder(AscendAttentionMetadataBuilder):
         if getattr(self.kv_cache_spec, "head_size", None) != FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE:
             return metadata
         if in_full_cudagraph_mode(self.vllm_config):
-            metadata.use_pa_graph = True
-            expand_pa_per_token_rows(metadata)
+            self._attach_pa_graph_rows(metadata, for_capture=False)
             return metadata
         if self.speculative_config is None or metadata.block_tables is None:
             return metadata
@@ -283,8 +321,7 @@ class AscendLargeHeadPagedMetadataBuilder(AscendAttentionMetadataBuilder):
             getattr(self.kv_cache_spec, "head_size", None) == FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE
             and in_full_cudagraph_mode(self.vllm_config)
         ):
-            metadata.use_pa_graph = True
-            expand_pa_per_token_rows(metadata)
+            self._attach_pa_graph_rows(metadata, for_capture=True)
         return metadata
 
 
@@ -352,6 +389,97 @@ class AscendLargeHeadPagedAttentionBackendImpl(AscendAttentionBackendImpl):
                 return False
         return True
 
+    def _can_use_large_head_eager_phase_split(
+        self,
+        attn_metadata: Any,
+        num_tokens: int,
+        kv_cache: Any = None,
+    ) -> bool:
+        self._maybe_init_kv_cache(kv_cache)
+        if (
+            _EXTRA_CTX.capturing
+            or self.head_size != FIA_TND_LARGE_HEAD_FALLBACK_HEAD_SIZE
+            or self.sliding_window is not None
+            or not _supports_large_head_paged_path()
+            or self.key_cache is None
+            or self.value_cache is None
+            or not (self.key_cache.is_contiguous() and self.value_cache.is_contiguous())
+        ):
+            return False
+        if (
+            not getattr(attn_metadata, "causal", True)
+            or getattr(attn_metadata, "attn_state", None) == AscendAttentionState.PrefillNoCache
+            or getattr(attn_metadata, "block_tables", None) is None
+        ):
+            return False
+        actual_seq_q = getattr(attn_metadata, "actual_seq_lengths_q", None)
+        seq_lens_list = getattr(attn_metadata, "seq_lens_list", None)
+        num_decodes = getattr(attn_metadata, "num_decodes", 0)
+        num_prefills = getattr(attn_metadata, "num_prefills", 0)
+        num_decode_tokens = getattr(attn_metadata, "num_decode_tokens", 0)
+        if not actual_seq_q or not seq_lens_list or num_decodes <= 0 or num_prefills < 0 or num_decode_tokens <= 0:
+            return False
+        num_reqs = len(actual_seq_q)
+        if (
+            num_decodes + num_prefills != num_reqs
+            or int(actual_seq_q[num_decodes - 1]) != num_decode_tokens
+            or int(actual_seq_q[-1]) > num_tokens
+            or len(seq_lens_list) < num_reqs
+            or attn_metadata.block_tables.shape[0] < num_reqs
+        ):
+            return False
+        prev = 0
+        for end, seq_len in zip(actual_seq_q, seq_lens_list):
+            qlen_i = int(end) - prev
+            if qlen_i <= 0 or int(seq_len) < qlen_i:
+                return False
+            prev = int(end)
+        return True
+
+    def full_graph_pa(
+        self,
+        query: torch.Tensor,
+        attn_metadata: AscendMetadata,
+        output: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Capture 512-dim FULL mode PagedAttention using non-mutating per-token PA metadata."""
+        assert output is not None, "Output tensor must be provided for full_graph_pa."
+        pa_block_table = getattr(attn_metadata, "pa_block_tables", None)
+        block_table = pa_block_table if pa_block_table is not None else attn_metadata.block_tables
+        pa_context_lens = getattr(attn_metadata, "pa_context_lens", None)
+        context_lens = pa_context_lens if pa_context_lens is not None else attn_metadata.seq_lens
+        workspace = get_capture_resource(
+            _PA_WORKSPACE_KEY,
+            lambda: torch_npu._npu_paged_attention_get_workspace(
+                query=query,
+                key_cache=self.key_cache,
+                value_cache=self.value_cache,
+                num_kv_heads=self.num_kv_heads,
+                num_heads=self.num_heads,
+                scale_value=self.scale,
+                block_table=block_table,
+                context_lens=context_lens,
+                out=output,
+            ),
+        )
+        register_task(
+            torch_npu._npu_paged_attention,
+            {
+                "query": query,
+                "key_cache": self.key_cache,
+                "value_cache": self.value_cache,
+                "num_kv_heads": self.num_kv_heads,
+                "num_heads": self.num_heads,
+                "scale_value": self.scale,
+                "block_table": block_table,
+                "context_lens": context_lens,
+                "out": output,
+                "workspace": workspace,
+            },
+            LargeHeadPagedVerifyParamProvider(self._layer_name),
+        )
+        return output
+
     def forward_fused_infer_attention(
         self,
         query: torch.Tensor,
@@ -373,6 +501,8 @@ class AscendLargeHeadPagedAttentionBackendImpl(AscendAttentionBackendImpl):
             return self.full_graph_pa(query, attn_metadata, output)
         if self._should_eager_bnsd_verify(attn_metadata, query.shape[0], kv_cache):
             return self._eager_fia_v2_paged_verify(query, attn_metadata, output)
+        if self._can_use_large_head_eager_phase_split(attn_metadata, query.shape[0], kv_cache):
+            return self._forward_large_head_chunked_prefill(query, key, value, attn_metadata, output)
         return super().forward_fused_infer_attention(query, key, value, attn_metadata, output, kv_cache)
 
     def forward_paged_attention(
@@ -389,11 +519,184 @@ class AscendLargeHeadPagedAttentionBackendImpl(AscendAttentionBackendImpl):
             return self._eager_fia_v2_paged_verify(query, attn_metadata, output)
         return super().forward_paged_attention(query, attn_metadata, output)
 
+    def _run_bnsd_fia_v2(
+        self,
+        q_bnsd: torch.Tensor,
+        block_table: torch.Tensor,
+        verify_mask: torch.Tensor | None,
+        actual_seq_qlen: list[int],
+        actual_seq_kvlen: list[int],
+        block_size: int,
+    ) -> torch.Tensor:
+        """Execute ``npu_fused_infer_attention_score_v2`` in BNSD paged layout."""
+        attn_output, _ = torch_npu.npu_fused_infer_attention_score_v2(
+            query=q_bnsd,
+            key=self.key_cache,
+            value=self.value_cache,
+            atten_mask=verify_mask,
+            block_table=block_table,
+            input_layout="BNSD",
+            block_size=block_size,
+            actual_seq_qlen=actual_seq_qlen,
+            actual_seq_kvlen=actual_seq_kvlen,
+            num_key_value_heads=self.num_kv_heads,
+            num_query_heads=self.num_heads,
+            sparse_mode=0,
+            softmax_scale=self.scale,
+        )
+        return attn_output
+
+    def _forward_large_head_eager_decode_slice(
+        self,
+        query: torch.Tensor,
+        attn_metadata: AscendMetadata,
+        output: torch.Tensor,
+        num_decodes: int,
+        num_decode_tokens: int,
+    ) -> None:
+        """Run decode/verify requests via paged BNSD FIA-v2 or PA without dense KV gather."""
+        dec_q = attn_metadata.actual_seq_lengths_q[:num_decodes]
+        dec_kv = [int(s) for s in attn_metadata.seq_lens_list[:num_decodes]]
+        dec_bt = attn_metadata.block_tables[:num_decodes]
+        out_slice = output[:num_decode_tokens]
+        if not self.use_bnsd_kv_cache:
+            expanded = build_pa_per_token_rows(dec_bt, dec_q, dec_kv, context_lens_device=torch.device("cpu"))
+            assert expanded is not None
+            torch_npu._npu_paged_attention(
+                query=query[:num_decode_tokens],
+                key_cache=self.key_cache,
+                value_cache=self.value_cache,
+                num_kv_heads=self.num_kv_heads,
+                num_heads=self.num_heads,
+                scale_value=self.scale,
+                block_table=expanded[0],
+                context_lens=expanded[1],
+                out=out_slice,
+            )
+            return
+
+        _, _, block_size, _ = self.key_cache.shape  # type: ignore[union-attr]
+        qlen = _uniform_query_len(dec_q)
+        if qlen is not None and qlen > 1:
+            width = dec_bt.shape[1] * block_size
+            verify_mask = getattr(attn_metadata, "paged_verify_mask", None)
+            if verify_mask is None or verify_mask.shape != (num_decodes, 1, qlen, width):
+                verify_mask = build_paged_verify_mask(
+                    torch.tensor(dec_kv, dtype=torch.int32, device=query.device),
+                    dec_bt,
+                    qlen - 1,
+                    block_size,
+                    query.device,
+                )
+            q_bnsd = (
+                query[:num_decode_tokens]
+                .view(num_decodes, qlen, self.num_heads, self.head_size)
+                .permute(0, 2, 1, 3)
+                .contiguous()
+            )
+            attn_out = self._run_bnsd_fia_v2(
+                q_bnsd, dec_bt, verify_mask, [qlen] * num_decodes, dec_kv, block_size
+            )
+            out_slice.copy_(attn_out.permute(0, 2, 1, 3).reshape(out_slice.shape))
+            return
+
+        if qlen == 1:
+            row_count, row_bt, row_kv = num_decodes, dec_bt, dec_kv
+        else:
+            expanded = build_pa_per_token_rows(dec_bt, dec_q, dec_kv)
+            assert expanded is not None
+            row_bt, row_kv_tensor = expanded
+            row_count, row_kv = num_decode_tokens, row_kv_tensor.tolist()
+        q_bnsd = query[:num_decode_tokens].contiguous().view(row_count, self.num_heads, 1, self.head_size)
+        attn_out = self._run_bnsd_fia_v2(q_bnsd, row_bt, None, [1] * row_count, row_kv, block_size)
+        out_slice.copy_(attn_out.squeeze(2).reshape(out_slice.shape))
+
+    def _forward_large_head_eager_prefill_slice(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_metadata: AscendMetadata,
+        output: torch.Tensor,
+        num_decodes: int,
+        num_decode_tokens: int,
+        total_tokens: int,
+    ) -> None:
+        """Run only prefill requests through ``npu_fusion_attention`` (zero decode gather)."""
+        num_reqs = len(attn_metadata.actual_seq_lengths_q)
+        prefill_seq_qlen = [
+            int(attn_metadata.actual_seq_lengths_q[i]) - num_decode_tokens for i in range(num_decodes, num_reqs)
+        ]
+        prefill_qlens = [
+            int(attn_metadata.actual_seq_lengths_q[i])
+            - (int(attn_metadata.actual_seq_lengths_q[i - 1]) if i > 0 else 0)
+            for i in range(num_decodes, num_reqs)
+        ]
+        prefill_seq_lens = [int(attn_metadata.seq_lens_list[i]) for i in range(num_decodes, num_reqs)]
+        all_new_prefill = (
+            self.kv_sharing_target_layer_name is None
+            and key is not None
+            and value is not None
+            and all(kv_len == q_len for kv_len, q_len in zip(prefill_seq_lens, prefill_qlens))
+        )
+        if all_new_prefill:
+            prefill_k = key[num_decode_tokens:total_tokens].contiguous()
+            prefill_v = value[num_decode_tokens:total_tokens].contiguous()
+            prefill_seq_kvlen = prefill_seq_qlen
+        else:
+            assert self.key_cache is not None and self.value_cache is not None
+            prefill_k, prefill_v = _gather_paged_kv_to_dense(
+                self.key_cache,
+                self.value_cache,
+                attn_metadata.block_tables[num_decodes:num_reqs],
+                prefill_seq_lens,
+                self.num_kv_heads,
+                self.head_size,
+                use_bnsd=self.use_bnsd_kv_cache,
+            )
+            prefill_seq_kvlen = []
+            cumsum = 0
+            for length in prefill_seq_lens:
+                cumsum += length
+                prefill_seq_kvlen.append(cumsum)
+        prefill_out = _run_large_head_fusion_attention(
+            query[num_decode_tokens:total_tokens].contiguous(),
+            prefill_k,
+            prefill_v,
+            prefill_seq_qlen,
+            prefill_seq_kvlen,
+            attn_metadata.attn_mask,
+            num_heads=self.num_heads,
+            scale=self.scale,
+            causal=True,
+        )
+        out_slice = output[num_decode_tokens:total_tokens]
+        out_slice.copy_(prefill_out.reshape(out_slice.shape))
+
+    def _forward_large_head_chunked_prefill(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_metadata: AscendMetadata,
+        output: torch.Tensor,
+    ) -> torch.Tensor:
+        """Split eager mixed/non-uniform large-head batches into paged decode and prefill."""
+        num_decodes = attn_metadata.num_decodes
+        num_decode_tokens = attn_metadata.num_decode_tokens
+        total_tokens = int(attn_metadata.actual_seq_lengths_q[-1])
+        self._forward_large_head_eager_decode_slice(query, attn_metadata, output, num_decodes, num_decode_tokens)
+        if attn_metadata.num_prefills > 0 and total_tokens > num_decode_tokens:
+            self._forward_large_head_eager_prefill_slice(
+                query, key, value, attn_metadata, output, num_decodes, num_decode_tokens, total_tokens
+            )
+        return output
+
     def _prepare_bnsd_paged_inputs(
         self,
         query: torch.Tensor,
         attn_metadata: AscendMetadata,
-    ) -> tuple[int, int, int, int, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[int, int, int, int, torch.Tensor, torch.Tensor, torch.Tensor | None]:
         if not self.use_bnsd_kv_cache:
             raise RuntimeError(
                 "Large-head paged verify requires BNSD KV cache layout "
@@ -422,19 +725,23 @@ class AscendLargeHeadPagedAttentionBackendImpl(AscendAttentionBackendImpl):
         if attn_metadata.block_tables is None:
             raise RuntimeError("Large-head paged verify requires non-None block_tables.")
         block_table = attn_metadata.block_tables[:num_reqs]
-        q_bnsd = (
-            query[:num_tokens]
-            .view(num_reqs, qlen, self.num_heads, self.head_size)
-            .permute(0, 2, 1, 3)
-            .contiguous()
-        )
-        verify_mask = getattr(attn_metadata, "paged_verify_mask", None)
-        if verify_mask is None or verify_mask.shape[0] != num_reqs or verify_mask.shape[2] != qlen:
-            verify_mask = torch.zeros(
-                (num_reqs, 1, qlen, block_table.shape[1] * block_size),
-                dtype=torch.bool,
-                device=query.device,
+        if qlen == 1:
+            q_bnsd = query[:num_tokens].contiguous().view(num_reqs, self.num_heads, 1, self.head_size)
+            verify_mask: torch.Tensor | None = None
+        else:
+            q_bnsd = (
+                query[:num_tokens]
+                .view(num_reqs, qlen, self.num_heads, self.head_size)
+                .permute(0, 2, 1, 3)
+                .contiguous()
             )
+            verify_mask = getattr(attn_metadata, "paged_verify_mask", None)
+            if verify_mask is None or verify_mask.shape[0] != num_reqs or verify_mask.shape[2] != qlen:
+                verify_mask = torch.zeros(
+                    (num_reqs, 1, qlen, block_table.shape[1] * block_size),
+                    dtype=torch.bool,
+                    device=query.device,
+                )
         return num_tokens, num_reqs, qlen, block_size, q_bnsd, block_table, verify_mask
 
     def full_graph_fia_v2_paged_verify(
@@ -448,13 +755,19 @@ class AscendLargeHeadPagedAttentionBackendImpl(AscendAttentionBackendImpl):
             query, attn_metadata
         )
         softmax_lse = torch.empty(1, dtype=query.dtype, device=query.device)
-        attn_output = torch.empty(
-            num_reqs,
-            self.num_heads,
-            qlen,
-            self.head_size,
-            dtype=query.dtype,
-            device=query.device,
+        output_view = output[:num_tokens]
+        zero_copy_out = qlen == 1 and output_view.is_contiguous()
+        attn_output = (
+            output_view.view(num_reqs, self.num_heads, 1, self.head_size)
+            if zero_copy_out
+            else torch.empty(
+                num_reqs,
+                self.num_heads,
+                qlen,
+                self.head_size,
+                dtype=query.dtype,
+                device=query.device,
+            )
         )
         actual_seq_qlen = [qlen] * num_reqs
         actual_seq_kvlen = attn_metadata.seq_lens_list[:num_reqs]
@@ -499,8 +812,8 @@ class AscendLargeHeadPagedAttentionBackendImpl(AscendAttentionBackendImpl):
             },
             LargeHeadPagedVerifyParamProvider(self._layer_name),
         )
-        output_view = output[:num_tokens]
-        output_view.copy_(attn_output.permute(0, 2, 1, 3).reshape(output_view.shape))
+        if not zero_copy_out:
+            output_view.copy_(attn_output.permute(0, 2, 1, 3).reshape(output_view.shape))
         return output
 
     def _eager_fia_v2_paged_verify(
@@ -513,23 +826,21 @@ class AscendLargeHeadPagedAttentionBackendImpl(AscendAttentionBackendImpl):
         num_tokens, num_reqs, qlen, block_size, q_bnsd, block_table, verify_mask = self._prepare_bnsd_paged_inputs(
             query, attn_metadata
         )
-        attn_output, _ = torch_npu.npu_fused_infer_attention_score_v2(
-            query=q_bnsd,
-            key=self.key_cache,
-            value=self.value_cache,
-            atten_mask=verify_mask,
-            block_table=block_table,
-            input_layout="BNSD",
-            block_size=block_size,
-            actual_seq_qlen=[qlen] * num_reqs,
-            actual_seq_kvlen=attn_metadata.seq_lens_list[:num_reqs],
-            num_key_value_heads=self.num_kv_heads,
-            num_query_heads=self.num_heads,
-            sparse_mode=0,
-            softmax_scale=self.scale,
+        attn_output = self._run_bnsd_fia_v2(
+            q_bnsd,
+            block_table,
+            verify_mask,
+            [qlen] * num_reqs,
+            attn_metadata.seq_lens_list[:num_reqs],
+            block_size,
         )
         output_view = output[:num_tokens]
-        output_view.copy_(attn_output.permute(0, 2, 1, 3).reshape(output_view.shape))
+        reshaped = (
+            attn_output.squeeze(2).reshape(output_view.shape)
+            if qlen == 1
+            else attn_output.permute(0, 2, 1, 3).reshape(output_view.shape)
+        )
+        output_view.copy_(reshaped)
         return output
 
 

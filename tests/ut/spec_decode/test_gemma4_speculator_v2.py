@@ -157,7 +157,8 @@ def test_build_fia_params_keeps_per_layer_block_tables_across_kv_groups():
     """Sliding (256-dim) and global (512-dim) groups must each receive their own block_table."""
     speculator = AscendGemma4Speculator.__new__(AscendGemma4Speculator)
     speculator.use_dcp = False
-    speculator.max_model_len = 8192
+    # vLLM v0.33.0 / main expose max_model_len as a read-only view of vllm_config.
+    speculator.vllm_config = SimpleNamespace(model_config=SimpleNamespace(max_model_len=8192))
     speculator.num_speculative_steps = 3
     speculator.draft_attn_layer_names = ["draft.swa.0", "draft.global.0"]
     speculator.input_batch = SimpleNamespace(num_reqs=1, seq_lens_np=[10])
@@ -208,7 +209,7 @@ def test_update_decode_attn_metadata_respects_advance_draft_positions():
     gemma_spec.use_dcp = False
     gemma_spec.attn_architecture = "GQA"
     gemma_spec.max_num_reqs = 4
-    gemma_spec.max_model_len = 8192
+    gemma_spec.vllm_config = SimpleNamespace(model_config=SimpleNamespace(max_model_len=8192))
     gemma_spec.target_input_buffers = target_buffers
 
     gemma_meta = {"draft.0": AscendMetadata(seq_lens_cpu=torch.zeros(4, dtype=torch.int32))}
@@ -226,7 +227,7 @@ def test_update_decode_attn_metadata_respects_advance_draft_positions():
     eagle_spec.use_dcp = False
     eagle_spec.attn_architecture = "GQA"
     eagle_spec.max_num_reqs = 4
-    eagle_spec.max_model_len = 8192
+    eagle_spec.vllm_config = SimpleNamespace(model_config=SimpleNamespace(max_model_len=8192))
     eagle_spec.target_input_buffers = target_buffers
 
     eagle_meta = {"draft.0": AscendMetadata(seq_lens_cpu=torch.zeros(4, dtype=torch.int32))}
