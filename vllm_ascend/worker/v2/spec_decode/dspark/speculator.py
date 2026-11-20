@@ -119,7 +119,7 @@ class AscendDSparkSpeculator(LmheadTPDraftSamplingMixin, DSparkSpeculator):
         (``max_num_reqs * num_speculative_steps``) into the LM-head
         collectives, then the logits are trimmed back to the real rows.
         """
-        if not lmhead_tp_enable():
+        if not lmhead_tp_enable() or getattr(self, "context_kv_only", False):
             return
 
         original = model.compute_draft_logits
@@ -141,7 +141,7 @@ class AscendDSparkSpeculator(LmheadTPDraftSamplingMixin, DSparkSpeculator):
         model.compute_draft_logits = aligned
 
     def init_cudagraph_manager(self, cudagraph_mode: CUDAGraphMode) -> None:
-        if self.speculative_config.enforce_eager:
+        if self.speculative_config.enforce_eager or getattr(self, "context_kv_only", False):
             cudagraph_mode = CUDAGraphMode.NONE
         super().init_cudagraph_manager(cudagraph_mode)
         # The Ascend graph manager is patched onto the upstream module and
@@ -259,7 +259,7 @@ class AscendDSparkSpeculator(LmheadTPDraftSamplingMixin, DSparkSpeculator):
                     group
                     for groups in self.attn_groups
                     for group in groups
-                    if issubclass(group.backend, AscendMLABackend)
+                    if issubclass(group.backend, AscendMLABackend) and getattr(group, "metadata_builders", True)
                 ]
                 self.use_flashmla = bool(mla_groups) and all(
                     getattr(group.get_metadata_builder(0), "flashmla_state", None) is not None for group in mla_groups
@@ -451,7 +451,12 @@ class AscendDSparkSpeculator(LmheadTPDraftSamplingMixin, DSparkSpeculator):
             num_draft_reqs = min(num_draft_reqs, sync_state.num_reqs)
         seq_lens_cpu = None
         is_prefilling = torch.from_numpy(self.input_batch.is_prefilling_np)
-        if self.use_dcp and self.attn_architecture == "MLA" and not (dummy_run and skip_attn_for_dummy_run):
+        if (
+            self.use_dcp
+            and self.attn_architecture == "MLA"
+            and not (dummy_run and skip_attn_for_dummy_run)
+            and not getattr(self, "context_kv_only", False)
+        ):
             # DSpark drafts one block with a fixed step; zero unused request slots
             # before upstream selects the padded batch size and slices this view.
             seq_lens_cpu, is_prefilling = self._prepare_draft_dcp_metadata_inputs(

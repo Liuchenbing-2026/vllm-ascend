@@ -467,7 +467,12 @@ class AscendMambaHybridModelState(MambaHybridModelState, AscendModelState):
 
         num_accepted_tokens = None
         num_decode_draft_tokens_cpu = None
-        if not for_capture and self.vllm_config.num_speculative_tokens > 0:
+        num_scheduled_spec_tokens = getattr(
+            self.vllm_config,
+            "num_scheduled_spec_tokens",
+            self.vllm_config.num_speculative_tokens,
+        )
+        if not for_capture and num_scheduled_spec_tokens > 0:
             num_accepted_tokens = self.num_accepted_tokens_gpu.new_ones(num_reqs)
             num_accepted_tokens[: input_batch.num_reqs] = self.num_accepted_tokens_gpu[
                 input_batch.idx_mapping[: input_batch.num_reqs]

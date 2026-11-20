@@ -71,7 +71,9 @@ def _register_dspark_swa_indices_warmup(worker: NPUWorker) -> int:
     rather than from the metadata builder's ``__init__``.
     """
     runner = worker.model_runner
-    if not hasattr(runner, "jit_warmup_registry"):
+    if not hasattr(runner, "jit_warmup_registry") or getattr(
+        getattr(runner, "speculative_config", None), "prefill_context_kv_only", False
+    ):
         return 0
 
     from vllm_ascend.attention.dsa_v1 import AscendDSAMetadataBuilder
@@ -82,6 +84,8 @@ def _register_dspark_swa_indices_warmup(worker: NPUWorker) -> int:
     registered = 0
     with runner.jit_warmup_registry.activate():
         for adapter, attn_group in _iter_dspark_draft_groups(runner):
+            if not getattr(attn_group, "metadata_builders", True):
+                continue
             builder = attn_group.get_metadata_builder()
             if not isinstance(builder, AscendDSAMetadataBuilder):
                 continue

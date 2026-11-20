@@ -471,6 +471,7 @@ class NPUModelRunner(GPUModelRunner):
         draft_layer_names = getattr(self.speculator, "draft_attn_layer_names", ())
         return any(
             any(layer_name not in draft_layer_names for layer_name in group.layer_names)
+            and bool(getattr(group, "metadata_builders", True))
             and getattr(group.get_metadata_builder(0), "flashmla_state", None) is not None
             for groups in self.attn_groups
             for group in groups

@@ -125,6 +125,25 @@ class Glm5DSparkModel(nn.Module):
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
 
+    def context_kv_modules(self) -> list[nn.Module]:
+        """Return modules needed to compute and write context KV on prefill."""
+        modules: list[nn.Module] = [self.context_proj, self.context_norm]
+        for layer in self.layers:
+            attn = layer.self_attn
+            impl = getattr(attn.attn, "impl", None)
+            candidates = [attn.fused_qkv_a_proj, getattr(impl, "kv_a_layernorm", None), attn.attn]
+            prolog_fn = getattr(impl, "supports_prolog_v3_writer", None)
+            if callable(prolog_fn) and prolog_fn():
+                candidates.extend(
+                    (
+                        getattr(impl, "q_proj", None),
+                        getattr(impl, "q_a_layernorm", None),
+                        getattr(impl, "kv_b_proj", None),
+                    )
+                )
+            modules.extend(mod for mod in candidates if isinstance(mod, nn.Module))
+        return modules
+
     def combine_hidden_states(self, hidden_states: torch.Tensor) -> torch.Tensor:
         expected = self.context_proj.input_size
         if hidden_states.shape[-1] != expected:
@@ -223,6 +242,10 @@ class Glm5DSparkForCausalLM(AscendQwen3DSparkForCausalLM):
 
     def combine_hidden_states(self, hidden_states: torch.Tensor) -> torch.Tensor:
         return self.model.combine_hidden_states(hidden_states)
+
+    def context_kv_modules(self) -> list[nn.Module]:
+        """Delegate context-KV module selection to the underlying GLM5 draft model."""
+        return self.model.context_kv_modules()
 
     def get_draft_attn_causal(self) -> list[bool]:
         # GLM MLA DFlash training exposes the whole current draft block to each

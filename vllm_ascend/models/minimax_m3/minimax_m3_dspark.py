@@ -317,6 +317,21 @@ class MiniMaxFlashDSparkModel(Qwen3DSparkModel):
         if self.quant_config is None:
             super()._build_fused_kv_buffers()
 
+    def context_kv_modules(self) -> list[nn.Module]:
+        """Return modules read by combine_hidden_states and context-KV writes."""
+        if self.quant_config is None and not hasattr(self, "_num_attn_layers"):
+            self._build_fused_kv_buffers()
+        modules: list[nn.Module] = [self.hidden_norm]
+        if getattr(self, "use_aux_hidden_state", False) and hasattr(self, "fc"):
+            modules.append(self.fc)
+        keep_qkv = self.quant_config is not None or getattr(self, "_fused_kv_weight", None) is None
+        for layer in self.layers:
+            attn = layer.self_attn
+            modules.extend((attn.k_norm, attn.attn))
+            if keep_qkv:
+                modules.append(attn.qkv_proj)
+        return modules
+
     def precompute_and_store_context_kv(self, context_states, context_positions, context_slot_mapping=None):
         # Use the actual norm modules (including Gemma's +1) and assign RoPE's
         # returned output. This remains correct for out-of-place NPU RoPE.
