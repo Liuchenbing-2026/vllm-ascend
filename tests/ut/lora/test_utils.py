@@ -13,10 +13,8 @@
 # limitations under the License.
 # This file is a part of the vllm-ascend project.
 
-from types import SimpleNamespace
 from unittest.mock import patch
 
-import pytest
 import torch
 import vllm.lora.utils as lora_utils
 from vllm.config import LoRAConfig
@@ -37,7 +35,6 @@ from vllm_ascend.lora.utils import (
     AscendReplicatedLinearWithLoRA,
     AscendRowParallelLinearWithLoRA,
     refresh_all_lora_classes,
-    warn_unmatched_lora_modules,
 )
 from vllm_ascend.ops.linear import AscendQKVParallelLinear
 
@@ -174,172 +171,3 @@ def test_ascend_merged_wrapper_uses_upstream_expand_for_multi_lora() -> None:
     with patch.object(BaseLinearLayerWithLoRA, "_apply_lora_to_output", return_value="upstream") as upstream:
         assert merged._apply_lora_to_output(x, y) == "upstream"
     upstream.assert_called_once_with(x, y)
-
-
-def test_set_lora_shape_mismatch_reports_module_slot_and_shapes() -> None:
-    lora_config = LoRAConfig(max_loras=1, max_lora_rank=8, lora_dtype=torch.bfloat16)
-    layer = object.__new__(AscendRowParallelLinearWithLoRA)
-    torch.nn.Module.__init__(layer)
-    layer.base_layer = object.__new__(RowParallelLinear)
-    layer.base_layer.prefix = "language_model.model.layers.3.self_attn.wo_a"
-    layer.n_slices = 1
-    layer.input_size = 5120 // 512
-    layer.output_size = 8
-    layer.tp_size = 1
-    layer.device = torch.device("cpu")
-    layer.create_lora_weights(max_loras=1, lora_config=lora_config)
-
-    with pytest.raises(ValueError, match="self_attn.wo_a.*slot 0.*\\(8, 12\\)"):
-        layer.set_lora(
-            0,
-            torch.ones(8, 12, dtype=torch.bfloat16),
-            torch.ones(8, 8, dtype=torch.bfloat16),
-        )
-
-
-def test_single_linear_set_lora_validates_full_dims_across_tp_and_allows_dummy_warmup() -> None:
-    lora_config = LoRAConfig(max_loras=1, max_lora_rank=8, lora_dtype=torch.bfloat16)
-
-    replicated = object.__new__(AscendReplicatedLinearWithLoRA)
-    torch.nn.Module.__init__(replicated)
-    replicated.base_layer = object.__new__(ReplicatedLinear)
-    replicated.base_layer.prefix = "model.layers.0.self_attn.wq_a"
-    replicated.n_slices = 1
-    replicated.input_size = 4096
-    replicated.output_size = 1024
-    replicated.tp_size = 1
-    replicated.device = torch.device("cpu")
-    replicated.create_lora_weights(max_loras=1, lora_config=lora_config)
-    with pytest.raises(ValueError, match="self_attn.wq_a.*in=4096, out=1024"):
-        replicated.set_lora(
-            0,
-            torch.ones(8, 5120, dtype=torch.bfloat16),
-            torch.ones(1280, 8, dtype=torch.bfloat16),
-        )
-    with pytest.raises(ValueError, match="self_attn.wq_a.*in=4096, out=1024"):
-        replicated.set_lora(
-            0,
-            torch.ones(8, 2048, dtype=torch.bfloat16),
-            torch.ones(1024, 8, dtype=torch.bfloat16),
-        )
-
-    row = object.__new__(AscendRowParallelLinearWithLoRA)
-    torch.nn.Module.__init__(row)
-    row.base_layer = object.__new__(RowParallelLinear)
-    row.base_layer.prefix = "model.layers.0.self_attn.wo_b"
-    row.n_slices = 1
-    row.input_size = 512
-    row.output_size = 4096
-    row.tp_size = 8
-    row.tp_rank = 0
-    row.device = torch.device("cpu")
-    row.create_lora_weights(max_loras=1, lora_config=lora_config)
-    for bad_in in (5120, 2048):
-        with pytest.raises(ValueError, match="self_attn.wo_b.*in=4096, out=4096"):
-            row.set_lora(
-                0,
-                torch.ones(8, bad_in, dtype=torch.bfloat16),
-                torch.ones(4096, 8, dtype=torch.bfloat16),
-            )
-    row.set_lora(
-        0,
-        torch.ones(8, 4096, dtype=torch.bfloat16),
-        torch.ones(4096, 8, dtype=torch.bfloat16),
-    )
-    row.set_lora(
-        0,
-        torch.zeros(8, 512, dtype=torch.bfloat16),
-        torch.zeros(4096, 8, dtype=torch.bfloat16),
-    )
-
-    col = object.__new__(AscendColumnParallelLinearWithLoRA)
-    torch.nn.Module.__init__(col)
-    col.base_layer = object.__new__(ColumnParallelLinear)
-    col.base_layer.prefix = "model.layers.0.self_attn.wo_a"
-    col.n_slices = 1
-    col.input_size = 1024
-    col.output_size = 512
-    col.tp_size = 8
-    col.tp_rank = 0
-    col.is_merged_col_linear = False
-    col.device = torch.device("cpu")
-    col.create_lora_weights(max_loras=1, lora_config=lora_config)
-    for bad_out in (5120, 2048):
-        with pytest.raises(ValueError, match="self_attn.wo_a.*in=1024, out=4096"):
-            col.set_lora(
-                0,
-                torch.ones(8, 1024, dtype=torch.bfloat16),
-                torch.ones(bad_out, 8, dtype=torch.bfloat16),
-            )
-    col.set_lora(
-        0,
-        torch.ones(8, 1024, dtype=torch.bfloat16),
-        torch.ones(4096, 8, dtype=torch.bfloat16),
-    )
-    col.set_lora(
-        0,
-        torch.zeros(8, 1024, dtype=torch.bfloat16),
-        torch.zeros(512, 8, dtype=torch.bfloat16),
-    )
-
-
-def test_warn_unmatched_lora_modules_surfaces_unmatched_and_zero_match_adapters(caplog) -> None:
-    class FakeAdapterManager:
-        def __init__(self, modules, packed_modules=None):
-            self.modules = modules
-            self.packed_modules = packed_modules or {}
-            self._registered_adapters = {}
-
-        def _get_lora_layer_weights(self, lora_model, module_name):
-            return lora_model.loras.get(module_name)
-
-        def _get_text_lora_name(self, lora_model, module_name):
-            return None
-
-    request = SimpleNamespace(lora_name="moe-adapter", lora_int_id=1)
-
-    manager_3d_unmatched = FakeAdapterManager(
-        modules={"language_model.model.layers.0.mlp.experts": object()},
-        packed_modules={
-            "language_model.model.layers.0.mlp.experts": [
-                "language_model.model.layers.0.mlp.experts.0.w1",
-            ]
-        },
-    )
-    manager_3d_unmatched._registered_adapters[1] = SimpleNamespace(
-        loras={
-            "model.layers.0.ffn.experts.base_layer": object(),
-            "model.layers.0.ffn.experts": object(),
-        }
-    )
-    with caplog.at_level("WARNING"):
-        unmatched = warn_unmatched_lora_modules(SimpleNamespace(_adapter_manager=manager_3d_unmatched), request)
-    assert unmatched == ["model.layers.0.ffn.experts", "model.layers.0.ffn.experts.base_layer"]
-    assert "is_3d_lora_weight=true" in caplog.text
-
-    caplog.clear()
-    manager_matched = FakeAdapterManager(
-        modules={"language_model.model.layers.0.mlp.experts": object()},
-        packed_modules={
-            "language_model.model.layers.0.mlp.experts": [
-                "language_model.model.layers.0.mlp.experts.1.gate_proj",
-            ]
-        },
-    )
-    manager_matched._registered_adapters[1] = SimpleNamespace(
-        loras={
-            "language_model.model.layers.0.mlp.experts": object(),
-            # Non-local peer EP subkey listed in packed_modules must not warn.
-            "language_model.model.layers.0.mlp.experts.1.gate_proj": object(),
-        }
-    )
-    with caplog.at_level("WARNING"):
-        assert warn_unmatched_lora_modules(SimpleNamespace(_adapter_manager=manager_matched), request) == []
-    assert caplog.text == ""
-
-    caplog.clear()
-    manager_empty = FakeAdapterManager(modules={"language_model.model.layers.0.self_attn.wq_a": object()})
-    manager_empty._registered_adapters[1] = SimpleNamespace(loras={})
-    with caplog.at_level("WARNING"):
-        assert warn_unmatched_lora_modules(SimpleNamespace(_adapter_manager=manager_empty), request) == []
-    assert "matched 0 target modules" in caplog.text

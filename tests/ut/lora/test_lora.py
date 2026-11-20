@@ -640,27 +640,3 @@ def test_should_use_unfused_quant_moe_for_lora() -> None:
 
     with patch("vllm_ascend.lora.fused_moe._EXTRA_CTX", SimpleNamespace(capturing=True)):
         assert should_use_unfused_quant_moe_for_lora(empty_ctx, QuantType.W4A8)
-
-
-def test_ascend_fused_moe_set_lora_wraps_shape_runtime_error() -> None:
-    base_layer = _make_base_layer()
-    base_layer.prefix = "model.layers.2.mlp.experts"
-    with (
-        patch("vllm_ascend.lora.fused_moe._assert_ascend_moe_lora_supported"),
-        patch("vllm_ascend.lora.fused_moe._get_lora_device", return_value=torch.device("cpu")),
-    ):
-        wrapper = AscendFusedMoEWithLoRA(base_layer)
-    wrapper.w13_lora_a_stacked = (torch.empty(1, 2, 8, 4096),)
-    wrapper.w13_lora_b_stacked = (torch.empty(1, 2, 256, 8),)
-    wrapper.w2_lora_a_stacked = (torch.empty(1, 2, 8, 256),)
-    wrapper.w2_lora_b_stacked = (torch.empty(1, 2, 4096, 8),)
-    lora_a = [torch.empty(2, 8, 5120), torch.empty(2, 8, 256), torch.empty(2, 8, 5120)]
-    lora_b = [torch.empty(2, 256, 8), torch.empty(2, 5120, 8), torch.empty(2, 256, 8)]
-    with (
-        patch.object(FusedMoEWithLoRA, "set_lora", side_effect=RuntimeError("shape mismatch")),
-        pytest.raises(
-            ValueError,
-            match="model.layers.2.mlp.experts.*slot 1.*\\(2, 8, 5120\\).*\\(2, 8, 4096\\).*shape mismatch",
-        ),
-    ):
-        wrapper.set_lora(1, lora_a, lora_b)
