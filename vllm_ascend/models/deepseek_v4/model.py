@@ -1094,14 +1094,29 @@ class AscendDeepseekV4ForCausalLM(nn.Module, SupportsPP, DeepseekV2MixtureOfExpe
         """Map HF adapter keys onto this module tree.
 
         Adapters are trained against the HF text backbone, which spells the
-        attention block ``.attn.``; the module tree registers the same block as
-        ``.self_attn.`` (see ``DeepseekV4DecoderLayer``). The LoRA loader
-        resolves adapter keys before it walks the module tree, and a key that
-        misses its module is dropped without an error because the patched base
-        layer keeps answering ``weight``, so serving reports the adapter as
-        applied while its delta stays exactly zero.
+        attention block ``.attn.``, MoE block ``.ffn.``, and expert projections
+        ``.w1.`` / ``.w2.`` / ``.w3.``; the module tree registers them under
+        ``.self_attn.``, ``.mlp.``, and ``.gate_proj.`` / ``.down_proj.`` /
+        ``.up_proj.`` (see ``DeepseekV4DecoderLayer``). The LoRA loader resolves
+        adapter keys before it walks the module tree, and a key that misses its
+        module is dropped without an error because the patched base layer keeps
+        answering ``weight``, so serving reports the adapter as applied while
+        its delta stays exactly zero.
         """
-        return WeightsMapper(orig_to_new_substr={".attn.": ".self_attn."})
+        return WeightsMapper(
+            orig_to_new_substr={
+                ".attn.": ".self_attn.",
+                ".ffn.": ".mlp.",
+                ".w1.": ".gate_proj.",
+                ".w2.": ".down_proj.",
+                ".w3.": ".up_proj.",
+            },
+            orig_to_new_suffix={
+                ".w1": ".gate_proj",
+                ".w2": ".down_proj",
+                ".w3": ".up_proj",
+            },
+        )
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
