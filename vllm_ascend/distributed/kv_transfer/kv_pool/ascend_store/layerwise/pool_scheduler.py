@@ -100,17 +100,30 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
         )
 
     def _lookup_external_hit_tokens(self, request: Request, num_computed_tokens: int) -> int | None:
+        lookahead = getattr(self, "num_hash_lookahead_tokens", 0)
         prompt_token_len = len(request.prompt_token_ids)
         if self.use_block_key_layerwise:
-            token_len = self._floor_to_cache_transfer_granularity(prompt_token_len)
-            if not self.use_eagle and len(self.cacheable_group_ids) != len(self.original_block_size):
-                token_len = self._floor_to_cache_transfer_granularity(max(prompt_token_len - 1, 0))
+            if lookahead > 0:
+                block_hashes = self._effective_lookup_hashes(request)
+                token_len = self._max_reusable_lookup_tokens(request, self.cache_transfer_granularity, block_hashes)
+            else:
+                token_len = self._floor_to_cache_transfer_granularity(prompt_token_len)
+                if not self.use_eagle and len(self.cacheable_group_ids) != len(self.original_block_size):
+                    token_len = self._floor_to_cache_transfer_granularity(max(prompt_token_len - 1, 0))
             if token_len < self.cache_transfer_granularity:
                 return None
             return self._get_block_key_layerwise_hit_tokens(request, token_len, num_computed_tokens)
 
         if self.use_layerwise_transfer:
-            return self._get_layerwise_hit_tokens(request, prompt_token_len, num_computed_tokens)
+            if lookahead > 0:
+                block_hashes = self._effective_lookup_hashes(request)
+                alignment = self.lcm_block_size if self.cache_coordinator is not None else self.hash_block_size
+                token_len = self._max_reusable_lookup_tokens(request, alignment, block_hashes)
+                if token_len <= 0:
+                    return None
+            else:
+                token_len = prompt_token_len
+            return self._get_layerwise_hit_tokens(request, token_len, num_computed_tokens)
 
         raise RuntimeError(f"Unsupported layerwise data plane: {self.layerwise_data_plane!r}")
 
@@ -122,7 +135,7 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
     ) -> int:
         self._get_or_create_request_tracker(request.request_id)
         if self.cache_coordinator is not None:
-            if self.use_eagle:
+            if self.use_eagle and getattr(self, "num_hash_lookahead_tokens", 0) == 0:
                 final_block_start = (request.num_tokens - 1) // self.lcm_block_size * self.lcm_block_size
                 token_len = min(token_len, final_block_start)
                 if token_len <= 0:
@@ -178,7 +191,7 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
             return [block_hash for block_hash, hit in zip(allowed_hashes, block_hits) if hit]
 
         return coordinator.find_reachable_hit_tokens(
-            request.block_hashes,
+            self._effective_lookup_hashes(request),
             token_len,
             query_group_hits,
             log_context=f"hit_check: req={request.request_id}",
@@ -206,7 +219,7 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
         re-probes backend readability instead.
         """
         num_hash_blocks = token_len // self.hash_block_size
-        block_hashes_to_check = request.block_hashes[:num_hash_blocks]
+        block_hashes_to_check = self._effective_lookup_hashes(request)[:num_hash_blocks]
         results: list[tuple[int, int, int]] = []
 
         for group_id, effective_block_size in enumerate(group_block_sizes):

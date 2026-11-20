@@ -61,8 +61,10 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.metadata
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.planes import make_data_plane
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     AscendConnectorMetadata,
+    AscendStoreKVConnectorWorkerMetadata,
     ReqMeta,
     block_hash_to_str,
+    call_store_mask,
     get_block_hashes,
     get_group_block_size,
     infer_dcp_mismatch_info,
@@ -99,6 +101,8 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
         # step in process_layer_data(). masked_block_runs inputs are
         # layer-invariant, so only the first layer pays the O(blocks) scan.
         self._masked_runs_cache: dict[tuple[str, str, int, int, int], list[tuple[int, int]]] = {}
+        self._step_save_event_ids: list[int] = []
+        self._completed_save_events: dict[int, int] = {}
         self._dspark_prefix_keys: DSparkPrefixKeys | None = None
         self.dspark_prefix_cache: DSparkPrefixCache | None = None
         self._init_layerwise_config()
@@ -674,6 +678,11 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
         self._save_disabled.clear()
         if self.kv_recv_thread is not None:
             self.kv_recv_thread.load_disabled.clear()
+        self._step_save_event_ids = [
+            request.event_id
+            for request in metadata.requests
+            if getattr(request, "can_save", False) and getattr(request, "event_id", None) is not None
+        ]
         self.process_layer_data(metadata.requests)
 
     def _is_layerwise_save_leader(self) -> bool:
@@ -1001,6 +1010,8 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
                 self.layerwise_offload,
             )
             save_end_block = self._layerwise_save_full_end(request, block_size, partial_block_index)
+            if not self.layerwise_offload:
+                save_end_block = min(save_end_block, len(group_block_hashes))
             # External hits already have full keys. A previous-step hit may
             # instead use snapshots, which still need promotion to full keys.
             if request.load_spec is not None and not request.load_spec.layerwise_previous_step:
@@ -1137,10 +1148,21 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
         everything) when the coordinator is unavailable or the save extent
         is not aligned.
         """
+        lookahead = getattr(request, "num_hash_lookahead_tokens", getattr(self, "num_hash_lookahead_tokens", 0))
+        num_block_hashes = (
+            len(request.block_hashes)
+            if isinstance(lookahead, int) and not isinstance(lookahead, bool) and lookahead > 0
+            else None
+        )
         if getattr(self, "block_key_hybrid", False) and request.can_save and request.save_end_token > 0:
             if self.cache_coordinator is None or request.save_end_token % self.cache_transfer_granularity:
                 raise ValueError("Block-key hybrid saves require a coordinator-aligned full-block boundary")
-            return self.token_database.store_mask(request.save_end_token, request.num_prompt_tokens)
+            return call_store_mask(
+                self.token_database,
+                request.save_end_token,
+                request.num_prompt_tokens,
+                num_block_hashes=num_block_hashes,
+            )
         masks = None
         if (
             self.cache_coordinator is not None
@@ -1148,7 +1170,12 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
             and request.save_end_token % self.cache_transfer_granularity == 0
         ):
             try:
-                masks = self.token_database.store_mask(request.save_end_token, request.num_prompt_tokens)
+                masks = call_store_mask(
+                    self.token_database,
+                    request.save_end_token,
+                    request.num_prompt_tokens,
+                    num_block_hashes=num_block_hashes,
+                )
             except AssertionError:
                 masks = None
         align_groups = getattr(self, "group_uses_align_state", [])
@@ -1761,3 +1788,44 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
             self._check_hybrid_load_errors()
         for event in save_finished_events[:num_local]:
             event.clear()
+
+    def _num_local_layerwise_layers(self) -> int:
+        if not getattr(self, "use_block_key_layerwise", False) and getattr(self, "pp_size", 1) > 1:
+            return getattr(self, "layerwise_key_layers", 0) or self.num_layers
+        return self.num_layers
+
+    def flush_pending_layerwise_saves(self, metadata: AscendConnectorMetadata) -> None:
+        """Flush layerwise saves on no-forward steps and record completed event IDs."""
+        num_local = self._num_local_layerwise_layers()
+        if (
+            getattr(self, "can_put", False)
+            and self.kv_send_thread is not None
+            and self.current_layer < num_local
+            and any(self.layer_save_tasks[layer_id] for layer_id in range(self.current_layer, num_local))
+        ):
+            while self.current_layer < num_local:
+                self.save_kv_layer(metadata)
+
+        step_event_ids = getattr(self, "_step_save_event_ids", None)
+        if not step_event_ids:
+            return
+        if self.kv_send_thread is not None:
+            self._drain_deferred_last_save()
+        completed = getattr(self, "_completed_save_events", None)
+        if completed is None:
+            completed = {}
+            self._completed_save_events = completed
+        for event_id in step_event_ids:
+            completed[event_id] = completed.get(event_id, 0) + 1
+        step_event_ids.clear()
+
+    def build_connector_worker_meta(self) -> AscendStoreKVConnectorWorkerMetadata | None:
+        base_meta = super().build_connector_worker_meta()
+        completed = getattr(self, "_completed_save_events", None)
+        if not completed:
+            return base_meta
+        merged = dict(base_meta.completed_events) if base_meta is not None else {}
+        for event_id, count in completed.items():
+            merged[event_id] = merged.get(event_id, 0) + count
+        completed.clear()
+        return AscendStoreKVConnectorWorkerMetadata(merged)

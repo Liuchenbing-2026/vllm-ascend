@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -15,6 +16,17 @@ from vllm.v1.core.kv_cache_utils import BlockHash, BlockHashList
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, MambaSpec, UniformTypeKVCacheSpecs
 
 from vllm_ascend.core.kv_cache_interface import is_prefix_cacheable
+
+try:
+    from vllm.v1.kv_cache_interface import (
+        get_reusable_prefix_length as _upstream_get_reusable_prefix_length,
+    )
+except ImportError:
+    _UPSTREAM_GET_REUSABLE_PREFIX_LENGTH = None
+else:
+    _UPSTREAM_GET_REUSABLE_PREFIX_LENGTH = (
+        _upstream_get_reusable_prefix_length if inspect.isfunction(_upstream_get_reusable_prefix_length) else None
+    )
 
 if TYPE_CHECKING:
     from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.metadata import LayerPoolKey
@@ -206,14 +218,53 @@ def _get_layer_compress_ratio(
     return compress_ratios[extract_layer_index(layer_name)]
 
 
-def _get_group_spec_ratios(group: object) -> set[int | None]:
+def get_group_layer_specs(group: Any) -> tuple[Any, ...]:
+    """Return leaf ``KVCacheSpec`` entries for both ``KVCacheGroupSpec`` and ``KVCacheGroup``."""
+    kv_cache_specs = getattr(group, "kv_cache_specs", None)
+    if isinstance(kv_cache_specs, Mapping):
+        return tuple(kv_cache_specs.values())
+    spec = getattr(group, "kv_cache_spec", group)
+    if isinstance(spec, UniformTypeKVCacheSpecs):
+        return tuple(spec.kv_cache_specs.values())
+    nested_specs = getattr(spec, "kv_cache_specs", None)
+    if isinstance(nested_specs, Mapping):
+        return tuple(nested_specs.values())
+    return (spec,) if spec is not None else ()
+
+
+def get_group_layer_spec_map(group: Any) -> dict[str, Any]:
+    """Return ``{layer_name: KVCacheSpec}`` for both ``KVCacheGroupSpec`` and ``KVCacheGroup``."""
+    kv_cache_specs = getattr(group, "kv_cache_specs", None)
+    if isinstance(kv_cache_specs, Mapping):
+        return dict(kv_cache_specs)
+    spec = getattr(group, "kv_cache_spec", None)
+    if isinstance(spec, UniformTypeKVCacheSpecs):
+        return dict(spec.kv_cache_specs)
+    nested_specs = getattr(spec, "kv_cache_specs", None)
+    if isinstance(nested_specs, Mapping):
+        return dict(nested_specs)
+    if spec is None:
+        return {}
+    return {name: spec for name in getattr(group, "layer_names", ())}
+
+
+def is_group_prefix_cacheable(group: Any) -> bool:
+    """Return whether ``group`` participates in prefix caching across vLLM baselines."""
     kv_cache_spec = getattr(group, "kv_cache_spec", None)
-    if kv_cache_spec is None:
+    if kv_cache_spec is not None:
+        return is_prefix_cacheable(kv_cache_spec)
+    prefix_cacheable = getattr(group, "prefix_cacheable", None)
+    if isinstance(prefix_cacheable, bool):
+        return prefix_cacheable
+    specs = get_group_layer_specs(group)
+    return bool(specs) and all(is_prefix_cacheable(spec) for spec in specs)
+
+
+def _get_group_spec_ratios(group: object) -> set[int | None]:
+    specs = get_group_layer_specs(group)
+    if not specs:
         return set()
-    kv_cache_specs = getattr(kv_cache_spec, "kv_cache_specs", None)
-    if kv_cache_specs is not None:
-        return {getattr(spec, "compress_ratio", None) for spec in kv_cache_specs.values()}
-    return {getattr(kv_cache_spec, "compress_ratio", None)}
+    return {getattr(spec, "compress_ratio", None) for spec in specs}
 
 
 def infer_group_cache_families(
@@ -257,7 +308,11 @@ def uses_hybrid_kv_cache(scheduler_config: Any, kv_cache_groups: Sequence[Any] |
         kv_cache_groups
         and not getattr(scheduler_config, "disable_hybrid_kv_cache_manager", False)
         and len(kv_cache_groups) > 1
-        and any(not isinstance(group.kv_cache_spec, FullAttentionSpec) for group in kv_cache_groups)
+        and any(
+            not isinstance(spec, FullAttentionSpec)
+            for group in kv_cache_groups
+            for spec in get_group_layer_specs(group)
+        )
     )
 
 
@@ -270,10 +325,12 @@ def infer_group_block_sizes(
 
     block_sizes: list[int] = []
     for group in kv_cache_groups:
-        spec = group.kv_cache_spec
-        if isinstance(spec, UniformTypeKVCacheSpecs):
-            spec = next(iter(spec.kv_cache_specs.values()))
-        block_sizes.append(spec.block_size)
+        specs = get_group_layer_specs(group)
+        block_size = getattr(group, "block_size", None)
+        if isinstance(block_size, int) and not isinstance(block_size, bool):
+            block_sizes.append(block_size)
+        else:
+            block_sizes.append(specs[0].block_size)
     return block_sizes
 
 
@@ -283,10 +340,7 @@ def get_sharded_mamba_group_ids(kv_cache_config: KVCacheConfig | None) -> set[in
         return set()
     group_ids: set[int] = set()
     for group_id, group in enumerate(kv_cache_config.kv_cache_groups):
-        for name in group.layer_names:
-            spec = group.kv_cache_spec
-            if isinstance(spec, UniformTypeKVCacheSpecs):
-                spec = spec.kv_cache_specs[name]
+        for spec in get_group_layer_spec_map(group).values():
             if not isinstance(spec, MambaSpec):
                 continue
             tp_replicated = getattr(spec, "tp_replicated", False)
@@ -298,9 +352,97 @@ def get_sharded_mamba_group_ids(kv_cache_config: KVCacheConfig | None) -> set[in
 def infer_cacheable_group_ids(kv_cache_groups: Sequence[Any] | None) -> list[int]:
     if not kv_cache_groups:
         return [0]
-    group_ids = [i for i, group in enumerate(kv_cache_groups) if is_prefix_cacheable(group.kv_cache_spec)]
+    group_ids = [i for i, group in enumerate(kv_cache_groups) if is_group_prefix_cacheable(group)]
     assert group_ids, "AscendStore requires at least one prefix-cacheable KV cache group"
     return group_ids
+
+
+def resolve_num_hash_lookahead_tokens(vllm_config: Any) -> int:
+    """Return the configured core lookahead hash window in tokens."""
+    lookahead = getattr(vllm_config, "num_hash_lookahead_tokens", 0)
+    if isinstance(lookahead, (int, np.integer)) and not isinstance(lookahead, bool):
+        return max(0, int(lookahead))
+    return 0
+
+
+def resolve_legacy_eagle_drop(
+    vllm_config: Any,
+    num_hash_lookahead_tokens: int | None = None,
+) -> bool:
+    """Whether legacy EAGLE trailing-block drop applies when lookahead hashes are off."""
+    if num_hash_lookahead_tokens is None:
+        num_hash_lookahead_tokens = resolve_num_hash_lookahead_tokens(vllm_config)
+    if num_hash_lookahead_tokens > 0:
+        return False
+    speculative_config = getattr(vllm_config, "speculative_config", None)
+    if speculative_config is None:
+        return False
+    for attr_name in ("use_eagle", "use_eagle_block_drop"):
+        use_eagle_fn = getattr(speculative_config, attr_name, None)
+        if callable(use_eagle_fn):
+            result = use_eagle_fn()
+            if isinstance(result, bool):
+                return result
+    return False
+
+
+def get_reusable_prefix_length(
+    num_tokens: int,
+    num_hash_lookahead_tokens: int = 0,
+    alignment_tokens: int = 1,
+) -> int:
+    """Return the reusable prefix length reserving logits and lookahead tokens."""
+    if _UPSTREAM_GET_REUSABLE_PREFIX_LENGTH is not None:
+        return int(
+            _UPSTREAM_GET_REUSABLE_PREFIX_LENGTH(
+                num_tokens,
+                num_hash_lookahead_tokens=num_hash_lookahead_tokens,
+                alignment_tokens=alignment_tokens,
+            )
+        )
+    token_limit = max(0, num_tokens - max(1, num_hash_lookahead_tokens))
+    return token_limit // alignment_tokens * alignment_tokens
+
+
+def hashed_prefix_length(block_hashes: Sequence[Any] | None, hash_block_size: int) -> int:
+    """Return the token span covered by committed lookahead block hashes."""
+    if not block_hashes or hash_block_size <= 0:
+        return 0
+    return len(block_hashes) * hash_block_size
+
+
+def trim_stale_lookahead_hashes(
+    block_hashes: Sequence[BlockHash] | None,
+    num_tokens: int,
+    hash_block_size: int,
+    num_hash_lookahead_tokens: int,
+) -> list[BlockHash]:
+    """Drop stale lookahead hashes beyond the current committed token span."""
+    if not block_hashes:
+        return []
+    if num_hash_lookahead_tokens <= 0 or hash_block_size <= 0:
+        return list(block_hashes)
+    max_valid_hashes = max(0, num_tokens - num_hash_lookahead_tokens) // hash_block_size
+    return list(block_hashes[:max_valid_hashes])
+
+
+def call_store_mask(
+    target: Any,
+    aligned_token_len: int,
+    num_prompt_tokens: int | None = None,
+    num_block_hashes: int | None = None,
+) -> tuple[list[bool], ...] | None:
+    """Invoke ``target.store_mask`` while tolerating legacy 2-arg mocks and coordinators."""
+    if num_block_hashes is None:
+        return target.store_mask(aligned_token_len, num_prompt_tokens)
+    try:
+        return target.store_mask(
+            aligned_token_len,
+            num_prompt_tokens,
+            num_block_hashes=num_block_hashes,
+        )
+    except TypeError:
+        return target.store_mask(aligned_token_len, num_prompt_tokens)
 
 
 def get_group_block_size(group_block_sizes: Sequence[int], group_id: int) -> int:
@@ -380,10 +522,16 @@ class ChunkedTokenDatabase:
         self,
         aligned_token_len: int,
         num_prompt_tokens: int | None = None,
+        num_block_hashes: int | None = None,
     ) -> tuple[list[bool], ...] | None:
         if self.cache_coordinator is None:
             return None
-        return self.cache_coordinator.store_mask(aligned_token_len, num_prompt_tokens)
+        return call_store_mask(
+            self.cache_coordinator,
+            aligned_token_len,
+            num_prompt_tokens,
+            num_block_hashes=num_block_hashes,
+        )
 
     def load_mask(
         self,
@@ -974,6 +1122,7 @@ class ReqMeta:
     # TODO: add lora_request which used for gen lora_id/lora_name in kv event
     token_ids: list[int] | None = None
     original_block_size: list[int] | int | None = None
+    num_hash_lookahead_tokens: int = 0
 
     event_id: int | None = None
     # Monotonic identity of one queued store operation. Unlike req_id, this
@@ -997,6 +1146,7 @@ class ReqMeta:
         num_prompt_tokens: int | None = None,
         token_ids: list[int] | None = None,
         original_block_size: list[int] | int | None = None,
+        num_hash_lookahead_tokens: int = 0,
         block_ids: list[int] | list[list[int]] | None = None,
         event_id: int | None = None,
         store_job_id: int | None = None,
@@ -1043,6 +1193,7 @@ class ReqMeta:
         self.num_prompt_tokens = num_prompt_tokens
         self.token_ids = token_ids
         self.original_block_size = original_block_size
+        self.num_hash_lookahead_tokens = max(0, int(num_hash_lookahead_tokens))
         self.event_id = event_id
         self.store_job_id = store_job_id
         self.last_block_gva = last_block_gva
@@ -1125,10 +1276,11 @@ class ReqMeta:
         kv_cache_group_families: list[str] | None = None,
         save_partial_block: bool = False,
         hash_block_size: int | None = None,
+        num_hash_lookahead_tokens: int = 0,
+        all_token_ids: Sequence[int] | None = None,
     ) -> ReqMeta | None:
         """Create the request metadata from a request tracker."""
-        if block_hashes is None:
-            block_hashes = []
+        block_hashes = [] if block_hashes is None else list(block_hashes)
         target_token_len = tracker.token_len
         previous_saved_tokens = tracker.num_saved_tokens
 
@@ -1161,6 +1313,12 @@ class ReqMeta:
         # committed request hash. Do not mark an unsent page as saved.
         if full_block_count > available_full_block_count:
             num_tokens_to_save = available_full_block_count * cache_transfer_granularity
+        if not discard_partial_chunks and num_hash_lookahead_tokens > 0:
+            # With lookahead block hashes, never publish unhashed tail tokens.
+            num_tokens_to_save = min(
+                num_tokens_to_save,
+                hashed_prefix_length(block_hashes, hash_block_size),
+            )
         if tracker.last_block_gva is not None and (
             target_token_len % cache_transfer_granularity != 0 or boundary_without_hash
         ):
@@ -1176,6 +1334,14 @@ class ReqMeta:
         skip_save = skip_save or (
             num_tokens_to_save < chunk_boundary and partial_block_index is None and not should_save_partial_block
         )
+        if (
+            not discard_partial_chunks
+            and num_hash_lookahead_tokens > 0
+            and num_tokens_to_save <= previous_saved_tokens
+            and partial_block_index is None
+            and not should_save_partial_block
+        ):
+            skip_save = True
         # A ReqMeta must never carry both a save AND a load.
         # The save would also be wasted work — the bytes are being looked up
         # in the store right now. Later cached_reqs steps save new tokens
@@ -1192,12 +1358,16 @@ class ReqMeta:
             )
 
         token_ids = None
-        if tracker.token_ids and not skip_save:
+        if not skip_save and (tracker.token_ids or all_token_ids):
             # The worker consumes metadata asynchronously. Own a stable,
             # bounded snapshot rather than sharing the scheduler's growing
             # full-history list.
+            source_token_ids = all_token_ids if all_token_ids is not None else tracker.token_ids
+            assert source_token_ids is not None
             token_ids_end = target_token_len if should_save_partial_block else num_tokens_to_save
-            token_ids = tracker.token_ids[previous_saved_tokens:token_ids_end].copy()
+            if num_hash_lookahead_tokens > 0:
+                token_ids_end = min(len(source_token_ids), token_ids_end + num_hash_lookahead_tokens)
+            token_ids = list(source_token_ids[previous_saved_tokens:token_ids_end])
 
         if load_spec is not None and load_spec.can_load:
             logger.debug(
@@ -1225,6 +1395,7 @@ class ReqMeta:
             # prefill boundary for this generation.
             num_prompt_tokens=tracker.prefill_end_tokens or tracker.num_prompt_tokens or target_token_len,
             original_block_size=original_block_size,
+            num_hash_lookahead_tokens=num_hash_lookahead_tokens,
             last_block_gva=tracker.last_block_gva,
             partial_block_index=partial_block_index,
             block_ids_np=np.asarray(tracker.allocated_block_ids, dtype=np.int64),

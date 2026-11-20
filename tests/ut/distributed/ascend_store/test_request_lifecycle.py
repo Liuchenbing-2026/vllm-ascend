@@ -256,7 +256,9 @@ def test_raw_sequence_lifecycle(
     assert isinstance(pool.kv_recv_thread, KVCacheStoreRecvingThread) == load_async
     assert pool.hash_block_size == hash_size == (prefix_unit or 128)
     assert pool.cache_transfer_granularity == 128
-    assert pool.use_eagle == (speculative_method is not None)
+    lookahead = getattr(config, "num_hash_lookahead_tokens", 0)
+    assert pool.num_hash_lookahead_tokens == lookahead
+    assert pool.use_eagle == (speculative_method is not None and lookahead == 0)
     scheduler = Scheduler(
         config,
         plan,
@@ -264,19 +266,23 @@ def test_raw_sequence_lifecycle(
         block_size=block_size,
         hash_block_size=hash_size,
     )
-    # #65448 makes core lookahead hashing opt-out. AscendStore's masks still
-    # use the legacy EAGLE drop, so both hashing and local lookup must agree.
-    assert config.num_hash_lookahead_tokens == scheduler.num_hash_lookahead_tokens == 0
-    assert scheduler.use_eagle_block_drop == (speculative_method == "mtp")
+    if speculative_method == "mtp" and lookahead > 0:
+        assert scheduler.num_hash_lookahead_tokens == lookahead > 0
+        assert not getattr(scheduler, "use_eagle_block_drop", False)
+    else:
+        assert lookahead == getattr(scheduler, "num_hash_lookahead_tokens", 0) == 0
+        if hasattr(scheduler, "use_eagle_block_drop"):
+            assert scheduler.use_eagle_block_drop == (speculative_method == "mtp")
     producer_tokens = list(range(512))
 
     def run_request(req_id, tokens, expected_hit, expected_local=0):
+        hasher_kwargs = {"num_hash_lookahead_tokens": lookahead} if lookahead > 0 else {}
         request = Request(
             request_id=req_id,
             prompt_token_ids=tokens,
             sampling_params=SamplingParams(max_tokens=10 if speculative_method else 2),
             pooling_params=None,
-            block_hasher=get_request_block_hasher(hash_size, sha256),
+            block_hasher=get_request_block_hasher(hash_size, sha256, **hasher_kwargs),
         )
         scheduler.add_request(request)
         seen_load = False
@@ -369,7 +375,18 @@ def test_raw_sequence_lifecycle(
                 # Consume the finished-ID notification and release Store references.
                 output = scheduler.schedule()
                 worker.bind_connector_metadata(output.kv_connector_metadata)
-                worker.get_finished(output.finished_req_ids)
+                worker.wait_for_save()
+                pool.wait_for_previous_save()
+                sending, recving = worker.get_finished(output.finished_req_ids)
+                worker_meta = worker.build_connector_worker_meta()
+                if sending or recving or worker_meta is not None:
+                    scheduler.connector.update_connector_output(
+                        KVConnectorOutput(
+                            finished_sending=sending,
+                            finished_recving=recving,
+                            kv_connector_worker_meta=worker_meta,
+                        )
+                    )
                 worker.clear_connector_metadata()
                 break
         assert seen_load == (expected_hit > 0)
@@ -386,7 +403,7 @@ def test_raw_sequence_lifecycle(
         return list(request.all_token_ids)
 
     try:
-        run_request("producer", producer_tokens, 0)
+        producer_generated = run_request("producer", producer_tokens, 0)
         saved = dict(MemoryBackend.payloads)
         assert saved
         # Clear the real local prefix cache; the next request must use the Store.
@@ -414,13 +431,31 @@ def test_raw_sequence_lifecycle(
             for _, _, _, tensor in cache_entries(plan, caches):
                 tensor.fill_(-3)
             tokens = list(range(length))
-            if fork is not None:
+            if lookahead > 0:
+                if length == 513 and fork is None:
+                    full_len = 512 + lookahead
+                    tokens = producer_generated[:full_len]
+                    hit = 512
+                elif fork is not None:
+                    tokens[fork] += 1000
+                    hit = min(384, max(0, fork - lookahead) // 128 * 128)
+                else:
+                    hit = max(0, length - max(1, lookahead)) // 128 * 128
+            elif fork is not None:
                 tokens[fork] += 1000
             if not has_private_state and not speculative_method and fork is None:
                 # Legacy full hits still reserve only the final token.
                 hit = {125: 0, 126: 0, 127: 0, 128: 127, 129: 128, 256: 255, 257: 256, 512: 511, 513: 512}[length]
             generated = run_request(f"consumer-{case}", tokens, hit)
             assert bool(pool.m_store.loads) == bool(hit)
+            if lookahead > 0 and length == 513:
+                assert scheduler.reset_prefix_cache()
+                for _, _, _, tensor in cache_entries(plan, caches):
+                    tensor.fill_(-3)
+                # Mismatched lookahead token at 512 must block trailing block reuse.
+                mismatch_tokens = list(tokens)
+                mismatch_tokens[512] += 1000
+                run_request(f"lookahead-mismatch-{case}", mismatch_tokens, 384)
             if speculative_method and length in (125, 126):
                 assert scheduler.reset_prefix_cache()
                 for _, _, _, tensor in cache_entries(plan, caches):
@@ -440,7 +475,8 @@ def test_raw_sequence_lifecycle(
         mixed_local = 128
         if speculative_method == "dspark" and only_full_attention:
             mixed_local = 256
-        run_request("mixed-local-remote", list(range(513)), 512, expected_local=mixed_local)
+        mixed_tokens = producer_generated[: 512 + lookahead] if lookahead > 0 else list(range(513))
+        run_request("mixed-local-remote", mixed_tokens, 512, expected_local=mixed_local)
         assert scheduler.reset_prefix_cache()
         missing_group = len(plan.kv_cache_groups) - 1
         MemoryBackend.payloads = {key: value for key, value in saved.items() if f"@group:{missing_group}@" not in key}

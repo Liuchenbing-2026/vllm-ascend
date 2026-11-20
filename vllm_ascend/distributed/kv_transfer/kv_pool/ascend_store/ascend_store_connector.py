@@ -120,10 +120,8 @@ class AscendStoreKVEvents(KVConnectorKVEvents):
 class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
     @classmethod
     def supports_lookahead_block_hashes(cls, kv_transfer_config: KVTransferConfig) -> bool:
-        # AscendStore's external coordinator retains the trailing EAGLE-block
-        # drop and prompt-token replay boundaries. It does not propagate the
-        # core lookahead length through its store/lookup masks.
-        return False
+        """Whether AscendStore propagates core lookahead block hashes."""
+        return True
 
     @classmethod
     def requires_piecewise_for_cudagraph(cls, extra_config: dict[str, Any]) -> bool:
@@ -473,7 +471,9 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
             assert self.connector_worker is not None
             worker = cast(LayerwiseKVPoolWorker, self.connector_worker)
             if self.has_connector_metadata():
-                worker.save_dflash_draft_kv(self._get_connector_metadata())
+                metadata = self._get_connector_metadata()
+                worker.save_dflash_draft_kv(metadata)
+                worker.flush_pending_layerwise_saves(metadata)
             return
 
         assert self.connector_worker is not None

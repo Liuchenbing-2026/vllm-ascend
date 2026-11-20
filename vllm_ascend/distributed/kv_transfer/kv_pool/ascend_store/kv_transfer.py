@@ -20,6 +20,7 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend.memcache_b
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     ChunkedTokenDatabase,
     ReqMeta,
+    call_store_mask,
     get_block_hashes,
 )
 
@@ -616,24 +617,49 @@ class KVCacheStoreSendingThread(KVTransferThread):
             self._saved_offsets.pop(req_id, None)
             self._retry_token_ids.pop(req_id, None)
 
-    def get_event_token_ids(self, req_meta: ReqMeta, start: int, end: int) -> list[int] | None:
+    def _merge_retry_event_tokens_locked(
+        self,
+        req_id: str,
+        token_ids_start: int,
+        token_ids: list[int],
+    ) -> tuple[int, list[int]]:
+        retry = self._retry_token_ids.get(req_id)
+        if retry is None:
+            return token_ids_start, token_ids
+        retry_start, retry_ids = retry
+        if retry_start <= token_ids_start <= retry_start + len(retry_ids):
+            prefix_len = token_ids_start - retry_start
+            return retry_start, retry_ids[:prefix_len] + token_ids
+        return token_ids_start, token_ids
+
+    def get_event_token_and_lookahead_ids(
+        self, req_meta: ReqMeta, start: int, end: int
+    ) -> tuple[list[int] | None, list[list[int]] | None]:
         if req_meta.token_ids is None:
-            return None
+            return None, None
         token_ids_start = req_meta.save_start_token
         token_ids = req_meta.token_ids
         with self.done_task_lock:
             if req_meta.store_job_id not in self.stored_requests.get(req_meta.req_id, ()):
-                return []
-            retry = self._retry_token_ids.get(req_meta.req_id)
-            if retry is not None:
-                retry_start, retry_ids = retry
-                if retry_start + len(retry_ids) == token_ids_start:
-                    token_ids_start = retry_start
-                    token_ids = retry_ids + token_ids
+                return [], None
+            token_ids_start, token_ids = self._merge_retry_event_tokens_locked(
+                req_meta.req_id,
+                token_ids_start,
+                token_ids,
+            )
+        lookahead = max(0, int(getattr(req_meta, "num_hash_lookahead_tokens", 0)))
         token_ids_end = token_ids_start + len(token_ids)
-        if start < token_ids_start or end > token_ids_end:
-            return []
-        return token_ids[start - token_ids_start : end - token_ids_start]
+        if start < token_ids_start or end + lookahead > token_ids_end:
+            return [], None
+        offset = start - token_ids_start
+        block_end = end - token_ids_start
+        block_tokens = token_ids[offset:block_end]
+        lookahead_tokens = [token_ids[block_end : block_end + lookahead]] if lookahead > 0 else None
+        return block_tokens, lookahead_tokens
+
+    def get_event_token_ids(self, req_meta: ReqMeta, start: int, end: int) -> list[int] | None:
+        token_ids, _ = self.get_event_token_and_lookahead_ids(req_meta, start, end)
+        return token_ids
 
     def _remember_retry_token_ids(self, req_meta: ReqMeta) -> None:
         if not self.enable_kv_event or req_meta.token_ids is None:
@@ -643,12 +669,11 @@ class KVCacheStoreSendingThread(KVTransferThread):
         with self.done_task_lock:
             if req_meta.store_job_id not in self.stored_requests.get(req_meta.req_id, ()):
                 return
-            retry = self._retry_token_ids.get(req_meta.req_id)
-            if retry is not None:
-                retry_start, retry_ids = retry
-                if retry_start + len(retry_ids) == token_ids_start:
-                    token_ids_start = retry_start
-                    token_ids = retry_ids + token_ids
+            token_ids_start, token_ids = self._merge_retry_event_tokens_locked(
+                req_meta.req_id,
+                token_ids_start,
+                token_ids,
+            )
             self._retry_token_ids[req_meta.req_id] = (token_ids_start, token_ids)
 
     def _clear_retry_token_ids(self, req_meta: ReqMeta) -> None:
@@ -761,7 +786,15 @@ class KVCacheStoreSendingThread(KVTransferThread):
         req_id = req_meta.req_id
         current_event = req_meta.current_event
         try:
-            store_masks = self.token_database.store_mask(token_len, req_meta.num_prompt_tokens)
+            num_block_hashes = (
+                len(req_meta.block_hashes) if getattr(req_meta, "num_hash_lookahead_tokens", 0) > 0 else None
+            )
+            store_masks = call_store_mask(
+                self.token_database,
+                token_len,
+                req_meta.num_prompt_tokens,
+                num_block_hashes=num_block_hashes,
+            )
         except AssertionError as exc:
             logger.debug("Skip AscendStore store mask for unaligned request %s: %s", req_id, exc)
             store_masks = None
@@ -911,7 +944,11 @@ class KVCacheStoreSendingThread(KVTransferThread):
                 addrs.append(addr)
                 sizes.append(size)
                 if self.enable_kv_event:
-                    token_ids = self.get_event_token_ids(req_meta, start, ends[index])
+                    token_ids, lookahead_token_ids = self.get_event_token_and_lookahead_ids(
+                        req_meta,
+                        start,
+                        ends[index],
+                    )
                     block_size = (
                         req_meta.original_block_size[group_id]
                         if isinstance(req_meta.original_block_size, list)
@@ -923,6 +960,9 @@ class KVCacheStoreSendingThread(KVTransferThread):
                             continue
                         current_hash = all_hashes[block_idx]
                         parent_hash = all_hashes[block_idx - 1] if block_idx > 0 else None
+                        event_kwargs: dict[str, Any] = {}
+                        if lookahead_token_ids is not None:
+                            event_kwargs["lookahead_token_ids"] = lookahead_token_ids
                         stored_event = BlockStored(
                             block_hashes=[current_hash],
                             parent_block_hash=parent_hash,
@@ -931,6 +971,7 @@ class KVCacheStoreSendingThread(KVTransferThread):
                             lora_id=None,
                             medium="cpu",
                             lora_name=None,
+                            **event_kwargs,
                         )
                         stored_events.append(stored_event)
                         logger.debug("Added kv cache event '%s' to kv cache events queue", stored_event)

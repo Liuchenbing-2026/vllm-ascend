@@ -161,7 +161,7 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
 
         # KV cache group indices that get the EAGLE last-block drop.
         self.eagle_group_ids: set[int] = {  # type: ignore[no-redef]
-            i for i, g in enumerate(kv_cache_config.kv_cache_groups) if g.is_eagle_group
+            i for i, g in enumerate(kv_cache_config.kv_cache_groups) if getattr(g, "is_eagle_group", False)
         }
         # Fall back to flagging only full-attention groups when no group is
         # flagged. Mamba/GDN state hits do not use the eagle drop (a draft
@@ -299,7 +299,7 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                 continue
             manager_cls = self.single_type_managers[i].__class__
             spec = _manager_spec(g.kv_cache_spec)
-            use_eagle = i in self.eagle_group_ids
+            use_eagle = i in self.drop_eagle_group_ids
 
             # Try to find an existing group with the same spec
             for idx, group in enumerate(self.attention_groups):
