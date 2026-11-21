@@ -134,8 +134,14 @@ def _make_full_group(layer_names: list[str], block_size: int = 128, *, is_eagle_
     spec = _full_spec(block_size)
     if _KVCacheGroupSpec is not None:
         return _KVCacheGroupSpec(layer_names, spec, is_eagle_group=is_eagle_group)
-    if _KVCacheGroup is not None and _ManagerConfig is not None and _FullAttentionManager is not None:
-        manager_cfg = _ManagerConfig(_FullAttentionManager, _FullAttentionManager.Params())
+    full_params_cls = getattr(_FullAttentionManager, "Params", None)
+    if (
+        _KVCacheGroup is not None
+        and _ManagerConfig is not None
+        and _FullAttentionManager is not None
+        and callable(full_params_cls)
+    ):
+        manager_cfg = _ManagerConfig(_FullAttentionManager, full_params_cls())
         return _KVCacheGroup({name: spec for name in layer_names}, manager_cfg, block_size)
     return SimpleNamespace(
         kv_cache_specs={name: spec for name in layer_names},
@@ -149,10 +155,16 @@ def _make_mamba_group(layer_names: list[str], block_size: int = 128, num_specula
     spec = _mamba_spec(block_size, num_speculative_blocks=num_speculative_blocks)
     if _KVCacheGroupSpec is not None:
         return _KVCacheGroupSpec(layer_names, spec)
-    if _KVCacheGroup is not None and _ManagerConfig is not None and _MambaManager is not None:
+    mamba_params_cls = getattr(_MambaManager, "Params", None)
+    if (
+        _KVCacheGroup is not None
+        and _ManagerConfig is not None
+        and _MambaManager is not None
+        and callable(mamba_params_cls)
+    ):
         manager_cfg = _ManagerConfig(
             _MambaManager,
-            _MambaManager.Params(
+            mamba_params_cls(
                 mamba_cache_mode="align",
                 num_speculative_blocks=num_speculative_blocks,
             ),
@@ -1527,10 +1539,34 @@ class TestPost66234KVCacheGroupLookaheadLifecycle(unittest.TestCase):
             prefix_cacheable=prefix_cacheable,
         )
 
+    @staticmethod
+    def _resolve_full_manager_and_params() -> tuple[Any, Any]:
+        params_cls = getattr(_FullAttentionManager, "Params", None)
+        if _FullAttentionManager is not None and callable(params_cls):
+            return _FullAttentionManager, params_cls()
+        fa_mgr = _FullAttentionManager if _FullAttentionManager is not None else _RefFullManager
+        return fa_mgr, SimpleNamespace()
+
+    def test_resolve_full_manager_and_params_handles_legacy_manager_without_params(self):
+        class _LegacyFullAttentionManager:
+            pass
+
+        with patch.object(sys.modules[__name__], "_FullAttentionManager", _LegacyFullAttentionManager):
+            fa_mgr, fa_params = self._resolve_full_manager_and_params()
+            group = self._build_post66234_group({"model.layers.0.self_attn": _full_spec(128)}, fa_mgr, fa_params, 128)
+        self.assertIs(fa_mgr, _LegacyFullAttentionManager)
+        self.assertEqual(fa_params, SimpleNamespace())
+        self.assertIs(group.manager_config.manager_cls, _LegacyFullAttentionManager)
+        self.assertTrue(group.prefix_cacheable)
+
+        with patch.object(sys.modules[__name__], "_FullAttentionManager", None):
+            fallback_mgr, fallback_params = self._resolve_full_manager_and_params()
+        self.assertIs(fallback_mgr, _RefFullManager)
+        self.assertEqual(fallback_params, SimpleNamespace())
+
     def test_post66234_cold_write_defers_pins_saves_and_releases_trailing_block(self):
         fa_spec = _full_spec(128)
-        fa_mgr = _FullAttentionManager if _FullAttentionManager is not None else _RefFullManager
-        fa_params = _FullAttentionManager.Params() if _FullAttentionManager is not None else SimpleNamespace()
+        fa_mgr, fa_params = self._resolve_full_manager_and_params()
         group = self._build_post66234_group({"model.layers.0.self_attn": fa_spec}, fa_mgr, fa_params, 128)
         self.assertFalse(hasattr(group, "kv_cache_spec"))
         self.assertFalse(hasattr(group, "is_eagle_group"))
