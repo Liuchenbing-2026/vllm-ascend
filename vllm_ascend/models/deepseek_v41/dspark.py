@@ -117,7 +117,7 @@ class DeepseekV41DSparkSWACache(AscendDeepseekV41SWACache):
             layer_cfg = build_dflash_sliding_window_layer_config(
                 spec,
                 vllm_config,
-                sliding_window=int(getattr(spec, "sliding_window")),
+                sliding_window=int(typing.cast(typing.Any, spec).sliding_window),
                 is_draft=True,
             )
             if layer_cfg is not None:

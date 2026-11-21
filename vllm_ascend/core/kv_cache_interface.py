@@ -4,7 +4,7 @@
 import inspect
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, fields, is_dataclass, replace
-from typing import Any
+from typing import Any, cast
 
 import torch
 from typing_extensions import Self
@@ -557,12 +557,14 @@ class _DFlashTailMixin:
     @property
     def tail_tokens(self) -> int:
         """Tokens below ``num_tokens_main_model`` a draft step can still read."""
-        return int(getattr(self, "sliding_window")) + self.num_speculative_tokens * self.max_in_flight_steps
+        spec = cast(Any, self)
+        return int(spec.sliding_window) + self.num_speculative_tokens * self.max_in_flight_steps
 
     def max_admission_blocks_per_request(self, max_in_flight_tokens: int, max_model_len: int) -> int:
         """Cap per-request blocks to min(window bound, per-in-flight tail bound)."""
-        sliding_window = int(getattr(self, "sliding_window"))
-        block_size = int(getattr(self, "block_size"))
+        spec = cast(Any, self)
+        sliding_window = int(spec.sliding_window)
+        block_size = int(spec.block_size)
         extra_retained = int(getattr(self, "extra_retained_tokens", 0))
         super_admission = getattr(super(), "max_admission_blocks_per_request", None)
         if callable(super_admission):
@@ -593,7 +595,7 @@ class _DFlashTailMixin:
             max_in_flight_tokens=int(max_in_flight),
             max_model_len=max_model_len,
         )
-        return max_blocks * int(getattr(self, "page_size_bytes"))
+        return max_blocks * int(cast(Any, self).page_size_bytes)
 
 
 def _validate_tail_params(specs: Sequence[Any]) -> tuple[int, int, int]:

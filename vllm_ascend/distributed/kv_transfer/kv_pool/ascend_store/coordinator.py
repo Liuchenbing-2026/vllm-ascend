@@ -507,13 +507,14 @@ def _get_manager_class(spec: KVCacheSpec) -> type[SingleTypeKVCacheManager]:
 
 
 def _find_hit_accepts_num_request_tokens(manager_cls: type[SingleTypeKVCacheManager]) -> bool:
-    cache = getattr(_find_hit_accepts_num_request_tokens, "_cache", None)
-    if not isinstance(cache, dict):
+    fn_vars = vars(_find_hit_accepts_num_request_tokens)
+    cache: dict[Any, bool] | None = fn_vars.get("_cache")
+    if cache is None:
         cache = {}
-        setattr(_find_hit_accepts_num_request_tokens, "_cache", cache)
+        fn_vars["_cache"] = cache
     cached = cache.get(manager_cls)
     if cached is not None:
-        return bool(cached)
+        return cached
     fn = getattr(manager_cls, "find_longest_cache_hit", None)
     try:
         accepted = fn is not None and "num_request_tokens" in inspect.signature(fn).parameters

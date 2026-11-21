@@ -661,13 +661,41 @@ def test_dspark_pd_and_mooncake_null_block_boundaries():
         )
 
 
+def _make_layerwise_worker(
+    *,
+    group_uses_align_state: list[bool],
+    group_skips_null_blocks: list[bool],
+    grouped_block_size: list[int],
+    cache_transfer_granularity: int,
+    layerwise_offload: bool = False,
+    use_layerwise_transfer: bool = True,
+    cache_coordinator: Any = None,
+    token_database: Any = None,
+) -> Any:
+    """Create a minimal LayerwiseKVPoolWorker with all reachable-mask fields initialized."""
+    from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.pool_worker import LayerwiseKVPoolWorker
+
+    worker: Any = LayerwiseKVPoolWorker.__new__(LayerwiseKVPoolWorker)
+    worker.group_uses_align_state = group_uses_align_state
+    worker.group_skips_null_blocks = group_skips_null_blocks
+    worker.num_kv_cache_groups = len(grouped_block_size)
+    worker.grouped_block_size = grouped_block_size
+    worker.layerwise_offload = layerwise_offload
+    worker.use_layerwise_transfer = use_layerwise_transfer
+    worker.block_key_hybrid = False
+    worker.cache_coordinator = cache_coordinator
+    worker.token_database = token_database
+    worker.cache_transfer_granularity = cache_transfer_granularity
+    worker._reused_layers_by_group = {}
+    return worker
+
+
 def test_ascend_store_coordinator_and_null_block_workers():
     """AscendStore coordinator skips eagle drop for DFlash & workers exclude block 0 placeholders."""
     from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.coordinator import (
         AscendStoreCoordinator,
         _find_hit_accepts_num_request_tokens,
     )
-    from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.pool_worker import LayerwiseKVPoolWorker
     from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.pool_worker import KVPoolWorker
 
     assert _find_hit_accepts_num_request_tokens(AscendDFlashSlidingWindowManager)
@@ -707,15 +735,12 @@ def test_ascend_store_coordinator_and_null_block_workers():
     assert base_worker._infer_group_skips_null_blocks() == [False, True, True]
 
     # Layerwise worker load/store mask excludes block 0 on SWA/DFlash groups without enabling Mamba checkpoints.
-    lw: Any = LayerwiseKVPoolWorker.__new__(LayerwiseKVPoolWorker)
-    lw.group_uses_align_state = [False]
-    lw.group_skips_null_blocks = [True]
-    lw.num_kv_cache_groups = 1
-    lw.grouped_block_size = [16]
-    lw.layerwise_offload = False
-    lw.block_key_hybrid = False
-    lw.cache_coordinator = None
-    lw.cache_transfer_granularity = 16
+    lw = _make_layerwise_worker(
+        group_uses_align_state=[False],
+        group_skips_null_blocks=[True],
+        grouped_block_size=[16],
+        cache_transfer_granularity=16,
+    )
     req: Any = SimpleNamespace(
         can_save=True,
         save_end_token=64,
@@ -729,15 +754,16 @@ def test_ascend_store_coordinator_and_null_block_workers():
 
     # FB-83-03 regression: mutating group_uses_align_state after init (as in test_pool_worker)
     # still activates null-block filtering and preserves aligned recurrent checkpoints.
-    lw_align: Any = LayerwiseKVPoolWorker.__new__(LayerwiseKVPoolWorker)
-    lw_align.block_key_hybrid = False
-    lw_align.cache_coordinator = object()
-    lw_align.token_database = SimpleNamespace(store_mask=lambda end, prompt: ([False],))
-    lw_align.layerwise_offload = True
-    lw_align.num_kv_cache_groups = 1
-    lw_align.grouped_block_size = [4352]
-    lw_align.cache_transfer_granularity = 4352
-    lw_align.group_skips_null_blocks = [False]
+    lw_align = _make_layerwise_worker(
+        group_uses_align_state=[False],
+        group_skips_null_blocks=[False],
+        grouped_block_size=[4352],
+        cache_transfer_granularity=4352,
+        layerwise_offload=True,
+        use_layerwise_transfer=True,
+        cache_coordinator=object(),
+        token_database=SimpleNamespace(store_mask=lambda end, prompt: ([False],)),
+    )
     lw_align.group_uses_align_state = [True]
     assert lw_align._effective_skip_null_blocks_by_group() == [True]
     aligned_req: Any = SimpleNamespace(
@@ -747,7 +773,6 @@ def test_ascend_store_coordinator_and_null_block_workers():
         num_prompt_tokens=8705,
         block_ids_by_group=[[3]],
     )
-    assert lw_align._compute_reachable_store_masks(aligned_req) == ([True],)
     null_aligned_req: Any = SimpleNamespace(
         can_save=True,
         save_end_token=4352,
@@ -755,7 +780,10 @@ def test_ascend_store_coordinator_and_null_block_workers():
         num_prompt_tokens=8705,
         block_ids_by_group=[[0]],
     )
-    assert lw_align._compute_reachable_store_masks(null_aligned_req) == ([False],)
+    for use_layerwise_transfer in (True, False):
+        lw_align.use_layerwise_transfer = use_layerwise_transfer
+        assert lw_align._compute_reachable_store_masks(aligned_req) == ([True],)
+        assert lw_align._compute_reachable_store_masks(null_aligned_req) == ([False],)
     lw_align.group_uses_align_state = [False, True]
     assert lw_align._effective_skip_null_blocks_by_group() == [False, True]
 
