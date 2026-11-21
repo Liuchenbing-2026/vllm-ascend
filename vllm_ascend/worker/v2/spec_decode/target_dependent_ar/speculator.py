@@ -49,7 +49,7 @@ from vllm_ascend.attention.large_head_paged_verify import (
 )
 from vllm_ascend.attention.mla_v1 import AscendMLABackend, AscendMLAMetadata
 from vllm_ascend.attention.sfa_v1 import AscendSFABackend
-from vllm_ascend.utils import model_supports_dcp, vllm_version_is
+from vllm_ascend.utils import model_supports_dcp, use_updatable_graph, vllm_version_is
 from vllm_ascend.worker.dcp_utils import DCPManager
 from vllm_ascend.worker.v2.aclgraph_utils import _get_graph_update_backend
 from vllm_ascend.worker.v2.attn_utils import (
@@ -629,6 +629,7 @@ class AscendTargetDependentARSpeculator(LmheadTPDraftSamplingMixin, TargetDepend
         is_draft_model_prefill: bool,
     ):
         """Build draft_attn_metadatas for partial-merged draft graph."""
+        del num_tokens_padded
         attn_metadata = self.model_state.attn_metadata
         attn_metadata = {
             name: metadata for name, metadata in attn_metadata.items() if name in self.draft_attn_layer_names
@@ -636,6 +637,12 @@ class AscendTargetDependentARSpeculator(LmheadTPDraftSamplingMixin, TargetDepend
 
         if is_draft_model_prefill:
             return [attn_metadata]
+
+        attn_backend = getattr(self, "attn_backend", None)
+        if attn_backend is not None and use_updatable_graph(attn_backend):
+            fast_meta = self._build_gqa_updatable_decode_metadata(attn_metadata, num_reqs_padded)
+            if fast_meta is not None:
+                return [fast_meta]
 
         draft_attn_metadatas = self._init_decode_draft_attn_metadatas(attn_metadata, num_reqs_padded)
 
@@ -645,6 +652,53 @@ class AscendTargetDependentARSpeculator(LmheadTPDraftSamplingMixin, TargetDepend
             self._update_decode_attn_metadata(per_step_attn_metadata, step, self.input_batch.num_reqs)
 
         return draft_attn_metadatas
+
+    def _build_gqa_updatable_decode_metadata(
+        self,
+        attn_metadata: dict[str, Any] | None,
+        num_reqs_padded: int,
+    ) -> dict[str, Any] | None:
+        """Build draft decode metadata for GQA UpdatableGraph without full metadata rebuilds."""
+        if self.attn_architecture != "GQA" or self.use_dcp or not attn_metadata:
+            return None
+        metadatas = list(attn_metadata.values())
+        if any(metadata is None or getattr(metadata, "use_pa_graph", False) for metadata in metadatas):
+            return None
+        if all(
+            metadata.block_tables is not None and metadata.block_tables.shape[0] == num_reqs_padded
+            for metadata in metadatas
+        ):
+            return attn_metadata
+
+        layer_to_group = getattr(self, "_draft_layer_to_kv_group", None)
+        if layer_to_group is None:
+            attn_groups = getattr(self, "attn_groups", None)
+            if not attn_groups:
+                return None
+            layer_to_group = {
+                layer_name: gid
+                for gid, groups in enumerate(attn_groups)
+                for group in groups
+                for layer_name in group.layer_names
+            }
+            self._draft_layer_to_kv_group = layer_to_group
+
+        input_block_tables = getattr(getattr(self, "block_tables", None), "input_block_tables", None)
+        if not input_block_tables:
+            return None
+
+        padded_metadata: dict[str, Any] = {}
+        for layer_name, metadata in attn_metadata.items():
+            if metadata.block_tables is not None and metadata.block_tables.shape[0] == num_reqs_padded:
+                padded_metadata[layer_name] = metadata
+                continue
+            gid = layer_to_group.get(layer_name)
+            if gid is None or gid >= len(input_block_tables) or input_block_tables[gid].shape[0] < num_reqs_padded:
+                return None
+            copied = copy(metadata)
+            copied.block_tables = input_block_tables[gid][:num_reqs_padded]
+            padded_metadata[layer_name] = copied
+        return padded_metadata
 
     def _init_decode_draft_attn_metadatas(self, attn_metadata: dict[str, Any] | None, num_reqs_padded: int):
         """Initialize per-step decode attention metadata for graph mode."""

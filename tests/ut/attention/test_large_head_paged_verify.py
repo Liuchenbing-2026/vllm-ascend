@@ -13,6 +13,7 @@ from vllm.v1.attention.backend import AttentionType
 from vllm.v1.kv_cache_interface import FullAttentionSpec
 
 from vllm_ascend.attention.attention_v1 import (
+    SWA_INT_MAX,
     AscendAttentionBackendImpl,
     AscendAttentionState,
 )
@@ -319,9 +320,8 @@ def test_metadata_builder_capture_vs_runtime_mask(monkeypatch):
     assert cap_meta.use_pa_graph is False
 
     rt_meta = builder.build(0, common)
-    assert rt_meta.paged_verify_mask is not None
-    assert rt_meta.paged_verify_mask.shape == (2, 1, 4, 16)
-    assert 16 in builder._kpos_cache and 4 in builder._qpos_cache
+    assert rt_meta.paged_verify_mask is None
+    assert rt_meta.use_pa_graph is False
 
 
 def test_bnsd_verify_capture_param_provider_and_eager_routing(monkeypatch):
@@ -402,18 +402,34 @@ def test_bnsd_verify_capture_param_provider_and_eager_routing(monkeypatch):
     assert reg_mock.call_count == 1
     op_arg, kwargs_arg, provider_arg = reg_mock.call_args[0]
     assert op_arg is torch_npu.npu_fused_infer_attention_score_v2.out
-    assert kwargs_arg["input_layout"] == "BNSD"
-    assert kwargs_arg["sparse_mode"] == 0
+    assert kwargs_arg["input_layout"] == "BSND"
+    assert kwargs_arg["sparse_mode"] == 3
+    assert kwargs_arg["pre_tokens"] == SWA_INT_MAX
+    assert kwargs_arg["next_tokens"] == 0
     assert kwargs_arg["block_size"] == 8
     assert kwargs_arg["actual_seq_qlen"] == [4, 4]
-    assert kwargs_arg["atten_mask"].shape == (2, 1, 4, 16)
+    assert kwargs_arg["atten_mask"].shape == (2048, 2048)
+    assert kwargs_arg["atten_mask"].dtype == torch.int8
+    assert kwargs_arg["out"][0].data_ptr() == output.data_ptr()
     assert provider_arg == LargeHeadPagedVerifyParamProvider("layer.59")
 
-    # Provider raises if multi-query verify replay lacks matching paged_verify_mask.
-    with pytest.raises(RuntimeError, match="paged_verify_mask"):
-        provider_arg.resolve({"layer.59": cap_meta})
+    # Provider omits atten_mask and clamps padded/dummy KV lengths to >= qlen.
+    pad_meta = AscendLargeHeadPagedMetadata(
+        block_tables=torch.zeros((4, 2), dtype=torch.int32),
+        actual_seq_lengths_q=[4, 8, 12, 16],
+        seq_lens=torch.tensor([6, 8, 1, 0], dtype=torch.int32),
+        seq_lens_list=[6, 8, 1, 0],
+        attn_state=AscendAttentionState.ChunkedPrefill,
+        num_prefills=0,
+        causal=True,
+    )
+    resolved = provider_arg.resolve({"layer.59": pad_meta})
+    assert "atten_mask" not in resolved
+    assert resolved["actual_seq_kvlen"] == [6, 8, 4, 4]
 
-    rt_mask = build_paged_verify_mask(cap_meta.seq_lens, block_table, 3, 8, torch.device("cpu"))
+    # Eager BSND verify path uses sparse_mode=3 + static [2048, 2048] mask without dynamic mask alloc.
+    fia_v2_mock = MagicMock(return_value=(torch.ones((2, 4, 8, 512), dtype=torch.bfloat16), torch.zeros(1)))
+    monkeypatch.setattr("torch_npu.npu_fused_infer_attention_score_v2", fia_v2_mock)
     rt_meta = AscendLargeHeadPagedMetadata(
         block_tables=block_table,
         actual_seq_lengths_q=[4, 8],
@@ -422,25 +438,21 @@ def test_bnsd_verify_capture_param_provider_and_eager_routing(monkeypatch):
         attn_state=AscendAttentionState.ChunkedPrefill,
         num_prefills=0,
         causal=True,
-        paged_verify_mask=rt_mask,
     )
-    resolved = provider_arg.resolve({"layer.59": rt_meta})
-    assert resolved["atten_mask"] is rt_mask
-    assert resolved["actual_seq_kvlen"] == [6, 8]
-
-    # Eager BNSD verify path invokes npu_fused_infer_attention_score_v2 in BNSD without dense gather.
-    fia_v2_mock = MagicMock(return_value=(torch.ones((2, 8, 4, 512), dtype=torch.bfloat16), torch.zeros(1)))
-    monkeypatch.setattr("torch_npu.npu_fused_infer_attention_score_v2", fia_v2_mock)
     out = impl.forward_fused_infer_attention(query, key, value, rt_meta, output)
     assert out is output
     assert fia_v2_mock.call_count == 1
-    assert fia_v2_mock.call_args.kwargs["input_layout"] == "BNSD"
-    assert fia_v2_mock.call_args.kwargs["atten_mask"] is rt_mask
+    assert fia_v2_mock.call_args.kwargs["input_layout"] == "BSND"
+    assert fia_v2_mock.call_args.kwargs["sparse_mode"] == 3
+    assert fia_v2_mock.call_args.kwargs["pre_tokens"] == SWA_INT_MAX
+    assert fia_v2_mock.call_args.kwargs["next_tokens"] == 0
+    assert fia_v2_mock.call_args.kwargs["atten_mask"].shape == (2048, 2048)
+    assert fia_v2_mock.call_args.kwargs["atten_mask"].dtype == torch.int8
     torch.testing.assert_close(output, torch.ones_like(output))
 
-    # Eager draft decode (qlen=1, _EXTRA_CTX.is_draft_model=True) also uses BNSD paged op.
+    # Eager draft decode (qlen=1, _EXTRA_CTX.is_draft_model=True) also uses BSND paged op without mask.
     fia_v2_mock.reset_mock()
-    fia_v2_mock.return_value = (torch.full((2, 8, 1, 512), 2.0, dtype=torch.bfloat16), torch.zeros(1))
+    fia_v2_mock.return_value = (torch.full((2, 1, 8, 512), 2.0, dtype=torch.bfloat16), torch.zeros(1))
     draft_q = torch.randn((2, 8, 512), dtype=torch.bfloat16)
     draft_out = torch.empty_like(draft_q)
     draft_meta = AscendLargeHeadPagedMetadata(
@@ -458,12 +470,13 @@ def test_bnsd_verify_capture_param_provider_and_eager_routing(monkeypatch):
     finally:
         extra_ctx.is_draft_model = False
     assert fia_v2_mock.call_count == 1
-    assert fia_v2_mock.call_args.kwargs["input_layout"] == "BNSD"
+    assert fia_v2_mock.call_args.kwargs["input_layout"] == "BSND"
+    assert fia_v2_mock.call_args.kwargs["sparse_mode"] == 0
     assert fia_v2_mock.call_args.kwargs["actual_seq_qlen"] == [1, 1]
     assert fia_v2_mock.call_args.kwargs["atten_mask"] is None
     torch.testing.assert_close(draft_out, torch.full_like(draft_out, 2.0))
 
-    # PrefillNoCache must never enter eager BNSD verify even with uniform qlen=4.
+    # PrefillNoCache must never enter eager verify even with uniform qlen=4.
     fia_v2_mock.reset_mock()
     nocache_meta = AscendLargeHeadPagedMetadata(
         block_tables=block_table,
@@ -473,7 +486,6 @@ def test_bnsd_verify_capture_param_provider_and_eager_routing(monkeypatch):
         attn_state=AscendAttentionState.PrefillNoCache,
         num_prefills=2,
         causal=True,
-        paged_verify_mask=rt_mask,
     )
     assert impl._should_eager_bnsd_verify(nocache_meta, query.shape[0]) is False
 
@@ -491,6 +503,36 @@ def test_bnsd_verify_capture_param_provider_and_eager_routing(monkeypatch):
     pa_decode = large_head_decode_graph_params(pa_meta, [11, 12])
     assert set(pa_decode) == {"block_table", "context_lens"}
     assert pa_decode["context_lens"].tolist() == [11, 12]
+
+
+def test_eager_verify_synthetic_short_row_falls_back_to_bnsd_mask(monkeypatch):
+    cfg = _mock_vllm_config(with_spec=True, cudagraph_mode=CUDAGraphMode.FULL_DECODE_ONLY)
+    _patch_large_head_env(monkeypatch, cfg)
+    impl = _new_large_head_impl(
+        torch.zeros((4, 2, 8, 512), dtype=torch.bfloat16),
+        torch.zeros((4, 2, 8, 512), dtype=torch.bfloat16),
+    )
+    fia_v2_mock = MagicMock(return_value=(torch.full((2, 8, 4, 512), 1.25, dtype=torch.bfloat16), torch.zeros(1)))
+    monkeypatch.setattr("torch_npu.npu_fused_infer_attention_score_v2", fia_v2_mock)
+
+    query = torch.randn((8, 8, 512), dtype=torch.bfloat16)
+    output = torch.empty_like(query)
+    short_meta = AscendLargeHeadPagedMetadata(
+        block_tables=torch.tensor([[0, 1], [2, 3]], dtype=torch.int32),
+        actual_seq_lengths_q=[4, 8],
+        seq_lens=torch.tensor([2, 8], dtype=torch.int32),
+        seq_lens_list=[2, 8],
+        attn_state=AscendAttentionState.ChunkedPrefill,
+        num_prefills=0,
+        causal=True,
+    )
+    impl.forward_fused_infer_attention(query, query[:, :2], query[:, :2], short_meta, output)
+    assert fia_v2_mock.call_count == 1
+    assert fia_v2_mock.call_args.kwargs["input_layout"] == "BNSD"
+    assert fia_v2_mock.call_args.kwargs["sparse_mode"] == 0
+    assert fia_v2_mock.call_args.kwargs["atten_mask"].shape == (2, 1, 4, 16)
+    assert fia_v2_mock.call_args.kwargs["atten_mask"].dtype == torch.bool
+    torch.testing.assert_close(output, torch.full_like(output, 1.25))
 
 
 def _patch_large_head_env(monkeypatch, cfg, *, kv_layout: str | None = None):
@@ -638,7 +680,7 @@ def test_eager_mixed_chunked_prefill_phase_split_and_nonuniform_decode(monkeypat
         torch.zeros((8, 2, 8, 512), dtype=torch.bfloat16),
     )
 
-    fia_v2_mock = MagicMock(return_value=(torch.full((2, 8, 4, 512), 1.5, dtype=torch.bfloat16), torch.zeros(1)))
+    fia_v2_mock = MagicMock(return_value=(torch.full((2, 4, 8, 512), 1.5, dtype=torch.bfloat16), torch.zeros(1)))
     fusion_mock = MagicMock(return_value=(torch.full((6, 8, 512), 2.5, dtype=torch.bfloat16), None))
     gather_calls: list[dict[str, object]] = []
 
@@ -657,7 +699,7 @@ def test_eager_mixed_chunked_prefill_phase_split_and_nonuniform_decode(monkeypat
     k_mixed = torch.randn((14, 2, 512), dtype=torch.bfloat16)
     v_mixed = torch.randn((14, 2, 512), dtype=torch.bfloat16)
 
-    # Case 1: 2 uniform decode/verify requests + 1 fresh prefill -> 0 dense gathers.
+    # Case 1: 2 uniform decode/verify requests + 1 fresh prefill -> BSND sparse_mode=3, 0 dense gathers.
     fresh_meta = AscendLargeHeadPagedMetadata(
         block_tables=block_table,
         actual_seq_lengths_q=[4, 8, 14],
@@ -672,10 +714,12 @@ def test_eager_mixed_chunked_prefill_phase_split_and_nonuniform_decode(monkeypat
     out_fresh = torch.empty_like(q_mixed)
     impl.forward_fused_infer_attention(q_mixed, k_mixed, v_mixed, fresh_meta, out_fresh)
     assert fia_v2_mock.call_count == 1
-    assert fia_v2_mock.call_args.kwargs["input_layout"] == "BNSD"
+    assert fia_v2_mock.call_args.kwargs["input_layout"] == "BSND"
+    assert fia_v2_mock.call_args.kwargs["sparse_mode"] == 3
     assert fia_v2_mock.call_args.kwargs["actual_seq_qlen"] == [4, 4]
     assert fia_v2_mock.call_args.kwargs["actual_seq_kvlen"] == [6, 8]
-    assert fia_v2_mock.call_args.kwargs["atten_mask"].shape == (2, 1, 4, 16)
+    assert fia_v2_mock.call_args.kwargs["atten_mask"].shape == (2048, 2048)
+    assert fia_v2_mock.call_args.kwargs["atten_mask"].dtype == torch.int8
     assert fusion_mock.call_count == 1
     assert fusion_mock.call_args.kwargs["actual_seq_qlen"] == [6]
     assert fusion_mock.call_args.kwargs["actual_seq_kvlen"] == [6]
@@ -700,6 +744,8 @@ def test_eager_mixed_chunked_prefill_phase_split_and_nonuniform_decode(monkeypat
     out_cached = torch.empty_like(q_mixed)
     impl.forward_fused_infer_attention(q_mixed, k_mixed, v_mixed, cached_meta, out_cached)
     assert fia_v2_mock.call_count == 1
+    assert fia_v2_mock.call_args.kwargs["input_layout"] == "BSND"
+    assert fia_v2_mock.call_args.kwargs["sparse_mode"] == 3
     assert len(gather_calls) == 1
     assert gather_calls[0]["seq_lens"] == [10]
     assert gather_calls[0]["use_bnsd"] is True
@@ -707,11 +753,11 @@ def test_eager_mixed_chunked_prefill_phase_split_and_nonuniform_decode(monkeypat
     assert fusion_mock.call_args.kwargs["actual_seq_qlen"] == [6]
     assert fusion_mock.call_args.kwargs["actual_seq_kvlen"] == [10]
 
-    # Case 3: non-uniform decodes expand per-token to single-query BNSD FIA-v2 without mask or gather.
+    # Case 3: non-uniform decodes expand per-token to single-query BSND FIA-v2 without mask or gather.
     fia_v2_mock.reset_mock()
     fusion_mock.reset_mock()
     gather_calls.clear()
-    fia_v2_mock.return_value = (torch.full((5, 8, 1, 512), 3.5, dtype=torch.bfloat16), torch.zeros(1))
+    fia_v2_mock.return_value = (torch.full((5, 1, 8, 512), 3.5, dtype=torch.bfloat16), torch.zeros(1))
     q_nonunif = torch.randn((5, 8, 512), dtype=torch.bfloat16)
     nonunif_meta = AscendLargeHeadPagedMetadata(
         block_tables=block_table[:2],
@@ -727,6 +773,8 @@ def test_eager_mixed_chunked_prefill_phase_split_and_nonuniform_decode(monkeypat
     out_nonunif = torch.empty_like(q_nonunif)
     impl.forward_fused_infer_attention(q_nonunif, q_nonunif[:, :2], q_nonunif[:, :2], nonunif_meta, out_nonunif)
     assert fia_v2_mock.call_count == 1
+    assert fia_v2_mock.call_args.kwargs["input_layout"] == "BSND"
+    assert fia_v2_mock.call_args.kwargs["sparse_mode"] == 0
     assert fia_v2_mock.call_args.kwargs["actual_seq_qlen"] == [1, 1, 1, 1, 1]
     assert fia_v2_mock.call_args.kwargs["actual_seq_kvlen"] == [7, 8, 9, 10, 5]
     assert fia_v2_mock.call_args.kwargs["atten_mask"] is None
