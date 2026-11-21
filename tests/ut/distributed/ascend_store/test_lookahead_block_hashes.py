@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import sys
 import unittest
 from dataclasses import fields, is_dataclass
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 # isort: off
+import pytest
 import tests.ut.distributed.ascend_store._mock_deps  # noqa: F401, E402
 import torch
 from vllm.v1.core.kv_cache_utils import KVCacheBlock
@@ -1490,3 +1493,70 @@ class TestLookaheadForkBoundaries(unittest.TestCase):
         pool = ExternalCachedBlockPool(128, {(0, bytes(h)) for h in hashes})
         _, bounded_hit = coord.find_longest_cache_hit(hashes, max_length=256, cached_block_pool=pool)
         self.assertEqual(bounded_hit, 256)
+
+
+class TestLegacyKVCacheCompatHook(unittest.TestCase):
+    @staticmethod
+    def _get_ut_conftest() -> Any:
+        target_suffix = os.path.join("tests", "ut", "conftest.py")
+        for mod in list(sys.modules.values()):
+            mod_file = getattr(mod, "__file__", None)
+            if isinstance(mod, ModuleType) and isinstance(mod_file, str) and mod_file.endswith(target_suffix):
+                return mod
+        import tests.ut.conftest as ut_conftest
+
+        return ut_conftest
+
+    def test_legacy_symbol_list_covers_post_66234_removed_apis(self):
+        ut_conftest = self._get_ut_conftest()
+        symbols = ut_conftest._LEGACY_KV_CACHE_SYMBOLS
+        for required in (
+            "CrossAttentionSpec",
+            "KVCacheGroupSpec",
+            "FullAttentionSpec",
+            "SlidingWindowSpec",
+            "UniformTypeKVCacheSpecs",
+            "CircularBufferSpec",
+            "SpecGroup",
+            "register_all_kvcache_specs",
+            "vllm.v1.kv_cache_spec_registry",
+        ):
+            self.assertIn(required, symbols)
+
+    def test_collect_error_with_legacy_symbol_skips_module(self):
+        ut_conftest = self._get_ut_conftest()
+        node = object.__new__(ut_conftest._LegacyKVCacheCompatModule)
+        legacy_causes = (
+            ImportError("cannot import name 'CrossAttentionSpec' from 'vllm.v1.kv_cache_interface'"),
+            ImportError("cannot import name 'SpecGroup' from 'vllm.v1.core.kv_cache_coordinator'"),
+            ModuleNotFoundError("No module named 'vllm.v1.kv_cache_spec_registry'"),
+        )
+        for cause in legacy_causes:
+            with self.subTest(cause=str(cause)):
+                collect_err = pytest.Collector.CollectError(f"ImportError while importing test module.\n{cause}")
+                collect_err.__cause__ = cause
+                with (
+                    patch.object(pytest.Module, "collect", side_effect=collect_err),
+                    self.assertRaises(pytest.skip.Exception) as ctx,
+                ):
+                    node.collect()
+                self.assertTrue(getattr(ctx.exception, "allow_module_level", False))
+
+    def test_collect_error_with_unrelated_import_or_module_not_found_reraises(self):
+        ut_conftest = self._get_ut_conftest()
+        node = object.__new__(ut_conftest._LegacyKVCacheCompatModule)
+        unrelated_causes: tuple[BaseException, ...] = (
+            ImportError("cannot import name 'TotallyUnrelatedSymbol' from 'some.mod'"),
+            ModuleNotFoundError("No module named 'examples.disaggregated_prefill_v1'"),
+            SyntaxError("invalid syntax"),
+        )
+        for cause in unrelated_causes:
+            with self.subTest(cause=str(cause)):
+                collect_err = pytest.Collector.CollectError(f"Collection failed.\n{cause}")
+                collect_err.__cause__ = cause
+                with (
+                    patch.object(pytest.Module, "collect", side_effect=collect_err),
+                    self.assertRaises(pytest.Collector.CollectError) as ctx,
+                ):
+                    node.collect()
+                self.assertIs(ctx.exception, collect_err)

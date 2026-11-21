@@ -300,6 +300,8 @@ _LEGACY_KV_CACHE_SYMBOLS = (
     "replace_as",
     "eagle_proof_margin",
     "resolve_dcp_kv_cache_spec",
+    "vllm.v1.kv_cache_spec_registry",
+    "kv_cache_spec_registry",
 )
 
 if _HAS_LEGACY_KV_CACHE_GROUP_SPEC:
@@ -317,21 +319,22 @@ else:
             _patch_call()
 
 
-if not _HAS_LEGACY_KV_CACHE_GROUP_SPEC:
+class _LegacyKVCacheCompatModule(pytest.Module):
+    def collect(self):
+        try:
+            return super().collect()
+        except (ImportError, pytest.Collector.CollectError) as exc:
+            cause = exc.__cause__ if isinstance(exc, pytest.Collector.CollectError) else exc
+            msg = f"{cause}\n{exc}" if cause is not None else str(exc)
+            if isinstance(cause, ImportError) and any(symbol in msg for symbol in _LEGACY_KV_CACHE_SYMBOLS):
+                pytest.skip(
+                    f"Requires legacy pre-#66234 vLLM KV cache API: {cause}",
+                    allow_module_level=True,
+                )
+            raise
 
-    class _LegacyKVCacheCompatModule(pytest.Module):
-        def collect(self):
-            try:
-                return super().collect()
-            except (ImportError, pytest.Collector.CollectError) as exc:
-                cause = exc.__cause__ if isinstance(exc, pytest.Collector.CollectError) else exc
-                msg = f"{cause}\n{exc}" if cause is not None else str(exc)
-                if isinstance(cause, ImportError) and any(symbol in msg for symbol in _LEGACY_KV_CACHE_SYMBOLS):
-                    pytest.skip(
-                        f"Requires legacy pre-#66234 vLLM KV cache API: {cause}",
-                        allow_module_level=True,
-                    )
-                raise
+
+if not _HAS_LEGACY_KV_CACHE_GROUP_SPEC:
 
     def pytest_pycollect_makemodule(module_path, parent):
         return _LegacyKVCacheCompatModule.from_parent(parent, path=module_path)
