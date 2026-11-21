@@ -82,6 +82,7 @@ def _make_runtime(
         model_config=SimpleNamespace(
             hf_config=SimpleNamespace(model_type="qwen3"),
             max_model_len=max_model_len,
+            supports_kv_cache_grouping=False,
         ),
         scheduler_config=SimpleNamespace(
             disable_hybrid_kv_cache_manager=disable_hybrid,
@@ -626,8 +627,8 @@ def test_dspark_pd_and_mooncake_null_block_boundaries():
     )
     assert skipped_slots[0].tolist() == [-1, -1, -1, -1, 8, 9]
 
-    meta_src = DraftKVCacheMetadata("l0", 0, 4, 16, (1000,), (64,), (32,), (1,), ((4, 8),), ("torch.bfloat16",))
-    meta_dst = DraftKVCacheMetadata("l0", 0, 4, 16, (5000,), (64,), (32,), (1,), ((4, 8),), ("torch.bfloat16",))
+    meta_src = DraftKVCacheMetadata(0, 4, 16, (1000,), (64,), (32,), (1,), ((4, 8),), ("torch.bfloat16",))
+    meta_dst = DraftKVCacheMetadata(0, 4, 16, (5000,), (64,), (32,), (1,), ((4, 8),), ("torch.bfloat16",))
     batches = list(
         build_draft_kv_read_batches(
             {"l0": meta_src}, {"l0": meta_dst}, {"l0": (0, 0, 5)}, {0: (0, 0, 7)}, prompt_tokens=12
