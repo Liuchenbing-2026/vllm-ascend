@@ -42,10 +42,13 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.metadata import (
     ReqMeta,
 )
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
+    DEFAULT_PULL_ZMQ_TIMEOUT_MS,
+    MooncakePeerLostError,
     SizedDict,
     ensure_zmq_recv,
     ensure_zmq_send,
     group_concurrent_contiguous,
+    lost_peer_monitor,
     worker_rank_to_dcp_rank,
     zmq_ctx,
 )
@@ -268,6 +271,9 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
                     if not future.done():
                         with suppress(Exception):
                             future.result()
+                request_endpoints = {(request.remote_host, request.remote_port) for request in requests.values()}
+                endpoint = next(iter(request_endpoints)) if len(request_endpoints) == 1 else None
+                self._invalidate_remote_metadata(remote_engine_id, endpoint=endpoint)
                 logger.exception(
                     "Mooncake batch pull failed for remote engine %s, marking batch requests failed: %s",
                     remote_engine_id,
@@ -1408,26 +1414,84 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
                 f"expected {sorted(expected_tp_ranks)}, got {incomplete_tp_layouts}"
             )
 
+    def _get_remote_metadata_endpoints(self) -> dict[str, tuple[str, int]]:
+        endpoints = getattr(self, "_remote_metadata_endpoints", None)
+        if endpoints is None:
+            endpoints = {}
+            self._remote_metadata_endpoints = endpoints
+        return endpoints
+
+    def _invalidate_remote_metadata(
+        self,
+        remote_engine_id: str | None = None,
+        *,
+        endpoint: tuple[str, int] | None = None,
+    ) -> None:
+        """Evict cached metadata/layout for a lost or restarted producer."""
+        remote_metadata = getattr(self, "remote_metadata", None)
+        remote_tp_rank_groups = getattr(self, "remote_tp_rank_groups", None)
+        remote_layer_index_pairs = getattr(self, "remote_layer_index_pairs", None)
+        endpoints = getattr(self, "_remote_metadata_endpoints", None)
+
+        engine_ids: set[str] = set()
+        if remote_engine_id is not None:
+            engine_ids.add(remote_engine_id)
+        if endpoint is not None:
+            if endpoints is not None:
+                for engine_id, cached_endpoint in list(endpoints.items()):
+                    if cached_endpoint == endpoint:
+                        engine_ids.add(engine_id)
+            if remote_metadata is not None:
+                for engine_id, meta in list(remote_metadata.items()):
+                    if (meta.scheduler_host, meta.scheduler_port) == endpoint:
+                        engine_ids.add(engine_id)
+        for engine_id in engine_ids:
+            if remote_metadata is not None:
+                remote_metadata.pop(engine_id, None)
+            if remote_tp_rank_groups is not None:
+                remote_tp_rank_groups.pop(engine_id, None)
+            if remote_layer_index_pairs is not None:
+                remote_layer_index_pairs.pop(engine_id, None)
+            if endpoints is not None:
+                endpoints.pop(engine_id, None)
+
     def _get_remote_metadata(
         self,
         remote_engine_id: str,
         remote_host: str,
         remote_port: int,
     ) -> MooncakeTransferMetadataGroups:
+        endpoints = self._get_remote_metadata_endpoints()
         cached_metadata = self.remote_metadata.get(remote_engine_id)
         if cached_metadata is not None:
-            return cached_metadata
+            cached_endpoint = endpoints.get(remote_engine_id)
+            if cached_endpoint == (remote_host, remote_port) or (
+                cached_endpoint is None
+                and (cached_metadata.scheduler_host, cached_metadata.scheduler_port) == (remote_host, remote_port)
+            ):
+                return cached_metadata
+            self._invalidate_remote_metadata(remote_engine_id)
 
         path = make_zmq_path("tcp", remote_host, remote_port)
-        with zmq_ctx(zmq.REQ, path) as sock:  # type: ignore[attr-defined]
-            sock.setsockopt(zmq.SNDTIMEO, 1000)  # type: ignore[attr-defined]
-            sock.setsockopt(zmq.RCVTIMEO, 1000)  # type: ignore[attr-defined]
-            ensure_zmq_send(
-                sock,
-                self.encoder.encode((b"get_meta_msg",)),
-                path,
-            )
-            metadata_bytes = ensure_zmq_recv(sock, path)
+        try:
+            with zmq_ctx(zmq.REQ, path) as sock:  # type: ignore[attr-defined]
+                sock.setsockopt(zmq.SNDTIMEO, DEFAULT_PULL_ZMQ_TIMEOUT_MS)  # type: ignore[attr-defined]
+                sock.setsockopt(zmq.RCVTIMEO, DEFAULT_PULL_ZMQ_TIMEOUT_MS)  # type: ignore[attr-defined]
+                with lost_peer_monitor(sock) as monitor:
+                    ensure_zmq_send(
+                        sock,
+                        self.encoder.encode((b"get_meta_msg",)),
+                        path,
+                    )
+                    metadata_bytes = (
+                        ensure_zmq_recv(sock, path) if monitor is None else ensure_zmq_recv(sock, path, monitor=monitor)
+                    )
+        except MooncakePeerLostError:
+            self._invalidate_remote_metadata(remote_engine_id, endpoint=(remote_host, remote_port))
+            raise
+        except Exception:
+            self._invalidate_remote_metadata(remote_engine_id, endpoint=(remote_host, remote_port))
+            raise
 
         if not metadata_bytes:
             raise RuntimeError(
@@ -1440,6 +1504,7 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
         self.remote_metadata[remote_engine_id] = transfer_metadata
         self.remote_tp_rank_groups[remote_engine_id] = remote_tp_rank_groups
         self.remote_layer_index_pairs[remote_engine_id] = remote_layer_index_pairs
+        endpoints[remote_engine_id] = (remote_host, remote_port)
         logger.debug(
             "Mooncake remote transfer layout for engine %s: TP candidates=%s, layer index pairs=%s",
             remote_engine_id,

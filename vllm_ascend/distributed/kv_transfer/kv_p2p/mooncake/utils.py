@@ -4,15 +4,18 @@
 
 import contextlib
 import hashlib
+import inspect
+import math
 import queue
 import struct
 import threading
 import time
+import unittest.mock
 from collections import OrderedDict
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Final, TypeVar, cast
 
 import httpx
 import numpy as np
@@ -34,6 +37,21 @@ if TYPE_CHECKING:
 
 
 KV_CACHE_BUFFER_ALIGNMENT = 2 * 1024 * 1024
+# A pull reply can only arrive on the connection that sent the request: a
+# closed/disconnected peer drops pending replies and refused reconnects mean
+# nothing is listening at that endpoint.
+PULL_LOST_PEER_EVENTS: Final[int] = int(getattr(zmq, "EVENT_DISCONNECTED", 0)) | int(
+    getattr(zmq, "EVENT_CONNECT_RETRIED", 0)
+)
+# ZMTP heartbeats detect frozen processes or unreachable hosts.
+PULL_HEARTBEAT_IVL_MS: Final[int] = 2000
+PULL_HEARTBEAT_TIMEOUT_MS: Final[int] = 10000
+DEFAULT_PULL_ZMQ_TIMEOUT_MS: Final[int] = 1000
+_ZMQ_MONITOR_EVENT_STRUCT_SIZE: Final[int] = 6
+
+
+class MooncakePeerLostError(RuntimeError):
+    """Raised when a prefill ZMQ peer disconnects or refuses connections."""
 
 
 class MooncakeMetaserverClient:
@@ -123,21 +141,159 @@ class MooncakeMetaserverClient:
             self.client.close()
 
 
+class _PreConnectOptionContext:
+    """Wrap a ZMQ context to set socket options before connect() runs.
+
+    Older vLLM pins (`v0.33.0` and `c410543d`) do not expose heartbeat
+    parameters on `make_zmq_socket`, and libzmq ignores heartbeat options set
+    after `connect()`.
+    """
+
+    def __init__(
+        self,
+        ctx: Any,
+        *,
+        linger: int | None,
+        heartbeat_ivl_ms: int | None,
+        heartbeat_timeout_ms: int | None,
+    ) -> None:
+        self._ctx = ctx
+        self._linger = linger
+        self._heartbeat_ivl_ms = heartbeat_ivl_ms
+        self._heartbeat_timeout_ms = heartbeat_timeout_ms
+
+    def socket(self, socket_type: Any) -> Any:
+        sock = self._ctx.socket(socket_type)
+        _apply_pre_connect_options(
+            sock,
+            linger=self._linger,
+            heartbeat_ivl_ms=self._heartbeat_ivl_ms,
+            heartbeat_timeout_ms=self._heartbeat_timeout_ms,
+        )
+        return sock
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._ctx, name)
+
+
+def _apply_pre_connect_options(
+    sock: Any,
+    *,
+    linger: int | None,
+    heartbeat_ivl_ms: int | None,
+    heartbeat_timeout_ms: int | None,
+) -> None:
+    """Apply LINGER and ZMTP heartbeat options prior to connect()."""
+    if linger is not None and hasattr(zmq, "LINGER"):
+        sock.setsockopt(zmq.LINGER, linger)  # type: ignore[attr-defined]
+    if heartbeat_ivl_ms is not None and hasattr(zmq, "HEARTBEAT_IVL"):
+        sock.setsockopt(zmq.HEARTBEAT_IVL, heartbeat_ivl_ms)  # type: ignore[attr-defined]
+    if heartbeat_timeout_ms is not None and hasattr(zmq, "HEARTBEAT_TIMEOUT"):
+        sock.setsockopt(zmq.HEARTBEAT_TIMEOUT, heartbeat_timeout_ms)  # type: ignore[attr-defined]
+
+
+def _make_zmq_socket_supports_heartbeat(make_socket_fn: Any) -> bool:
+    """Check whether make_zmq_socket explicitly accepts heartbeat kwargs."""
+    try:
+        params = inspect.signature(make_socket_fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return "heartbeat_ivl_ms" in params and "heartbeat_timeout_ms" in params
+
+
+def _make_zmq_socket_accepts_param(make_socket_fn: Any, param_name: str) -> bool:
+    """Check whether a socket factory accepts a named keyword argument."""
+    try:
+        params = inspect.signature(make_socket_fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(param.name == param_name or param.kind == inspect.Parameter.VAR_KEYWORD for param in params)
+
+
+def make_mooncake_client_socket(
+    ctx: Any,
+    path: str,
+    socket_type: Any,
+    *,
+    linger: int | None = 0,
+    heartbeat_ivl_ms: int | None = PULL_HEARTBEAT_IVL_MS,
+    heartbeat_timeout_ms: int | None = PULL_HEARTBEAT_TIMEOUT_MS,
+    make_socket_fn: Any | None = None,
+) -> Any:
+    """Create a client ZMQ socket with pre-connect LINGER and heartbeat options."""
+    factory = make_zmq_socket if make_socket_fn is None else make_socket_fn
+    if _make_zmq_socket_supports_heartbeat(factory):
+        return factory(
+            ctx=ctx,
+            path=path,
+            socket_type=socket_type,
+            bind=False,
+            linger=linger,
+            heartbeat_ivl_ms=heartbeat_ivl_ms,
+            heartbeat_timeout_ms=heartbeat_timeout_ms,
+        )
+
+    wrapped_ctx = _PreConnectOptionContext(
+        ctx,
+        linger=linger,
+        heartbeat_ivl_ms=heartbeat_ivl_ms,
+        heartbeat_timeout_ms=heartbeat_timeout_ms,
+    )
+    kwargs: dict[str, Any] = {
+        "ctx": wrapped_ctx,
+        "path": path,
+        "socket_type": socket_type,
+        "bind": False,
+    }
+    if linger is not None and _make_zmq_socket_accepts_param(factory, "linger"):
+        kwargs["linger"] = linger
+    return factory(**kwargs)
+
+
+def close_zmq_socket(sock: Any) -> None:
+    """Close a ZMQ socket with LINGER=0 without blocking on dead peers."""
+    if sock is None:
+        return
+    try:
+        sock.close(linger=0)
+    except TypeError:
+        sock.close()
+
+
 @contextlib.contextmanager
-def zmq_ctx(socket_type: Any, addr: str) -> Iterator[Any]:
-    """Create a Mooncake ROUTER or REQ socket and clean up its context."""
-    if socket_type not in (zmq.ROUTER, zmq.REQ):  # type: ignore[attr-defined]
+def zmq_ctx(
+    socket_type: Any,
+    addr: str,
+    *,
+    linger: int = 0,
+    heartbeat_ivl_ms: int | None = PULL_HEARTBEAT_IVL_MS,
+    heartbeat_timeout_ms: int | None = PULL_HEARTBEAT_TIMEOUT_MS,
+) -> Iterator[Any]:
+    """Create a Mooncake ROUTER, REQ, or DEALER socket and clean up its context."""
+    if socket_type not in (zmq.ROUTER, zmq.REQ, zmq.DEALER):  # type: ignore[attr-defined]
         raise ValueError(f"Unexpected socket type: {socket_type}")
 
     context: Any | None = None
     try:
         context = zmq.Context()  # type: ignore[attr-defined]
-        yield make_zmq_socket(
-            ctx=context,
-            path=addr,
-            socket_type=socket_type,
-            bind=socket_type == zmq.ROUTER,  # type: ignore[attr-defined]
-        )
+        if socket_type == zmq.ROUTER:  # type: ignore[attr-defined]
+            yield make_zmq_socket(
+                ctx=context,
+                path=addr,
+                socket_type=socket_type,
+                bind=True,
+                linger=linger,
+            )
+        else:
+            yield make_mooncake_client_socket(
+                context,
+                addr,
+                socket_type,
+                linger=linger,
+                heartbeat_ivl_ms=heartbeat_ivl_ms,
+                heartbeat_timeout_ms=heartbeat_timeout_ms,
+                make_socket_fn=make_zmq_socket,
+            )
     finally:
         if context is not None:
             context.destroy(linger=0)
@@ -387,15 +543,147 @@ def ensure_zmq_send(
                 raise RuntimeError(f"Failed to send data to {path} after {max_retries} retries: {e}")
 
 
-def ensure_zmq_recv(
-    socket: zmq.Socket,  # type: ignore
+def _supports_socket_monitor(sock: Any) -> bool:
+    """Return True if sock is a real/non-mock socket supporting ZMQ monitors."""
+    if isinstance(sock, unittest.mock.NonCallableMock):
+        return False
+    return callable(getattr(sock, "get_monitor_socket", None))
+
+
+@contextlib.contextmanager
+def lost_peer_monitor(
+    sock: Any,
+    events: int = PULL_LOST_PEER_EVENTS,
+) -> Iterator[Any | None]:
+    """Attach a ZMQ socket monitor for disconnect and refused-connect events."""
+    if not _supports_socket_monitor(sock):
+        yield None
+        return
+
+    monitor = sock.get_monitor_socket(events)
+    try:
+        yield monitor
+    finally:
+        try:
+            disable_monitor = getattr(sock, "disable_monitor", None)
+            if callable(disable_monitor):
+                with contextlib.suppress(zmq.ZMQError):  # type: ignore[attr-defined]
+                    disable_monitor()
+        finally:
+            close_zmq_socket(monitor)
+
+
+def _is_monitor_stopped_event(frames: Any) -> bool:
+    """Return True when a 6-byte ZMQ monitor event frame is EVENT_MONITOR_STOPPED."""
+    if not frames or not isinstance(frames[0], (bytes, bytearray)) or len(frames[0]) != _ZMQ_MONITOR_EVENT_STRUCT_SIZE:
+        return False
+    event_id = struct.unpack("=H", frames[0][:2])[0]
+    stopped_event = int(getattr(zmq, "EVENT_MONITOR_STOPPED", 1024))
+    return event_id == stopped_event and (event_id & PULL_LOST_PEER_EVENTS) == 0
+
+
+def _format_monitor_event(frames: Any) -> str:
+    """Format a ZMQ monitor frame into a human-readable event label."""
+    if not frames or not isinstance(frames[0], (bytes, bytearray)) or len(frames[0]) < 2:
+        return "unknown_event"
+    event_id = struct.unpack("=H", frames[0][:2])[0]
+    if event_id == getattr(zmq, "EVENT_DISCONNECTED", None):
+        return "EVENT_DISCONNECTED"
+    if event_id == getattr(zmq, "EVENT_CONNECT_RETRIED", None):
+        return "EVENT_CONNECT_RETRIED"
+    return f"event={event_id}"
+
+
+def _resolve_recv_timeout_ms(sock: Any, timeout_ms: int | None) -> int | None:
+    """Resolve an effective non-negative receive timeout in milliseconds."""
+    if timeout_ms is not None:
+        return timeout_ms if timeout_ms >= 0 else None
+    getsockopt = getattr(sock, "getsockopt", None)
+    if not callable(getsockopt) or not hasattr(zmq, "RCVTIMEO"):
+        return None
+    try:
+        raw_timeout = getsockopt(zmq.RCVTIMEO)  # type: ignore[attr-defined]
+    except Exception:
+        return None
+    if isinstance(raw_timeout, int) and not isinstance(raw_timeout, bool) and raw_timeout >= 0:
+        return raw_timeout
+    return None
+
+
+def recv_unless_lost(
+    sock: Any,
+    monitor: Any,
     path: str,
-    max_retries: int = 3,
+    *,
+    timeout_ms: int | None = None,
 ) -> bytes:
+    """Return the peer's next reply, or raise MooncakePeerLostError once lost."""
+    if monitor is None:
+        return sock.recv()
+
+    effective_timeout_ms = _resolve_recv_timeout_ms(sock, timeout_ms)
+    deadline = None if effective_timeout_ms is None else time.monotonic() + effective_timeout_ms / 1000.0
+    poller = zmq.Poller()  # type: ignore[attr-defined]
+    poller.register(sock, zmq.POLLIN)  # type: ignore[attr-defined]
+    poller.register(monitor, zmq.POLLIN)  # type: ignore[attr-defined]
+    first_poll = True
+    try:
+        while True:
+            if deadline is None:
+                poll_timeout_ms: int | None = None
+            elif first_poll and effective_timeout_ms == 0:
+                poll_timeout_ms = 0
+            else:
+                remaining_ms = math.ceil((deadline - time.monotonic()) * 1000.0)
+                if remaining_ms <= 0:
+                    raise zmq.Again()  # type: ignore[attr-defined]
+                poll_timeout_ms = remaining_ms
+            first_poll = False
+
+            events = dict(poller.poll(poll_timeout_ms))
+            if not events:
+                raise zmq.Again()  # type: ignore[attr-defined]
+            # Check sock before monitor so a completed reply arriving right
+            # before the peer disconnects is still returned cleanly.
+            if sock in events:
+                try:
+                    return sock.recv(flags=zmq.NOBLOCK)  # type: ignore[attr-defined]
+                except zmq.Again:  # type: ignore[attr-defined]
+                    pass
+            if monitor in events:
+                try:
+                    frames = monitor.recv_multipart(flags=zmq.NOBLOCK)  # type: ignore[attr-defined]
+                except zmq.Again:  # type: ignore[attr-defined]
+                    continue
+                if not _is_monitor_stopped_event(frames):
+                    raise MooncakePeerLostError(
+                        f"Lost connection to prefill worker {path} ({_format_monitor_event(frames)})"
+                    )
+    finally:
+        with contextlib.suppress(KeyError, zmq.ZMQError):  # type: ignore[attr-defined]
+            poller.unregister(monitor)
+        with contextlib.suppress(KeyError, zmq.ZMQError):  # type: ignore[attr-defined]
+            poller.unregister(sock)
+
+
+def _recv_with_retries(
+    socket: Any,
+    path: str,
+    max_retries: int,
+    *,
+    monitor: Any | None,
+    timeout_ms: int | None,
+) -> bytes:
+    """Receive ZMQ data with retries on transient ZMQError, failing fast on lost peer."""
     retries_left = max_retries
     while True:
         try:
+            if monitor is not None:
+                return recv_unless_lost(socket, monitor, path, timeout_ms=timeout_ms)
             return socket.recv()
+        except MooncakePeerLostError as e:
+            logger.error("Receive aborted on lost peer. source=%s, error=%s. ", path, e)
+            raise
         except zmq.ZMQError as e:  # type: ignore
             retries_left -= 1
             if retries_left > 0:
@@ -403,16 +691,42 @@ def ensure_zmq_recv(
                 time.sleep(0.1)
             else:
                 logger.error("Receive failed after all retries. source=%s, error=%s. ", path, e)
-                raise RuntimeError(f"Failed to receive data after {max_retries} retries: {e}")
+                raise RuntimeError(f"Failed to receive data after {max_retries} retries: {e}") from e
+
+
+def ensure_zmq_recv(
+    socket: zmq.Socket,  # type: ignore
+    path: str,
+    max_retries: int = 3,
+    *,
+    monitor: Any | None = None,
+    timeout_ms: int | None = None,
+) -> bytes:
+    """Receive a ZMQ reply with monitor-based fast failure when supported."""
+    if monitor is not None:
+        return _recv_with_retries(socket, path, max_retries, monitor=monitor, timeout_ms=timeout_ms)
+    if _supports_socket_monitor(socket):
+        with lost_peer_monitor(socket) as local_monitor:
+            return _recv_with_retries(socket, path, max_retries, monitor=local_monitor, timeout_ms=timeout_ms)
+    return _recv_with_retries(socket, path, max_retries, monitor=None, timeout_ms=timeout_ms)
 
 
 __all__ = [
+    "DEFAULT_PULL_ZMQ_TIMEOUT_MS",
+    "MooncakePeerLostError",
+    "PULL_HEARTBEAT_IVL_MS",
+    "PULL_HEARTBEAT_TIMEOUT_MS",
+    "PULL_LOST_PEER_EVENTS",
     "SizedDict",
     "as_kv_cache_tensors",
+    "close_zmq_socket",
     "collect_configured_register_regions",
     "ensure_zmq_recv",
     "ensure_zmq_send",
     "group_concurrent_contiguous",
+    "lost_peer_monitor",
+    "make_mooncake_client_socket",
+    "recv_unless_lost",
     "split_if_not_byte_contiguous",
     "string_to_int64_hash",
     "worker_rank_to_dcp_rank",

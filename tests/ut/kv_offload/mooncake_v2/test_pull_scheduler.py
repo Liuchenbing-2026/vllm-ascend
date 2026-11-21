@@ -527,6 +527,8 @@ def test_recving_thread_socket_pool_creates_once_and_reuses_by_endpoint(
     thread = MooncakeSchedulerRecvingThread(threading.Event())
     context = MagicMock()
     socket = MagicMock()
+    raw_socket = MagicMock()
+    context.socket.return_value = raw_socket
     context_cls = MagicMock(return_value=context)
     make_socket = MagicMock(return_value=socket)
     monkeypatch.setattr(
@@ -547,13 +549,33 @@ def test_recving_thread_socket_pool_creates_once_and_reuses_by_endpoint(
 
     assert first is second is socket
     context_cls.assert_called_once_with()
-    make_socket.assert_called_once_with(
-        ctx=context,
-        path=path,
-        socket_type=zmq.REQ,  # type: ignore[attr-defined]
-        bind=False,
-    )
+    make_socket.assert_called_once()
+    call_kwargs = make_socket.call_args.kwargs
+    assert call_kwargs["path"] == path
+    assert call_kwargs["socket_type"] == zmq.REQ  # type: ignore[attr-defined]
+    assert call_kwargs["bind"] is False
+    assert call_kwargs["linger"] == 0
+    assert call_kwargs["ctx"].socket(zmq.REQ) is raw_socket  # type: ignore[attr-defined]
+    raw_socket.setsockopt.assert_any_call(zmq.LINGER, 0)  # type: ignore[attr-defined]
+    if hasattr(zmq, "HEARTBEAT_IVL"):
+        raw_socket.setsockopt.assert_any_call(
+            zmq.HEARTBEAT_IVL,  # type: ignore[attr-defined]
+            pull_scheduler.PULL_HEARTBEAT_IVL_MS,
+        )
+    if hasattr(zmq, "HEARTBEAT_TIMEOUT"):
+        raw_socket.setsockopt.assert_any_call(
+            zmq.HEARTBEAT_TIMEOUT,  # type: ignore[attr-defined]
+            pull_scheduler.PULL_HEARTBEAT_TIMEOUT_MS,
+        )
     assert socket.setsockopt.call_count == 2
+    socket.setsockopt.assert_any_call(
+        zmq.SNDTIMEO,  # type: ignore[attr-defined]
+        pull_scheduler.DEFAULT_PULL_ZMQ_TIMEOUT_MS,
+    )
+    socket.setsockopt.assert_any_call(
+        zmq.RCVTIMEO,  # type: ignore[attr-defined]
+        pull_scheduler.DEFAULT_PULL_ZMQ_TIMEOUT_MS,
+    )
 
 
 def test_base_scheduler_clips_attention_and_keeps_mamba_state_blocks() -> None:

@@ -38,8 +38,15 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.metadata import (
     MooncakeConnectorMetadata,
 )
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
+    DEFAULT_PULL_ZMQ_TIMEOUT_MS,
+    PULL_HEARTBEAT_IVL_MS,
+    PULL_HEARTBEAT_TIMEOUT_MS,
+    MooncakePeerLostError,
+    close_zmq_socket,
     ensure_zmq_recv,
     ensure_zmq_send,
+    lost_peer_monitor,
+    make_mooncake_client_socket,
     zmq_ctx,
 )
 
@@ -354,18 +361,34 @@ class MooncakeSchedulerRecvingThread(threading.Thread):
         path = make_zmq_path("tcp", remote_host, remote_port)
         sock = self._get_remote_socket(path)
         try:
-            ensure_zmq_send(
-                sock,
-                self.encoder.encode((DONE_RECVING_MSG, request_id)),
-                path,
-            )
-            response = ensure_zmq_recv(sock, path)
+            with lost_peer_monitor(sock) as monitor:
+                ensure_zmq_send(
+                    sock,
+                    self.encoder.encode((DONE_RECVING_MSG, request_id)),
+                    path,
+                )
+                response = (
+                    ensure_zmq_recv(sock, path) if monitor is None else ensure_zmq_recv(sock, path, monitor=monitor)
+                )
             if response != ACK_MSG:
                 raise RuntimeError(f"Unexpected Mooncake scheduler completion response: {response!r}")
+        except MooncakePeerLostError:
+            close_zmq_socket(sock)
+            self._discard_remote_sockets(path)
+            raise
         except Exception:
-            sock.close(linger=0)
+            close_zmq_socket(sock)
             raise
         self._return_remote_socket(path, sock)
+
+    def _discard_remote_sockets(self, path: str) -> None:
+        """Close and drop all pooled REQ sockets for a dead producer scheduler."""
+        with self.remote_sockets_lock:
+            sockets = self.remote_sockets.pop(path, None)
+        if not sockets:
+            return
+        for sock in sockets:
+            close_zmq_socket(sock)
 
     def _get_remote_socket(self, path: str) -> Any:
         """Borrow a persistent REQ socket for one producer scheduler."""
@@ -376,14 +399,17 @@ class MooncakeSchedulerRecvingThread(threading.Thread):
 
             if self.zmq_context is None:
                 self.zmq_context = zmq.Context()  # type: ignore[attr-defined]
-            sock = make_zmq_socket(
-                ctx=self.zmq_context,
-                path=path,
-                socket_type=zmq.REQ,  # type: ignore[attr-defined]
-                bind=False,
+            sock = make_mooncake_client_socket(
+                self.zmq_context,
+                path,
+                zmq.REQ,  # type: ignore[attr-defined]
+                linger=0,
+                heartbeat_ivl_ms=PULL_HEARTBEAT_IVL_MS,
+                heartbeat_timeout_ms=PULL_HEARTBEAT_TIMEOUT_MS,
+                make_socket_fn=make_zmq_socket,
             )
-            sock.setsockopt(zmq.SNDTIMEO, 1000)  # type: ignore[attr-defined]
-            sock.setsockopt(zmq.RCVTIMEO, 1000)  # type: ignore[attr-defined]
+            sock.setsockopt(zmq.SNDTIMEO, DEFAULT_PULL_ZMQ_TIMEOUT_MS)  # type: ignore[attr-defined]
+            sock.setsockopt(zmq.RCVTIMEO, DEFAULT_PULL_ZMQ_TIMEOUT_MS)  # type: ignore[attr-defined]
             return sock
 
     def _return_remote_socket(self, path: str, sock: Any) -> None:
@@ -699,6 +725,7 @@ class MooncakePullConnectorScheduler(MooncakeBaseConnectorScheduler):
                     raise RuntimeError("Producer Mooncake scheduler received a receive-completion event")
                 self._recving_thread.add_request(*remote)
                 if req_id in connector_output.failed_recving:
+                    self._validated_producer_leases.pop((remote[0], remote[1]), None)
                     logger.error(
                         "Mooncake D receive failed after worker aggregation: request_id=%s, "
                         "remote_request_id=%s, producer=%s:%s, failure_policy=%s; producer release notification queued",

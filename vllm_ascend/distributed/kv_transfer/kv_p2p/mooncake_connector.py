@@ -10,6 +10,7 @@ import random
 import struct
 import threading
 import time
+import unittest.mock
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -61,6 +62,17 @@ from vllm_ascend.ascend_config import get_ascend_config, init_ascend_config
 from vllm_ascend.core.kv_cache_interface import (
     AscendSFAIndexerCacheSpec,
     AscendSlidingWindowMLASpec,
+)
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
+    PULL_HEARTBEAT_IVL_MS,
+    PULL_HEARTBEAT_TIMEOUT_MS,
+    MooncakePeerLostError,
+    close_zmq_socket,
+    lost_peer_monitor,
+    make_mooncake_client_socket,
+)
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
+    ensure_zmq_recv as _shared_ensure_zmq_recv,
 )
 from vllm_ascend.distributed.kv_transfer.utils.mooncake_transfer_engine import global_te
 from vllm_ascend.distributed.kv_transfer.utils.utils import (
@@ -744,6 +756,7 @@ class KVCacheRecvingThread(threading.Thread):
         remote_port_send_num = req_meta["remote_port_send_num"]
         all_task_done = req_meta["all_task_done"]
         transfer_failed = self._is_failed_recv_request(request_id)
+        peer_lost = False
 
         try:
             if transfer_failed:
@@ -754,6 +767,17 @@ class KVCacheRecvingThread(threading.Thread):
                     logger.debug("Starting to transfer KV cache for request %s.", remote_request_id)
                     self._transfer_kv_cache_all_groups(req_meta)
                     logger.debug("Finished transferring KV cache for request %s.", remote_request_id)
+                except MooncakePeerLostError as e:
+                    transfer_failed = True
+                    peer_lost = True
+                    self._mark_failed_recv_request(request_id, req_meta["local_block_ids"])
+                    self._invalidate_remote_metadata(
+                        req_meta["remote_engine_id"],
+                        remote_host=remote_host,
+                        remote_handshake_port=remote_handshake_port,
+                    )
+                    self._discard_remote_sockets(remote_host, remote_handshake_port)
+                    logger.exception("Failed to transfer KV cache for request %s: %s", remote_request_id, e)
                 except Exception as e:
                     transfer_failed = True
                     self._mark_failed_recv_request(request_id, req_meta["local_block_ids"])
@@ -786,11 +810,12 @@ class KVCacheRecvingThread(threading.Thread):
                 with self.proc_not_transfer_request_lock:
                     self.proc_not_transfer_request.pop(remote_request_id, None)
             self.request_queue.task_done()
-            self._send_done_signal_to_free_remote_port(remote_request_id, remote_host, remote_port_send_num)
-            # Always send the done signal to the remote host to ensure proper
-            # resource cleanup. Failing to do so may cause a memory leak on the
-            # remote host.
-            self._send_done_recv_signal(remote_request_id, remote_host, remote_handshake_port, remote_port_send_num)
+            if not peer_lost:
+                self._send_done_signal_to_free_remote_port(remote_request_id, remote_host, remote_port_send_num)
+                # Always send the done signal to the remote host to ensure proper
+                # resource cleanup. Failing to do so may cause a memory leak on the
+                # remote host.
+                self._send_done_recv_signal(remote_request_id, remote_host, remote_handshake_port, remote_port_send_num)
 
     def _send_done_signal_to_free_remote_port(
         self, request_id: str, remote_host: str, remote_port_send_num: dict[int, RemotePortInfo]
@@ -1486,13 +1511,96 @@ class KVCacheRecvingThread(threading.Thread):
         )
         torch_npu.npu_scatter_pa_kv_cache(k_buffer, v_buffer, k_cache_layer, v_cache_layer, slot_mapping)
 
+    @staticmethod
+    def _close_socket(sock: Any) -> None:
+        if sock is None:
+            return
+        if isinstance(sock, unittest.mock.NonCallableMock):
+            sock.close()
+        else:
+            close_zmq_socket(sock)
+
+    def _discard_remote_sockets(self, remote_host: str, remote_handshake_port: int) -> None:
+        """Close and drop pooled REQ sockets for a lost remote peer."""
+        remote_path = make_zmq_path("tcp", remote_host, remote_handshake_port)
+        with self.remote_sockets_lock:
+            sockets = self.remote_sockets.pop(remote_path, None)
+        if not sockets:
+            return
+        for sock in sockets:
+            self._close_socket(sock)
+
+    def _get_remote_endpoint_engine_ids(self) -> defaultdict[tuple[str, int], set[str]]:
+        endpoint_map = getattr(self, "_remote_endpoint_engine_ids", None)
+        if endpoint_map is None:
+            endpoint_map = defaultdict(set)
+            self._remote_endpoint_engine_ids = endpoint_map
+        return endpoint_map
+
+    def _invalidate_remote_metadata(
+        self,
+        remote_engine_id: str | None = None,
+        *,
+        remote_host: str | None = None,
+        remote_handshake_port: int | None = None,
+    ) -> None:
+        """Evict cached remote metadata for a lost or restarted producer."""
+        metadata_maps: tuple[dict[str, dict[int, Any]], ...] = (
+            self.kv_caches_base_addr,
+            self.remote_te_port,
+            self.remote_block_size_scale,
+            self.remote_block_stride_per_addr,
+            self.remote_kv_group2layeridx,
+        )
+        with self.remote_metadata_lock:
+            engine_ids: set[str] = set()
+            if remote_engine_id is not None and remote_engine_id != self.local_engine_id:
+                engine_ids.add(remote_engine_id)
+            endpoint_map = self._get_remote_endpoint_engine_ids()
+            if remote_host is not None and remote_handshake_port is not None:
+                for eid in endpoint_map.pop((remote_host, remote_handshake_port), ()):
+                    if eid != self.local_engine_id:
+                        engine_ids.add(eid)
+            if not engine_ids and remote_engine_id is None and remote_handshake_port is not None:
+                other_host_eids: set[str] = (
+                    {
+                        eid
+                        for (host, port), eids in endpoint_map.items()
+                        if port == remote_handshake_port and host != remote_host
+                        for eid in eids
+                    }
+                    if remote_host is not None
+                    else set()
+                )
+                for cache_map in metadata_maps:
+                    for engine_id, ports in list(cache_map.items()):
+                        if (
+                            engine_id != self.local_engine_id
+                            and engine_id not in other_host_eids
+                            and remote_handshake_port in ports
+                        ):
+                            engine_ids.add(engine_id)
+            for engine_id in engine_ids:
+                for cache_map in metadata_maps:
+                    cache_map.pop(engine_id, None)
+                for endpoint, eids in list(endpoint_map.items()):
+                    eids.discard(engine_id)
+                    if not eids:
+                        endpoint_map.pop(endpoint, None)
+
     def _get_remote_metadata(self, remote_host: str, remote_handshake_port: int) -> None:
         """Get the metadata from the remote host."""
         sock: zmq.Socket | None = None  # type: ignore
+        remote_addr = f"{remote_host}:{remote_handshake_port}"
         try:
             sock = self._get_remote_socket(remote_host, remote_handshake_port)
-            ensure_zmq_send(sock, self.encoder.encode((GET_META_MSG, "")), f"{remote_host}:{remote_handshake_port}")
-            metadata_bytes = ensure_zmq_recv(sock, f"{remote_host}:{remote_handshake_port}")
+            with lost_peer_monitor(sock) as monitor:
+                ensure_zmq_send(sock, self.encoder.encode((GET_META_MSG, "")), remote_addr)
+                metadata_bytes = (
+                    ensure_zmq_recv(sock, remote_addr)
+                    if monitor is None
+                    else ensure_zmq_recv(sock, remote_addr, monitor=monitor)
+                )
             agent_meta = self.decoder.decode(metadata_bytes)
             engine_id = agent_meta.engine_id
             assert engine_id != self.local_engine_id, (
@@ -1507,14 +1615,25 @@ class KVCacheRecvingThread(threading.Thread):
                     self.kv_group2layeridx,
                 )
             with self.remote_metadata_lock:
+                self._get_remote_endpoint_engine_ids()[(remote_host, remote_handshake_port)].add(engine_id)
                 self.remote_kv_group2layeridx[engine_id][remote_handshake_port] = agent_meta.kv_group2layeridx
                 self.kv_caches_base_addr[engine_id][remote_handshake_port] = agent_meta.kv_caches_base_addr
                 self.remote_te_port[engine_id][remote_handshake_port] = agent_meta.te_rpc_port
                 self.remote_block_size_scale[engine_id][remote_handshake_port] = agent_meta.block_size_scale
                 self.remote_block_stride_per_addr[engine_id][remote_handshake_port] = agent_meta.block_strides
+        except MooncakePeerLostError:
+            if sock is not None:
+                self._close_socket(sock)
+                sock = None
+            self._discard_remote_sockets(remote_host, remote_handshake_port)
+            self._invalidate_remote_metadata(
+                remote_host=remote_host,
+                remote_handshake_port=remote_handshake_port,
+            )
+            raise
         except Exception:
-            if isinstance(sock, zmq.Socket):  # type: ignore
-                sock.close()
+            if sock is not None:
+                self._close_socket(sock)
                 sock = None
             raise
         finally:
@@ -1533,11 +1652,17 @@ class KVCacheRecvingThread(threading.Thread):
             "Sending done recving signal for request %s to %s:%d", request_id, remote_host, remote_handshake_port
         )
         sock: zmq.Socket | None = None  # type: ignore
+        remote_addr = f"{remote_host}:{remote_handshake_port}"
         try:
             sock = self._get_remote_socket(remote_host, remote_handshake_port)
             data_bytes = self.encoder.encode((DONE_RECVING_MSG, request_id, remote_port_send_num))
-            ensure_zmq_send(sock, data_bytes, f"{remote_host}:{remote_handshake_port}")
-            resp = ensure_zmq_recv(sock, f"{remote_host}:{remote_handshake_port}")
+            with lost_peer_monitor(sock) as monitor:
+                ensure_zmq_send(sock, data_bytes, remote_addr)
+                resp = (
+                    ensure_zmq_recv(sock, remote_addr)
+                    if monitor is None
+                    else ensure_zmq_recv(sock, remote_addr, monitor=monitor)
+                )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug("Received response for request %s: %s", request_id, resp.decode("utf-8"))
             if resp != b"ACK":
@@ -1548,9 +1673,19 @@ class KVCacheRecvingThread(threading.Thread):
                     remote_handshake_port,
                 )
                 raise RuntimeError(f"Failed to receive ACK, resp: {resp.decode('utf-8')}")
+        except MooncakePeerLostError as e:
+            if sock is not None:
+                self._close_socket(sock)
+                sock = None
+            self._discard_remote_sockets(remote_host, remote_handshake_port)
+            self._invalidate_remote_metadata(
+                remote_host=remote_host,
+                remote_handshake_port=remote_handshake_port,
+            )
+            logger.warning("Peer lost while sending done recving signal. error=%s. ", e)
         except RuntimeError as e:
-            if isinstance(sock, zmq.Socket):  # type: ignore
-                sock.close()
+            if sock is not None:
+                self._close_socket(sock)
                 sock = None
                 logger.warning("Unexpected error occurred in socket. error=%s. ", e)
         finally:
@@ -1565,12 +1700,18 @@ class KVCacheRecvingThread(threading.Thread):
             if self.remote_sockets[remote_path]:
                 return self.remote_sockets[remote_path].popleft()
 
-            ctx = zmq.Context()  # type: ignore
-            sock = make_zmq_socket(
-                ctx=ctx,
-                path=remote_path,
-                socket_type=zmq.REQ,  # type: ignore
-                bind=False,
+            ctx = getattr(self, "_zmq_context", None)
+            if ctx is None:
+                ctx = zmq.Context()  # type: ignore
+                self._zmq_context = ctx
+            sock = make_mooncake_client_socket(
+                ctx,
+                remote_path,
+                zmq.REQ,  # type: ignore
+                linger=0,
+                heartbeat_ivl_ms=PULL_HEARTBEAT_IVL_MS,
+                heartbeat_timeout_ms=PULL_HEARTBEAT_TIMEOUT_MS,
+                make_socket_fn=make_zmq_socket,
             )
             sock.setsockopt(
                 zmq.SNDTIMEO,  # type: ignore
@@ -4348,7 +4489,18 @@ def zmq_ctx(socket_type: Any, addr: str) -> Iterator[zmq.Socket]:  # type: ignor
     ctx: zmq.Context | None = None  # type: ignore
     try:
         ctx = zmq.Context()  # type: ignore
-        yield make_zmq_socket(ctx=ctx, path=addr, socket_type=socket_type, bind=socket_type == zmq.ROUTER)  # type: ignore
+        if socket_type == zmq.ROUTER:  # type: ignore
+            yield make_zmq_socket(ctx=ctx, path=addr, socket_type=socket_type, bind=True, linger=0)  # type: ignore
+        else:
+            yield make_mooncake_client_socket(
+                ctx,
+                addr,
+                socket_type,
+                linger=0,
+                heartbeat_ivl_ms=PULL_HEARTBEAT_IVL_MS,
+                heartbeat_timeout_ms=PULL_HEARTBEAT_TIMEOUT_MS,
+                make_socket_fn=make_zmq_socket,
+            )
     finally:
         if ctx is not None:
             ctx.destroy(linger=0)
@@ -4436,19 +4588,18 @@ def ensure_zmq_recv(
     socket: zmq.Socket,  # type: ignore
     path: str,
     max_retries: int = 3,
+    *,
+    monitor: Any | None = None,
+    timeout_ms: int | None = None,
 ) -> bytes:
-    retries_left = max_retries
-    while True:
-        try:
-            return socket.recv()
-        except zmq.ZMQError as e:  # type: ignore
-            retries_left -= 1
-            if retries_left > 0:
-                logger.warning("Receive failed. error=%s, attempts_left=%d. ", e, retries_left)
-                time.sleep(0.1)
-            else:
-                logger.error("Receive failed after all retries. source=%s, error=%s. ", path, e)
-                raise RuntimeError(f"Failed to receive data after {max_retries} retries: {e}")
+    """Receive ZMQ data with retries on transient errors and fast-fail on peer loss."""
+    return _shared_ensure_zmq_recv(
+        socket,
+        path,
+        max_retries=max_retries,
+        monitor=monitor,
+        timeout_ms=timeout_ms,
+    )
 
 
 def transfer_groups_need_independent_block_ids(
