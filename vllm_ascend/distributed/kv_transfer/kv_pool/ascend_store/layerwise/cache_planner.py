@@ -13,7 +13,7 @@ from vllm.utils.math_utils import round_up
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec, KVCacheTensor, MambaSpec
 
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import get_backend_class
-from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import is_prefix_cacheable
+from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import is_group_prefix_cacheable
 
 from .layerwise_cache_layout import (
     LayerwiseCacheConfig,
@@ -138,7 +138,7 @@ class LayerwiseCachePlanner:
             reusable_entry_names = {
                 entry_name
                 for group in self.config.kv_cache_groups
-                if is_prefix_cacheable(group.kv_cache_spec)
+                if is_group_prefix_cacheable(group)
                 for entry_name in group.layer_names
                 if entry_name not in self.draft_names
                 and self.layer_id_by_entry[entry_name] not in independent

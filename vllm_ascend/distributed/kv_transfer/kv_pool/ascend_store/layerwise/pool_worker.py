@@ -328,14 +328,15 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
                 )
                 self.layerwise_offload = self._layerwise_reuse_layout.has_layer_reuse
                 self.num_prefetch_layers = self._layerwise_reuse_layout.num_prefetch_layers
-                for group_id, group in enumerate(self.kv_cache_config.kv_cache_groups):
-                    layers = {
-                        self._global_to_local_layer[self._layerwise_reuse_layout.cache_layer_indices[name]]
-                        for name in group.layer_names
-                        if name in self._layerwise_reuse_layout.reused_cache_names
-                    }
-                    if layers:
-                        self._reused_layers_by_group[group_id] = layers
+                if self.kv_cache_config is not None:
+                    for group_id, group in enumerate(self.kv_cache_config.kv_cache_groups):
+                        layers = {
+                            self._global_to_local_layer[self._layerwise_reuse_layout.cache_layer_indices[name]]
+                            for name in group.layer_names
+                            if name in self._layerwise_reuse_layout.reused_cache_names
+                        }
+                        if layers:
+                            self._reused_layers_by_group[group_id] = layers
         else:
             self.num_prefetch_layers = 2
             if self.use_layerwise:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import os
 import sys
 import unittest
 from dataclasses import fields, is_dataclass
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -59,6 +61,7 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.coordinator import
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.dspark_prefix_layout import draft_only_group_ids
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.in_flight_save_blocks import InFlightSaveBlockTracker
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.kv_transfer import KVCacheStoreSendingThread
+from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.cache_planner import LayerwiseCachePlanner
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.layerwise_cache_layout import (
     get_layerwise_kv_cache_specs,
 )
@@ -76,6 +79,7 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     hashed_prefix_length,
     infer_cacheable_group_ids,
     infer_group_block_sizes,
+    infer_group_cache_families,
     resolve_legacy_eagle_drop,
     resolve_num_hash_lookahead_tokens,
     trim_stale_lookahead_hashes,
@@ -1495,6 +1499,357 @@ class TestLookaheadForkBoundaries(unittest.TestCase):
         self.assertEqual(bounded_hit, 256)
 
 
+class TestPost66234KVCacheGroupLookaheadLifecycle(unittest.TestCase):
+    @staticmethod
+    def _build_post66234_group(
+        kv_cache_specs: dict[str, Any],
+        manager_cls: Any,
+        params: Any,
+        block_size: int = 128,
+        *,
+        prefix_cacheable: bool = True,
+    ) -> Any:
+        if _KVCacheGroup is not None and _ManagerConfig is not None and hasattr(manager_cls, "Params"):
+            try:
+                return _KVCacheGroup(
+                    kv_cache_specs=kv_cache_specs,
+                    manager_config=_ManagerConfig(manager_cls, params),
+                    block_size=block_size,
+                )
+            except (AssertionError, TypeError):
+                pass
+        return SimpleNamespace(
+            kv_cache_specs=kv_cache_specs,
+            layer_names=list(kv_cache_specs),
+            manager_config=SimpleNamespace(manager_cls=manager_cls, params=params),
+            block_size=block_size,
+            dcp_sharded=False,
+            prefix_cacheable=prefix_cacheable,
+        )
+
+    def test_post66234_cold_write_defers_pins_saves_and_releases_trailing_block(self):
+        fa_spec = _full_spec(128)
+        fa_mgr = _FullAttentionManager if _FullAttentionManager is not None else _RefFullManager
+        fa_params = _FullAttentionManager.Params() if _FullAttentionManager is not None else SimpleNamespace()
+        group = self._build_post66234_group({"model.layers.0.self_attn": fa_spec}, fa_mgr, fa_params, 128)
+        self.assertFalse(hasattr(group, "kv_cache_spec"))
+        self.assertFalse(hasattr(group, "is_eagle_group"))
+        self.assertTrue(group.prefix_cacheable)
+
+        sched = _make_base_scheduler(num_hash_lookahead_tokens=1, save_decode_cache=False)
+        sched.kv_cache_config = SimpleNamespace(
+            kv_cache_groups=[group],
+            prefix_cache_retention_interval=None,
+            num_blocks=32,
+        )
+        sched.client = _FakeLookupClient(0)
+
+        req_id = "post66234-cold"
+        prompt = list(range(128))
+        req = SimpleNamespace(
+            request_id=req_id,
+            prompt_token_ids=prompt,
+            all_token_ids=list(prompt),
+            block_hashes=[],
+            num_computed_tokens=0,
+            num_tokens=128,
+            num_in_flight_tokens=0,
+            num_stale_output_tokens=0,
+        )
+        sched._unfinished_requests[req_id] = (req, [[4]])
+
+        step1 = SimpleNamespace(
+            finished_req_ids=set(),
+            preempted_req_ids=set(),
+            scheduled_new_reqs=[
+                SimpleNamespace(
+                    req_id=req_id,
+                    num_computed_tokens=0,
+                    prefill_token_ids=prompt,
+                    prompt_token_ids=prompt,
+                    block_ids=([4],),
+                )
+            ],
+            num_scheduled_tokens={req_id: 128},
+            scheduled_cached_reqs=SimpleNamespace(req_ids=[], new_block_ids=[], num_computed_tokens=[]),
+        )
+        meta1 = sched.build_connector_meta(step1)
+        self.assertEqual(meta1.requests, [])
+        self.assertTrue(sched._has_unsaved_prefill_lookahead(req_id))
+
+        # Request generates lookahead token 128 and finishes: pin block 4 until worker finishes save.
+        req.num_computed_tokens = 128
+        req.all_token_ids.append(555)
+        req.num_tokens = 129
+        req.block_hashes = _hash_tokens_with_lookahead(req.all_token_ids, 128, 1)
+        delay_free, _ = sched.request_finished_all_groups(req, ([4],))
+        self.assertFalse(delay_free)
+        self.assertTrue(sched.has_pending_push_work())
+        self.assertEqual(sched._block_pool.blocks[4].ref_cnt, 1)
+
+        step2 = SimpleNamespace(
+            finished_req_ids={req_id},
+            preempted_req_ids=set(),
+            scheduled_new_reqs=[],
+            num_scheduled_tokens={},
+            scheduled_cached_reqs=SimpleNamespace(req_ids=[], new_block_ids=[], num_computed_tokens=[]),
+        )
+        meta2 = sched.build_connector_meta(step2)
+        self.assertEqual(len(meta2.requests), 1)
+        req_meta = meta2.requests[0]
+        self.assertEqual(req_meta.save_end_token, 128)
+        self.assertEqual(req_meta.token_ids, req.all_token_ids)
+        self.assertIsNotNone(req_meta.event_id)
+
+        sched.update_connector_output(
+            KVConnectorOutput(
+                kv_connector_worker_meta=AscendStoreKVConnectorWorkerMetadata(completed_events={req_meta.event_id: 1})
+            )
+        )
+        self.assertFalse(sched.has_pending_push_work())
+        self.assertEqual(sched._block_pool.freed_order, [4])
+
+    def test_post66234_warm_hit_after_hbm_clear_and_fork_boundaries(self):
+        fa_group = self._build_post66234_group(
+            {"layers.0.attn": _full_spec(128)}, _RefFullManager, SimpleNamespace(), 128
+        )
+        mamba_params = SimpleNamespace(mamba_cache_mode="align", num_speculative_blocks=0)
+        mamba_group = self._build_post66234_group(
+            {"layers.1.mamba": _mamba_spec(128)},
+            _RefMambaManager,
+            mamba_params,
+            128,
+        )
+        self.assertFalse(hasattr(fa_group, "kv_cache_spec"))
+        self.assertFalse(hasattr(mamba_group, "kv_cache_spec"))
+
+        base_prompt = list(range(1539))
+        prefix_hashes = _hash_tokens_with_lookahead(base_prompt, hash_block_size=128, num_hash_lookahead_tokens=1)
+        with patch.object(coord_mod, "_get_group_manager_class", side_effect=_fake_ref_manager):
+            coord = AscendStoreCoordinator(
+                [fa_group, mamba_group],
+                scheduler_block_size=128,
+                hash_block_size=128,
+                group_block_sizes=[128, 128],
+                group_cache_families=["default", "default"],
+                use_eagle=False,
+                retention_interval=None,
+                num_hash_lookahead_tokens=1,
+            )
+
+        db = ChunkedTokenDatabase(
+            metadata=[
+                KeyMetadata(model_name="qwen3", dcp_rank=0, head_or_tp_rank=0, pp_rank=0, kv_cache_group_id=0),
+                KeyMetadata(model_name="qwen3", dcp_rank=0, head_or_tp_rank=0, pp_rank=0, kv_cache_group_id=1),
+            ],
+            block_size=[128, 128],
+            partitions=None,
+            hash_block_size=128,
+        )
+        db.cache_coordinator = coord
+        stored_keys: set[str] = set()
+        for gid in (0, 1):
+            for _, _, key_str, _ in db.process_token_key_strings(
+                len(prefix_hashes) * 128, prefix_hashes, kv_cache_group_id=gid
+            ):
+                stored_keys.add(key_str)
+        stored_lw = {f"{gid}:{bh.hex()}" for gid in (0, 1) for bh in prefix_hashes}
+
+        worker = KVPoolWorker.__new__(KVPoolWorker)
+        worker.num_hash_lookahead_tokens = 1
+        worker.hash_block_size = 128
+        worker.max_model_len = 8192
+        worker.cache_transfer_granularity = 128
+        worker.num_kv_cache_groups = 2
+        worker.cacheable_group_ids = [0, 1]
+        worker.group_uses_align_state = [False, True]
+        worker.sharded_mamba_group_ids = set()
+        worker.use_kvpp = False
+        worker.tp_mismatch = False
+        worker.use_mla = True
+        worker.use_sparse = False
+        worker.tp_size = 1
+        worker.pp_size = 1
+        worker.dcp_size = 1
+        worker.pcp_size = 1
+        worker.num_kv_head = 1
+        worker.token_database = db
+        worker.cache_coordinator = coord
+        worker.m_store = SimpleNamespace(exists=lambda keys: [int(k in stored_keys) for k in keys])
+
+        sched = _make_base_scheduler(num_hash_lookahead_tokens=1, cls=KVPoolScheduler)
+        sched.kv_cache_config = SimpleNamespace(kv_cache_groups=[fa_group, mamba_group])
+        sched.kv_cache_group_ids = [0, 1]
+        sched.kv_cache_group_families = ["default", "default"]
+        sched.original_block_size = [128, 128]
+        sched.grouped_block_size = [128, 128]
+        sched.cacheable_group_ids = [0, 1]
+        sched.cache_coordinator = coord
+        sched.client = _HashAwareFakeLookupClient(worker)
+
+        lw_sched = _make_base_scheduler(num_hash_lookahead_tokens=1, use_layerwise=True, cls=LayerwiseKVPoolScheduler)
+        lw_sched.kv_cache_config = sched.kv_cache_config
+        lw_sched.kv_cache_group_ids = [0, 1]
+        lw_sched.kv_cache_group_families = ["default", "default"]
+        lw_sched.original_block_size = [128, 128]
+        lw_sched.grouped_block_size = [128, 128]
+        lw_sched.cacheable_group_ids = [0, 1]
+        lw_sched.cache_coordinator = coord
+        lw_sched.use_block_key_layerwise = False
+        lw_sched.use_layerwise_transfer = True
+        lw_sched.sharded_mamba_group_ids = set()
+        lw_sched.dspark_prefix_keys = None
+        lw_sched.dspark_draft_only_group_ids = frozenset()
+        lw_sched.layerwise_max_transfer_blocks = 0
+        lw_sched.tp_size = 1
+        lw_sched.put_step = 1
+        lw_sched.block_key_hybrid = False
+        lw_sched.layerwise_keys = SimpleNamespace(make_hit_check_keys=lambda gid, bh, ranks: [f"{gid}:{bh}"])
+        lw_sched.store_scheduler = SimpleNamespace(batch_is_readable=lambda batch: [key in stored_lw for key in batch])
+
+        # Warm lookup (hbm_hit_tokens=0), fork@256 (->128), and fork@257 (->256) under Post-#66234 groups.
+        for fork, expected in ((None, 1536), (256, 128), (257, 256)):
+            toks = list(base_prompt)
+            if fork is not None:
+                toks[fork] += 10000
+            req = SimpleNamespace(
+                request_id=f"post66234-fork-{fork}",
+                prompt_token_ids=toks,
+                num_tokens=len(toks),
+                block_hashes=_hash_tokens_with_lookahead(toks, hash_block_size=128, num_hash_lookahead_tokens=1),
+            )
+            self.assertEqual(sched.get_num_new_matched_tokens(req, 0)[0], expected)
+            self.assertEqual(lw_sched.get_num_new_matched_tokens(req, 0)[0], expected)
+
+    def test_post66234_hybrid_mamba_circular_and_layerwise_planner(self):
+        class _MixedSpec:
+            def __init__(self, *, block_size: int, tokens_per_state: int, page_size_bytes: int) -> None:
+                self.block_size = block_size
+                self.tokens_per_state = tokens_per_state
+                self.page_size_bytes = page_size_bytes
+                self.dtype = torch.float16
+                self.dcp_sharded = False
+
+        class _Post66234MambaMaskMgr:
+            @classmethod
+            def reachable_block_mask(
+                cls,
+                start_block,
+                end_block,
+                alignment_tokens,
+                block_size,
+                manager_config,
+                retention_interval=None,
+                reachable_boundaries=(),
+            ):
+                return [i == 1 for i in range(start_block, end_block)]
+
+        class _NonCacheableCircularMgr:
+            @classmethod
+            def prefix_cacheable(cls, config):
+                return False
+
+        mla_c2 = _MixedSpec(block_size=128, tokens_per_state=2, page_size_bytes=2048)
+        mla_c1 = _MixedSpec(block_size=128, tokens_per_state=1, page_size_bytes=2048)
+        ring_spec = _MixedSpec(block_size=32, tokens_per_state=1, page_size_bytes=1024)
+        mamba_spec = _mamba_spec(128, num_speculative_blocks=1)
+
+        fa_group = self._build_post66234_group(
+            {"model.layers.0.attn": mla_c2, "model.layers.1.attn": mla_c1},
+            _RefFullManager,
+            SimpleNamespace(),
+            128,
+        )
+        mamba_group = self._build_post66234_group(
+            {"model.layers.2.mamba": mamba_spec},
+            _Post66234MambaMaskMgr,
+            SimpleNamespace(mamba_cache_mode="align", num_speculative_blocks=1),
+            128,
+        )
+        circular_group = self._build_post66234_group(
+            {"model.layers.0.ring": ring_spec},
+            _NonCacheableCircularMgr,
+            SimpleNamespace(),
+            32,
+            prefix_cacheable=False,
+        )
+        groups = [fa_group, mamba_group, circular_group]
+        self.assertEqual(infer_cacheable_group_ids(groups), [0, 1])
+        self.assertEqual(infer_group_cache_families(groups, None), ["mixed", "default", "default"])
+
+        coord = AscendStoreCoordinator(
+            groups,
+            scheduler_block_size=128,
+            hash_block_size=128,
+            group_block_sizes=[128, 128, 32],
+            group_cache_families=["mixed", "default", "default"],
+            use_eagle=False,
+            retention_interval=0,
+            num_hash_lookahead_tokens=1,
+        )
+        store_masks = coord.store_mask(512, num_prompt_tokens=258, num_block_hashes=2)
+        self.assertEqual(store_masks[0], [True, True, False, False])
+        self.assertEqual(store_masks[1], [False, True, False, False])
+        self.assertEqual(store_masks[2], [])
+
+        # LayerwiseCachePlanner must accept Post-#66234 KVCacheGroup without .kv_cache_spec.
+        kv_cfg = SimpleNamespace(
+            num_blocks=3,
+            kv_cache_groups=groups,
+            kv_cache_tensors=[
+                SimpleNamespace(
+                    size=3 * 2048,
+                    layers=["model.layers.0.attn"],
+                    layer_stride=0,
+                    block_stride=2048,
+                    offset=0,
+                    host_resident=False,
+                ),
+                SimpleNamespace(
+                    size=3 * 2048,
+                    layers=["model.layers.1.attn"],
+                    layer_stride=0,
+                    block_stride=2048,
+                    offset=0,
+                    host_resident=False,
+                ),
+                SimpleNamespace(
+                    size=3 * 1024,
+                    layers=["model.layers.0.ring"],
+                    layer_stride=0,
+                    block_stride=1024,
+                    offset=0,
+                    host_resident=False,
+                ),
+            ],
+        )
+        runtime = SimpleNamespace(
+            model_config=SimpleNamespace(
+                get_total_num_hidden_layers=lambda: 3,
+                hf_text_config=SimpleNamespace(model_type="glm5_next_text"),
+            ),
+        )
+        planner = LayerwiseCachePlanner(
+            kv_cfg,  # type: ignore[arg-type]
+            runtime,  # type: ignore[arg-type]
+            {"layerwise_num_shared_buffers": 1, "layerwise_prefetch_layers": 1, "layerwise_independent_layers": []},
+            spec_reuse_rules={_MixedSpec: True},  # type: ignore[dict-item]
+        )
+        with (
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.layerwise_cache_layout.get_dtype_size",
+                return_value=2,
+            ),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.cache_planner.round_up",
+                side_effect=lambda val, align: (val + align - 1) // align * align,
+            ),
+        ):
+            layout = planner.build()
+        self.assertEqual(layout.reused_cache_names, frozenset({"model.layers.0.attn", "model.layers.1.attn"}))
+        self.assertNotIn("model.layers.0.ring", layout.reused_cache_names)
+
+
 class TestLegacyKVCacheCompatHook(unittest.TestCase):
     @staticmethod
     def _get_ut_conftest() -> Any:
@@ -1669,3 +2024,25 @@ class TestLegacyKVCacheCompatHook(unittest.TestCase):
                 self.assertEqual(rep.longrepr, original_longrepr)
                 self.assertEqual(rep.result, ["stale-item"])
                 self.assertIn("call", rep.__dict__)
+
+    def test_conftest_has_no_forbidden_re_and_respects_identifier_boundaries(self):
+        ut_conftest = self._get_ut_conftest()
+        conftest_path = Path(ut_conftest.__file__)
+        tree = ast.parse(conftest_path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                self.assertFalse(any(alias.name == "re" for alias in node.names))
+            elif isinstance(node, ast.ImportFrom):
+                self.assertNotEqual(node.module, "re")
+
+        self.assertTrue(ut_conftest._contains_legacy_kv_cache_symbol("cannot import name 'CircularBufferSpec'"))
+        self.assertFalse(ut_conftest._contains_legacy_kv_cache_symbol("MyCircularBufferSpecHelper FullAttentionSpecV2"))
+        self.assertEqual(
+            list(
+                ut_conftest._iter_import_error_messages(
+                    "MyImportError: cannot import name 'FullAttentionSpec'\n"
+                    "E   ImportError: cannot import name 'FullAttentionSpec' from 'vllm'\n"
+                )
+            ),
+            ["cannot import name 'FullAttentionSpec' from 'vllm'"],
+        )

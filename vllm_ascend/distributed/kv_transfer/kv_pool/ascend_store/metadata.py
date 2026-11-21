@@ -334,11 +334,21 @@ def is_group_prefix_cacheable(group: Any) -> bool:
     return bool(specs) and all(is_prefix_cacheable(spec) for spec in specs)
 
 
+def _get_spec_compress_ratio(spec: object) -> int | None:
+    ratio = getattr(spec, "compress_ratio", None)
+    if ratio is not None:
+        return ratio
+    tokens_per_state = getattr(spec, "tokens_per_state", None)
+    if isinstance(tokens_per_state, int) and not isinstance(tokens_per_state, bool) and tokens_per_state > 1:
+        return tokens_per_state
+    return None
+
+
 def _get_group_spec_ratios(group: object) -> set[int | None]:
     specs = get_group_layer_specs(group)
     if not specs:
         return set()
-    return {getattr(spec, "compress_ratio", None) for spec in specs}
+    return {_get_spec_compress_ratio(spec) for spec in specs}
 
 
 def infer_group_cache_families(

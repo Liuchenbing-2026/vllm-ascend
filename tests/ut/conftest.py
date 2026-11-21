@@ -28,7 +28,6 @@ run on CPU via mocks.
 
 import contextlib
 import importlib.util
-import re
 import subprocess
 import sys
 import types
@@ -308,10 +307,42 @@ _LEGACY_KV_CACHE_SYMBOLS = (
     "vllm.v1.kv_cache_spec_registry",
     "kv_cache_spec_registry",
 )
-_LEGACY_KV_CACHE_SYMBOL_RE = re.compile(
-    r"\b(?:" + "|".join(re.escape(sym) for sym in _LEGACY_KV_CACHE_SYMBOLS) + r")\b"
-)
-_IMPORT_ERROR_LINE_RE = re.compile(r"(?:^|\b)(?:ImportError|ModuleNotFoundError):\s*([^\n]+)")
+
+
+def _is_ident_char(ch: str) -> bool:
+    return ch.isalnum() or ch == "_"
+
+
+def _contains_legacy_kv_cache_symbol(text: str) -> bool:
+    for sym in _LEGACY_KV_CACHE_SYMBOLS:
+        start = 0
+        sym_len = len(sym)
+        while True:
+            idx = text.find(sym, start)
+            if idx == -1:
+                break
+            before_ok = idx == 0 or not _is_ident_char(text[idx - 1])
+            end = idx + sym_len
+            after_ok = end == len(text) or not _is_ident_char(text[end])
+            if before_ok and after_ok:
+                return True
+            start = idx + 1
+    return False
+
+
+def _iter_import_error_messages(text: str):
+    for line in text.splitlines():
+        for prefix in ("ImportError:", "ModuleNotFoundError:"):
+            start = 0
+            prefix_len = len(prefix)
+            while True:
+                idx = line.find(prefix, start)
+                if idx == -1:
+                    break
+                if idx == 0 or not _is_ident_char(line[idx - 1]):
+                    yield line[idx + prefix_len :].strip()
+                    break
+                start = idx + 1
 
 
 def _iter_exception_chain(exc):
@@ -346,7 +377,7 @@ def _match_legacy_kv_cache_import_error(exc, longrepr=None):
     for err in import_errors:
         err_name = getattr(err, "name", None) or ""
         err_text = f"{err} {err_name}"
-        if _LEGACY_KV_CACHE_SYMBOL_RE.search(err_text):
+        if _contains_legacy_kv_cache_symbol(err_text):
             return str(err)
     if import_errors:
         return None
@@ -356,9 +387,8 @@ def _match_legacy_kv_cache_import_error(exc, longrepr=None):
     if longrepr is not None:
         texts.append(str(longrepr))
     for text in texts:
-        for match in _IMPORT_ERROR_LINE_RE.finditer(text):
-            line = match.group(1).strip()
-            if _LEGACY_KV_CACHE_SYMBOL_RE.search(line):
+        for line in _iter_import_error_messages(text):
+            if _contains_legacy_kv_cache_symbol(line):
                 return line
     return None
 
