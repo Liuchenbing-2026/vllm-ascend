@@ -4,6 +4,7 @@ import hashlib
 import unittest
 from dataclasses import fields, is_dataclass
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 # isort: off
@@ -410,7 +411,7 @@ class TestCoordinatorLookaheadAndBaselines(unittest.TestCase):
         self.assertEqual(db.store_mask(256, 256, num_block_hashes=2), ([True, True],))
 
     def test_mamba_sparse_retention_receives_lookahead_replay_boundaries(self):
-        calls: list[dict[str, object]] = []
+        calls: list[dict[str, Any]] = []
 
         class _Post66234FullManager:
             @classmethod
@@ -538,7 +539,7 @@ class TestReqMetaAndInFlightSaveTracker(unittest.TestCase):
             num_hash_lookahead_tokens=3,
             all_token_ids=all_tokens,
         )
-        self.assertIsNotNone(meta)
+        assert meta is not None
         self.assertEqual(meta.save_end_token, 128)
         self.assertEqual(meta.token_len_chunk, 128)
         self.assertEqual(meta.num_hash_lookahead_tokens, 3)
@@ -570,7 +571,7 @@ class TestReqMetaAndInFlightSaveTracker(unittest.TestCase):
             block_hashes=_hashes(1),
             num_hash_lookahead_tokens=0,
         )
-        self.assertIsNotNone(legacy_meta)
+        assert legacy_meta is not None
         self.assertEqual(legacy_meta.save_end_token, 20)
 
     def test_in_flight_tracker_retain_finished_excludes_mamba_scratch_and_null_blocks(self):
@@ -591,7 +592,7 @@ class TestReqMetaAndInFlightSaveTracker(unittest.TestCase):
         )
         self.assertTrue(retained)
         event_id = req_meta.event_id
-        self.assertIsNotNone(event_id)
+        assert event_id is not None
         # Pinned deduplicated blocks: [2, 3, 4, 5] (no 0, no scratch 6, no private 7/8).
         self.assertEqual(tracker.sending_blocks[event_id], [2, 3, 4, 5])
         for bid in (2, 3, 4, 5):
@@ -721,9 +722,12 @@ class TestSchedulerAndWorkerLookaheadLifecycle(unittest.TestCase):
         lw_sched.tp_size = 1
         lw_sched.put_step = 1
         probed_hashes: list[str] = []
-        lw_sched.layerwise_keys = SimpleNamespace(
-            make_hit_check_keys=lambda gid, bh, ranks: (probed_hashes.append(bh) or [f"{gid}:{bh}"])
-        )
+
+        def _make_hit_check_keys(gid, bh, ranks):
+            probed_hashes.append(bh)
+            return [f"{gid}:{bh}"]
+
+        lw_sched.layerwise_keys = SimpleNamespace(make_hit_check_keys=_make_hit_check_keys)
         lw_sched.store_scheduler = SimpleNamespace(batch_is_readable=lambda batch: [True] * len(batch))
         lw_hit, _ = lw_sched.get_num_new_matched_tokens(req_short, 0)
         self.assertEqual(lw_hit, 128)
@@ -872,11 +876,11 @@ class TestSchedulerAndWorkerLookaheadLifecycle(unittest.TestCase):
             saved_layers.append(worker.current_layer)
             worker.current_layer += 1
 
-        worker.save_kv_layer = _fake_save_layer
         worker._step_save_event_ids = [req_meta.event_id]
         worker._completed_save_events = {}
 
-        worker.flush_pending_layerwise_saves(meta)
+        with patch.object(worker, "save_kv_layer", _fake_save_layer):
+            worker.flush_pending_layerwise_saves(meta)
         self.assertEqual(saved_layers, [0, 1])
         worker_meta = worker.build_connector_worker_meta()
         self.assertEqual(worker_meta, AscendStoreKVConnectorWorkerMetadata({req_meta.event_id: 1}))
@@ -981,14 +985,16 @@ class TestSchedulerAndWorkerLookaheadLifecycle(unittest.TestCase):
         worker.max_model_len = 2048
         worker.cache_transfer_granularity = 128
         worker.group_uses_align_state = [False]
-        worker._lookup_with_coordinator = MagicMock(return_value=None)
-        worker._build_lookup_keys = MagicMock(return_value=(["k0"], [0], [128]))
-        worker._expand_lookup_keys_by_rank = MagicMock(return_value=["k0"])
         worker.m_store = SimpleNamespace(exists=MagicMock(return_value=[1]))
 
-        hit = worker.lookup_scheduler(token_len=512, block_hashes=_hashes(1), kv_cache_group_ids=[0])
+        with (
+            patch.object(worker, "_lookup_with_coordinator", return_value=None),
+            patch.object(worker, "_build_lookup_keys", return_value=(["k0"], [0], [128])) as build_lookup_keys,
+            patch.object(worker, "_expand_lookup_keys_by_rank", return_value=["k0"]),
+        ):
+            hit = worker.lookup_scheduler(token_len=512, block_hashes=_hashes(1), kv_cache_group_ids=[0])
         self.assertEqual(hit, 128)
-        worker._build_lookup_keys.assert_called_once_with(128, _hashes(1), 0)
+        build_lookup_keys.assert_called_once_with(128, _hashes(1), 0)
 
     def test_tp_mismatch_events_fallback_when_lookahead_zero_and_emit_when_positive(self):
         worker = KVPoolWorker.__new__(KVPoolWorker)
@@ -1000,8 +1006,6 @@ class TestSchedulerAndWorkerLookaheadLifecycle(unittest.TestCase):
         worker.num_sub_keys = 1
         worker.enable_kv_events = True
         worker.token_database = _DummyTokenDatabase(block_size=4)
-        worker._build_strided_addrs = MagicMock(return_value=([4096], [8]))
-        worker._make_sub_key_str = lambda base, rank: f"{base}@tp:{rank}"
         worker.m_store = SimpleNamespace(put=MagicMock(side_effect=lambda keys, addrs, sizes: [True] * len(keys)))
 
         send_thread = MagicMock(spec=KVCacheStoreSendingThread)
@@ -1021,17 +1025,6 @@ class TestSchedulerAndWorkerLookaheadLifecycle(unittest.TestCase):
             num_hash_lookahead_tokens=0,
             store_job_id=1,
         )
-        self.assertTrue(worker._store_kv_tp_mismatch(req_l0))
-        send_thread.get_event_token_ids.assert_called_once_with(req_l0, 0, 4)
-        events_l0 = send_thread.update_kv_event.call_args.args[0]
-        self.assertEqual(len(events_l0), 1)
-        self.assertIsNone(getattr(events_l0[0], "lookahead_token_ids", None))
-
-        send_thread.update_kv_event.reset_mock()
-        send_thread.get_event_token_and_lookahead_ids.side_effect = lambda req, start, end: (
-            req.token_ids[start:end],
-            [[5, 6]],
-        )
         req_l2 = ReqMeta(
             req_id="r-tp-l2",
             token_len_chunk=4,
@@ -1042,11 +1035,26 @@ class TestSchedulerAndWorkerLookaheadLifecycle(unittest.TestCase):
             num_hash_lookahead_tokens=2,
             store_job_id=2,
         )
-        self.assertTrue(worker._store_kv_tp_mismatch(req_l2))
-        send_thread.get_event_token_and_lookahead_ids.assert_called_once_with(req_l2, 0, 4)
-        events_l2 = send_thread.update_kv_event.call_args.args[0]
-        self.assertEqual(len(events_l2), 1)
-        self.assertEqual(events_l2[0].lookahead_token_ids, [[5, 6]])
+        with (
+            patch.object(worker, "_build_strided_addrs", return_value=([4096], [8])),
+            patch.object(worker, "_make_sub_key_str", side_effect=lambda base, rank: f"{base}@tp:{rank}"),
+        ):
+            self.assertTrue(worker._store_kv_tp_mismatch(req_l0))
+            send_thread.get_event_token_ids.assert_called_once_with(req_l0, 0, 4)
+            events_l0 = send_thread.update_kv_event.call_args.args[0]
+            self.assertEqual(len(events_l0), 1)
+            self.assertIsNone(getattr(events_l0[0], "lookahead_token_ids", None))
+
+            send_thread.update_kv_event.reset_mock()
+            send_thread.get_event_token_and_lookahead_ids.side_effect = lambda req, start, end: (
+                req.token_ids[start:end],
+                [[5, 6]],
+            )
+            self.assertTrue(worker._store_kv_tp_mismatch(req_l2))
+            send_thread.get_event_token_and_lookahead_ids.assert_called_once_with(req_l2, 0, 4)
+            events_l2 = send_thread.update_kv_event.call_args.args[0]
+            self.assertEqual(len(events_l2), 1)
+            self.assertEqual(events_l2[0].lookahead_token_ids, [[5, 6]])
 
     def test_running_cached_decode_transition_with_new_blocks_flushes_only_prefill(self):
         sched = _make_base_scheduler(num_hash_lookahead_tokens=3, save_decode_cache=False)
@@ -1179,7 +1187,7 @@ class _RefFullManager:
         pcp_world_size=1,
     ):
         bs = block_size or kv_cache_spec.block_size
-        computed = tuple([] for _ in kv_cache_group_ids)
+        computed: tuple[list[Any], ...] = tuple([] for _ in kv_cache_group_ids)
         for bh in list(block_hashes)[: max_length // bs]:
             cached = block_pool.get_cached_block(bh, kv_cache_group_ids)
             if not cached:
@@ -1215,7 +1223,7 @@ class _RefMambaManager:
         pcp_world_size=1,
     ):
         bs = block_size or kv_cache_spec.block_size
-        computed = tuple([] for _ in kv_cache_group_ids)
+        computed: tuple[list[Any], ...] = tuple([] for _ in kv_cache_group_ids)
         max_blocks = min(max_length // bs, len(block_hashes))
         for idx in range(max_blocks - 1, -1, -1):
             cached = block_pool.get_cached_block(block_hashes[idx], kv_cache_group_ids)
@@ -1437,16 +1445,16 @@ class TestLookaheadForkBoundaries(unittest.TestCase):
                         self.assertLessEqual(hit, max(0, fork - lookahead) // 128 * 128)
 
                 # Repeated and interleaved lookups remain isolated and exact.
-                repeat_cases = [
+                repeat_cases: list[tuple[int | None, int]] = [
                     (256, 128),
                     (257, 256 if lookahead == 1 else 128),
                     (None, 1536),
                     (256, 128),
                 ]
-                for idx, (fork, expected) in enumerate(repeat_cases):
+                for idx, (repeat_fork, expected) in enumerate(repeat_cases):
                     toks = list(base_prompt)
-                    if fork is not None:
-                        toks[fork] += 10000
+                    if repeat_fork is not None:
+                        toks[repeat_fork] += 10000
                     req = SimpleNamespace(
                         request_id=f"repeat-{idx}",
                         prompt_token_ids=toks,

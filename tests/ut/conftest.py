@@ -276,15 +276,30 @@ import vllm.v1.kv_cache_interface as _vllm_kv_cache_interface  # noqa: E402
 _HAS_LEGACY_KV_CACHE_GROUP_SPEC = hasattr(_vllm_kv_cache_interface, "KVCacheGroupSpec")
 _LEGACY_KV_CACHE_SYMBOLS = (
     "KVCacheGroupSpec",
+    "KVCacheSpecRegistry",
     "FullAttentionSpec",
     "SlidingWindowSpec",
+    "SlidingWindowMLASpec",
+    "ChunkedLocalAttentionSpec",
+    "CrossAttentionSpec",
+    "EncoderOnlyAttentionSpec",
+    "SinkFullAttentionSpec",
     "UniformTypeKVCacheSpecs",
     "CircularBufferSpec",
     "RSWASpec",
+    "HiSparseHotSpec",
+    "HiSparseResidentSpec",
     "SpecGroup",
     "register_all_kvcache_specs",
     "get_manager_for_kv_cache_spec",
-    "SlidingWindowMLASpec",
+    "get_kv_cache_spec_kind",
+    "get_kv_cache_spec_sliding_window",
+    "get_mamba_prefill_checkpoint_position",
+    "is_full_attention_spec",
+    "iter_layer_specs",
+    "replace_as",
+    "eagle_proof_margin",
+    "resolve_dcp_kv_cache_spec",
 )
 
 if _HAS_LEGACY_KV_CACHE_GROUP_SPEC:
@@ -308,11 +323,12 @@ if not _HAS_LEGACY_KV_CACHE_GROUP_SPEC:
         def collect(self):
             try:
                 return super().collect()
-            except ImportError as exc:
-                msg = str(exc)
-                if any(symbol in msg for symbol in _LEGACY_KV_CACHE_SYMBOLS):
+            except (ImportError, pytest.Collector.CollectError) as exc:
+                cause = exc.__cause__ if isinstance(exc, pytest.Collector.CollectError) else exc
+                msg = f"{cause}\n{exc}" if cause is not None else str(exc)
+                if isinstance(cause, ImportError) and any(symbol in msg for symbol in _LEGACY_KV_CACHE_SYMBOLS):
                     pytest.skip(
-                        f"Requires legacy pre-#66234 vLLM KV cache API: {exc}",
+                        f"Requires legacy pre-#66234 vLLM KV cache API: {cause}",
                         allow_module_level=True,
                     )
                 raise

@@ -267,7 +267,7 @@ class BaseKVPoolScheduler(ABC):
             return list(hashes)
         num_tokens = getattr(request, "num_tokens", None)
         if not isinstance(num_tokens, int) or isinstance(num_tokens, bool):
-            token_ids = getattr(request, "all_token_ids", None) or getattr(request, "prompt_token_ids", ())
+            token_ids = getattr(request, "all_token_ids", None) or getattr(request, "prompt_token_ids", None) or ()
             num_tokens = len(token_ids)
         return trim_stale_lookahead_hashes(hashes, num_tokens, self.hash_block_size, lookahead)
 
@@ -281,7 +281,7 @@ class BaseKVPoolScheduler(ABC):
         lookahead = getattr(self, "num_hash_lookahead_tokens", 0)
         num_tokens = getattr(request, "num_tokens", None)
         if not isinstance(num_tokens, int) or isinstance(num_tokens, bool):
-            token_ids = getattr(request, "all_token_ids", None) or getattr(request, "prompt_token_ids", ())
+            token_ids = getattr(request, "all_token_ids", None) or getattr(request, "prompt_token_ids", None) or ()
             num_tokens = len(token_ids)
         reusable = get_reusable_prefix_length(
             num_tokens,

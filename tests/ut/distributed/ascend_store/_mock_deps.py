@@ -490,14 +490,28 @@ def _make_pkg(name, path=""):
     return mod
 
 
+def _ensure_pkg(name: str, path: str = "") -> types.ModuleType:
+    existing = sys.modules.get(name)
+    if isinstance(existing, types.ModuleType):
+        mod = existing
+    else:
+        mod = _make_pkg(name, path)
+        sys.modules[name] = mod
+    if "." in name:
+        parent_name, child_name = name.rsplit(".", 1)
+        parent = sys.modules.get(parent_name)
+        if isinstance(parent, types.ModuleType) and not hasattr(parent, child_name):
+            setattr(parent, child_name, mod)
+    return mod
+
+
 _vllm_ascend_real_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "vllm_ascend"))
 _vllm_ascend_package_paths = {
     "vllm_ascend": _vllm_ascend_real_path,
     "vllm_ascend.distributed": os.path.join(_vllm_ascend_real_path, "distributed"),
 }
 for _pkg, _path in _vllm_ascend_package_paths.items():
-    if _pkg not in sys.modules:
-        sys.modules[_pkg] = _make_pkg(_pkg, _path)
+    _ensure_pkg(_pkg, _path)
 
 if _MOCK_VLLM_DEPS and "vllm_ascend._build_info" not in sys.modules:
     # Standalone CPU tests have no wheel-generated hardware build metadata.
@@ -514,21 +528,22 @@ _distributed_utils.get_decode_context_model_parallel_world_size = MagicMock(  # 
     return_value=1
 )
 sys.modules["vllm_ascend.distributed.utils"] = _distributed_utils
+_distributed_pkg = sys.modules.get("vllm_ascend.distributed")
+if isinstance(_distributed_pkg, types.ModuleType) and not hasattr(_distributed_pkg, "utils"):
+    _distributed_pkg.utils = _distributed_utils  # type: ignore[attr-defined]
 
 # mooncake_backend imports get_global_rank from the real
 # vllm_ascend.distributed.parallel_state, whose import chain pulls in vllm.
 # Only mock it when vllm is absent; otherwise keep the real module so the
 # mock does not leak into other UTs collected in the same process.
 if _MOCK_VLLM_DEPS:
-    _ascend_parallel_state = _make_pkg("vllm_ascend.distributed.parallel_state")
+    _ascend_parallel_state = _ensure_pkg("vllm_ascend.distributed.parallel_state")
     _ascend_parallel_state.get_global_rank = MagicMock(return_value=0)  # type: ignore[attr-defined]
-    sys.modules["vllm_ascend.distributed.parallel_state"] = _ascend_parallel_state
 
 _kv_transfer_real_path = os.path.join(_vllm_ascend_real_path, "distributed", "kv_transfer")
 if _MOCK_VLLM_DEPS:
-    _kv_transfer_init = _make_pkg("vllm_ascend.distributed.kv_transfer", _kv_transfer_real_path)
+    _kv_transfer_init = _ensure_pkg("vllm_ascend.distributed.kv_transfer", _kv_transfer_real_path)
     _kv_transfer_init.register_connector = MagicMock()  # type: ignore[attr-defined]
-    sys.modules["vllm_ascend.distributed.kv_transfer"] = _kv_transfer_init
 else:
     # Preserve the real registration entry point when vLLM is installed. This
     # helper is imported while pytest collects the ascend_store tests, so
@@ -539,18 +554,16 @@ else:
 if _MOCK_VLLM_DEPS:
     # Ascend-store tests import the Mooncake backend, which imports this module.
     # Without vLLM there is no real engine to load, so keep the import stubbed.
-    _kv_utils_pkg = _make_pkg(
+    _ensure_pkg(
         "vllm_ascend.distributed.kv_transfer.utils",
         os.path.join(_kv_transfer_real_path, "utils"),
     )
-    sys.modules["vllm_ascend.distributed.kv_transfer.utils"] = _kv_utils_pkg
     sys.modules["vllm_ascend.distributed.kv_transfer.utils.mooncake_transfer_engine"] = MagicMock()
 
-_kv_pool_pkg = _make_pkg(
+_kv_pool_pkg = _ensure_pkg(
     "vllm_ascend.distributed.kv_transfer.kv_pool",
     os.path.join(_kv_transfer_real_path, "kv_pool"),
 )
-sys.modules["vllm_ascend.distributed.kv_transfer.kv_pool"] = _kv_pool_pkg
 
 _ascend_store_real_path = os.path.join(
     os.path.dirname(__file__),
@@ -564,17 +577,15 @@ _ascend_store_real_path = os.path.join(
     "kv_pool",
     "ascend_store",
 )
-_ascend_store_pkg = _make_pkg(
+_ascend_store_pkg = _ensure_pkg(
     "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store",
     os.path.abspath(_ascend_store_real_path),
 )
-sys.modules["vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store"] = _ascend_store_pkg
 
-_backend_pkg = _make_pkg(
+_backend_pkg = _ensure_pkg(
     "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend",
     os.path.join(os.path.abspath(_ascend_store_real_path), "backend"),
 )
-sys.modules["vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend"] = _backend_pkg
 
 # Execute the real backend/__init__.py inside the stub package so that
 # backend_map always stays in sync with the source of truth. The stub
@@ -589,9 +600,11 @@ sys.modules["vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend"] 
 # test_backend.py imports the real backend classes and also relies on
 # ``mock.patch`` (which itself calls importlib.import_module) resolving
 # those real modules.
-_backend_init_path = os.path.join(_backend_pkg.__path__[0], "__init__.py")  # type: ignore[attr-defined]
-with open(_backend_init_path, encoding="utf-8") as _backend_init_file:
-    exec(compile(_backend_init_file.read(), _backend_init_path, "exec"), vars(_backend_pkg))  # type: ignore[arg-type]
+if not hasattr(_backend_pkg, "backend_map"):
+    _backend_init_path = os.path.join(_backend_pkg.__path__[0], "__init__.py")  # type: ignore[attr-defined]
+    with open(_backend_init_path, encoding="utf-8") as _backend_init_file:
+        _backend_code = compile(_backend_init_file.read(), _backend_init_path, "exec")
+        exec(_backend_code, vars(_backend_pkg))  # type: ignore[arg-type]
 
 if "vllm_ascend.utils" not in sys.modules or not hasattr(sys.modules["vllm_ascend.utils"], "AscendDeviceType"):
     _ascend_utils = MagicMock()

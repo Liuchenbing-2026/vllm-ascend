@@ -679,9 +679,11 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
         if self.kv_recv_thread is not None:
             self.kv_recv_thread.load_disabled.clear()
         self._step_save_event_ids = [
-            request.event_id
+            event_id
             for request in metadata.requests
-            if getattr(request, "can_save", False) and getattr(request, "event_id", None) is not None
+            if getattr(request, "can_save", False)
+            and isinstance(event_id := getattr(request, "event_id", None), int)
+            and not isinstance(event_id, bool)
         ]
         self.process_layer_data(metadata.requests)
 
