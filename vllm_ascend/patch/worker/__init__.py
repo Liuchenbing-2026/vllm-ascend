@@ -19,7 +19,10 @@ from vllm.triton_utils import HAS_TRITON
 
 import vllm_ascend.patch.worker.patch_worker_profiler  # noqa
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
+from vllm_ascend.patch.platform.patch_mamba_midblock_resume import apply_mamba_midblock_checkpoint_rule
 from vllm_ascend.utils import vllm_version_is
+
+apply_mamba_midblock_checkpoint_rule()
 
 # patch_ascend_ops rebinds causal_conv1d to the AscendC wrappers and
 # patch_triton overwrites causal_conv1d_update with the NPU Triton kernel, so
@@ -27,6 +30,7 @@ from vllm_ascend.utils import vllm_version_is
 if HAS_TRITON:
     import vllm_ascend.patch.worker.patch_ascend_ops  # noqa
     import vllm_ascend.patch.worker.patch_triton  # noqa
+    import vllm_ascend.patch.worker.patch_kda_checkpoint  # noqa
 
 
 # Apply before model construction on every device, including 310P.

@@ -32,6 +32,8 @@ else:
 import vllm_ascend.patch.platform.patch_structured_output  # noqa
 import vllm_ascend.patch.platform.patch_torch_accelerator  # noqa
 import vllm_ascend.patch.platform.patch_mamba_manager  # noqa
+import vllm_ascend.patch.platform.patch_mamba_midblock_resume  # noqa
+import vllm_ascend.patch.platform.patch_renderer_vocab_guard  # noqa
 
 if os.getenv("DYNAMIC_EPLB", "false").lower() in ("true", "1") or os.getenv("EXPERT_MAP_RECORD", "false") == "true":
     import vllm_ascend.patch.platform.patch_multiproc_executor  # noqa
@@ -116,3 +118,15 @@ import vllm_ascend.patch.platform.patch_example_connector  # noqa
 # Upstream plan: contribute physical-block accounting to vLLM and remove this
 # patch once both supported vLLM versions cover first-time and shared-block
 # admission accounting.
+
+# ** File: platform/patch_mamba_midblock_resume.py **
+# Align-mode Mamba mid-block prefix-hit resume (allowing checkpoint export into
+# the private resumed block), mid-block state hash exclusion, and sparse decode
+# boundary state retention across manager/coordinator free paths.
+# Upstream plan: retire once all supported vLLM pins include these changes.
+
+# ** File: platform/patch_renderer_vocab_guard.py **
+# Restricts tokenizer.max_token_id upper-bound expansion in BaseRenderer to
+# multimodal models so text-only models reject reserved tokenizer-only IDs
+# before embedding lookup.
+# Upstream plan: retire once all supported vLLM pins include the check.

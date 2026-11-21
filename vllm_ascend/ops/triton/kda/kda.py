@@ -1310,10 +1310,12 @@ def chunk_kda_fwd(
     g: torch.Tensor,
     beta: torch.Tensor,
     scale: float,
-    initial_state: torch.Tensor,
+    initial_state: torch.Tensor | None,
     output_final_state: bool,
     cu_seqlens: torch.Tensor | None = None,
     prebuilt_meta=None,
+    checkpoint_state: torch.Tensor | None = None,
+    checkpoint_offsets: torch.Tensor | None = None,
 ):
     chunk_size = FLA_CHUNK_SIZE
     chunk_indices_chunk64 = None if prebuilt_meta is None else prebuilt_meta.chunk_indices_chunk64
@@ -1364,6 +1366,8 @@ def chunk_kda_fwd(
         cu_seqlens=cu_seqlens,
         chunk_indices=chunk_indices_chunk64,
         chunk_offsets=chunk_offsets_chunk64,
+        checkpoint_state=checkpoint_state,
+        checkpoint_offsets=checkpoint_offsets,
     )
     del w, u, kg
     o = chunk_gla_fwd_o_gk(
@@ -1394,6 +1398,8 @@ def chunk_kda(
     use_qk_l2norm_in_kernel: bool = False,
     cu_seqlens: torch.Tensor | None = None,
     prebuilt_meta=None,
+    checkpoint_state: torch.Tensor | None = None,
+    checkpoint_offsets: torch.Tensor | None = None,
     **kwargs,
 ):
     if scale is None:
@@ -1410,10 +1416,12 @@ def chunk_kda(
         g=g.contiguous(),
         beta=beta.contiguous(),
         scale=scale,
-        initial_state=initial_state.contiguous(),
+        initial_state=None if initial_state is None else initial_state.contiguous(),
         output_final_state=output_final_state,
         cu_seqlens=cu_seqlens,
         prebuilt_meta=prebuilt_meta,
+        checkpoint_state=checkpoint_state,
+        checkpoint_offsets=checkpoint_offsets,
     )
     return o, final_state
 
@@ -1540,25 +1548,47 @@ def chunk_kda_with_fused_gate(
     k: torch.Tensor,
     v: torch.Tensor,
     raw_g: torch.Tensor,
-    beta: torch.Tensor,
-    A_log: torch.Tensor,
-    g_bias: torch.Tensor | None,
+    beta: torch.Tensor | None = None,
+    A_log: torch.Tensor = None,
+    g_bias: torch.Tensor | None = None,
     scale: float | None = None,
     initial_state: torch.Tensor | None = None,
     output_final_state: bool = False,
     use_qk_l2norm_in_kernel: bool = False,
     cu_seqlens: torch.Tensor | None = None,
-    safe_gate: bool = False,
-    lower_bound: float = -5.0,
+    safe_gate: bool | None = None,
+    lower_bound: float | None = DEFAULT_KDA_LOWER_BOUND,
+    prebuilt_meta=None,
+    checkpoint_state: torch.Tensor | None = None,
+    checkpoint_offsets: torch.Tensor | None = None,
+    raw_beta: torch.Tensor | None = None,
     **kwargs,
 ):
     """Prefill KDA from a raw gate projection, matching upstream FLA's API.
 
     Upstream fuses gate + chunk-local cumsum in one Triton kernel. On NPU the
     existing ``chunk_kda`` path already does the cumsum, so only the gate is
-    expanded here (safe sigmoid for GLM-5.3-Flash, softplus otherwise).
+    expanded here (safe sigmoid when requested or bounded, softplus otherwise).
+    Supports both pre-sigmoided ``beta`` and upstream ``raw_beta``.
     """
-    g = apply_kda_gate(raw_g, A_log, g_bias, safe_gate=safe_gate, lower_bound=lower_bound)
+    if beta is None:
+        if raw_beta is None:
+            raise ValueError("Either beta or raw_beta must be provided.")
+        beta = raw_beta.float().sigmoid()
+        if safe_gate is None:
+            safe_gate = lower_bound is not None
+    elif safe_gate is None:
+        safe_gate = False
+    if A_log is None:
+        raise ValueError("A_log must be provided.")
+    effective_lower_bound = DEFAULT_KDA_LOWER_BOUND if lower_bound is None else lower_bound
+    g = apply_kda_gate(
+        raw_g,
+        A_log.reshape(-1),
+        g_bias,
+        safe_gate=safe_gate,
+        lower_bound=effective_lower_bound,
+    )
     return chunk_kda(
         q=q,
         k=k,
@@ -1570,4 +1600,7 @@ def chunk_kda_with_fused_gate(
         output_final_state=output_final_state,
         use_qk_l2norm_in_kernel=use_qk_l2norm_in_kernel,
         cu_seqlens=cu_seqlens,
+        prebuilt_meta=prebuilt_meta,
+        checkpoint_state=checkpoint_state,
+        checkpoint_offsets=checkpoint_offsets,
     )

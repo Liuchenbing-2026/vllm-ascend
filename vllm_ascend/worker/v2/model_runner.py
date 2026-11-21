@@ -485,6 +485,14 @@ class NPUModelRunner(GPUModelRunner):
         # Match V1's physical buffer plan without mutating the scheduler's
         # logical cache configuration. Allocation must honor zero-stride aliases.
         kv_cache_config = deepcopy(kv_cache_config)
+        # Ensure worker metadata builders (e.g. prefill checkpoint planners) see
+        # the resolved hash and alignment geometry before init_attn_backend runs.
+        hash_block_size = getattr(kv_cache_config, "hash_block_size", None)
+        if hash_block_size is not None:
+            self.vllm_config.cache_config.hash_block_size = hash_block_size
+        cache_hit_alignment_tokens = getattr(kv_cache_config, "cache_hit_alignment_tokens", None)
+        if cache_hit_alignment_tokens is not None:
+            self.vllm_config.cache_config.cache_hit_alignment_tokens = cache_hit_alignment_tokens
         sparse_cfg = self.ascend_config.sparse_kv_offload_config
         configure_dspark_kv_transfer(
             self.vllm_config, self.speculator, kv_cache_config, is_last_pp_rank=self.is_last_pp_rank

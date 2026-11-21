@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+import inspect
 import sys
 from collections.abc import Mapping
 from copy import copy
@@ -23,6 +24,7 @@ from vllm.v1.core.kv_cache_utils import (
 )
 from vllm.v1.core.single_type_kv_cache_manager import (
     MambaManager,
+    SingleTypeKVCacheManager,
     get_manager_for_kv_cache_spec,
 )
 from vllm.v1.kv_cache_interface import (
@@ -179,6 +181,8 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
 
         extra_mgr_kwargs: dict = {"scheduler_block_size": scheduler_block_size}
         extra_mgr_kwargs["needs_kv_cache_zeroing"] = kv_cache_config.needs_kv_cache_zeroing
+        if "retention_interval" in inspect.signature(SingleTypeKVCacheManager.__init__).parameters:
+            extra_mgr_kwargs["retention_interval"] = self.retention_interval
         self.single_type_managers = tuple(
             get_manager_for_kv_cache_spec(
                 kv_cache_spec=_manager_spec(kv_cache_group.kv_cache_spec),
@@ -195,6 +199,13 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
             )
             for i, kv_cache_group in enumerate(self.kv_cache_config.kv_cache_groups)
         )
+        for mgr in self.single_type_managers:
+            if not hasattr(mgr, "retention_interval") or mgr.retention_interval is None:
+                mgr.retention_interval = self.retention_interval
+            if hasattr(mgr, "keep_decode_resume_state"):
+                mgr.keep_decode_resume_state = bool(
+                    getattr(mgr, "enable_caching", enable_caching) and mgr.retention_interval is not None
+                )
         # hash_block_size: the block size used to compute block hashes.
         # The actual block size usually equals hash_block_size, but in cases where
         # different KV cache groups have different block sizes, the actual block size
