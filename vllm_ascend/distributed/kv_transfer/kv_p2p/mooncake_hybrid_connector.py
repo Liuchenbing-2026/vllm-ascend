@@ -212,11 +212,7 @@ def _validate_remote_kv_layout(
 
     if len(remote_addrs) != len(local_addrs):
         layer_diff_detail = ""
-        if (
-            local_entry_layer_names
-            and remote_entry_layer_names
-            and len(local_entry_layer_names) == len(local_addrs)
-        ):
+        if local_entry_layer_names and remote_entry_layer_names and len(local_entry_layer_names) == len(local_addrs):
             local_layers = {layer for entry in local_entry_layer_names for layer in entry}
             remote_layers = {layer for entry in remote_entry_layer_names for layer in entry}
             missing_on_remote = sorted(local_layers - remote_layers)
