@@ -907,11 +907,20 @@ class BaseKVPoolWorker(ABC):
         else:
             done_sending = set()
 
-        done_recving = set()
+        done_recving: set[str] = set()
+        cancelled_loading = getattr(meta, "cancelled_loading_req_ids", None)
+        preempted_req_ids = set(meta.preempted_req_ids) if meta.preempted_req_ids else set()
         if self.kv_recv_thread is not None:
-            self.kv_recv_thread.discard_finished_requests(meta.preempted_req_ids)
+            recv_discard_ids = (
+                preempted_req_ids - set(meta.loading_req_ids)
+                if self.load_async and not self.use_layerwise
+                else preempted_req_ids
+            )
+            self.kv_recv_thread.discard_finished_requests(recv_discard_ids)
             if self.load_async and not self.use_layerwise:
                 done_recving = self.kv_recv_thread.get_and_clear_finished_requests(meta.loading_req_ids)
+        if self.load_async and not self.use_layerwise and cancelled_loading:
+            done_recving |= set(cancelled_loading) & set(meta.loading_req_ids)
 
         logger.debug(
             "Number of completed KV cache send requests: %d, receive requests: %d, tp_rank:%d",
@@ -927,13 +936,19 @@ class BaseKVPoolWorker(ABC):
             ensure_initialized()
 
     def reset_store(self) -> None:
-        """Drain queued puts, then wipe the backend.
+        """Drain queued transfers, then wipe the backend.
 
         Join first so a put already on the send thread cannot land after
-        ``remove_all`` and repopulate the pool with the previous weights.
+        ``remove_all`` and repopulate the pool with the previous weights,
+        and clear any drained async receive completions before reuse.
         """
         if self.kv_send_thread is not None:
             self.kv_send_thread.request_queue.join()
+        recv_thread = getattr(self, "kv_recv_thread", None)
+        if recv_thread is not None:
+            if not isinstance(getattr(recv_thread, "_fatal_error", None), BaseException):
+                recv_thread.request_queue.join()
+            recv_thread.get_and_clear_finished_requests()
         self.m_store.remove_all()
 
     def lookup(

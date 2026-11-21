@@ -1080,6 +1080,71 @@ class KVCacheStoreRecvingThread(KVTransferThread):
         self._invalid_block_ids_lock = invalid_block_ids_lock or threading.Lock()
         self.worker = worker
         self._record_operation_cb = record_operation
+        self._pending_load_counts: dict[str, int] = {}
+
+    def add_request(self, request: Any) -> None:
+        with self._request_submit_lock:
+            if self._stopping.is_set() or self._fatal_error is not None:
+                if self._fatal_error is not None:
+                    logger.error(
+                        "Reject KV transfer submission to failed thread %s: %s",
+                        self.name,
+                        self._fatal_error,
+                    )
+                if isinstance(request, ReqMeta):
+                    self._record_load_failure(request)
+                    self._finish_load_request(request.req_id)
+                return
+            if isinstance(request, ReqMeta):
+                with self.done_task_lock:
+                    # Discard any unconsumed completion from an earlier load of
+                    # this req_id and keep an outstanding count per submission.
+                    self.finished_requests.discard(request.req_id)
+                    self._pending_load_counts[request.req_id] = self._pending_load_counts.get(request.req_id, 0) + 1
+            self.request_queue.put(request)
+
+    def _finish_load_request(self, req_id: str) -> None:
+        with self.done_task_lock:
+            remaining = self._pending_load_counts.get(req_id, 0)
+            if remaining > 1:
+                self._pending_load_counts[req_id] = remaining - 1
+                return
+            self._pending_load_counts.pop(req_id, None)
+            self.finished_requests.add(req_id)
+
+    def _record_load_failure(self, req_meta: ReqMeta) -> None:
+        if isinstance(self.m_store, MemcacheBackend):
+            self._mark_failed_requests([req_meta])
+            return
+        req_meta.can_save = False
+        if len(req_meta.block_ids_by_group) > 1:
+            with self.done_task_lock:
+                self.failed_requests.add(req_meta.req_id)
+        else:
+            with self._invalid_block_ids_lock:
+                self._invalid_block_ids.update(
+                    block_id for group in req_meta.block_ids_by_group for block_id in group if block_id > 0
+                )
+
+    def _handle_request_exception(self, request_data: Any) -> None:
+        def finish_failed_load(failed_request: Any) -> None:
+            if isinstance(failed_request, ReqMeta):
+                self._record_load_failure(failed_request)
+                self._finish_load_request(failed_request.req_id)
+
+        queued_request_count = self.request_queue.qsize()
+        current_needs_ack = self.request_queue.unfinished_tasks > queued_request_count
+        if request_data is not None:
+            finish_failed_load(request_data)
+            if current_needs_ack:
+                self.request_queue.task_done()
+        for _ in range(queued_request_count):
+            try:
+                queued_request = self.request_queue.get_nowait()
+            except queue.Empty:
+                break
+            finish_failed_load(queued_request)
+            self.request_queue.task_done()
 
     def _handle_request(self, req_meta: ReqMeta):
         try:
@@ -1087,7 +1152,7 @@ class KVCacheStoreRecvingThread(KVTransferThread):
             req_id = req_meta.req_id
             if load_spec is None:
                 logger.error("KV pool async recv request %s has no load spec; skip load.", req_id)
-                self.set_finished_request(req_id)
+                self._finish_load_request(req_id)
                 return
 
             token_len = load_spec.token_len
@@ -1102,115 +1167,121 @@ class KVCacheStoreRecvingThread(KVTransferThread):
                 )
                 if loaded is False:
                     self._mark_failed_requests([req_meta])
-                self.set_finished_request(req_id)
+                self._finish_load_request(req_id)
                 return
 
-            addr_list = []
-            size_list = []
-            key_list = []
-            block_id_list: list[int] = []
-            group_ids = req_meta.kv_cache_group_ids or [0]
-            load_masks = self.token_database.load_mask(req_meta.block_hashes, token_len)
-            for group_id in group_ids:
-                block_ids = req_meta.block_ids_by_group[group_id]
-                group_block_size = self._get_block_size(group_id)
-                mask_num = load_spec.vllm_cached_tokens // group_block_size * group_block_size
+            try:
+                addr_list = []
+                size_list = []
+                key_list = []
+                block_id_list: list[int] = []
+                group_ids = req_meta.kv_cache_group_ids or [0]
+                load_masks = self.token_database.load_mask(req_meta.block_hashes, token_len)
+                for group_id in group_ids:
+                    block_ids = req_meta.block_ids_by_group[group_id]
+                    group_block_size = self._get_block_size(group_id)
+                    mask_num = load_spec.vllm_cached_tokens // group_block_size * group_block_size
 
-                def chunk_filter(start: int, group_id=group_id) -> bool:
-                    return self.token_database.mask_allows_chunk(load_masks, group_id, start)
+                    def chunk_filter(start: int, group_id=group_id) -> bool:
+                        return self.token_database.mask_allows_chunk(load_masks, group_id, start)
 
-                token_iter = self.token_database.process_token_key_strings_with_block_ids(
-                    token_len,
-                    req_meta.block_hashes,
-                    block_ids,
-                    mask_num,
-                    kv_cache_group_id=group_id,
-                    skip_null_blocks=self._skip_null_blocks(req_meta, group_id),
-                    chunk_filter=chunk_filter,
-                )
-                for start, end, key, _block_hash, block_id in token_iter:
-                    addr, size, block_id = self._prepare_value(
-                        start,
-                        end,
+                    token_iter = self.token_database.process_token_key_strings_with_block_ids(
+                        token_len,
+                        req_meta.block_hashes,
                         block_ids,
+                        mask_num,
                         kv_cache_group_id=group_id,
-                        block_id=block_id,
+                        skip_null_blocks=self._skip_null_blocks(req_meta, group_id),
+                        chunk_filter=chunk_filter,
                     )
-                    key_list.append(key)
-                    addr_list.append(addr)
-                    size_list.append(size)
-                    block_id_list.append(block_id)
-            if not key_list:
-                self.set_finished_request(req_id)
-                return
-            key_list_c = key_list[self.tp_rank % len(key_list) :] + key_list[: self.tp_rank % len(key_list)]
-            addr_list_c = addr_list[self.tp_rank % len(addr_list) :] + addr_list[: self.tp_rank % len(addr_list)]
-            size_list_c = size_list[self.tp_rank % len(size_list) :] + size_list[: self.tp_rank % len(size_list)]
-            block_id_list_c = (
-                block_id_list[self.tp_rank % len(block_id_list) :] + block_id_list[: self.tp_rank % len(block_id_list)]
-            )
-            logger.debug(
-                "KV pool async recv calls backend get request=%s token_len=%d groups=%s keys=%d sample_keys=%s",
-                req_id,
-                token_len,
-                req_meta.kv_cache_group_ids or [0],
-                len(key_list_c),
-                key_list_c[:3],
-            )
-            load_get_start = time.perf_counter() if self._record_operation_cb is not None else 0.0
-            ret = self.m_store.get(key_list_c, addr_list_c, size_list_c)
-            if self._record_operation_cb is not None:
-                self._record_operation_cb(
-                    "load_get",
-                    time.perf_counter() - load_get_start,
+                    for start, end, key, _block_hash, block_id in token_iter:
+                        addr, size, block_id = self._prepare_value(
+                            start,
+                            end,
+                            block_ids,
+                            kv_cache_group_id=group_id,
+                            block_id=block_id,
+                        )
+                        key_list.append(key)
+                        addr_list.append(addr)
+                        size_list.append(size)
+                        block_id_list.append(block_id)
+                if not key_list:
+                    self._finish_load_request(req_id)
+                    return
+                key_list_c = key_list[self.tp_rank % len(key_list) :] + key_list[: self.tp_rank % len(key_list)]
+                addr_list_c = addr_list[self.tp_rank % len(addr_list) :] + addr_list[: self.tp_rank % len(addr_list)]
+                size_list_c = size_list[self.tp_rank % len(size_list) :] + size_list[: self.tp_rank % len(size_list)]
+                block_id_list_c = (
+                    block_id_list[self.tp_rank % len(block_id_list) :]
+                    + block_id_list[: self.tp_rank % len(block_id_list)]
+                )
+                logger.debug(
+                    "KV pool async recv calls backend get request=%s token_len=%d groups=%s keys=%d sample_keys=%s",
+                    req_id,
+                    token_len,
+                    req_meta.kv_cache_group_ids or [0],
+                    len(key_list_c),
+                    key_list_c[:3],
+                )
+                load_get_start = time.perf_counter() if self._record_operation_cb is not None else 0.0
+                ret = self.m_store.get(key_list_c, addr_list_c, size_list_c)
+                if self._record_operation_cb is not None:
+                    self._record_operation_cb(
+                        "load_get",
+                        time.perf_counter() - load_get_start,
+                        len(key_list_c),
+                    )
+                if isinstance(self.m_store, MemcacheBackend) and (
+                    ret is None or len(ret) != len(key_list_c) or any(r != 0 for r in ret)
+                ):
+                    self._mark_failed_requests([req_meta])
+                    self._finish_load_request(req_id)
+                    return
+                if ret is not None and any(r != 0 for r in ret):
+                    missing_block_ids = record_failed_blocks(
+                        block_id_list_c,
+                        ret,
+                    )
+                    if len(req_meta.block_ids_by_group) == 1:
+                        with self._invalid_block_ids_lock:
+                            self._invalid_block_ids.update(missing_block_ids)
+                    elif missing_block_ids:
+                        logger.error(
+                            "KV load failed for hybrid request %s. "
+                            "Skip invalid-block fallback to avoid scheduler crash. "
+                            "failed_blocks=%s",
+                            req_id,
+                            missing_block_ids,
+                        )
+                elif ret is None:
+                    missing_block_ids = record_failed_blocks(
+                        block_id_list_c,
+                        [1] * len(block_id_list_c),
+                    )
+                    if len(req_meta.block_ids_by_group) == 1:
+                        with self._invalid_block_ids_lock:
+                            self._invalid_block_ids.update(missing_block_ids)
+                    elif missing_block_ids:
+                        logger.error(
+                            "KV load failed for hybrid request %s. "
+                            "Skip invalid-block fallback to avoid scheduler crash. "
+                            "failed_blocks=%s",
+                            req_id,
+                            missing_block_ids,
+                        )
+                logger.debug(
+                    "KV pool async recv backend get returned request=%s token_len=%d groups=%s keys=%d",
+                    req_id,
+                    token_len,
+                    req_meta.kv_cache_group_ids or [0],
                     len(key_list_c),
                 )
-            if isinstance(self.m_store, MemcacheBackend) and (
-                ret is None or len(ret) != len(key_list_c) or any(r != 0 for r in ret)
-            ):
-                self._mark_failed_requests([req_meta])
-                self.set_finished_request(req_id)
-                return
-            if ret is not None and any(r != 0 for r in ret):
-                missing_block_ids = record_failed_blocks(
-                    block_id_list_c,
-                    ret,
-                )
-                if len(req_meta.block_ids_by_group) == 1:
-                    with self._invalid_block_ids_lock:
-                        self._invalid_block_ids.update(missing_block_ids)
-                elif missing_block_ids:
-                    logger.error(
-                        "KV load failed for hybrid request %s. "
-                        "Skip invalid-block fallback to avoid scheduler crash. "
-                        "failed_blocks=%s",
-                        req_id,
-                        missing_block_ids,
-                    )
-            elif ret is None:
-                missing_block_ids = record_failed_blocks(
-                    block_id_list_c,
-                    [1] * len(block_id_list_c),
-                )
-                if len(req_meta.block_ids_by_group) == 1:
-                    with self._invalid_block_ids_lock:
-                        self._invalid_block_ids.update(missing_block_ids)
-                elif missing_block_ids:
-                    logger.error(
-                        "KV load failed for hybrid request %s. "
-                        "Skip invalid-block fallback to avoid scheduler crash. "
-                        "failed_blocks=%s",
-                        req_id,
-                        missing_block_ids,
-                    )
-            logger.debug(
-                "KV pool async recv backend get returned request=%s token_len=%d groups=%s keys=%d",
-                req_id,
-                token_len,
-                req_meta.kv_cache_group_ids or [0],
-                len(key_list_c),
-            )
-            self.set_finished_request(req_id)
+                self._finish_load_request(req_id)
+            except Exception:
+                logger.exception("KV pool async recv failed for request %s", req_meta.req_id)
+                self._record_load_failure(req_meta)
+                self._finish_load_request(req_meta.req_id)
         finally:
             self.request_queue.task_done()
 

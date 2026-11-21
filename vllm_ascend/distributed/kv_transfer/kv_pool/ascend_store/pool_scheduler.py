@@ -628,20 +628,52 @@ class BaseKVPoolScheduler(ABC):
         """
         force_skip_save = self.kv_role == "kv_consumer"
 
+        load_specs: dict[str, LoadSpec] | None = getattr(self, "load_specs", None)
+        cancelled_loading_req_ids: set[str] = set()
         for finished_req_id in scheduler_output.finished_req_ids:
             self._request_trackers.pop(finished_req_id, None)
             self._unfinished_requests.pop(finished_req_id, None)
             self._preempted_req_ids.discard(finished_req_id)
+            load_spec = load_specs.pop(finished_req_id, None) if load_specs is not None else None
+            if finished_req_id in self._async_loading_req_ids and load_spec is not None and load_spec.can_load:
+                # The request entered async loading (for example after draining
+                # deferred_loads) and was aborted before its load metadata was
+                # dispatched to workers. Keep it in _async_loading_req_ids until
+                # workers report finished_recving so core scheduler releases the
+                # retained KV blocks without launching an unnecessary remote get.
+                cancelled_loading_req_ids.add(finished_req_id)
 
-        for req_id in scheduler_output.preempted_req_ids:
-            self._preempted_req_ids.update(scheduler_output.preempted_req_ids)
-            self._request_trackers.pop(req_id, None)
-            self._unfinished_requests.pop(req_id, None)
-            self._async_loading_req_ids.discard(req_id)
+        preempted_req_ids = scheduler_output.preempted_req_ids
+        if preempted_req_ids:
+            scheduled_new_req_ids = {req.req_id for req in scheduler_output.scheduled_new_reqs}
+            self._preempted_req_ids.update(preempted_req_ids)
+            for req_id in preempted_req_ids:
+                self._request_trackers.pop(req_id, None)
+                has_pending_async_load = (
+                    load_specs is not None
+                    and req_id in load_specs
+                    and load_specs[req_id].can_load
+                    and req_id in self._async_loading_req_ids
+                    and req_id in self._unfinished_requests
+                )
+                if has_pending_async_load:
+                    # Request was preempted and re-admitted for a new async load
+                    # in the same scheduling step (e.g. reset_prefix_cache with
+                    # reset_running_requests=True). Preserve the new load state.
+                    continue
+                self._async_loading_req_ids.discard(req_id)
+                if req_id in scheduled_new_req_ids and req_id in self._unfinished_requests:
+                    # Re-admitted synchronously in the same step: keep
+                    # _unfinished_requests and load_specs for _process_new_request.
+                    continue
+                self._unfinished_requests.pop(req_id, None)
+                if load_specs is not None:
+                    load_specs.pop(req_id, None)
 
         meta = AscendConnectorMetadata(
-            scheduler_output.preempted_req_ids,
+            preempted_req_ids,
             self._async_loading_req_ids.copy(),
+            cancelled_loading_req_ids,
         )
 
         for request in scheduler_output.scheduled_new_reqs:
