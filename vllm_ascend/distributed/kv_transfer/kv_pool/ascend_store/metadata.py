@@ -13,9 +13,40 @@ from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorMetadat
 from vllm.logger import logger
 from vllm.utils.math_utils import cdiv
 from vllm.v1.core.kv_cache_utils import BlockHash, BlockHashList
-from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, MambaSpec, UniformTypeKVCacheSpecs
+from vllm.v1.kv_cache_interface import KVCacheConfig, MambaSpec
 
-from vllm_ascend.core.kv_cache_interface import is_prefix_cacheable
+try:
+    from vllm.v1.kv_cache_interface import FullAttentionSpec as _FullAttentionSpec
+except ImportError:
+    _FullAttentionSpec = None  # type: ignore[assignment,misc]
+
+try:
+    from vllm.v1.kv_cache_interface import UniformTypeKVCacheSpecs as _UniformTypeKVCacheSpecs
+except ImportError:
+    _UniformTypeKVCacheSpecs = None  # type: ignore[assignment,misc]
+
+try:
+    from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager as _FullAttentionManager
+except ImportError:
+    _FullAttentionManager = None  # type: ignore[assignment,misc]
+
+try:
+    from vllm_ascend.core.kv_cache_interface import is_prefix_cacheable as _ascend_is_prefix_cacheable
+except ImportError:
+    _ascend_is_prefix_cacheable = None
+
+
+def is_prefix_cacheable(kv_cache_spec: Any) -> bool:
+    """Return whether ``kv_cache_spec`` participates in prefix caching."""
+    if _ascend_is_prefix_cacheable is not None:
+        return bool(_ascend_is_prefix_cacheable(kv_cache_spec))
+    nested_specs = getattr(kv_cache_spec, "kv_cache_specs", None)
+    if isinstance(nested_specs, Mapping):
+        return all(is_prefix_cacheable(spec) for spec in nested_specs.values())
+    return bool(getattr(kv_cache_spec, "prefix_cacheable", True)) and bool(
+        getattr(kv_cache_spec, "participates_in_prefix_caching", True)
+    )
+
 
 try:
     from vllm.v1.kv_cache_interface import (
@@ -224,7 +255,7 @@ def get_group_layer_specs(group: Any) -> tuple[Any, ...]:
     if isinstance(kv_cache_specs, Mapping):
         return tuple(kv_cache_specs.values())
     spec = getattr(group, "kv_cache_spec", group)
-    if isinstance(spec, UniformTypeKVCacheSpecs):
+    if _UniformTypeKVCacheSpecs is not None and isinstance(spec, _UniformTypeKVCacheSpecs):
         return tuple(spec.kv_cache_specs.values())
     nested_specs = getattr(spec, "kv_cache_specs", None)
     if isinstance(nested_specs, Mapping):
@@ -238,7 +269,7 @@ def get_group_layer_spec_map(group: Any) -> dict[str, Any]:
     if isinstance(kv_cache_specs, Mapping):
         return dict(kv_cache_specs)
     spec = getattr(group, "kv_cache_spec", None)
-    if isinstance(spec, UniformTypeKVCacheSpecs):
+    if _UniformTypeKVCacheSpecs is not None and isinstance(spec, _UniformTypeKVCacheSpecs):
         return dict(spec.kv_cache_specs)
     nested_specs = getattr(spec, "kv_cache_specs", None)
     if isinstance(nested_specs, Mapping):
@@ -246,6 +277,44 @@ def get_group_layer_spec_map(group: Any) -> dict[str, Any]:
     if spec is None:
         return {}
     return {name: spec for name in getattr(group, "layer_names", ())}
+
+
+def is_full_attention_group(group: Any, spec: Any = None, manager_cls: Any = None) -> bool:
+    """Return whether ``group`` uses full-attention semantics across vLLM baselines."""
+    specs = get_group_layer_specs(spec) if spec is not None else get_group_layer_specs(group)
+    if specs and any(isinstance(s, MambaSpec) for s in specs):
+        return False
+    if _FullAttentionSpec is not None and specs:
+        return all(isinstance(s, _FullAttentionSpec) for s in specs)
+    if manager_cls is None:
+        manager_config = getattr(group, "manager_config", None)
+        manager_cls = getattr(manager_config, "manager_cls", None)
+    return (
+        _FullAttentionManager is not None
+        and inspect.isclass(manager_cls)
+        and issubclass(manager_cls, _FullAttentionManager)
+    )
+
+
+def get_group_mamba_cache_mode(group: Any, spec: Any = None) -> str | None:
+    """Return the Mamba cache mode across legacy ``MambaSpec`` and ``ManagerConfig.params``."""
+    mode = getattr(spec, "mamba_cache_mode", None)
+    if mode is not None:
+        return mode
+    params = getattr(getattr(group, "manager_config", None), "params", None)
+    return getattr(params, "mamba_cache_mode", None)
+
+
+def get_group_num_speculative_blocks(group: Any, spec: Any = None) -> int:
+    """Return Mamba speculative scratch blocks across legacy ``MambaSpec`` and ``ManagerConfig.params``."""
+    count = getattr(spec, "num_speculative_blocks", None)
+    if isinstance(count, int) and not isinstance(count, bool):
+        return count
+    params = getattr(getattr(group, "manager_config", None), "params", None)
+    param_count = getattr(params, "num_speculative_blocks", 0)
+    if isinstance(param_count, int) and not isinstance(param_count, bool):
+        return param_count
+    return 0
 
 
 def is_group_prefix_cacheable(group: Any) -> bool:
@@ -308,11 +377,7 @@ def uses_hybrid_kv_cache(scheduler_config: Any, kv_cache_groups: Sequence[Any] |
         kv_cache_groups
         and not getattr(scheduler_config, "disable_hybrid_kv_cache_manager", False)
         and len(kv_cache_groups) > 1
-        and any(
-            not isinstance(spec, FullAttentionSpec)
-            for group in kv_cache_groups
-            for spec in get_group_layer_specs(group)
-        )
+        and any(not is_full_attention_group(group) for group in kv_cache_groups)
     )
 
 

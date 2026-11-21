@@ -12,8 +12,8 @@ from vllm.utils.import_utils import resolve_obj_by_qualname
 from vllm.utils.math_utils import round_up
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec, KVCacheTensor, MambaSpec
 
-from vllm_ascend.core.kv_cache_interface import is_prefix_cacheable
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import get_backend_class
+from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import is_prefix_cacheable
 
 from .layerwise_cache_layout import (
     LayerwiseCacheConfig,

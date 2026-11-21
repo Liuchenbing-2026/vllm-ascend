@@ -26,6 +26,7 @@ NPU is available. 310P-specific tests live in ``tests/ut/_310p/`` but also
 run on CPU via mocks.
 """
 
+import contextlib
 import importlib.util
 import subprocess
 import sys
@@ -270,18 +271,66 @@ if not _npu_available:
         return_value=(MagicMock(), MagicMock())
     )
 
-adapt_patch()
-adapt_patch(True)
+import vllm.v1.kv_cache_interface as _vllm_kv_cache_interface  # noqa: E402
 
-# register Ascend CustomOp here because uts will use this
-register_ascend_customop()
+_HAS_LEGACY_KV_CACHE_GROUP_SPEC = hasattr(_vllm_kv_cache_interface, "KVCacheGroupSpec")
+_LEGACY_KV_CACHE_SYMBOLS = (
+    "KVCacheGroupSpec",
+    "FullAttentionSpec",
+    "SlidingWindowSpec",
+    "UniformTypeKVCacheSpecs",
+    "CircularBufferSpec",
+    "RSWASpec",
+    "SpecGroup",
+    "register_all_kvcache_specs",
+    "get_manager_for_kv_cache_spec",
+    "SlidingWindowMLASpec",
+)
+
+if _HAS_LEGACY_KV_CACHE_GROUP_SPEC:
+    adapt_patch()
+    adapt_patch(True)
+    # register Ascend CustomOp here because uts will use this
+    register_ascend_customop()
+else:
+    for _patch_call in (
+        lambda: adapt_patch(),
+        lambda: adapt_patch(True),
+        register_ascend_customop,
+    ):
+        with contextlib.suppress(ImportError):
+            _patch_call()
+
+
+if not _HAS_LEGACY_KV_CACHE_GROUP_SPEC:
+
+    class _LegacyKVCacheCompatModule(pytest.Module):
+        def collect(self):
+            try:
+                return super().collect()
+            except ImportError as exc:
+                msg = str(exc)
+                if any(symbol in msg for symbol in _LEGACY_KV_CACHE_SYMBOLS):
+                    pytest.skip(
+                        f"Requires legacy pre-#66234 vLLM KV cache API: {exc}",
+                        allow_module_level=True,
+                    )
+                raise
+
+    def pytest_pycollect_makemodule(module_path, parent):
+        return _LegacyKVCacheCompatModule.from_parent(parent, path=module_path)
+
 
 if not _npu_available:
     import torch
 
     from tests.ut.helpers.golden_copy_and_expand import npu_copy_and_expand_eagle_inputs_stub
 
-    enable_custom_op()
+    if _HAS_LEGACY_KV_CACHE_GROUP_SPEC:
+        enable_custom_op()
+    else:
+        with contextlib.suppress(ImportError):
+            enable_custom_op()
     if hasattr(torch.ops, "_C_ascend") and not hasattr(torch.ops._C_ascend, "npu_copy_and_expand_eagle_inputs"):
         torch.ops._C_ascend.npu_copy_and_expand_eagle_inputs = npu_copy_and_expand_eagle_inputs_stub
     # Re-sync after enable_custom_op / adapt_patch so @patch("torch.npu.*") hits
@@ -311,20 +360,29 @@ def _clear_enable_sp_before_test():
 @pytest.fixture(autouse=True)
 def _reset_stream_globals_before_test():
     """Avoid cross-test leakage from utils.current_stream() caching."""
-    import vllm_ascend.ops.fused_moe.moe_utils as moe_utils_mod
     import vllm_ascend.utils as utils_mod
+
+    if _HAS_LEGACY_KV_CACHE_GROUP_SPEC:
+        import vllm_ascend.ops.fused_moe.moe_utils as moe_utils_mod
+    else:
+        try:
+            import vllm_ascend.ops.fused_moe.moe_utils as moe_utils_mod
+        except ImportError:
+            moe_utils_mod = None  # type: ignore[assignment]
 
     utils_mod._CURRENT_STREAM = None
     utils_mod._GLOBAL_STREAM = None
     if hasattr(utils_mod, "_SHARED_EXPERTS_CALCULATION_STREAM"):
         utils_mod._SHARED_EXPERTS_CALCULATION_STREAM = None
-    moe_utils_mod.COMM_STREAM = None
+    if moe_utils_mod is not None:
+        moe_utils_mod.COMM_STREAM = None
     yield
     utils_mod._CURRENT_STREAM = None
     utils_mod._GLOBAL_STREAM = None
     if hasattr(utils_mod, "_SHARED_EXPERTS_CALCULATION_STREAM"):
         utils_mod._SHARED_EXPERTS_CALCULATION_STREAM = None
-    moe_utils_mod.COMM_STREAM = None
+    if moe_utils_mod is not None:
+        moe_utils_mod.COMM_STREAM = None
 
 
 @pytest.fixture(autouse=True)

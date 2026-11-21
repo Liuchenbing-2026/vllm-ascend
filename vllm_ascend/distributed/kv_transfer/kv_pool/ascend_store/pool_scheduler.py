@@ -1,3 +1,4 @@
+import inspect
 import math
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -10,12 +11,29 @@ from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_manager import KVCacheBlocks, KVCacheManager
 from vllm.v1.core.kv_cache_utils import BlockHash
 from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
-from vllm.v1.kv_cache_interface import (
-    KVCacheConfig,
-    MambaSpec,
-    RSWASpec,
-    SlidingWindowSpec,
-)
+from vllm.v1.kv_cache_interface import KVCacheConfig, MambaSpec
+
+try:
+    from vllm.v1.kv_cache_interface import RSWASpec as _RSWASpec
+except ImportError:
+    _RSWASpec = None  # type: ignore[assignment,misc]
+
+try:
+    from vllm.v1.kv_cache_interface import SlidingWindowSpec as _SlidingWindowSpec
+except ImportError:
+    _SlidingWindowSpec = None  # type: ignore[assignment,misc]
+
+try:
+    from vllm.v1.core.single_type_kv_cache_manager import (
+        RSWAManager as _RSWAManager,
+    )
+    from vllm.v1.core.single_type_kv_cache_manager import (
+        SlidingWindowManager as _SlidingWindowManager,
+    )
+except ImportError:
+    _RSWAManager = None  # type: ignore[assignment,misc]
+    _SlidingWindowManager = None  # type: ignore[assignment,misc]
+
 from vllm.v1.outputs import KVConnectorOutput
 from vllm.v1.request import Request
 
@@ -32,6 +50,8 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     ReqMeta,
     RequestTracker,
     get_group_layer_specs,
+    get_group_mamba_cache_mode,
+    get_group_num_speculative_blocks,
     get_reusable_prefix_length,
     hashed_prefix_length,
     infer_cache_transfer_granularity,
@@ -45,6 +65,16 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     trim_stale_lookahead_hashes,
     uses_hybrid_kv_cache,
 )
+
+_SWA_SPEC_TYPES: tuple[type, ...] = tuple(t for t in (_SlidingWindowSpec, _RSWASpec) if isinstance(t, type))
+_SWA_MANAGER_TYPES: tuple[type, ...] = tuple(t for t in (_SlidingWindowManager, _RSWAManager) if isinstance(t, type))
+
+
+def _is_swa_group(group: Any) -> bool:
+    mgr_cls = getattr(getattr(group, "manager_config", None), "manager_cls", None)
+    if _SWA_MANAGER_TYPES and inspect.isclass(mgr_cls) and issubclass(mgr_cls, _SWA_MANAGER_TYPES):
+        return True
+    return bool(_SWA_SPEC_TYPES) and any(isinstance(spec, _SWA_SPEC_TYPES) for spec in get_group_layer_specs(group))
 
 
 def _safe_nonneg_int(value: Any, default: int = 0) -> int:
@@ -118,11 +148,7 @@ class BaseKVPoolScheduler(ABC):
         self.swa_group_ids = {
             group_id
             for group_id in self.cacheable_group_ids
-            if kv_cache_groups is not None
-            and any(
-                isinstance(spec, (SlidingWindowSpec, RSWASpec))
-                for spec in get_group_layer_specs(kv_cache_groups[group_id])
-            )
+            if kv_cache_groups is not None and _is_swa_group(kv_cache_groups[group_id])
         }
         cacheable_block_sizes = [self.original_block_size[i] for i in self.cacheable_group_ids]
         self.grouped_block_size = [block_size * self.dcp_size for block_size in self.original_block_size]
@@ -286,12 +312,15 @@ class BaseKVPoolScheduler(ABC):
             for kv_cache_spec in get_group_layer_specs(kv_cache_group):
                 if not isinstance(kv_cache_spec, MambaSpec):
                     continue
-                if getattr(kv_cache_spec, "mamba_cache_mode", None) != "align":
+                if get_group_mamba_cache_mode(kv_cache_group, kv_cache_spec) != "align":
                     raise NotImplementedError(
                         "AscendStore hybrid linear-attention support currently requires mamba_cache_mode='align'."
                     )
                 if self.use_hybrid:
-                    num_speculative_blocks_by_group[group_id] = kv_cache_spec.num_speculative_blocks
+                    num_speculative_blocks_by_group[group_id] = get_group_num_speculative_blocks(
+                        kv_cache_group,
+                        kv_cache_spec,
+                    )
         return num_speculative_blocks_by_group
 
     def get_num_new_matched_tokens(
@@ -324,13 +353,23 @@ class BaseKVPoolScheduler(ABC):
         store_skip_tokens = num_external_hit_tokens
         lookahead = getattr(self, "num_hash_lookahead_tokens", 0)
         if lookahead > 0:
+            alignment = (
+                self.cache_transfer_granularity
+                if self._discard_partial_chunks or len(self.cacheable_group_ids) != len(self.original_block_size)
+                else self.hash_block_size
+            )
             reusable_limit = get_reusable_prefix_length(
                 request.num_tokens,
                 num_hash_lookahead_tokens=lookahead,
-                alignment_tokens=1,
+                alignment_tokens=alignment,
             )
-            hashed_limit = hashed_prefix_length(self._effective_lookup_hashes(request), self.hash_block_size)
+            hashed_limit = (
+                hashed_prefix_length(self._effective_lookup_hashes(request), self.hash_block_size)
+                // alignment
+                * alignment
+            )
             num_external_hit_tokens = min(num_external_hit_tokens, reusable_limit, hashed_limit)
+            store_skip_tokens = min(store_skip_tokens, reusable_limit, hashed_limit)
         elif self.use_eagle:
             # Keep the draft model's recomputation zone intact: the
             # generation-point hidden states must be freshly computed, and the
@@ -639,13 +678,13 @@ class BaseKVPoolScheduler(ABC):
             )
             if hashed_prefix_length(trimmed_hashes, self.hash_block_size) <= request_tracker.num_saved_tokens:
                 return None
+            if new_block_ids is not None:
+                request_tracker.update(new_block_ids, prefill_end_tokens)
             request_tracker.token_len = prefill_end_tokens
             if request_tracker.token_ids is not None and len(request_tracker.token_ids) < prefill_end_tokens:
                 request_tracker.token_ids.extend(
                     request.all_token_ids[len(request_tracker.token_ids) : prefill_end_tokens]
                 )
-            if new_block_ids is not None:
-                request_tracker.update(new_block_ids, request.num_computed_tokens)
             self._sync_swa_block_ids(request_tracker)
             load_spec = self._running_load_spec(request_tracker, request.num_computed_tokens)
             return self._build_req_meta(

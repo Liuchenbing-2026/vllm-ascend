@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import replace
 from functools import lru_cache, partial
 from importlib import import_module
@@ -13,11 +13,12 @@ from vllm.utils.math_utils import cdiv
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_utils import BlockHash, BlockHashList, KVCacheBlock
 from vllm.v1.core.single_type_kv_cache_manager import SingleTypeKVCacheManager
-from vllm.v1.kv_cache_interface import (
-    FullAttentionSpec,
-    KVCacheSpec,
-    UniformTypeKVCacheSpecs,
-)
+from vllm.v1.kv_cache_interface import KVCacheSpec
+
+try:
+    from vllm.v1.kv_cache_interface import UniformTypeKVCacheSpecs as _UniformTypeKVCacheSpecs
+except ImportError:
+    _UniformTypeKVCacheSpecs = None  # type: ignore[assignment,misc]
 
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     block_hash_to_bytes,
@@ -26,6 +27,7 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     get_reusable_prefix_length,
     hashed_prefix_length,
     infer_cacheable_group_ids,
+    is_full_attention_group,
 )
 
 if TYPE_CHECKING:
@@ -206,7 +208,7 @@ class AscendStoreCoordinator:
 
         self.attention_groups = sorted(
             attention_groups,
-            key=lambda item: not isinstance(item[0], FullAttentionSpec),
+            key=lambda item: not is_full_attention_group(None, spec=item[0], manager_cls=item[2]),
         )
         self.eagle_attn_group_indices: set[int] = {
             index
@@ -228,17 +230,23 @@ class AscendStoreCoordinator:
         apply_eagle: bool = True,
     ) -> tuple[tuple[list[bool], ...], int]:
         effective_max_length = max_length
+        hashes_to_query = block_hashes
         if self.num_hash_lookahead_tokens > 0:
             effective_max_length = min(
                 max_length,
                 hashed_prefix_length(block_hashes, self.hash_block_size),
             )
+            max_hashes = max(0, effective_max_length // self.hash_block_size)
+            if len(block_hashes) > max_hashes:
+                hashes_to_query = block_hashes[:max_hashes]
         blocks_per_group, hit_length = self._find_hit_blocks(
-            block_hashes,
+            hashes_to_query,
             effective_max_length,
             cached_block_pool,
             apply_eagle=apply_eagle,
         )
+        if self.num_hash_lookahead_tokens > 0:
+            hit_length = min(hit_length, effective_max_length)
         masks = tuple([block is not cached_block_pool.null_block for block in blocks] for blocks in blocks_per_group)
         return masks, hit_length
 
@@ -428,10 +436,10 @@ class AscendStoreCoordinator:
         if not exists and hbm_hit_tokens <= 0:
             logger.debug("%s: token_len=%d no pooled blocks found", log_context, effective_token_len)
             return 0
-        hit_hashes: Sequence[BlockHash] = block_hashes
+        hit_hashes: Sequence[BlockHash] = block_hashes_to_check
         if hbm_hit_tokens > 0:
-            num_hbm_hashes = min(hbm_hit_tokens // self.hash_block_size, effective_token_len // self.hash_block_size)
-            hit_hashes = _HBMPrefixBlockHashes(block_hashes, num_hbm_hashes)
+            num_hbm_hashes = min(hbm_hit_tokens // self.hash_block_size, len(block_hashes_to_check))
+            hit_hashes = _HBMPrefixBlockHashes(block_hashes_to_check, num_hbm_hashes)
         _, hit_length = self.find_longest_cache_hit(
             hit_hashes,
             effective_token_len,
@@ -478,8 +486,10 @@ class AscendStoreCoordinator:
         hit_length = max_length
         hit_blocks_by_group: list[list[KVCacheBlock] | None] = [None] * len(self.kv_cache_groups)
         hit_length_by_group: list[int] = [0] * len(self.kv_cache_groups)
-        is_simple_hybrid = len(self.attention_groups) == 2 and isinstance(
-            self.attention_groups[0][0], FullAttentionSpec
+        is_simple_hybrid = len(self.attention_groups) == 2 and is_full_attention_group(
+            None,
+            spec=self.attention_groups[0][0],
+            manager_cls=self.attention_groups[0][2],
         )
         eagle_verified: set[int] = set()
 
@@ -489,7 +499,7 @@ class AscendStoreCoordinator:
             for index, (spec, group_ids, manager_cls, manager_config) in enumerate(self.attention_groups):
                 first_group_id = group_ids[0]
                 cached = hit_blocks_by_group[first_group_id]
-                if isinstance(spec, FullAttentionSpec) and cached is not None:
+                if is_full_attention_group(None, spec=spec, manager_cls=manager_cls) and cached is not None:
                     curr_hit_length = min(curr_hit_length, hit_length_by_group[first_group_id])
                     continue
 
@@ -525,10 +535,11 @@ class AscendStoreCoordinator:
             if is_simple_hybrid:
                 break
 
-        spec0, group_ids0, _, _ = self.attention_groups[0]
-        if isinstance(spec0, FullAttentionSpec):
-            num_blocks = cdiv(hit_length, spec0.block_size)
-            for group_id in group_ids0:
+        for spec_i, group_ids_i, manager_cls_i, _ in self.attention_groups:
+            if not is_full_attention_group(None, spec=spec_i, manager_cls=manager_cls_i):
+                continue
+            num_blocks = cdiv(hit_length, spec_i.block_size)
+            for group_id in group_ids_i:
                 full_blocks = hit_blocks_by_group[group_id]
                 assert full_blocks is not None
                 del full_blocks[num_blocks:]
@@ -555,8 +566,11 @@ def _get_group_manager_class(group: Any, spec: KVCacheSpec) -> type[SingleTypeKV
 
 
 def _unwrap_spec(spec: KVCacheSpec) -> KVCacheSpec:
-    if isinstance(spec, UniformTypeKVCacheSpecs):
+    if _UniformTypeKVCacheSpecs is not None and isinstance(spec, _UniformTypeKVCacheSpecs):
         return next(iter(spec.kv_cache_specs.values()))
+    nested_specs = getattr(spec, "kv_cache_specs", None)
+    if isinstance(nested_specs, Mapping):
+        return next(iter(nested_specs.values()))
     return spec
 
 

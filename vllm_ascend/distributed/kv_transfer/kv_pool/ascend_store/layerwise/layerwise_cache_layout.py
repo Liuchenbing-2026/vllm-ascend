@@ -8,7 +8,7 @@ from collections.abc import Callable, Collection, Mapping
 from copy import copy
 from dataclasses import dataclass, replace
 from math import lcm
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import regex as re
 import torch
@@ -18,10 +18,15 @@ from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
     KVCacheSpec,
     KVCacheTensor,
-    UniformTypeKVCacheSpecs,
 )
 
-from vllm_ascend.core.kv_cache_interface import AscendSFAIndexerCacheSpec
+try:
+    from vllm.v1.kv_cache_interface import UniformTypeKVCacheSpecs as _UniformTypeKVCacheSpecs
+except ImportError:
+    _UniformTypeKVCacheSpecs = None  # type: ignore[assignment,misc]
+
+if TYPE_CHECKING:
+    from vllm_ascend.core.kv_cache_interface import AscendSFAIndexerCacheSpec
 
 SpecReuseRules = Mapping[type[KVCacheSpec], bool | Callable[[KVCacheSpec], bool]]
 
@@ -292,10 +297,18 @@ def get_layerwise_kv_cache_specs(
     """Expand group specs into a cache spec for every logical layer."""
     layer_specs: dict[str, KVCacheSpec] = {}
     for group in kv_cache_config.kv_cache_groups:
+        group_specs = getattr(group, "kv_cache_specs", None)
+        if isinstance(group_specs, Mapping):
+            layer_specs.update(group_specs)
+            continue
         group_spec = group.kv_cache_spec
         for layer_name in group.layer_names:
-            if isinstance(group_spec, UniformTypeKVCacheSpecs):
+            if _UniformTypeKVCacheSpecs is not None and isinstance(group_spec, _UniformTypeKVCacheSpecs):
                 layer_specs[layer_name] = group_spec.kv_cache_specs[layer_name]
             else:
-                layer_specs[layer_name] = group_spec
+                nested_specs = getattr(group_spec, "kv_cache_specs", None)
+                if isinstance(nested_specs, Mapping):
+                    layer_specs[layer_name] = nested_specs[layer_name]
+                else:
+                    layer_specs[layer_name] = group_spec
     return layer_specs
