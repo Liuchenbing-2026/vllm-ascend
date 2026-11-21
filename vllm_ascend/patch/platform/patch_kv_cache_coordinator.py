@@ -5,6 +5,7 @@ import sys
 from collections.abc import Mapping
 from copy import copy
 from dataclasses import replace
+from functools import lru_cache
 from math import lcm
 
 import vllm
@@ -42,20 +43,14 @@ from vllm_ascend.core.kv_cache_interface import (
 )
 
 
-_FIND_HIT_NUM_REQ_TOKENS_CACHE: dict[type, bool] = {}
-
-
+@lru_cache(maxsize=64)
 def _accepts_num_request_tokens(manager_cls: type) -> bool:
-    cached = _FIND_HIT_NUM_REQ_TOKENS_CACHE.get(manager_cls)
-    if cached is not None:
-        return cached
     fn = getattr(manager_cls, "find_longest_cache_hit", None)
     try:
-        accepted = fn is not None and "num_request_tokens" in inspect.signature(fn).parameters
+        return fn is not None and "num_request_tokens" in inspect.signature(fn).parameters
     except (TypeError, ValueError):
-        accepted = False
-    _FIND_HIT_NUM_REQ_TOKENS_CACHE[manager_cls] = accepted
-    return accepted
+        return False
+
 
 _orig_get_kv_cache_coordinator = vllm.v1.core.kv_cache_coordinator.get_kv_cache_coordinator
 

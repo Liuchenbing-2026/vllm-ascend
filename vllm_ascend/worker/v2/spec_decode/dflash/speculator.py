@@ -287,7 +287,12 @@ class AscendDFlashSpeculator(LmheadTPDraftSamplingMixin, DFlashSpeculator):
                 metadata.block_tables = metadata.block_tables[:num_reqs_padded]
 
     def __init__(self, vllm_config: VllmConfig, device: torch.device):
+        target_dp_index = getattr(vllm_config.parallel_config, "data_parallel_index", None)
         super().__init__(vllm_config, device)
+        # Preserve independent dense DP index across upstream replace(parallel_config, ...)
+        # so DP replicas keep distinct per-rank torch.compile cache directories.
+        if target_dp_index is not None and hasattr(self.vllm_config.parallel_config, "data_parallel_index"):
+            self.vllm_config.parallel_config.data_parallel_index = target_dp_index
         self._lmhead_tp_validate_draft_sampling()
 
     def init_cudagraph_manager(self, cudagraph_mode: CUDAGraphMode) -> None:

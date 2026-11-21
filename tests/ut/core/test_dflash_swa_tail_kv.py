@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-# ruff: noqa: E402
 """CPU unit tests for #22692: DFlash/DSpark SWA tail-only KV & target no-padding."""
 
+from dataclasses import dataclass
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -19,10 +19,7 @@ from vllm.v1.kv_cache_interface import (
 )
 from vllm.v1.kv_cache_spec_registry import KVCacheSpecRegistry
 
-from vllm_ascend.core.kv_cache_config_builder import (
-    AscendKVCacheConfigBuilder,
-    group_and_unify_kv_cache_specs,
-)
+from vllm_ascend.core.kv_cache_config_builder import AscendKVCacheConfigBuilder, group_and_unify_kv_cache_specs
 from vllm_ascend.core.kv_cache_interface import (
     AscendDFlashSlidingWindowMLASpec,
     AscendDFlashSlidingWindowSpec,
@@ -203,6 +200,11 @@ def test_build_dflash_layer_config_forward_compat(monkeypatch):
     """Forward-compat helper wraps upstream DFlashSlidingWindowManager.layer_config when present."""
     called = {}
 
+    @dataclass(frozen=True)
+    class FakeLayerConfig:
+        spec: KVCacheGroupSpec | SlidingWindowSpec
+        is_draft: bool = False
+
     class FakeUpstreamDFlash:
         @staticmethod
         def layer_config(spec, *, sliding_window, num_speculative_tokens, max_in_flight_steps, num_lookahead_tokens):
@@ -213,7 +215,7 @@ def test_build_dflash_layer_config_forward_compat(monkeypatch):
                 max_in_flight_steps=max_in_flight_steps,
                 num_lookahead_tokens=num_lookahead_tokens,
             )
-            return SimpleNamespace(spec=spec, is_draft=False)
+            return FakeLayerConfig(spec=spec, is_draft=False)
 
     monkeypatch.setattr(
         "vllm_ascend.core.kv_cache_interface.get_upstream_dflash_sliding_window_manager",
@@ -222,10 +224,16 @@ def test_build_dflash_layer_config_forward_compat(monkeypatch):
     runtime = _make_runtime(method="dspark", num_speculative_tokens=3, max_in_flight_steps=2, num_lookahead_tokens=3)
     plain = SlidingWindowSpec(block_size=16, num_kv_heads=1, head_size=16, dtype=torch.bfloat16, sliding_window=128)
     cfg = build_dflash_sliding_window_layer_config(plain, runtime, sliding_window=128, is_draft=True)
+    assert isinstance(cfg, FakeLayerConfig)
     assert cfg.is_draft is True
     assert called["num_speculative_tokens"] == 3
     assert called["max_in_flight_steps"] == 2
     assert called["num_lookahead_tokens"] == 3
+
+    # Non-dataclass configs also update in place without tripping dataclasses.replace().
+    FakeUpstreamDFlash.layer_config = staticmethod(lambda spec, **kw: SimpleNamespace(spec=spec, is_draft=False))
+    ns_cfg = build_dflash_sliding_window_layer_config(plain, runtime, sliding_window=128, is_draft=True)
+    assert ns_cfg.is_draft is True
 
 
 def test_dflash_manager_backs_only_each_chunks_tail_and_reserves_bounded():
@@ -323,6 +331,46 @@ def test_dflash_manager_prefix_hit_sparse_mask_and_external_load():
     # boundary=28 -> first_read=28+1-7=22 -> block 5; hit_tokens=28 -> block 7.
     assert mask == [False] * 5 + [True, True] + [False] * 3
 
+    # Int block-size specs (FB-01 regression) and post-#61452/#64109 manager_config calls.
+    assert AscendDFlashSlidingWindowManager.reachable_block_mask(0, 1, 16, 16, False, 16, (0,)) == [False]
+    assert AscendDFlashSlidingWindowManager.reachable_block_mask(0, 3, 16, 16, False, 16, (32,)) == [False, True, False]
+    mgr_cfg = SimpleNamespace(params=SimpleNamespace(sliding_window=8, extra_retained_tokens=0))
+    assert (
+        AscendDFlashSlidingWindowManager.reachable_block_mask(0, 10, 4, 4, mgr_cfg, False, 16, (28,))
+        == [False] * 5 + [True, True] + [False] * 3
+    )
+    assert (
+        AscendDFlashSlidingWindowManager.reachable_block_mask(
+            0,
+            10,
+            4,
+            block_size=4,
+            manager_config=mgr_cfg,
+            use_eagle=False,
+            retention_interval=16,
+            reachable_boundaries=(28,),
+        )
+        == [False] * 5 + [True, True] + [False] * 3
+    )
+    post_hits, post_hit_len = AscendDFlashSlidingWindowManager.find_longest_cache_hit(
+        fake_hashes, 32, [0], pool, 4, mgr_cfg, True, 4, num_request_tokens=32
+    )
+    assert post_hit_len == 32
+    assert all(b.is_null for b in post_hits[0][:6])
+    assert post_hits[0][6:8] == cached_blocks[6:8]
+    kw_hits, kw_len = AscendDFlashSlidingWindowManager.find_longest_cache_hit(
+        fake_hashes,
+        32,
+        [0],
+        pool,
+        block_size=4,
+        manager_config=mgr_cfg,
+        drop_eagle_block=True,
+        alignment_tokens=4,
+        num_request_tokens=32,
+    )
+    assert kw_len == 32 and kw_hits[0][6:8] == cached_blocks[6:8]
+
     # External load works both with num_tokens_main_model and pre-#64109 default None.
     ext_mgr = _make_dflash_manager(spec, num_gpu_blocks=32, max_admission_blocks=8)
     ext_mgr.allocate_external_computed_blocks("ext1", 0, 40, num_tokens_main_model=40)
@@ -336,9 +384,7 @@ def test_no_target_padding_for_draft_only_swa_buckets_68533():
     """Muse Spark shape: 5-layer DFlash SWA draft must not pad 16 FullAttention layers to 20."""
     runtime = _make_runtime(method="dflash", num_speculative_tokens=3, num_lookahead_tokens=3)
     full_spec = FullAttentionSpec(block_size=16, num_kv_heads=1, head_size=128, dtype=torch.bfloat16)
-    swa_spec = SlidingWindowSpec(
-        block_size=16, num_kv_heads=1, head_size=128, dtype=torch.bfloat16, sliding_window=128
-    )
+    swa_spec = SlidingWindowSpec(block_size=16, num_kv_heads=1, head_size=128, dtype=torch.bfloat16, sliding_window=128)
     draft_spec = AscendDFlashSlidingWindowSpec(
         block_size=16,
         num_kv_heads=1,
@@ -474,8 +520,16 @@ def test_admission_and_coordinator_patches_handle_dflash_and_legacy_managers():
 
         @classmethod
         def find_longest_cache_hit(
-            cls, block_hashes, max_length, kv_cache_group_ids, block_pool, kv_cache_spec,
-            drop_eagle_block, alignment_tokens, dcp_world_size=1, pcp_world_size=1,
+            cls,
+            block_hashes,
+            max_length,
+            kv_cache_group_ids,
+            block_pool,
+            kv_cache_spec,
+            drop_eagle_block,
+            alignment_tokens,
+            dcp_world_size=1,
+            pcp_world_size=1,
         ):
             return ([],), 0
 
@@ -594,9 +648,7 @@ def test_ascend_store_coordinator_and_null_block_workers():
 
     # Worker null-block inference keeps group_uses_align_state focused on Mamba align.
     base_worker = BaseKVPoolWorker.__new__(BaseKVPoolWorker)
-    mamba = MambaSpec(
-        shapes=((2, 4),), dtypes=(torch.bfloat16,), block_size=16, mamba_cache_mode="align"
-    )
+    mamba = MambaSpec(shapes=((2, 4),), dtypes=(torch.bfloat16,), block_size=16, mamba_cache_mode="align")
     base_worker.kv_cache_config = SimpleNamespace(
         kv_cache_groups=[
             KVCacheGroupSpec(layer_names=["t"], kv_cache_spec=full_spec),
@@ -627,3 +679,84 @@ def test_ascend_store_coordinator_and_null_block_workers():
     )
     assert lw._compute_reachable_store_masks(req) == ([False, False, True, True],)
     assert lw._compute_reachable_load_masks(req, 64) == ([False, False, True, True],)
+
+
+def test_dflash_and_dspark_preserve_data_parallel_index(monkeypatch):
+    """Independent dense DP DFlash/DFlash2/DSpark specs keep their per-replica compile cache index (FB-03)."""
+    from vllm.config import ParallelConfig, replace
+    from vllm.v1.worker.gpu.spec_decode.dflash.speculator import DFlashSpeculator
+
+    from vllm_ascend.patch.worker import patch_dspark
+    from vllm_ascend.worker.v2.spec_decode.dflash.speculator import AscendDFlashSpeculator
+    from vllm_ascend.worker.v2.spec_decode.dflash2.speculator import AscendDFlash2Speculator
+    from vllm_ascend.worker.v2.spec_decode.dspark.speculator import AscendDSparkSpeculator
+    from vllm_ascend.worker.v2.spec_decode.lmhead_tp_utils import LmheadTPDraftSamplingMixin
+    from vllm_ascend.worker.v2.spec_decode.pcp_utils import build_dspark_draft_config
+
+    assert issubclass(AscendDFlash2Speculator, AscendDFlashSpeculator)
+
+    target_pc = ParallelConfig(data_parallel_size=2, data_parallel_rank=1, distributed_executor_backend="mp")
+    target_pc.reconfigure_for_independent_dp_rank()
+    assert target_pc.data_parallel_rank == 0 and target_pc.data_parallel_index == 1
+
+    def fake_dflash_init(self, vllm_config, device):
+        # Upstream DFlashSpeculator.__init__ calls replace(parallel_config, ...),
+        # which resets init=False data_parallel_index to 0 in ParallelConfig.__post_init__.
+        copied = SimpleNamespace(**vars(vllm_config))
+        copied.parallel_config = replace(vllm_config.parallel_config, prefill_context_parallel_size=1)
+        self.vllm_config = copied
+        self.draft_model_config = SimpleNamespace(
+            hf_config=SimpleNamespace(
+                dflash_config={"selector_top_k": 4},
+                sample_from_anchor=True,
+                dspark_draft_topk=None,
+            ),
+            get_hidden_size=lambda: 16,
+        )
+        self.max_num_reqs = 2
+        self.max_num_tokens = 8
+        self.num_speculative_steps = 3
+        self.dtype = torch.bfloat16
+        self.draft_logits = None
+
+    monkeypatch.setattr(DFlashSpeculator, "__init__", fake_dflash_init)
+    monkeypatch.setattr(LmheadTPDraftSamplingMixin, "_lmhead_tp_validate_draft_sampling", lambda self: None)
+    monkeypatch.setattr(AscendDSparkSpeculator, "_init_dcp", lambda self: None)
+
+    dflash_cfg = SimpleNamespace(parallel_config=target_pc, speculative_config=None)
+    dflash2 = AscendDFlash2Speculator(dflash_cfg, torch.device("cpu"))
+    assert dflash2.vllm_config.parallel_config.data_parallel_index == 1
+
+    target_pcp_pc = ParallelConfig(
+        data_parallel_size=4,
+        data_parallel_rank=3,
+        prefill_context_parallel_size=2,
+        distributed_executor_backend="mp",
+    )
+    target_pcp_pc.reconfigure_for_independent_dp_rank()
+    pcp_cfg = SimpleNamespace(parallel_config=target_pcp_pc, engram_config=None)
+    dspark_built = build_dspark_draft_config(pcp_cfg)
+    assert dspark_built.parallel_config.data_parallel_index == 3
+
+    dspark_cfg = SimpleNamespace(parallel_config=target_pc, engram_config=None)
+    dspark = AscendDSparkSpeculator(dspark_cfg, torch.device("cpu"))
+    assert dspark.vllm_config.parallel_config.data_parallel_index == 1
+
+    # Also verify patch_dspark wrapper preserves data_parallel_index across _get_dspark_parallel_config.
+    def fake_get_dspark_pc(parallel_config, *args, **kwargs):
+        return replace(parallel_config, pipeline_parallel_size=1)
+
+    def fake_load_dspark(target_model, cfg):
+        return patch_dspark.dspark_utils._get_dspark_parallel_config(cfg.parallel_config)
+
+    monkeypatch.setattr(patch_dspark, "resolve_spec_pp_support", lambda cfg: None)
+    monkeypatch.setattr(patch_dspark.eagle_utils, "maybe_share_target_embed", lambda *a: None)
+    monkeypatch.setattr(patch_dspark, "_original_load_dspark_model", fake_load_dspark)
+    monkeypatch.setattr(patch_dspark.dspark_utils, "_get_dspark_parallel_config", fake_get_dspark_pc, raising=False)
+    mock_vllm_cfg = SimpleNamespace(
+        parallel_config=target_pc,
+        model_config=SimpleNamespace(model="t"),
+        speculative_config=SimpleNamespace(draft_model_config=SimpleNamespace(model="d")),
+    )
+    draft_pc = patch_dspark._load_dspark_model_with_target_quant(object(), mock_vllm_cfg)
+    assert draft_pc.data_parallel_index == 1

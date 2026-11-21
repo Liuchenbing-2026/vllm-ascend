@@ -38,7 +38,6 @@ from vllm.v1.kv_cache_interface import (
 )
 
 from vllm_ascend.core.kv_cache_interface import is_dflash_sliding_window_spec
-
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.cache_planner import (
     get_layerwise_offload_config,
     get_spec_reuse_rules,

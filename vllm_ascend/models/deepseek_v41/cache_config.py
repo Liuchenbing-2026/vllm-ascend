@@ -251,10 +251,7 @@ def group_cache_specs(specs):
 
     # Group draft SWA layers independently across slots so extra draft layers
     # never shrink or pad target full/SWA groups (#68533).
-    draft_columns = [
-        [name for name in layer_tuple if _is_padded_draft_swa(name)]
-        for layer_tuple in layer_tuples
-    ]
+    draft_columns = [[name for name in layer_tuple if _is_padded_draft_swa(name)] for layer_tuple in layer_tuples]
     for names in zip_longest(*draft_columns):
         draft_group_specs = {name: padded[name] for name in names if name is not None}
         if draft_group_specs:

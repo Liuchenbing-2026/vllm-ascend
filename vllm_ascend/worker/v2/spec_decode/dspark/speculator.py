@@ -73,8 +73,11 @@ class AscendDSparkSpeculator(LmheadTPDraftSamplingMixin, DSparkSpeculator):
             return False
 
     def __init__(self, vllm_config: VllmConfig, device: torch.device):
+        target_dp_index = getattr(vllm_config.parallel_config, "data_parallel_index", None)
         vllm_config = build_dspark_draft_config(vllm_config)
         super().__init__(vllm_config, device)
+        if target_dp_index is not None and hasattr(self.vllm_config.parallel_config, "data_parallel_index"):
+            self.vllm_config.parallel_config.data_parallel_index = target_dp_index
         self._lmhead_tp_validate_draft_sampling()
         self.input_batch: InputBatch | None = None
         self._draft_metadata_num_reqs: int | None = None

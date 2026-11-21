@@ -86,7 +86,18 @@ def _load_dspark_model_with_target_quant(target_model, vllm_config):
         partition_mask = cast(AbstractContextManager[None], nullcontext())
         if spec_pp_support is not None:
             partition_mask = patch.object(vllm_envs, "VLLM_PP_LAYER_PARTITION", None)
-        with partition_mask, draft_config_context():
+        dp_mask = cast(AbstractContextManager[None], nullcontext())
+        orig_get_dspark_pc = getattr(dspark_utils, "_get_dspark_parallel_config", None)
+        if callable(orig_get_dspark_pc):
+
+            def _dp_safe_get_dspark_parallel_config(parallel_config, *args, **kwargs):
+                draft_pc = orig_get_dspark_pc(parallel_config, *args, **kwargs)
+                if hasattr(parallel_config, "data_parallel_index") and hasattr(draft_pc, "data_parallel_index"):
+                    draft_pc.data_parallel_index = parallel_config.data_parallel_index
+                return draft_pc
+
+            dp_mask = patch.object(dspark_utils, "_get_dspark_parallel_config", _dp_safe_get_dspark_parallel_config)
+        with partition_mask, dp_mask, draft_config_context():
             return _original_load_dspark_model(target_model, vllm_config)
     finally:
         eagle_utils.maybe_share_target_embed = _original_maybe_share_target_embed

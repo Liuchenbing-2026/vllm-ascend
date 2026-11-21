@@ -178,9 +178,7 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
             return [block_hash for block_hash, hit in zip(allowed_hashes, block_hits) if hit]
 
         extra_kwargs = (
-            {"num_request_tokens": request.num_tokens}
-            if getattr(request, "num_tokens", None) is not None
-            else {}
+            {"num_request_tokens": request.num_tokens} if getattr(request, "num_tokens", None) is not None else {}
         )
         return coordinator.find_reachable_hit_tokens(
             request.block_hashes,

@@ -779,9 +779,7 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
                 if local_id == 0:
                     continue
                 if remote_id == 0:
-                    raise ValueError(
-                        f"Mooncake SWA required remote block is not resident: request={request_id!r}"
-                    )
+                    raise ValueError(f"Mooncake SWA required remote block is not resident: request={request_id!r}")
                 paired_local.append(local_id)
                 paired_remote.append(remote_id)
             local_kernel_block_ids = self._expand_block_ids(paired_local, local_block_size_scale)

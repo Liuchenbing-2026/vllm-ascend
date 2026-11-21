@@ -50,5 +50,9 @@ def build_dspark_draft_config(
             enable_eplb=enable_eplb,
             eplb_config=eplb_config,
         )
+        if hasattr(target_parallel_config, "data_parallel_index") and hasattr(
+            vllm_config.parallel_config, "data_parallel_index"
+        ):
+            vllm_config.parallel_config.data_parallel_index = target_parallel_config.data_parallel_index
         vllm_config.engram_config = engram_config
     return vllm_config

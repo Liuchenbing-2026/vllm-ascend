@@ -3,7 +3,7 @@
 
 import inspect
 from collections.abc import Iterable
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, fields, is_dataclass, replace
 from typing import Any
 
 import torch
@@ -691,16 +691,10 @@ def as_dflash_sliding_window_spec(
     if not isinstance(spec, SlidingWindowSpec) or is_dflash_sliding_window_spec(spec):
         return spec
     target_cls: type[SlidingWindowSpec] = (
-        AscendDFlashSlidingWindowMLASpec
-        if isinstance(spec, SlidingWindowMLASpec)
-        else AscendDFlashSlidingWindowSpec
+        AscendDFlashSlidingWindowMLASpec if isinstance(spec, SlidingWindowMLASpec) else AscendDFlashSlidingWindowSpec
     )
     target_fields = {f.name for f in fields(target_cls) if f.init}
-    kwargs = {
-        f.name: getattr(spec, f.name)
-        for f in fields(type(spec))
-        if f.init and f.name in target_fields
-    }
+    kwargs = {f.name: getattr(spec, f.name) for f in fields(type(spec)) if f.init and f.name in target_fields}
     num_spec, max_steps, lookahead = extract_dflash_tail_params(vllm_config)
     kwargs.update(
         num_speculative_tokens=num_spec,
@@ -733,7 +727,10 @@ def build_dflash_sliding_window_layer_config(
         num_lookahead_tokens=lookahead,
     )
     if hasattr(layer_cfg, "is_draft"):
-        layer_cfg = replace(layer_cfg, is_draft=is_draft)
+        if is_dataclass(layer_cfg):
+            layer_cfg = replace(layer_cfg, is_draft=is_draft)
+        else:
+            layer_cfg.is_draft = is_draft
     return layer_cfg
 
 

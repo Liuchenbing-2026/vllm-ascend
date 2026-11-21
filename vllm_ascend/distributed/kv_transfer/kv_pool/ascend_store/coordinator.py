@@ -20,10 +20,7 @@ from vllm.v1.kv_cache_interface import (
     UniformTypeKVCacheSpecs,
 )
 
-from vllm_ascend.core.kv_cache_interface import (
-    is_dflash_sliding_window_manager,
-    is_dflash_sliding_window_spec,
-)
+from vllm_ascend.core.kv_cache_interface import is_dflash_sliding_window_manager, is_dflash_sliding_window_spec
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     block_hash_to_bytes,
     get_block_hashes,
@@ -40,7 +37,6 @@ _REACHABLE_MASK_BASE_KWARGS = frozenset(("start_block", "end_block", "alignment_
 _REACHABLE_MASK_OPTIONAL_KWARGS = frozenset(("retention_interval", "num_prompt_tokens", "reachable_boundaries"))
 # manager class -> accepted reachable_block_mask parameter names.
 _REACHABLE_MASK_KWARGS_CACHE: dict[type[SingleTypeKVCacheManager], frozenset[str]] = {}
-_FIND_HIT_NUM_REQ_TOKENS_CACHE: dict[type[SingleTypeKVCacheManager], bool] = {}
 
 # Per-group pool query used by the shared reachable hit lookup: returns the
 # subset of ``group_block_hashes`` present in the pool (all replicas valid).
@@ -510,17 +506,13 @@ def _get_manager_class(spec: KVCacheSpec) -> type[SingleTypeKVCacheManager]:
     return manager_cls
 
 
+@lru_cache(maxsize=64)
 def _find_hit_accepts_num_request_tokens(manager_cls: type[SingleTypeKVCacheManager]) -> bool:
-    cached = _FIND_HIT_NUM_REQ_TOKENS_CACHE.get(manager_cls)
-    if cached is not None:
-        return cached
     fn = getattr(manager_cls, "find_longest_cache_hit", None)
     try:
-        accepted = fn is not None and "num_request_tokens" in inspect.signature(fn).parameters
+        return fn is not None and "num_request_tokens" in inspect.signature(fn).parameters
     except (TypeError, ValueError):
-        accepted = False
-    _FIND_HIT_NUM_REQ_TOKENS_CACHE[manager_cls] = accepted
-    return accepted
+        return False
 
 
 def _find_longest_cache_hit(

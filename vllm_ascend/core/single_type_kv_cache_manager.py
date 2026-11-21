@@ -37,8 +37,15 @@ def _resolve_block_hashes_compat(
     return BlockHashListWithBlockSize(block_hashes, hash_block_size, block_size)
 
 
+def _is_swa_spec_or_config(obj: Any) -> bool:
+    """Return whether ``obj`` exposes sliding-window spec or manager-config fields."""
+    return getattr(obj, "params", None) is not None or hasattr(obj, "sliding_window")
+
+
 def _extract_swa_reach(spec_or_config: Any) -> tuple[int, int]:
     """Return ``(num_retained_tokens, block_size_or_zero)`` across spec/config APIs."""
+    if isinstance(spec_or_config, int) and not isinstance(spec_or_config, bool):
+        return max(spec_or_config - 1, 0), spec_or_config
     params = getattr(spec_or_config, "params", None)
     if params is not None:
         sliding_window = params.sliding_window
@@ -174,9 +181,7 @@ class AscendDFlashSlidingWindowManager(SlidingWindowManager):
         req_blocks = self.req_to_blocks[request_id]
         num_computed_blocks = cdiv(num_total_computed_tokens, self.block_size)
         # Pre-#64109 coordinators omit num_tokens_main_model; fall back to computed span.
-        effective_main_tokens = (
-            num_total_computed_tokens if num_tokens_main_model is None else num_tokens_main_model
-        )
+        effective_main_tokens = num_total_computed_tokens if num_tokens_main_model is None else num_tokens_main_model
         num_null_blocks = min(
             self._num_unbacked_leading_blocks(effective_main_tokens),
             num_computed_blocks,
@@ -252,24 +257,39 @@ class AscendDFlashSlidingWindowManager(SlidingWindowManager):
         max_length: int,
         kv_cache_group_ids: list[int],
         block_pool: BlockPool,
-        kv_cache_spec: Any,
-        drop_eagle_block: Any,
-        alignment_tokens: int,
-        dcp_world_size: int = 1,
-        pcp_world_size: int = 1,
+        *args: Any,
         num_request_tokens: int | None = None,
+        **kwargs: Any,
     ) -> tuple[tuple[list[KVCacheBlock], ...], int]:
         """Find longest hit whose blocks in ``[L - num_retained_tokens, hit)`` exist."""
-        assert dcp_world_size == 1 and pcp_world_size == 1
         # Tolerate both pre-#61452 (kv_cache_spec, drop_eagle_block) and post-#61452 args.
-        if isinstance(kv_cache_spec, int):
-            block_size = kv_cache_spec
-            num_retained_tokens, _ = _extract_swa_reach(drop_eagle_block)
+        is_post_61452 = "manager_config" in kwargs or (
+            len(args) >= 2
+            and isinstance(args[0], int)
+            and not isinstance(args[0], bool)
+            and _is_swa_spec_or_config(args[1])
+        )
+        if is_post_61452:
+            block_size = args[0] if len(args) >= 1 else kwargs["block_size"]
+            manager_config = args[1] if len(args) >= 2 else kwargs["manager_config"]
+            alignment_tokens = args[3] if len(args) >= 4 else kwargs["alignment_tokens"]
+            dcp_world_size = args[4] if len(args) >= 5 else kwargs.get("dcp_world_size", 1)
+            pcp_world_size = args[5] if len(args) >= 6 else kwargs.get("pcp_world_size", 1)
+            if len(args) >= 7 and num_request_tokens is None:
+                num_request_tokens = args[6]
+            num_retained_tokens, _ = _extract_swa_reach(manager_config)
         else:
+            kv_cache_spec = args[0] if len(args) >= 1 else kwargs["kv_cache_spec"]
+            alignment_tokens = args[2] if len(args) >= 3 else kwargs["alignment_tokens"]
+            dcp_world_size = args[3] if len(args) >= 4 else kwargs.get("dcp_world_size", 1)
+            pcp_world_size = args[4] if len(args) >= 5 else kwargs.get("pcp_world_size", 1)
+            if len(args) >= 6 and num_request_tokens is None:
+                num_request_tokens = args[5]
             assert isinstance(kv_cache_spec, SlidingWindowSpec), (
                 "AscendDFlashSlidingWindowManager can only be used for sliding window groups"
             )
             num_retained_tokens, block_size = _extract_swa_reach(kv_cache_spec)
+        assert dcp_world_size == 1 and pcp_world_size == 1
         alignment_tokens = alignment_tokens or block_size
         assert alignment_tokens % block_size == 0
 
@@ -305,21 +325,32 @@ class AscendDFlashSlidingWindowManager(SlidingWindowManager):
         start_block: int,
         end_block: int,
         alignment_tokens: int | None,
-        kv_cache_spec: Any,
-        use_eagle: Any = False,
-        retention_interval: int | None = None,
-        reachable_boundaries: Sequence[int] = (),
-        dcp_world_size: int = 1,
-        final_segment_end_block: int | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> list[bool] | None:
-        del use_eagle, dcp_world_size, final_segment_end_block
-        if retention_interval is None or alignment_tokens is None:
-            return None
-        if isinstance(kv_cache_spec, int):
-            block_size = kv_cache_spec
-            num_retained_tokens, _ = _extract_swa_reach(use_eagle)
+        is_post_61452 = "manager_config" in kwargs or (
+            len(args) >= 2
+            and isinstance(args[0], int)
+            and not isinstance(args[0], bool)
+            and _is_swa_spec_or_config(args[1])
+        )
+        if is_post_61452:
+            block_size = args[0] if len(args) >= 1 else kwargs["block_size"]
+            manager_config = args[1] if len(args) >= 2 else kwargs["manager_config"]
+            retention_interval = args[3] if len(args) >= 4 else kwargs.get("retention_interval")
+            reachable_boundaries = args[4] if len(args) >= 5 else kwargs.get("reachable_boundaries", ())
+            if retention_interval is None or alignment_tokens is None:
+                return None
+            num_retained_tokens, _ = _extract_swa_reach(manager_config)
         else:
+            kv_cache_spec = args[0] if len(args) >= 1 else kwargs.get("kv_cache_spec", kwargs.get("block_size"))
+            retention_interval = args[2] if len(args) >= 3 else kwargs.get("retention_interval")
+            reachable_boundaries = args[3] if len(args) >= 4 else kwargs.get("reachable_boundaries", ())
+            if retention_interval is None or alignment_tokens is None:
+                return None
             num_retained_tokens, block_size = _extract_swa_reach(kv_cache_spec)
+        if block_size <= 0:
+            raise ValueError(f"Invalid block_size for reachable_block_mask: {block_size}")
         mask = [False] * (end_block - start_block)
         for boundary_tokens in reachable_boundaries:
             hit_tokens = boundary_tokens // alignment_tokens * alignment_tokens
