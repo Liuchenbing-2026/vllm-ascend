@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import inspect
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, fields, is_dataclass, replace
 from typing import Any
 
@@ -475,7 +475,8 @@ class AscendSlidingWindowMLASpec(SlidingWindowMLASpec):
 
     def is_uniform_with_collection(self, kv_cache_specs: dict[str, KVCacheSpec]) -> bool:
         return all(
-            type(spec) is type(self)
+            isinstance(spec, AscendSlidingWindowMLASpec)
+            and type(spec) is type(self)
             and spec.sliding_window == self.sliding_window
             and getattr(spec, "bounded_replay", False) == getattr(self, "bounded_replay", False)
             for spec in kv_cache_specs.values()
@@ -556,30 +557,31 @@ class _DFlashTailMixin:
     @property
     def tail_tokens(self) -> int:
         """Tokens below ``num_tokens_main_model`` a draft step can still read."""
-        return self.sliding_window + self.num_speculative_tokens * self.max_in_flight_steps
+        return int(getattr(self, "sliding_window")) + self.num_speculative_tokens * self.max_in_flight_steps
 
     def max_admission_blocks_per_request(self, max_in_flight_tokens: int, max_model_len: int) -> int:
         """Cap per-request blocks to min(window bound, per-in-flight tail bound)."""
-        extra_retained = getattr(self, "extra_retained_tokens", 0)
+        sliding_window = int(getattr(self, "sliding_window"))
+        block_size = int(getattr(self, "block_size"))
+        extra_retained = int(getattr(self, "extra_retained_tokens", 0))
         super_admission = getattr(super(), "max_admission_blocks_per_request", None)
         if callable(super_admission):
-            window_blocks = super_admission(max_in_flight_tokens + self.num_lookahead_tokens, max_model_len)
+            window_blocks = int(super_admission(max_in_flight_tokens + self.num_lookahead_tokens, max_model_len))
         else:
             num_tokens = min(
-                self.sliding_window - 1 + extra_retained + max_in_flight_tokens + self.num_lookahead_tokens,
+                sliding_window - 1 + extra_retained + max_in_flight_tokens + self.num_lookahead_tokens,
                 max_model_len,
             )
-            window_blocks = cdiv(num_tokens, self.block_size) + 1
-        tail_blocks = cdiv(self.tail_tokens + extra_retained + self.num_lookahead_tokens, self.block_size) + 1
+            window_blocks = cdiv(num_tokens, block_size) + 1
+        tail_blocks = cdiv(self.tail_tokens + extra_retained + self.num_lookahead_tokens, block_size) + 1
         return min(window_blocks, (self.max_in_flight_steps + 1) * tail_blocks)
 
     def max_memory_usage_bytes(self, vllm_config: VllmConfig) -> int:
         """Compute tail-bounded per-request KV pool demand for startup sizing."""
         parallel_cfg = getattr(vllm_config, "parallel_config", None)
+        dcp_sharded = bool(getattr(self, "dcp_sharded", False))
         if parallel_cfg is not None:
-            assert not self.dcp_sharded or parallel_cfg.decode_context_parallel_size == 1, (
-                "DCP not support sliding window."
-            )
+            assert not dcp_sharded or parallel_cfg.decode_context_parallel_size == 1, "DCP not support sliding window."
         max_in_flight = getattr(vllm_config, "max_in_flight_tokens", None)
         if max_in_flight is None:
             scheduler_cfg = getattr(vllm_config, "scheduler_config", None)
@@ -588,13 +590,13 @@ class _DFlashTailMixin:
             max_in_flight = max_batched * max_batches
         max_model_len = vllm_config.model_config.max_model_len
         max_blocks = self.max_admission_blocks_per_request(
-            max_in_flight_tokens=max_in_flight,
+            max_in_flight_tokens=int(max_in_flight),
             max_model_len=max_model_len,
         )
-        return max_blocks * self.page_size_bytes
+        return max_blocks * int(getattr(self, "page_size_bytes"))
 
 
-def _validate_tail_params(specs: list[Any]) -> tuple[int, int, int]:
+def _validate_tail_params(specs: Sequence[Any]) -> tuple[int, int, int]:
     num_spec_set = {spec.num_speculative_tokens for spec in specs}
     in_flight_set = {spec.max_in_flight_steps for spec in specs}
     lookahead_set = {spec.num_lookahead_tokens for spec in specs}
@@ -622,7 +624,9 @@ class AscendDFlashSlidingWindowSpec(_DFlashTailMixin, SlidingWindowSpec):
         first = specs[0]
         target_names = {f.name for f in fields(cls) if f.init}
         sw_fields = fields(SlidingWindowSpec)
-        init_kwargs = {f.name: getattr(first, f.name) for f in sw_fields if f.init and f.name in target_names}
+        init_kwargs: dict[str, Any] = {
+            f.name: getattr(first, f.name) for f in sw_fields if f.init and f.name in target_names
+        }
         init_kwargs.update(
             num_speculative_tokens=num_spec,
             max_in_flight_steps=max_steps,
@@ -634,7 +638,8 @@ class AscendDFlashSlidingWindowSpec(_DFlashTailMixin, SlidingWindowSpec):
 
     def is_uniform_with_collection(self, kv_cache_specs: dict[str, KVCacheSpec]) -> bool:
         return all(
-            type(spec) is type(self)
+            isinstance(spec, AscendDFlashSlidingWindowSpec)
+            and type(spec) is type(self)
             and spec.sliding_window == self.sliding_window
             and spec.num_speculative_tokens == self.num_speculative_tokens
             and spec.max_in_flight_steps == self.max_in_flight_steps
@@ -663,7 +668,8 @@ class AscendDFlashSlidingWindowMLASpec(_DFlashTailMixin, AscendSlidingWindowMLAS
 
     def is_uniform_with_collection(self, kv_cache_specs: dict[str, KVCacheSpec]) -> bool:
         return all(
-            type(spec) is type(self)
+            isinstance(spec, AscendDFlashSlidingWindowMLASpec)
+            and type(spec) is type(self)
             and spec.sliding_window == self.sliding_window
             and getattr(spec, "bounded_replay", False) == getattr(self, "bounded_replay", False)
             and spec.num_speculative_tokens == self.num_speculative_tokens
@@ -683,7 +689,9 @@ def as_dflash_sliding_window_spec(spec: KVCacheSpec, vllm_config: Any, *, is_dra
     else:
         target_cls = AscendDFlashSlidingWindowSpec
     target_fields = {f.name for f in fields(target_cls) if f.init}
-    kwargs = {f.name: getattr(spec, f.name) for f in fields(type(spec)) if f.init and f.name in target_fields}
+    kwargs: dict[str, Any] = {
+        f.name: getattr(spec, f.name) for f in fields(type(spec)) if f.init and f.name in target_fields
+    }
     num_spec, max_steps, lookahead = extract_dflash_tail_params(vllm_config)
     kwargs.update(num_speculative_tokens=num_spec, max_in_flight_steps=max_steps, num_lookahead_tokens=lookahead)
     if is_draft is not None and "is_draft" in target_fields:
@@ -712,7 +720,7 @@ def build_dflash_sliding_window_layer_config(
         num_lookahead_tokens=lookahead,
     )
     if hasattr(layer_cfg, "is_draft"):
-        if is_dataclass(layer_cfg):
+        if is_dataclass(layer_cfg) and not isinstance(layer_cfg, type):
             layer_cfg = replace(layer_cfg, is_draft=is_draft)
         else:
             layer_cfg.is_draft = is_draft

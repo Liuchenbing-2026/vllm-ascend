@@ -32,7 +32,7 @@ def get_num_blocks_to_allocate(
         if callable(get_reservation):
             reservation = get_reservation(request_id, num_tokens)
             if reservation is not None:
-                return reservation
+                return int(reservation)
         blocks = self.req_to_blocks.get(request_id, ())
         if blocks:
             # Requests can hold blocks without a num_cached_block entry when

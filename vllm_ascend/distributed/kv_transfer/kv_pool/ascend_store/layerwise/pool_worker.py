@@ -1152,12 +1152,12 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
             except AssertionError:
                 masks = None
         align_groups = getattr(self, "group_uses_align_state", [])
-        skip_null_groups = getattr(self, "group_skips_null_blocks", align_groups)
+        skip_null_groups = self._effective_skip_null_blocks_by_group()
         if not any(skip_null_groups):
             return masks
         # Mamba align slots and tail-only DFlash/SWA leading slots can be null
         # (block 0) even inside a reachable span. Never write or read keys for holes.
-        result: list[list[bool] | None] = list(masks) if masks is not None else [None] * self.num_kv_cache_groups
+        result: list[Sequence[bool] | None] = list(masks) if masks is not None else [None] * self.num_kv_cache_groups
         for group_id, skip_null in enumerate(skip_null_groups):
             if not skip_null or group_id >= len(request.block_ids_by_group):
                 continue
@@ -1438,8 +1438,7 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
         cached_tokens: int,
     ) -> tuple[Sequence[bool] | None, ...] | None:
         """Exclude unbacked block-0 placeholders on SWA/DFlash and align-state loads."""
-        align_groups = getattr(self, "group_uses_align_state", [])
-        skip_null_groups = getattr(self, "group_skips_null_blocks", align_groups)
+        skip_null_groups = self._effective_skip_null_blocks_by_group()
         if not any(skip_null_groups) or not getattr(request, "block_ids_by_group", None):
             return masks
         result: list[Sequence[bool] | None] = (

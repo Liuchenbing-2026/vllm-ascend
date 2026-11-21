@@ -5,8 +5,8 @@ import sys
 from collections.abc import Mapping
 from copy import copy
 from dataclasses import replace
-from functools import lru_cache
 from math import lcm
+from typing import Any
 
 import vllm
 import vllm.v1.core.kv_cache_coordinator as vllm_kv_cache_coordinator
@@ -43,13 +43,21 @@ from vllm_ascend.core.kv_cache_interface import (
 )
 
 
-@lru_cache(maxsize=64)
 def _accepts_num_request_tokens(manager_cls: type) -> bool:
+    cache = getattr(_accepts_num_request_tokens, "_cache", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        setattr(_accepts_num_request_tokens, "_cache", cache)
+    cached = cache.get(manager_cls)
+    if cached is not None:
+        return bool(cached)
     fn = getattr(manager_cls, "find_longest_cache_hit", None)
     try:
-        return fn is not None and "num_request_tokens" in inspect.signature(fn).parameters
+        accepted = fn is not None and "num_request_tokens" in inspect.signature(fn).parameters
     except (TypeError, ValueError):
-        return False
+        accepted = False
+    cache[manager_cls] = accepted
+    return accepted
 
 
 _orig_get_kv_cache_coordinator = vllm.v1.core.kv_cache_coordinator.get_kv_cache_coordinator
@@ -463,21 +471,20 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
                         else group_block_size
                     )
                     _max_length = min(curr_hit_length + eagle_margin, max_cache_hit_length)
-                extra_hit_kwargs = (
-                    {"num_request_tokens": num_request_tokens} if _accepts_num_request_tokens(manager_cls) else {}
-                )
-                hit_result = manager_cls.find_longest_cache_hit(
-                    block_hashes=_get_block_hashes(spec),
-                    max_length=_max_length,
-                    kv_cache_group_ids=group_ids,
-                    block_pool=self.block_pool,
-                    kv_cache_spec=spec,
-                    drop_eagle_block=drop_eagle_block,
-                    alignment_tokens=self._cache_hit_alignment_tokens,
-                    dcp_world_size=self.dcp_world_size if spec.dcp_sharded else 1,
-                    pcp_world_size=1,
-                    **extra_hit_kwargs,
-                )
+                hit_kwargs: dict[str, Any] = {
+                    "block_hashes": _get_block_hashes(spec),
+                    "max_length": _max_length,
+                    "kv_cache_group_ids": group_ids,
+                    "block_pool": self.block_pool,
+                    "kv_cache_spec": spec,
+                    "drop_eagle_block": drop_eagle_block,
+                    "alignment_tokens": self._cache_hit_alignment_tokens,
+                    "dcp_world_size": self.dcp_world_size if spec.dcp_sharded else 1,
+                    "pcp_world_size": 1,
+                }
+                if _accepts_num_request_tokens(manager_cls):
+                    hit_kwargs["num_request_tokens"] = num_request_tokens
+                hit_result = manager_cls.find_longest_cache_hit(**hit_kwargs)
                 hit_blocks, _new_hit_length = hit_result
                 if drop_eagle_block:
                     eagle_verified.add(idx)
@@ -532,21 +539,20 @@ class AscendHybridKVCacheCoordinator(HybridKVCacheCoordinator):
         hit_blocks: list[list[KVCacheBlock]] = [[] for _ in range(num_groups)]
         hit_lengths: list[int] = [0] * num_groups
         for spec, group_ids, manager_cls, use_eagle in self.attention_groups:
-            extra_hit_kwargs = (
-                {"num_request_tokens": num_request_tokens} if _accepts_num_request_tokens(manager_cls) else {}
-            )
-            blocks, group_hit = manager_cls.find_longest_cache_hit(
-                block_hashes=block_hashes,
-                max_length=max_cache_hit_length,
-                kv_cache_group_ids=group_ids,
-                block_pool=self.block_pool,
-                kv_cache_spec=spec,
-                drop_eagle_block=use_eagle and not self.skips_eagle_block_drop,
-                alignment_tokens=self._cache_hit_alignment_tokens,
-                dcp_world_size=self.dcp_world_size if spec.dcp_sharded else 1,
-                pcp_world_size=1,
-                **extra_hit_kwargs,
-            )
+            hit_kwargs: dict[str, Any] = {
+                "block_hashes": block_hashes,
+                "max_length": max_cache_hit_length,
+                "kv_cache_group_ids": group_ids,
+                "block_pool": self.block_pool,
+                "kv_cache_spec": spec,
+                "drop_eagle_block": use_eagle and not self.skips_eagle_block_drop,
+                "alignment_tokens": self._cache_hit_alignment_tokens,
+                "dcp_world_size": self.dcp_world_size if spec.dcp_sharded else 1,
+                "pcp_world_size": 1,
+            }
+            if _accepts_num_request_tokens(manager_cls):
+                hit_kwargs["num_request_tokens"] = num_request_tokens
+            blocks, group_hit = manager_cls.find_longest_cache_hit(**hit_kwargs)
             for gid, blks in zip(group_ids, blocks):
                 hit_blocks[gid] = blks
                 hit_lengths[gid] = group_hit

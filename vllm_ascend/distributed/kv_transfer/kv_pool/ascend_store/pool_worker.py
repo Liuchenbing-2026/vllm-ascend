@@ -23,6 +23,7 @@ from vllm.model_executor.model_loader.utils import get_model_cls
 from vllm.v1.core.kv_cache_utils import BlockHash, maybe_convert_block_hash
 from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
+    KVCacheSpec,
     MambaSpec,
     SlidingWindowSpec,
     UniformTypeKVCacheSpecs,
@@ -438,10 +439,10 @@ class BaseKVPoolWorker(ABC):
             retention_interval=retention_interval,
         )
 
-    def _iter_group_specs(self) -> list[list[object]]:
+    def _iter_group_specs(self) -> list[list[KVCacheSpec]]:
         if self.kv_cache_config is None:
             return []
-        per_group: list[list[object]] = []
+        per_group: list[list[KVCacheSpec]] = []
         for group in self.kv_cache_config.kv_cache_groups:
             kv_cache_spec = group.kv_cache_spec
             if isinstance(kv_cache_spec, UniformTypeKVCacheSpecs):
@@ -472,6 +473,16 @@ class BaseKVPoolWorker(ABC):
                 for spec in specs
             )
             for specs in per_group
+        ]
+
+    def _effective_skip_null_blocks_by_group(self) -> list[bool]:
+        """Combine align-state and tail-only SWA groups that may hold null block 0."""
+        align_groups = getattr(self, "group_uses_align_state", ())
+        skip_groups = getattr(self, "group_skips_null_blocks", ())
+        num_groups = max(len(align_groups), len(skip_groups))
+        return [
+            (i < len(align_groups) and bool(align_groups[i])) or (i < len(skip_groups) and bool(skip_groups[i]))
+            for i in range(num_groups)
         ]
 
     @staticmethod
@@ -1436,7 +1447,7 @@ class KVPoolWorker(BaseKVPoolWorker):
                     "no_load_spec" if load_spec is None else f"can_load={load_spec.can_load}",
                 )
                 continue
-            skip_null_groups = getattr(self, "group_skips_null_blocks", self.group_uses_align_state)
+            skip_null_groups = self._effective_skip_null_blocks_by_group()
             request.skip_null_blocks_by_group = skip_null_groups
             load_group_ids = request.kv_cache_group_ids or [0]
             token_len = request.token_len_chunk
@@ -1601,7 +1612,7 @@ class KVPoolWorker(BaseKVPoolWorker):
             if current_event is None:
                 current_event = torch.npu.Event()
                 current_event.record()
-            skip_null_groups = getattr(self, "group_skips_null_blocks", self.group_uses_align_state)
+            skip_null_groups = self._effective_skip_null_blocks_by_group()
             request.skip_null_blocks_by_group = skip_null_groups
             request.current_event = current_event
             requests.append(request)

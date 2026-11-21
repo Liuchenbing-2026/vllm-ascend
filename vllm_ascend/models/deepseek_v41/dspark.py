@@ -117,12 +117,13 @@ class DeepseekV41DSparkSWACache(AscendDeepseekV41SWACache):
             layer_cfg = build_dflash_sliding_window_layer_config(
                 spec,
                 vllm_config,
-                sliding_window=spec.sliding_window,
+                sliding_window=int(getattr(spec, "sliding_window")),
                 is_draft=True,
             )
             if layer_cfg is not None:
                 return layer_cfg
-        return super().get_kv_cache_config(vllm_config) if hasattr(super(), "get_kv_cache_config") else spec
+        super_get_config = getattr(super(), "get_kv_cache_config", None)
+        return super_get_config(vllm_config) if callable(super_get_config) else spec
 
     def get_attn_backend(self):
         return DeepseekV41CacheBackend

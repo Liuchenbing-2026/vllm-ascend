@@ -4,6 +4,7 @@
 
 from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +18,7 @@ from vllm.v1.core.single_type_kv_cache_manager import (
 from vllm.v1.kv_cache_interface import (
     FullAttentionSpec,
     KVCacheGroupSpec,
+    KVCacheSpec,
     MambaSpec,
     SlidingWindowSpec,
     UniformTypeKVCacheSpecs,
@@ -66,7 +68,7 @@ def _make_runtime(
     max_model_len: int = 4096,
     max_num_batched_tokens: int = 512,
     disable_hybrid: bool = False,
-):
+) -> Any:
     """Build a minimal VllmConfig-compatible double across vLLM pin versions."""
     speculator_cfg = SimpleNamespace(num_lookahead_tokens=num_lookahead_tokens)
     spec_cfg = (
@@ -245,7 +247,11 @@ def test_build_dflash_layer_config_forward_compat(monkeypatch):
     assert called["num_lookahead_tokens"] == 3
 
     # Non-dataclass configs also update in place without tripping dataclasses.replace().
-    FakeUpstreamDFlash.layer_config = staticmethod(lambda spec, **kw: SimpleNamespace(spec=spec, is_draft=False))
+    monkeypatch.setattr(
+        FakeUpstreamDFlash,
+        "layer_config",
+        staticmethod(lambda spec, **kw: SimpleNamespace(spec=spec, is_draft=False)),
+    )
     ns_cfg = build_dflash_sliding_window_layer_config(plain, runtime, sliding_window=128, is_draft=True)
     assert ns_cfg.is_draft is True
 
@@ -330,7 +336,7 @@ def test_dflash_manager_prefix_hit_sparse_mask_and_external_load():
     manager = _make_dflash_manager(spec, num_gpu_blocks=32, max_admission_blocks=8, enable_caching=True)
     pool = manager.block_pool
 
-    fake_hashes = [f"h{i}".encode() for i in range(10)]
+    fake_hashes: list[Any] = [f"h{i}".encode() for i in range(10)]
     cached_blocks = [MagicMock(is_null=False, block_id=i + 1) for i in range(10)]
 
     # Only blocks from index 6 upward exist in the pool; [0..5] are missing.
@@ -426,7 +432,7 @@ def test_no_target_padding_for_draft_only_swa_buckets_68533():
         is_draft=True,
     )
 
-    specs = {f"target.{i}.attn": (full_spec if i % 4 == 1 else swa_spec) for i in range(62)}
+    specs: dict[str, KVCacheSpec] = {f"target.{i}.attn": (full_spec if i % 4 == 1 else swa_spec) for i in range(62)}
     for i in range(5):
         specs[f"draft.{i}.attn"] = draft_spec
 
@@ -440,7 +446,9 @@ def test_no_target_padding_for_draft_only_swa_buckets_68533():
     assert len(groups) == 5
 
     # Counterexample: a full-attention draft bucket is unbounded and still sets group size = 1.
-    unbounded_specs = {f"target.{i}.attn": (full_spec if i % 4 == 1 else swa_spec) for i in range(62)}
+    unbounded_specs: dict[str, KVCacheSpec] = {
+        f"target.{i}.attn": (full_spec if i % 4 == 1 else swa_spec) for i in range(62)
+    }
     unbounded_specs["draft.0.attn"] = FullAttentionSpec(
         block_size=16, num_kv_heads=1, head_size=128, dtype=torch.bfloat16, dcp_sharded=False, is_draft=True
     )
@@ -518,7 +526,7 @@ def test_attn_utils_align_and_promote_dflash_draft_specs(monkeypatch):
     dflash_small = AscendDFlashSlidingWindowSpec(
         block_size=16, num_kv_heads=1, head_size=64, dtype=torch.bfloat16, sliding_window=128, is_draft=True
     )
-    specs_map = {"target": full_spec, "draft": dflash_small}
+    specs_map: dict[str, KVCacheSpec] = {"target": full_spec, "draft": dflash_small}
     attn_utils._align_hybrid_attention_page_sizes(specs_map)
     assert specs_map["draft"].block_size == 32
 
@@ -579,7 +587,7 @@ def test_mla_nope_context_kv_skips_padding_slots():
     """exec_kv_prefill guards MLA-NoPE indexed copies when slot_mapping contains -1."""
     from vllm_ascend.attention.mla_v1 import AscendMLAImpl
 
-    impl = AscendMLAImpl.__new__(AscendMLAImpl)
+    impl: Any = AscendMLAImpl.__new__(AscendMLAImpl)
     impl.use_pcp = False
     impl.use_mla_rope = True
     impl.kv_lora_rank = 4
@@ -639,7 +647,7 @@ def test_dspark_pd_and_mooncake_null_block_boundaries():
         list(build_draft_kv_read_batches({"l0": meta_src}, {"l0": meta_dst}, {"l0": (0, 5)}, {0: (4, 7)}, 8))
 
     # Mooncake pull_worker SWA null filtering.
-    worker = MooncakePullRecvingThread.__new__(MooncakePullRecvingThread)
+    worker: Any = MooncakePullRecvingThread.__new__(MooncakePullRecvingThread)
     worker.dcp_size = 1
     worker.dcp_rank = 0
     spec = _make_dflash_spec(block_size=4, sliding_window=8)
@@ -686,7 +694,7 @@ def test_ascend_store_coordinator_and_null_block_workers():
     assert 1 not in coord.eagle_reachable_group_ids
 
     # Worker null-block inference keeps group_uses_align_state focused on Mamba align.
-    base_worker = KVPoolWorker.__new__(KVPoolWorker)
+    base_worker: Any = KVPoolWorker.__new__(KVPoolWorker)
     mamba = MambaSpec(shapes=((2, 4),), dtypes=(torch.bfloat16,), block_size=16, mamba_cache_mode="align")
     base_worker.kv_cache_config = SimpleNamespace(
         kv_cache_groups=[
@@ -699,7 +707,7 @@ def test_ascend_store_coordinator_and_null_block_workers():
     assert base_worker._infer_group_skips_null_blocks() == [False, True, True]
 
     # Layerwise worker load/store mask excludes block 0 on SWA/DFlash groups without enabling Mamba checkpoints.
-    lw = LayerwiseKVPoolWorker.__new__(LayerwiseKVPoolWorker)
+    lw: Any = LayerwiseKVPoolWorker.__new__(LayerwiseKVPoolWorker)
     lw.group_uses_align_state = [False]
     lw.group_skips_null_blocks = [True]
     lw.num_kv_cache_groups = 1
@@ -708,7 +716,7 @@ def test_ascend_store_coordinator_and_null_block_workers():
     lw.block_key_hybrid = False
     lw.cache_coordinator = None
     lw.cache_transfer_granularity = 16
-    req = SimpleNamespace(
+    req: Any = SimpleNamespace(
         can_save=True,
         save_end_token=64,
         num_prompt_tokens=64,
@@ -718,6 +726,38 @@ def test_ascend_store_coordinator_and_null_block_workers():
     )
     assert lw._compute_reachable_store_masks(req) == ([False, False, True, True],)
     assert lw._compute_reachable_load_masks(req, 64) == ([False, False, True, True],)
+
+    # FB-83-03 regression: mutating group_uses_align_state after init (as in test_pool_worker)
+    # still activates null-block filtering and preserves aligned recurrent checkpoints.
+    lw_align: Any = LayerwiseKVPoolWorker.__new__(LayerwiseKVPoolWorker)
+    lw_align.block_key_hybrid = False
+    lw_align.cache_coordinator = object()
+    lw_align.token_database = SimpleNamespace(store_mask=lambda end, prompt: ([False],))
+    lw_align.layerwise_offload = True
+    lw_align.num_kv_cache_groups = 1
+    lw_align.grouped_block_size = [4352]
+    lw_align.cache_transfer_granularity = 4352
+    lw_align.group_skips_null_blocks = [False]
+    lw_align.group_uses_align_state = [True]
+    assert lw_align._effective_skip_null_blocks_by_group() == [True]
+    aligned_req: Any = SimpleNamespace(
+        can_save=True,
+        save_end_token=4352,
+        target_token_len=4352,
+        num_prompt_tokens=8705,
+        block_ids_by_group=[[3]],
+    )
+    assert lw_align._compute_reachable_store_masks(aligned_req) == ([True],)
+    null_aligned_req: Any = SimpleNamespace(
+        can_save=True,
+        save_end_token=4352,
+        target_token_len=4352,
+        num_prompt_tokens=8705,
+        block_ids_by_group=[[0]],
+    )
+    assert lw_align._compute_reachable_store_masks(null_aligned_req) == ([False],)
+    lw_align.group_uses_align_state = [False, True]
+    assert lw_align._effective_skip_null_blocks_by_group() == [False, True]
 
 
 def test_dflash_and_dspark_preserve_data_parallel_index(monkeypatch):
@@ -762,7 +802,7 @@ def test_dflash_and_dspark_preserve_data_parallel_index(monkeypatch):
     monkeypatch.setattr(LmheadTPDraftSamplingMixin, "_lmhead_tp_validate_draft_sampling", lambda self: None)
     monkeypatch.setattr(AscendDSparkSpeculator, "_init_dcp", lambda self: None)
 
-    dflash_cfg = SimpleNamespace(parallel_config=target_pc, speculative_config=None)
+    dflash_cfg: Any = SimpleNamespace(parallel_config=target_pc, speculative_config=None)
     dflash2 = AscendDFlash2Speculator(dflash_cfg, torch.device("cpu"))
     assert dflash2.vllm_config.parallel_config.data_parallel_index == 1
 
@@ -773,11 +813,11 @@ def test_dflash_and_dspark_preserve_data_parallel_index(monkeypatch):
         distributed_executor_backend="mp",
     )
     target_pcp_pc.reconfigure_for_independent_dp_rank()
-    pcp_cfg = SimpleNamespace(parallel_config=target_pcp_pc, engram_config=None)
+    pcp_cfg: Any = SimpleNamespace(parallel_config=target_pcp_pc, engram_config=None)
     dspark_built = build_dspark_draft_config(pcp_cfg)
     assert dspark_built.parallel_config.data_parallel_index == 3
 
-    dspark_cfg = SimpleNamespace(parallel_config=target_pc, engram_config=None)
+    dspark_cfg: Any = SimpleNamespace(parallel_config=target_pc, engram_config=None)
     dspark = AscendDSparkSpeculator(dspark_cfg, torch.device("cpu"))
     assert dspark.vllm_config.parallel_config.data_parallel_index == 1
 
@@ -792,7 +832,7 @@ def test_dflash_and_dspark_preserve_data_parallel_index(monkeypatch):
     monkeypatch.setattr(patch_dspark.eagle_utils, "maybe_share_target_embed", lambda *a: None)
     monkeypatch.setattr(patch_dspark, "_original_load_dspark_model", fake_load_dspark)
     monkeypatch.setattr(patch_dspark.dspark_utils, "_get_dspark_parallel_config", fake_get_dspark_pc, raising=False)
-    mock_vllm_cfg = SimpleNamespace(
+    mock_vllm_cfg: Any = SimpleNamespace(
         parallel_config=target_pc,
         model_config=SimpleNamespace(model="t"),
         speculative_config=SimpleNamespace(draft_model_config=SimpleNamespace(model="d")),

@@ -357,11 +357,13 @@ def group_and_unify_kv_cache_specs(
         elif isinstance(spec, MLAAttentionSpec):
             logical_block_specs[spec.block_size][name] = spec
 
-    mla_uniform_specs = []
+    mla_uniform_specs: list[UniformTypeKVCacheSpecs] = []
     for block_size in sorted(logical_block_specs):
         spec_dict = logical_block_specs[block_size]
         assert len(spec_dict) > 0
-        mla_uniform_specs.append(UniformTypeKVCacheSpecs.from_specs(spec_dict))
+        uniform_mla = UniformTypeKVCacheSpecs.from_specs(spec_dict)
+        assert uniform_mla is not None
+        mla_uniform_specs.append(uniform_mla)
     if not mla_uniform_specs and not any(
         getattr(spec, "cache_dtype_str", None) == TURBOQUANT_CACHE_DTYPE for spec in kv_cache_spec.values()
     ):
