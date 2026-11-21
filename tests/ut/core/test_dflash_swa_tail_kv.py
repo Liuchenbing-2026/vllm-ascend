@@ -9,7 +9,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 from vllm.v1.core.block_pool import BlockPool
-from vllm.v1.core.single_type_kv_cache_manager import FullAttentionManager, SlidingWindowManager
+from vllm.v1.core.single_type_kv_cache_manager import (
+    FullAttentionManager,
+    SlidingWindowManager,
+    register_all_kvcache_specs,
+)
 from vllm.v1.kv_cache_interface import (
     FullAttentionSpec,
     KVCacheGroupSpec,
@@ -17,6 +21,7 @@ from vllm.v1.kv_cache_interface import (
     SlidingWindowSpec,
     UniformTypeKVCacheSpecs,
 )
+from vllm.v1.kv_cache_layout import KVCacheLayout
 from vllm.v1.kv_cache_spec_registry import KVCacheSpecRegistry
 
 from vllm_ascend.core.kv_cache_config_builder import AscendKVCacheConfigBuilder, group_and_unify_kv_cache_specs
@@ -32,9 +37,10 @@ from vllm_ascend.core.kv_cache_interface import (
     register_ascend_kv_cache_specs,
 )
 from vllm_ascend.core.single_type_kv_cache_manager import AscendDFlashSlidingWindowManager
-from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.pull_worker import MooncakePullConnectorWorker
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.pull_worker import MooncakePullRecvingThread
 from vllm_ascend.distributed.kv_transfer.kv_p2p.sfa_pd_rd2h.dspark_context import (
     DSparkContextChunk,
+    DSparkContextDescriptor,
     build_draft_context_slot_mappings,
 )
 from vllm_ascend.distributed.kv_transfer.kv_p2p.sfa_pd_rd2h.dspark_kv import (
@@ -43,6 +49,12 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.sfa_pd_rd2h.dspark_kv import (
 )
 from vllm_ascend.patch.platform import patch_kv_cache_admission, patch_kv_cache_coordinator
 from vllm_ascend.worker.v2 import attn_utils
+
+
+@pytest.fixture(autouse=True)
+def _register_specs():
+    register_all_kvcache_specs(None)
+    register_ascend_kv_cache_specs()
 
 
 def _make_runtime(
@@ -86,6 +98,7 @@ def _make_runtime(
             enable_prefix_caching=False,
             prefix_cache_retention_interval=None,
             cache_dtype="auto",
+            get_resolved_kv_cache_layout=lambda: KVCacheLayout.LBHNC,
         ),
         attention_config=SimpleNamespace(hisparse_config=None),
         speculative_config=spec_cfg,
@@ -290,9 +303,24 @@ def test_dflash_manager_draft_rejection_and_partial_accept_safety(max_in_flight_
         for blk_idx in range(first_read // spec.block_size, end_blk):
             assert not blocks[blk_idx].is_null
 
-    # Partial acceptance: advance accepted tokens and confirm live suffix stays backed.
-    manager.remove_skipped_blocks("req_44", 38)
-    assert not any(b.is_null for b in manager.req_to_blocks["req_44"][31 // 4 : 44 // 4])
+    # Worst-case all-draft rejection: committed prefix is 44 - num_spec * max_in_flight_steps
+    # (41 for 1 step -> first_read=34 -> block 8; 38 for 2 steps -> first_read=31 -> block 7).
+    min_accepted = 44 - num_spec * max_in_flight_steps
+    min_first_read_blk = (min_accepted - spec.sliding_window + 1) // spec.block_size
+    manager.remove_skipped_blocks("req_44", min_accepted)
+    blocks_44 = manager.req_to_blocks["req_44"]
+    assert all(b.is_null for b in blocks_44[:min_first_read_blk])
+    assert not any(b.is_null for b in blocks_44[min_first_read_blk : 44 // spec.block_size])
+
+    # Partial acceptance (+2 accepted tokens): advances skipped boundary by one full block
+    # (43 -> block 9 for 1 step; 40 -> block 8 for 2 steps), freeing the evicted block while
+    # keeping the live suffix backed.
+    partial_accepted = min_accepted + 2
+    partial_first_read_blk = (partial_accepted - spec.sliding_window + 1) // spec.block_size
+    assert partial_first_read_blk == min_first_read_blk + 1
+    manager.remove_skipped_blocks("req_44", partial_accepted)
+    assert all(b.is_null for b in blocks_44[:partial_first_read_blk])
+    assert not any(b.is_null for b in blocks_44[partial_first_read_blk : 44 // spec.block_size])
 
 
 def test_dflash_manager_prefix_hit_sparse_mask_and_external_load():
@@ -413,7 +441,7 @@ def test_no_target_padding_for_draft_only_swa_buckets_68533():
     # Counterexample: a full-attention draft bucket is unbounded and still sets group size = 1.
     unbounded_specs = {f"target.{i}.attn": (full_spec if i % 4 == 1 else swa_spec) for i in range(62)}
     unbounded_specs["draft.0.attn"] = FullAttentionSpec(
-        block_size=16, num_kv_heads=1, head_size=128, dtype=torch.bfloat16, is_draft=True
+        block_size=16, num_kv_heads=1, head_size=128, dtype=torch.bfloat16, dcp_sharded=False, is_draft=True
     )
     assert len(AscendKVCacheConfigBuilder().get_kv_cache_groups(runtime, unbounded_specs)) == 63
 
@@ -441,13 +469,14 @@ def test_deepseek_v41_dspark_independent_draft_slots_no_target_padding():
     from vllm_ascend.models.deepseek_v41.cache_config import (
         group_cache_specs,
         make_cache_groups,
+        make_index_cache_spec,
         make_mla_cache_spec,
         make_swa_cache_spec,
     )
 
     runtime = _make_runtime(method="dspark", num_speculative_tokens=3, num_lookahead_tokens=3)
     mla = make_mla_cache_spec(block_size=64, head_size=512, compress_ratio=2)
-    idx = make_mla_cache_spec(block_size=32, head_size=128, compress_ratio=1)
+    idx = make_index_cache_spec(block_size=64, head_size=128, compress_ratio=1)
     swa = make_swa_cache_spec(
         block_size=64, window_size=128, head_size=512, dtype=torch.bfloat16, cache_dtype="bfloat16"
     )
@@ -465,13 +494,21 @@ def test_deepseek_v41_dspark_independent_draft_slots_no_target_padding():
         groups = make_cache_groups(group_cache_specs(specs))
         target_groups = [g for g in groups if not any(n.startswith("mtp.") for n in g.layer_names)]
         draft_groups = [g for g in groups if all(n.startswith("mtp.") for n in g.layer_names)]
-        assert len(target_groups) == 3
+        assert len(target_groups) == 2 and sorted(len(g.layer_names) for g in target_groups) == [4, 8]
+        assert len(draft_groups) == (1 if num_draft == 3 else 2)
         assert sum(len(g.layer_names) for g in draft_groups) == num_draft
         assert all(
             isinstance(g.kv_cache_spec, UniformTypeKVCacheSpecs)
             and all(isinstance(s, AscendDFlashSlidingWindowMLASpec) for s in g.kv_cache_spec.kv_cache_specs.values())
             for g in draft_groups
         )
+
+    bad_idx = make_index_cache_spec(block_size=32, head_size=128, compress_ratio=1)
+    bad_specs = {**base, "model.layers.0.self_attn.indexer.k_cache": bad_idx}
+    with pytest.raises(ValueError, match="Non-uniform DeepSeek V4.1"):
+        group_cache_specs(bad_specs)
+    with pytest.raises(ValueError, match="None"):
+        make_cache_groups([None])
 
 
 def test_attn_utils_align_and_promote_dflash_draft_specs(monkeypatch):
@@ -566,7 +603,8 @@ def test_mla_nope_context_kv_skips_padding_slots():
 
 def test_dspark_pd_and_mooncake_null_block_boundaries():
     """SFA P/D context slots, KV read batches, and Mooncake SWA pull handle leading null block 0."""
-    chunk = DSparkContextChunk(token_offset=0, num_tokens=6)
+    descriptor = DSparkContextDescriptor("req-1", "gen-1", 6, (2,), 4)
+    chunk = DSparkContextChunk(descriptor, token_offset=0, num_tokens=6)
     default_slots = build_draft_context_slot_mappings(
         chunk,
         draft_group_ids=(0,),
@@ -588,8 +626,8 @@ def test_dspark_pd_and_mooncake_null_block_boundaries():
     )
     assert skipped_slots[0].tolist() == [-1, -1, -1, -1, 8, 9]
 
-    meta_src = DraftKVCacheMetadata("l0", 0, 4, 16, (1000,), (64,), (32,), (1,), ((4, 8),), (torch.bfloat16,))
-    meta_dst = DraftKVCacheMetadata("l0", 0, 4, 16, (5000,), (64,), (32,), (1,), ((4, 8),), (torch.bfloat16,))
+    meta_src = DraftKVCacheMetadata("l0", 0, 4, 16, (1000,), (64,), (32,), (1,), ((4, 8),), ("torch.bfloat16",))
+    meta_dst = DraftKVCacheMetadata("l0", 0, 4, 16, (5000,), (64,), (32,), (1,), ((4, 8),), ("torch.bfloat16",))
     batches = list(
         build_draft_kv_read_batches(
             {"l0": meta_src}, {"l0": meta_dst}, {"l0": (0, 0, 5)}, {0: (0, 0, 7)}, prompt_tokens=12
@@ -600,7 +638,7 @@ def test_dspark_pd_and_mooncake_null_block_boundaries():
         list(build_draft_kv_read_batches({"l0": meta_src}, {"l0": meta_dst}, {"l0": (0, 5)}, {0: (4, 7)}, 8))
 
     # Mooncake pull_worker SWA null filtering.
-    worker = MooncakePullConnectorWorker.__new__(MooncakePullConnectorWorker)
+    worker = MooncakePullRecvingThread.__new__(MooncakePullRecvingThread)
     worker.dcp_size = 1
     worker.dcp_rank = 0
     spec = _make_dflash_spec(block_size=4, sliding_window=8)
@@ -621,7 +659,7 @@ def test_ascend_store_coordinator_and_null_block_workers():
         _find_hit_accepts_num_request_tokens,
     )
     from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.pool_worker import LayerwiseKVPoolWorker
-    from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.pool_worker import BaseKVPoolWorker
+    from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.pool_worker import KVPoolWorker
 
     assert _find_hit_accepts_num_request_tokens(AscendDFlashSlidingWindowManager)
 
@@ -647,7 +685,7 @@ def test_ascend_store_coordinator_and_null_block_workers():
     assert 1 not in coord.eagle_reachable_group_ids
 
     # Worker null-block inference keeps group_uses_align_state focused on Mamba align.
-    base_worker = BaseKVPoolWorker.__new__(BaseKVPoolWorker)
+    base_worker = KVPoolWorker.__new__(KVPoolWorker)
     mamba = MambaSpec(shapes=((2, 4),), dtypes=(torch.bfloat16,), block_size=16, mamba_cache_mode="align")
     base_worker.kv_cache_config = SimpleNamespace(
         kv_cache_groups=[

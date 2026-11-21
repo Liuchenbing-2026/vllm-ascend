@@ -4,6 +4,7 @@
 
 from dataclasses import replace
 from itertools import chain, zip_longest
+from typing import Any
 
 import torch
 from vllm.config import VllmConfig
@@ -199,10 +200,19 @@ def get_layer_tuples(specs):
     return page_sizes, layer_tuples
 
 
+def _uniform_group_or_raise(group_specs: dict[str, Any], *, label: str) -> UniformTypeKVCacheSpecs:
+    """Return a uniform KV cache group or fail fast with mismatched layer context."""
+    group = UniformTypeKVCacheSpecs.from_specs(group_specs)
+    if group is None:
+        details = ", ".join(f"{n}={type(s).__name__}(block_size={s.block_size})" for n, s in group_specs.items())
+        raise ValueError(f"Non-uniform DeepSeek V4.1 KV cache {label} group cannot be unified: {details}")
+    return group
+
+
 def group_cache_specs(specs):
     """Merge full-context resources and pad layer tuples without mutating inputs."""
     if specs and all(isinstance(spec, AscendSlidingWindowMLASpec) for spec in specs.values()):
-        return [UniformTypeKVCacheSpecs.from_specs({name: spec}) for name, spec in specs.items()]
+        return [_uniform_group_or_raise({name: spec}, label="swa_only") for name, spec in specs.items()]
     page_sizes, layer_tuples = get_layer_tuples(specs)
     padded = {}
     for page_size, layer_tuple in zip(page_sizes, layer_tuples):
@@ -230,8 +240,8 @@ def group_cache_specs(specs):
     state_names = [name for name, spec in padded.items() if isinstance(spec, CircularBufferSpec)]
     # A decoder-only PP stage has no compression state buffers.
     groups = [
-        UniformTypeKVCacheSpecs.from_specs({name: padded[name] for name in names})
-        for names in (mla_names, state_names)
+        _uniform_group_or_raise({name: padded[name] for name in names}, label=label)
+        for label, names in (("mla", mla_names), ("state", state_names))
         if names
     ]
 
@@ -247,7 +257,9 @@ def group_cache_specs(specs):
     ]
     # Stage-local SWA counts need not be divisible by the number of KV sources.
     for names in zip_longest(*swa_columns):
-        groups.append(UniformTypeKVCacheSpecs.from_specs({name: padded[name] for name in names if name is not None}))
+        swa_group_specs = {name: padded[name] for name in names if name is not None}
+        if swa_group_specs:
+            groups.append(_uniform_group_or_raise(swa_group_specs, label="target_swa"))
 
     # Group draft SWA layers independently across slots so extra draft layers
     # never shrink or pad target full/SWA groups (#68533).
@@ -255,12 +267,17 @@ def group_cache_specs(specs):
     for names in zip_longest(*draft_columns):
         draft_group_specs = {name: padded[name] for name in names if name is not None}
         if draft_group_specs:
-            groups.append(UniformTypeKVCacheSpecs.from_specs(draft_group_specs))
+            groups.append(_uniform_group_or_raise(draft_group_specs, label="draft_swa"))
     return groups
 
 
 def make_cache_groups(grouped_specs):
-    return [KVCacheGroupSpec(layer_names=list(s.kv_cache_specs), kv_cache_spec=s) for s in grouped_specs]
+    groups: list[KVCacheGroupSpec] = []
+    for idx, spec in enumerate(grouped_specs):
+        if spec is None:
+            raise ValueError(f"group_cache_specs produced an invalid None entry at index {idx}")
+        groups.append(KVCacheGroupSpec(layer_names=list(spec.kv_cache_specs), kv_cache_spec=spec))
+    return groups
 
 
 def _specs_from_groups(groups):

@@ -457,7 +457,8 @@ class AscendSlidingWindowMLASpec(SlidingWindowMLASpec):
             carried_kwargs.update(declared_kwarg(cls, "bounded_replay", bounded_replay_set.pop()))
         if None not in extra_retained_set:
             carried_kwargs.update(declared_kwarg(cls, "extra_retained_tokens", extra_retained_set.pop()))
-        carried_kwargs.update(declared_kwarg(cls, "is_draft", all(getattr(spec, "is_draft", False) for spec in specs)))
+        is_draft = all(getattr(spec, "is_draft", False) for spec in specs)
+        carried_kwargs.update(declared_kwarg(cls, "is_draft", is_draft))
         return cls(
             block_size=specs[0].block_size,
             dcp_sharded=specs[0].dcp_sharded,
@@ -509,12 +510,9 @@ def is_dflash_sliding_window_manager(manager_cls: Any) -> bool:
     from vllm_ascend.core.single_type_kv_cache_manager import AscendDFlashSlidingWindowManager
 
     upstream_cls = get_upstream_dflash_sliding_window_manager()
-    candidates: tuple[type, ...] = (
-        (AscendDFlashSlidingWindowManager, upstream_cls)
-        if upstream_cls is not None
-        else (AscendDFlashSlidingWindowManager,)
-    )
-    return issubclass(manager_cls, candidates)
+    if upstream_cls is not None:
+        return issubclass(manager_cls, (AscendDFlashSlidingWindowManager, upstream_cls))
+    return issubclass(manager_cls, AscendDFlashSlidingWindowManager)
 
 
 def extract_dflash_tail_params(vllm_config: Any) -> tuple[int, int, int]:
@@ -565,10 +563,7 @@ class _DFlashTailMixin:
         extra_retained = getattr(self, "extra_retained_tokens", 0)
         super_admission = getattr(super(), "max_admission_blocks_per_request", None)
         if callable(super_admission):
-            window_blocks = super_admission(
-                max_in_flight_tokens + self.num_lookahead_tokens,
-                max_model_len,
-            )
+            window_blocks = super_admission(max_in_flight_tokens + self.num_lookahead_tokens, max_model_len)
         else:
             num_tokens = min(
                 self.sliding_window - 1 + extra_retained + max_in_flight_tokens + self.num_lookahead_tokens,
@@ -626,11 +621,8 @@ class AscendDFlashSlidingWindowSpec(_DFlashTailMixin, SlidingWindowSpec):
         )
         first = specs[0]
         target_names = {f.name for f in fields(cls) if f.init}
-        init_kwargs = {
-            f.name: getattr(first, f.name)
-            for f in fields(SlidingWindowSpec)
-            if f.init and f.name in target_names
-        }
+        sw_fields = fields(SlidingWindowSpec)
+        init_kwargs = {f.name: getattr(first, f.name) for f in sw_fields if f.init and f.name in target_names}
         init_kwargs.update(
             num_speculative_tokens=num_spec,
             max_in_flight_steps=max_steps,
@@ -681,26 +673,19 @@ class AscendDFlashSlidingWindowMLASpec(_DFlashTailMixin, AscendSlidingWindowMLAS
         )
 
 
-def as_dflash_sliding_window_spec(
-    spec: KVCacheSpec,
-    vllm_config: Any,
-    *,
-    is_draft: bool | None = None,
-) -> KVCacheSpec:
+def as_dflash_sliding_window_spec(spec: KVCacheSpec, vllm_config: Any, *, is_draft: bool | None = None) -> KVCacheSpec:
     """Promote a sliding-window spec into its tail-only DFlash/DSpark counterpart."""
     if not isinstance(spec, SlidingWindowSpec) or is_dflash_sliding_window_spec(spec):
         return spec
-    target_cls: type[SlidingWindowSpec] = (
-        AscendDFlashSlidingWindowMLASpec if isinstance(spec, SlidingWindowMLASpec) else AscendDFlashSlidingWindowSpec
-    )
+    target_cls: type[SlidingWindowSpec]
+    if isinstance(spec, SlidingWindowMLASpec):
+        target_cls = AscendDFlashSlidingWindowMLASpec
+    else:
+        target_cls = AscendDFlashSlidingWindowSpec
     target_fields = {f.name for f in fields(target_cls) if f.init}
     kwargs = {f.name: getattr(spec, f.name) for f in fields(type(spec)) if f.init and f.name in target_fields}
     num_spec, max_steps, lookahead = extract_dflash_tail_params(vllm_config)
-    kwargs.update(
-        num_speculative_tokens=num_spec,
-        max_in_flight_steps=max_steps,
-        num_lookahead_tokens=lookahead,
-    )
+    kwargs.update(num_speculative_tokens=num_spec, max_in_flight_steps=max_steps, num_lookahead_tokens=lookahead)
     if is_draft is not None and "is_draft" in target_fields:
         kwargs["is_draft"] = is_draft
     return target_cls(**kwargs)
