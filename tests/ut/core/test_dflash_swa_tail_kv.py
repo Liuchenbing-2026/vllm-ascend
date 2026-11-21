@@ -214,7 +214,7 @@ def test_dflash_spec_tail_bounds_merge_and_registry_isolation(monkeypatch):
 
 def test_build_dflash_layer_config_forward_compat(monkeypatch):
     """Forward-compat helper wraps upstream DFlashSlidingWindowManager.layer_config when present."""
-    called = {}
+    called: dict[str, Any] = {}
 
     @dataclass(frozen=True)
     class FakeLayerConfig:
@@ -253,6 +253,7 @@ def test_build_dflash_layer_config_forward_compat(monkeypatch):
         staticmethod(lambda spec, **kw: SimpleNamespace(spec=spec, is_draft=False)),
     )
     ns_cfg = build_dflash_sliding_window_layer_config(plain, runtime, sliding_window=128, is_draft=True)
+    assert ns_cfg is not None
     assert ns_cfg.is_draft is True
 
 

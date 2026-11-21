@@ -36,7 +36,7 @@ Mark draft reconstruction so disabled drafts can inherit the target collection p
 """
 
 from contextlib import AbstractContextManager, nullcontext
-from typing import cast
+from typing import Any, cast
 from unittest.mock import patch
 
 import vllm.envs as vllm_envs
@@ -86,7 +86,7 @@ def _load_dspark_model_with_target_quant(target_model, vllm_config):
         partition_mask = cast(AbstractContextManager[None], nullcontext())
         if spec_pp_support is not None:
             partition_mask = patch.object(vllm_envs, "VLLM_PP_LAYER_PARTITION", None)
-        dp_mask = cast(AbstractContextManager[None], nullcontext())
+        dp_mask = cast(AbstractContextManager[Any], nullcontext())
         orig_get_dspark_pc = getattr(dspark_utils, "_get_dspark_parallel_config", None)
         if callable(orig_get_dspark_pc):
 
