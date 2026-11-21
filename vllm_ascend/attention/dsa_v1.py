@@ -1318,7 +1318,9 @@ class AscendDSAMetadataBuilder(AttentionMetadataBuilder[AscendDSAMetadata]):
         self._dspark_num_query_per_req = int(num_query_per_req)
 
     def _build_dspark_swa_indices_eager(
-        self, dspark_swa_args: tuple, buffer: torch.Tensor | None = None
+        self,
+        dspark_swa_args: tuple[torch.Tensor, int, int, int, torch.Tensor, torch.Tensor, int | None],
+        buffer: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Build DSpark SWA indices through the shared physical-slot entry point."""
         return build_dspark_swa_indices(

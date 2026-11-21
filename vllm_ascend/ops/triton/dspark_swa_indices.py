@@ -138,7 +138,7 @@ def _dspark_swa_indices_kernel(
         row_hi = tl.minimum((r + 1) * num_query_per_req, num_rows_padded)
         if row_lo < row_hi:
             for row in range(row_lo, row_hi):
-                base = row.to(tl.int64) * INDEX_W + cb * BLOCK_W
+                base = tl.cast(row, tl.int64) * INDEX_W + cb * BLOCK_W
                 tl.store(slots_ptr + base + col_offs, -1, mask=col_mask)
                 if cb == 0:
                     tl.store(lens_ptr + row, 0)
