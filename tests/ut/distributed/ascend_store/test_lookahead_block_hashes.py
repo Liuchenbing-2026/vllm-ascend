@@ -1519,44 +1519,153 @@ class TestLegacyKVCacheCompatHook(unittest.TestCase):
             "CircularBufferSpec",
             "SpecGroup",
             "register_all_kvcache_specs",
+            "create_kv_cache_group_specs",
+            "is_kv_cache_spec_uniform",
             "vllm.v1.kv_cache_spec_registry",
         ):
             self.assertIn(required, symbols)
 
-    def test_collect_error_with_legacy_symbol_skips_module(self):
-        ut_conftest = self._get_ut_conftest()
-        node = object.__new__(ut_conftest._LegacyKVCacheCompatModule)
-        legacy_causes = (
+    @staticmethod
+    def _build_legacy_collect_errors() -> list[tuple[str, pytest.Collector.CollectError]]:
+        cases: list[tuple[str, pytest.Collector.CollectError]] = []
+        direct_causes = (
             ImportError("cannot import name 'CrossAttentionSpec' from 'vllm.v1.kv_cache_interface'"),
             ImportError("cannot import name 'SpecGroup' from 'vllm.v1.core.kv_cache_coordinator'"),
             ModuleNotFoundError("No module named 'vllm.v1.kv_cache_spec_registry'"),
+            ImportError("cannot import name 'create_kv_cache_group_specs' from 'vllm.v1.core.kv_cache_planning'"),
+            ImportError("cannot import name 'is_kv_cache_spec_uniform' from 'vllm.v1.core.kv_cache_planning'"),
         )
-        for cause in legacy_causes:
-            with self.subTest(cause=str(cause)):
-                collect_err = pytest.Collector.CollectError(f"ImportError while importing test module.\n{cause}")
-                collect_err.__cause__ = cause
-                with (
-                    patch.object(pytest.Module, "collect", side_effect=collect_err),
-                    self.assertRaises(pytest.skip.Exception) as ctx,
-                ):
-                    node.collect()
-                self.assertTrue(getattr(ctx.exception, "allow_module_level", False))
+        for cause in direct_causes:
+            err = pytest.Collector.CollectError(f"ImportError while importing test module.\n{cause}")
+            err.__cause__ = cause
+            cases.append((f"cause:{cause}", err))
+
+        stripped = pytest.Collector.CollectError(
+            "ImportError while importing test module.\n"
+            "E   ImportError: cannot import name 'CrossAttentionSpec' from 'vllm.v1.kv_cache_interface'"
+        )
+        cases.append(("stripped-cause", stripped))
+
+        nested = pytest.Collector.CollectError("ImportError while importing test module.")
+        wrapper = RuntimeError("wrapped collection import error")
+        wrapper.__cause__ = ImportError("cannot import name 'FullAttentionSpec' from 'vllm.v1.kv_cache_interface'")
+        nested.__cause__ = wrapper
+        cases.append(("nested-cause", nested))
+
+        ctx_only = pytest.Collector.CollectError("ImportError while importing test module.")
+        ctx_only.__context__ = ImportError("cannot import name 'CircularBufferSpec' from 'vllm.v1.kv_cache_interface'")
+        cases.append(("context-only", ctx_only))
+        return cases
+
+    @staticmethod
+    def _build_unrelated_collect_errors() -> list[tuple[str, pytest.Collector.CollectError]]:
+        torchcodec_traceback = (
+            "ImportError while importing test module 'tests/ut/ops/test_dummy.py'.\n"
+            "Traceback:\n"
+            "tests/ut/ops/test_dummy.py:3:\n"
+            "from vllm.v1.kv_cache_interface import FullAttentionSpec\n"
+            "E   ModuleNotFoundError: No module named 'torchcodec'"
+        )
+        torchcodec_with_cause = pytest.Collector.CollectError(torchcodec_traceback)
+        torchcodec_with_cause.__cause__ = ModuleNotFoundError("No module named 'torchcodec'")
+
+        torchcodec_stripped = pytest.Collector.CollectError(torchcodec_traceback)
+
+        examples_err = pytest.Collector.CollectError(
+            "Collection failed.\nNo module named 'examples.disaggregated_prefill_v1'"
+        )
+        examples_err.__cause__ = ModuleNotFoundError("No module named 'examples.disaggregated_prefill_v1'")
+
+        unrelated_imp = pytest.Collector.CollectError(
+            "ImportError while importing test module.\n"
+            "cannot import name 'TotallyUnrelatedSymbol' from 'vllm.v1.kv_cache_interface'"
+        )
+        unrelated_imp.__cause__ = ImportError(
+            "cannot import name 'TotallyUnrelatedSymbol' from 'vllm.v1.kv_cache_interface'"
+        )
+
+        syntax_err = pytest.Collector.CollectError(
+            "SyntaxError: invalid syntax\nImportError: cannot import name 'FullAttentionSpec'"
+        )
+        syntax_err.__cause__ = SyntaxError("invalid syntax")
+
+        return [
+            ("torchcodec-cause", torchcodec_with_cause),
+            ("torchcodec-stripped", torchcodec_stripped),
+            ("examples-module", examples_err),
+            ("unrelated-symbol", unrelated_imp),
+            ("syntax-error", syntax_err),
+        ]
+
+    @staticmethod
+    def _make_failed_report(
+        exc: BaseException | None,
+        longrepr: Any = None,
+    ) -> SimpleNamespace:
+        excinfo = SimpleNamespace(value=exc) if exc is not None else None
+        return SimpleNamespace(
+            failed=True,
+            outcome="failed",
+            longrepr=str(exc) if longrepr is None else longrepr,
+            result=["stale-item"],
+            call=SimpleNamespace(excinfo=excinfo),
+        )
+
+    def test_collect_error_with_legacy_symbol_skips_module_and_report(self):
+        ut_conftest = self._get_ut_conftest()
+        node = object.__new__(ut_conftest._LegacyKVCacheCompatModule)
+        collector = SimpleNamespace(path="tests/ut/dummy_legacy_test.py", nodeid="tests/ut/dummy_legacy_test.py")
+
+        for label, collect_err in self._build_legacy_collect_errors():
+            for method_name in ("collect", "_getobj"):
+                with self.subTest(layer=method_name, case=label):
+                    with (
+                        patch.object(pytest.Module, method_name, side_effect=collect_err),
+                        self.assertRaises(pytest.skip.Exception) as ctx,
+                    ):
+                        getattr(node, method_name)()
+                    self.assertTrue(getattr(ctx.exception, "allow_module_level", False))
+
+            with self.subTest(layer="report", case=label):
+                rep = self._make_failed_report(collect_err)
+                converted = ut_conftest._convert_legacy_collect_report(collector, rep)
+                self.assertTrue(converted)
+                self.assertEqual(rep.outcome, "skipped")
+                self.assertEqual(rep.result, [])
+                self.assertNotIn("call", rep.__dict__)
+                self.assertIsInstance(rep.longrepr, tuple)
+                self.assertEqual(len(rep.longrepr), 3)
+                self.assertIn("Requires legacy pre-#66234 vLLM KV cache API", rep.longrepr[2])
+
+        with self.subTest(layer="report-longrepr-only"):
+            rep = self._make_failed_report(
+                None,
+                longrepr="Traceback:\nE   ImportError: cannot import name 'FullAttentionSpec' from 'vllm'",
+            )
+            self.assertTrue(ut_conftest._convert_legacy_collect_report(collector, rep))
+            self.assertEqual(rep.outcome, "skipped")
 
     def test_collect_error_with_unrelated_import_or_module_not_found_reraises(self):
         ut_conftest = self._get_ut_conftest()
         node = object.__new__(ut_conftest._LegacyKVCacheCompatModule)
-        unrelated_causes: tuple[BaseException, ...] = (
-            ImportError("cannot import name 'TotallyUnrelatedSymbol' from 'some.mod'"),
-            ModuleNotFoundError("No module named 'examples.disaggregated_prefill_v1'"),
-            SyntaxError("invalid syntax"),
-        )
-        for cause in unrelated_causes:
-            with self.subTest(cause=str(cause)):
-                collect_err = pytest.Collector.CollectError(f"Collection failed.\n{cause}")
-                collect_err.__cause__ = cause
-                with (
-                    patch.object(pytest.Module, "collect", side_effect=collect_err),
-                    self.assertRaises(pytest.Collector.CollectError) as ctx,
-                ):
-                    node.collect()
-                self.assertIs(ctx.exception, collect_err)
+        collector = SimpleNamespace(path="tests/ut/dummy_unrelated_test.py", nodeid="tests/ut/dummy_unrelated_test.py")
+
+        for label, collect_err in self._build_unrelated_collect_errors():
+            for method_name in ("collect", "_getobj"):
+                with self.subTest(layer=method_name, case=label):
+                    with (
+                        patch.object(pytest.Module, method_name, side_effect=collect_err),
+                        self.assertRaises(pytest.Collector.CollectError) as ctx,
+                    ):
+                        getattr(node, method_name)()
+                    self.assertIs(ctx.exception, collect_err)
+
+            with self.subTest(layer="report", case=label):
+                rep = self._make_failed_report(collect_err)
+                original_longrepr = rep.longrepr
+                converted = ut_conftest._convert_legacy_collect_report(collector, rep)
+                self.assertFalse(converted)
+                self.assertEqual(rep.outcome, "failed")
+                self.assertEqual(rep.longrepr, original_longrepr)
+                self.assertEqual(rep.result, ["stale-item"])
+                self.assertIn("call", rep.__dict__)

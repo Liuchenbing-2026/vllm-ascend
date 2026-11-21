@@ -28,6 +28,7 @@ run on CPU via mocks.
 
 import contextlib
 import importlib.util
+import re
 import subprocess
 import sys
 import types
@@ -300,9 +301,88 @@ _LEGACY_KV_CACHE_SYMBOLS = (
     "replace_as",
     "eagle_proof_margin",
     "resolve_dcp_kv_cache_spec",
+    "create_kv_cache_group_specs",
+    "is_kv_cache_spec_uniform",
+    "kv_cache_groups_tp_replicas",
+    "may_override_num_blocks",
     "vllm.v1.kv_cache_spec_registry",
     "kv_cache_spec_registry",
 )
+_LEGACY_KV_CACHE_SYMBOL_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(sym) for sym in _LEGACY_KV_CACHE_SYMBOLS) + r")\b"
+)
+_IMPORT_ERROR_LINE_RE = re.compile(r"(?:^|\b)(?:ImportError|ModuleNotFoundError):\s*([^\n]+)")
+
+
+def _iter_exception_chain(exc):
+    if exc is None:
+        return []
+    chain = []
+    seen = set()
+    stack = [exc]
+    while stack:
+        cur = stack.pop()
+        if cur is None or id(cur) in seen:
+            continue
+        seen.add(id(cur))
+        chain.append(cur)
+        sub_exceptions = getattr(cur, "exceptions", None)
+        if isinstance(sub_exceptions, tuple):
+            for sub_exc in reversed(sub_exceptions):
+                if isinstance(sub_exc, BaseException):
+                    stack.append(sub_exc)
+        if cur.__context__ is not None:
+            stack.append(cur.__context__)
+        if cur.__cause__ is not None:
+            stack.append(cur.__cause__)
+    return chain
+
+
+def _match_legacy_kv_cache_import_error(exc, longrepr=None):
+    chain = _iter_exception_chain(exc)
+    if any(isinstance(err, SyntaxError) for err in chain):
+        return None
+    import_errors = [err for err in chain if isinstance(err, ImportError)]
+    for err in import_errors:
+        err_name = getattr(err, "name", None) or ""
+        err_text = f"{err} {err_name}"
+        if _LEGACY_KV_CACHE_SYMBOL_RE.search(err_text):
+            return str(err)
+    if import_errors:
+        return None
+    texts = []
+    if isinstance(exc, pytest.Collector.CollectError):
+        texts.append(str(exc))
+    if longrepr is not None:
+        texts.append(str(longrepr))
+    for text in texts:
+        for match in _IMPORT_ERROR_LINE_RE.finditer(text):
+            line = match.group(1).strip()
+            if _LEGACY_KV_CACHE_SYMBOL_RE.search(line):
+                return line
+    return None
+
+
+def _convert_legacy_collect_report(collector, rep):
+    if not getattr(rep, "failed", False):
+        return False
+    call = getattr(rep, "call", None)
+    excinfo = getattr(call, "excinfo", None)
+    exc = excinfo.value if excinfo is not None else None
+    matched = _match_legacy_kv_cache_import_error(exc, getattr(rep, "longrepr", None))
+    if matched is None:
+        return False
+    path = getattr(collector, "path", getattr(collector, "nodeid", ""))
+    rep.outcome = "skipped"
+    rep.longrepr = (
+        str(path),
+        1,
+        f"Skipped: Requires legacy pre-#66234 vLLM KV cache API: {matched}",
+    )
+    rep.result = []
+    rep.__dict__.pop("call", None)
+    return True
+
 
 if _HAS_LEGACY_KV_CACHE_GROUP_SPEC:
     adapt_patch()
@@ -319,25 +399,42 @@ else:
             _patch_call()
 
 
+def _maybe_skip_legacy_kv_cache_error(exc):
+    matched = _match_legacy_kv_cache_import_error(exc)
+    if matched is not None:
+        pytest.skip(
+            f"Requires legacy pre-#66234 vLLM KV cache API: {matched}",
+            allow_module_level=True,
+        )
+
+
 class _LegacyKVCacheCompatModule(pytest.Module):
+    def _getobj(self):
+        try:
+            return super()._getobj()
+        except (ImportError, pytest.Collector.CollectError) as exc:
+            _maybe_skip_legacy_kv_cache_error(exc)
+            raise
+
     def collect(self):
         try:
             return super().collect()
         except (ImportError, pytest.Collector.CollectError) as exc:
-            cause = exc.__cause__ if isinstance(exc, pytest.Collector.CollectError) else exc
-            msg = f"{cause}\n{exc}" if cause is not None else str(exc)
-            if isinstance(cause, ImportError) and any(symbol in msg for symbol in _LEGACY_KV_CACHE_SYMBOLS):
-                pytest.skip(
-                    f"Requires legacy pre-#66234 vLLM KV cache API: {cause}",
-                    allow_module_level=True,
-                )
+            _maybe_skip_legacy_kv_cache_error(exc)
             raise
 
 
 if not _HAS_LEGACY_KV_CACHE_GROUP_SPEC:
 
+    @pytest.hookimpl(tryfirst=True)
     def pytest_pycollect_makemodule(module_path, parent):
         return _LegacyKVCacheCompatModule.from_parent(parent, path=module_path)
+
+    @pytest.hookimpl(hookwrapper=True, trylast=True)
+    def pytest_make_collect_report(collector):
+        outcome = yield
+        rep = outcome.get_result()
+        _convert_legacy_collect_report(collector, rep)
 
 
 if not _npu_available:

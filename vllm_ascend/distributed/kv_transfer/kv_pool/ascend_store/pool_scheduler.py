@@ -346,11 +346,12 @@ class BaseKVPoolScheduler(ABC):
         if self.kv_role == "kv_consumer" and not self.consumer_is_to_load:
             return 0, False
 
-        num_external_hit_tokens = self._lookup_external_hit_tokens(request, num_computed_tokens)
-        if not num_external_hit_tokens:
+        matched_external_hit_tokens = self._lookup_external_hit_tokens(request, num_computed_tokens)
+        if not matched_external_hit_tokens:
             return 0, False
 
-        store_skip_tokens = num_external_hit_tokens
+        num_external_hit_tokens: int = matched_external_hit_tokens
+        store_skip_tokens: int = matched_external_hit_tokens
         lookahead = getattr(self, "num_hash_lookahead_tokens", 0)
         if lookahead > 0:
             alignment = (
@@ -872,10 +873,10 @@ class BaseKVPoolScheduler(ABC):
                         self.retain_blocks_for_save(req_meta)
                         meta.add_request(req_meta)
 
-        finished_lookahead_metas = getattr(self, "_finished_lookahead_metas", None)
+        finished_lookahead_metas: dict[str, ReqMeta] | None = getattr(self, "_finished_lookahead_metas", None)
         if finished_lookahead_metas:
-            for req_meta in finished_lookahead_metas.values():
-                meta.add_request(req_meta)
+            for finished_req_meta in finished_lookahead_metas.values():
+                meta.add_request(finished_req_meta)
             finished_lookahead_metas.clear()
 
         return meta

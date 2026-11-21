@@ -32,9 +32,13 @@ except ImportError:
 
 _ascend_is_prefix_cacheable: Callable[[Any], bool] | None
 try:
-    from vllm_ascend.core.kv_cache_interface import is_prefix_cacheable as _ascend_is_prefix_cacheable
+    from vllm_ascend.core.kv_cache_interface import (
+        is_prefix_cacheable as _imported_ascend_is_prefix_cacheable,
+    )
 except ImportError:
     _ascend_is_prefix_cacheable = None
+else:
+    _ascend_is_prefix_cacheable = _imported_ascend_is_prefix_cacheable
 
 
 def is_prefix_cacheable(kv_cache_spec: Any) -> bool:
