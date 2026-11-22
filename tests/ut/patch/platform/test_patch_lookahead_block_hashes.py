@@ -477,15 +477,17 @@ class TestPatchLookaheadBlockHashes(unittest.TestCase):
                 ktc_multi = KVTransferConfig(
                     kv_connector="MultiConnector",
                     kv_role="kv_both",
-                    kv_connector_extra_config={"connectors": [{"kv_connector": "AscendStoreConnector"}]},
+                    kv_connector_extra_config={
+                        "connectors": [{"kv_connector": "AscendStoreConnector", "kv_role": "kv_both"}]
+                    },
                 )
                 ktc_multi_opt_out = KVTransferConfig(
                     kv_connector="MultiConnector",
                     kv_role="kv_both",
                     kv_connector_extra_config={
                         "connectors": [
-                            {"kv_connector": "AscendStoreConnector"},
-                            {"kv_connector": "OptOutConnector"},
+                            {"kv_connector": "AscendStoreConnector", "kv_role": "kv_both"},
+                            {"kv_connector": "OptOutConnector", "kv_role": "kv_both"},
                         ]
                     },
                 )
@@ -509,6 +511,7 @@ class TestPatchLookaheadBlockHashes(unittest.TestCase):
 
         def make_req(toks: list[int]):
             return SimpleNamespace(
+                _all_token_ids=toks,
                 all_token_ids=toks,
                 num_tokens=len(toks),
                 block_hashes=[],
