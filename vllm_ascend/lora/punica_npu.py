@@ -63,6 +63,9 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         )
         self._single_lora_mask = None
         self.active_lora_slots: set[int] | None = None
+        self._lora_index_to_id: tuple[int | None, ...] = ()
+        max_loras = self.lora_config.max_loras if self.lora_config is not None else 0
+        self._slot_to_lora_id = torch.full((max_loras,), -1, dtype=torch.long, device=device)
         self._wrapper_id = next(_LORA_WRAPPER_IDS)
         _LORA_WRAPPERS[self._wrapper_id] = self
         if self._single_lora_slot:
@@ -76,6 +79,35 @@ class PunicaWrapperNPU(PunicaWrapperBase):
                 device=device,
             )
 
+    @property
+    def slot_to_lora_id(self) -> torch.Tensor | None:
+        return getattr(self, "_slot_to_lora_id", None)
+
+    @property
+    def lora_index_to_id(self) -> tuple[int | None, ...] | None:
+        return getattr(self, "_lora_index_to_id", None)
+
+    def _update_slot_to_lora_id(self, lora_index_to_id: list[int | None]) -> None:
+        self._lora_index_to_id = tuple(lora_index_to_id)
+        num_slots = len(lora_index_to_id)
+        existing = getattr(self, "_slot_to_lora_id", None)
+        if existing is None and num_slots == 0:
+            return
+        target_device = (
+            existing.device if existing is not None else getattr(self, "device", self._token_lora_indices.device)
+        )
+        if existing is None or existing.numel() < num_slots:
+            existing = torch.full((num_slots,), -1, dtype=torch.long, device=target_device)
+            self._slot_to_lora_id = existing
+        if num_slots > 0:
+            host_ids = torch.tensor(
+                [int(lora_id) if (lora_id is not None and lora_id > 0) else -1 for lora_id in lora_index_to_id],
+                dtype=torch.long,
+            )
+            existing[:num_slots].copy_(host_ids, non_blocking=True)
+        if existing.numel() > num_slots:
+            existing[num_slots:].fill_(-1)
+
     def _update_base_metadata(
         self,
         mapping,
@@ -84,6 +116,7 @@ class PunicaWrapperNPU(PunicaWrapperBase):
         vocab_size: int,
     ) -> None:
         super()._update_base_metadata(mapping, lora_index_to_id, max_loras, vocab_size)
+        self._update_slot_to_lora_id(lora_index_to_id)
         if self._single_lora_mask is None:
             return
 

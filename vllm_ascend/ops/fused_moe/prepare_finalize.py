@@ -165,7 +165,7 @@ class PrepareAndFinalizeWithAll2All(PrepareAndFinalize):
         if not self.replace_allreduce:
             self.num_tokens, _ = hidden_states.shape
             pad_size = self.tp_size - self.num_tokens  # Pad to TP size (cyclic)
-            if should_exchange_all2all_lora_indices(self.lora_context):
+            if should_exchange_all2all_lora_indices(self.lora_context, quant_type=quant_type):
                 prepare_lora_indices(
                     self.lora_context,
                     num_tokens=self.num_tokens,
@@ -496,7 +496,9 @@ class PrepareAndFinalizeWithAllGather(PrepareAndFinalize):
             pertoken_scale = torch.ops.vllm.maybe_all_gather_and_maybe_unpad(pertoken_scale)
 
         lora_context = self.lora_context
-        if lora_context is not None and should_gather_allgather_lora_indices(lora_context):
+        if lora_context is not None and (
+            self.moe_config.dp_size > 1 or should_gather_allgather_lora_indices(lora_context)
+        ):
             tp_size = get_tensor_model_parallel_world_size()
             tp_rank = get_tensor_model_parallel_rank()
             lora_indices = slice_local_lora_indices(
@@ -538,7 +540,7 @@ class PrepareAndFinalizeWithAllGather(PrepareAndFinalize):
         gather_lora_indices = (
             lora_context is not None
             and (self.moe_config.dp_size > 1 or self.moe_config.pcp_size > 1)
-            and should_gather_allgather_lora_indices(lora_context)
+            and (self.moe_config.dp_size > 1 or should_gather_allgather_lora_indices(lora_context))
         )
         lora_indices: torch.Tensor | None = (
             slice_local_lora_indices(
