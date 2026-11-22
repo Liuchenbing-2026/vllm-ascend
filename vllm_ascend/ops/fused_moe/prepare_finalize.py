@@ -37,6 +37,7 @@ from vllm.v1.worker.ubatching import dbo_current_ubatch_id
 import vllm_ascend.models.common.ops.sequence_parallel  # noqa: F401
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX
 from vllm_ascend.lora.fused_moe import (
+    assert_moe_lora_dp1_supported,
     prepare_lora_indices,
     should_exchange_all2all_lora_indices,
     should_gather_allgather_lora_indices,
@@ -160,6 +161,8 @@ class PrepareAndFinalizeWithAll2All(PrepareAndFinalize):
             MoEPrepareOutput where `mc2_mask` is None for All2All path.
         """
         self.replace_allreduce = replace_allreduce
+        if self.lora_context is not None:
+            assert_moe_lora_dp1_supported(self.moe_config.dp_size)
 
         padded_hidden_states_shape = hidden_states.shape
         if not self.replace_allreduce:
@@ -330,6 +333,8 @@ class PrepareAndFinalizeWithMC2(PrepareAndFinalizeWithAll2All):
             MoEPrepareOutput, possibly sliced/padded.
         """
         self.replace_allreduce = replace_allreduce
+        if self.lora_context is not None:
+            assert_moe_lora_dp1_supported(self.moe_config.dp_size)
         mc2_mask = _EXTRA_CTX.mc2_mask
         if self.replace_allreduce:
             # SP shards use the local token count, not the largest DP batch.
@@ -468,10 +473,13 @@ class PrepareAndFinalizeWithAllGather(PrepareAndFinalize):
     def _prepare_with_ep_group(
         self, hidden_states: torch.Tensor, router_logits: torch.Tensor, quant_type=QuantType.NONE
     ) -> MoEPrepareOutput:
+        lora_context = self.lora_context
+        if lora_context is not None:
+            assert_moe_lora_dp1_supported(self.moe_config.dp_size)
         local_sp_tokens = hidden_states.shape[0]
         device = hidden_states.device
         pertoken_scale = None
-        if not (self.lora_context is not None and should_use_unfused_quant_moe_for_lora(self.lora_context, quant_type)):
+        if not (lora_context is not None and should_use_unfused_quant_moe_for_lora(lora_context, quant_type)):
             if quant_type == QuantType.W8A8:
                 hidden_states, pertoken_scale = torch_npu.npu_dynamic_quant(hidden_states)
             elif quant_type in (QuantType.W8A8MXFP, QuantType.W4A8MXFP):
@@ -495,10 +503,7 @@ class PrepareAndFinalizeWithAllGather(PrepareAndFinalize):
         if pertoken_scale is not None:
             pertoken_scale = torch.ops.vllm.maybe_all_gather_and_maybe_unpad(pertoken_scale)
 
-        lora_context = self.lora_context
-        if lora_context is not None and (
-            self.moe_config.dp_size > 1 or should_gather_allgather_lora_indices(lora_context)
-        ):
+        if lora_context is not None and should_gather_allgather_lora_indices(lora_context):
             tp_size = get_tensor_model_parallel_world_size()
             tp_rank = get_tensor_model_parallel_rank()
             lora_indices = slice_local_lora_indices(
@@ -537,10 +542,12 @@ class PrepareAndFinalizeWithAllGather(PrepareAndFinalize):
             MoEPrepareOutput with global tensors.
         """
         lora_context = self.lora_context
+        if lora_context is not None:
+            assert_moe_lora_dp1_supported(self.moe_config.dp_size)
         gather_lora_indices = (
             lora_context is not None
-            and (self.moe_config.dp_size > 1 or self.moe_config.pcp_size > 1)
-            and (self.moe_config.dp_size > 1 or should_gather_allgather_lora_indices(lora_context))
+            and self.moe_config.pcp_size > 1
+            and should_gather_allgather_lora_indices(lora_context)
         )
         lora_indices: torch.Tensor | None = (
             slice_local_lora_indices(
@@ -559,14 +566,10 @@ class PrepareAndFinalizeWithAllGather(PrepareAndFinalize):
             if pad_size > 0:
                 hidden_states = nn.functional.pad(hidden_states, (0, 0, 0, pad_size))
                 router_logits = nn.functional.pad(router_logits, (0, 0, 0, pad_size))
-                if lora_indices is not None:
-                    lora_indices = nn.functional.pad(lora_indices, (0, pad_size), value=-1)
 
             # All-gather across DP group
             hidden_states = self.moe_config.dp_group.all_gather(hidden_states, 0)
             router_logits = self.moe_config.dp_group.all_gather(router_logits, 0)
-            if lora_indices is not None:
-                lora_indices = self.moe_config.dp_group.all_gather(lora_indices.contiguous(), 0)
 
         if self.moe_config.pcp_size > 1:
             max_tokens_across_pcp = _EXTRA_CTX.max_tokens_across_pcp

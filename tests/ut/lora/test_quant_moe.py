@@ -592,13 +592,13 @@ def test_w4a8_method_apply_forwards_moe_lora_context() -> None:
     comm_method.fused_experts.assert_called_once_with(fused_experts_input="built", quant_method=method)
 
 
-def test_w4a8_allgather_dp2_uses_gathered_lora_indices_without_collapsing_minus_one() -> None:
+def test_w4a8_allgather_ep_uses_gathered_lora_indices_without_collapsing_minus_one() -> None:
     lora_context = SimpleNamespace(
         use_ep=True,
         ep_rank=1,
         local_num_experts=2,
         top_k=1,
-        replicated_batch=False,
+        replicated_batch=True,
         gathered_lora_indices=torch.tensor([-1, 0], dtype=torch.long),
     )
     mlp_input = _make_w4a8_input(
@@ -623,11 +623,11 @@ def test_w4a8_allgather_dp2_uses_gathered_lora_indices_without_collapsing_minus_
             DeviceOperator,
             "npu_dynamic_quant",
             side_effect=[(quantized_input, input_scale), (quantized_activated, activated_scale)],
-        ),
+        ) as mock_quant,
         patch(
             f"{QUANT_MOE}.torch_npu.npu_grouped_matmul",
             side_effect=[[gate_up_out], [down_out]],
-        ),
+        ) as mock_gmm,
         patch(f"{QUANT_MOE}._apply_moe_activation", return_value=activated),
         patch(f"{QUANT_MOE}.moe_lora_apply_w13") as apply_w13,
         patch(f"{QUANT_MOE}.moe_lora_apply_w2") as apply_w2,
@@ -639,10 +639,19 @@ def test_w4a8_allgather_dp2_uses_gathered_lora_indices_without_collapsing_minus_
             quant_method=quant_method,
         )
 
-    assert output is down_out
-    expert_per_row, lora_per_row = apply_w13.call_args.kwargs["lora_routing"]
-    # Active row 0 comes from token 1 (adapter 0, global expert 3 -> local expert 1 on ep_rank=1).
-    # Trailing row 1 is inactive (-1 in expanded_row_idx) and must receive lora_slot=-1.
-    assert int(expert_per_row[0]) == 1
-    assert lora_per_row.tolist() == [0, -1]
-    assert apply_w2.call_args.kwargs["lora_routing"][1].tolist() == [0, -1]
+        assert output is down_out
+        expert_per_row, lora_per_row = apply_w13.call_args.kwargs["lora_routing"]
+        # Active row 0 comes from token 1 (adapter 0, global expert 3 -> local expert 1 on ep_rank=1).
+        # Trailing row 1 is inactive (-1 in expanded_row_idx) and must receive lora_slot=-1.
+        assert int(expert_per_row[0]) == 1
+        assert lora_per_row.tolist() == [0, -1]
+        assert apply_w2.call_args.kwargs["lora_routing"][1].tolist() == [0, -1]
+
+        mock_quant.side_effect = [(quantized_input, input_scale)]
+        mock_gmm.side_effect = [[gate_up_out]]
+        lora_context.replicated_batch = False
+        with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+            quant_apply_mlp_with_moe_lora(
+                mlp_compute_input=mlp_input,
+                quant_method=quant_method,
+            )

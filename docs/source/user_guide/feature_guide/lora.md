@@ -18,7 +18,7 @@ LoRA applies to both dense models and mixture-of-experts (MoE) models. The base 
 | W8A8 dynamic quantization | Supported | Supported |
 | W4A8 dynamic quantization (per-channel) | Supported | Supported (AllGather in graph mode, All-to-All in eager mode) |
 
-Other MoE quantization methods (including per-group W4A8 and weights with antiquant offsets), Fused MC2, and dynamic EPLB are not supported with LoRA.
+Other MoE quantization methods (including per-group W4A8 and weights with antiquant offsets), MoE data parallelism (`data_parallel_size > 1`), Fused MC2, and dynamic EPLB are not supported with LoRA.
 
 ## LoRA Parameters
 
@@ -84,7 +84,7 @@ This path enables language-model LoRA projections (`wq_a`, `wq_b`, `wkv`, `wo_a`
 - **Quantization & constraints**:
     - W4A8 MoE LoRA requires per-channel weight scales without antiquant offsets or dynamic EPLB. On 8-way TP, W4A8 MoE checkpoints require `--enable-expert-parallel` so the grouped-matmul K dimension satisfies the kernel alignment constraint.
     - Active `wo_a` adapters require a single local output-projection group per rank (`n_local_groups == 1`), no fine-grained output-projection TP, and `--fully-sharded-loras` left off.
-    - Under `DP=1`, layers with no active expert slot skip MoE LoRA delta kernels; under `EP` with `DP>1`, layers with loaded expert slots conservatively run the MoE LoRA path because remote ranks may route adapter tokens. To preserve zero-delta numerical equivalence and dispatch/combine dtype consistency between base and adapter requests in a LoRA-enabled engine, shared experts and LoRA-capable quantized MoE stay on the linear-wrapper / floating-point unfused quantization boundary path whenever an adapter is loaded on those layers.
+    - MoE LoRA requires `data_parallel_size=1` (TP and TP + EP are supported); `data_parallel_size > 1` is rejected explicitly because adapters are loaded and evicted independently per DP rank from local requests, so cross-DP expert routing cannot guarantee adapter residency on receiving expert ranks. Under `DP=1`, layers with no active expert slot skip MoE LoRA delta kernels. To preserve zero-delta numerical equivalence and dispatch/combine dtype consistency between base and adapter requests in a LoRA-enabled engine, shared experts and LoRA-capable quantized MoE stay on the linear-wrapper / floating-point unfused quantization boundary path whenever an adapter is loaded on those layers.
 - **Latency & throughput characteristics**:
     - Enabling `--enable-lora` routes wrapped base linear layers (including shared experts) through unfused LoRA wrappers instead of fused base kernels, adding a fixed structural decode overhead (~19–23% measured on Atlas A3 W4A8 for both attention-only and MoE adapters, independent of adapter weights).
     - Always compare base vs adapter latency inside the **same LoRA-enabled engine** (rather than against a separate non-LoRA engine, which runs different base/shared-expert fused kernels) and report exact decode conditions (output length, batch size, and graph/bounded-replay mode).

@@ -548,7 +548,7 @@ class TokenDispatcherWithAll2AllV(MoETokenDispatcher[MoEAllToAllCombineMetadata]
         # This decision selects how many AlltoAll exchanges the dispatch issues
         # (the quantized path sends the token scale in a second exchange), so
         # every EP rank in the group must take the same branch. Relying on
-        # ``layer_lora_slots`` (and ``active_lora_slots`` when DP=1) keeps
+        # ``layer_lora_slots`` and ``active_lora_slots`` (under DP=1) keeps
         # quantized dispatch active when this layer has no MoE adapter loaded;
         # when ``should_use_unfused_quant_moe_for_lora`` applies (for example,
         # an expert adapter is loaded on W4A8/W8A8), dispatch also stays

@@ -14,7 +14,7 @@ from vllm_ascend.lora.fused_moe import (
     _recover_moe_lora_routing_all2all,
     _recover_moe_lora_routing_allgather,
     all2all_lora_indices,
-    encode_local_lora_ids,
+    assert_moe_lora_dp1_supported,
     has_lora,
     has_moe_lora,
     moe_lora_apply_w2,
@@ -23,7 +23,6 @@ from vllm_ascend.lora.fused_moe import (
     prepare_lora_indices,
     preprocess_lora_indices,
     reset_lora_indices,
-    resolve_received_lora_slots,
     should_disable_all2all_quant_for_lora,
     should_exchange_all2all_lora_indices,
     should_gather_allgather_lora_indices,
@@ -35,10 +34,10 @@ from vllm_ascend.lora.punica_npu import PunicaWrapperNPU
 from vllm_ascend.quantization.quant_type import QuantType
 
 
-def _make_base_layer(*, num_local_experts=256, is_act_and_mul=True, shared_experts=None, use_ep=False):
+def _make_base_layer(*, num_local_experts=256, is_act_and_mul=True, shared_experts=None, use_ep=False, dp_size=1):
     return SimpleNamespace(
         moe_config=SimpleNamespace(
-            dp_size=1,
+            dp_size=dp_size,
             hidden_dim=4096,
             num_local_experts=num_local_experts,
             num_experts=num_local_experts,
@@ -422,13 +421,69 @@ def test_moe_lora_intersects_active_and_loaded_slots(active, loaded, expected):
     assert has_moe_lora(context) is expected
 
 
-def test_ep_lora_does_not_drop_remote_tokens_on_idle_rank():
-    context = SimpleNamespace(
+def test_ep_dp1_base_only_batch_skips_moe_lora():
+    idle_context = SimpleNamespace(
         punica_wrapper=SimpleNamespace(no_lora=True, active_lora_slots=set()),
         layer_lora_slots={0},
         use_ep=True,
+        replicated_batch=True,
     )
-    assert has_moe_lora(context)
+    assert not has_moe_lora(idle_context)
+
+    active_context = SimpleNamespace(
+        punica_wrapper=SimpleNamespace(no_lora=False, active_lora_slots={0}),
+        layer_lora_slots={0},
+        use_ep=True,
+        replicated_batch=True,
+    )
+    assert has_moe_lora(active_context)
+
+
+def test_moe_lora_rejects_dp_gt1_at_init_and_runtime():
+    assert_moe_lora_dp1_supported(1)
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        assert_moe_lora_dp1_supported(2)
+
+    base_dp2 = _make_base_layer(dp_size=2, use_ep=True)
+    with (
+        patch("vllm_ascend.lora.fused_moe.get_ascend_config", return_value=SimpleNamespace(enable_fused_mc2=0)),
+        patch("vllm_ascend.lora.fused_moe._get_lora_device", return_value=torch.device("cpu")),
+    ):
+        with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+            _assert_ascend_moe_lora_supported(base_dp2)
+        with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+            AscendFusedMoEWithLoRA(base_dp2)
+
+    dp_gt1_ctx = SimpleNamespace(
+        punica_wrapper=SimpleNamespace(
+            no_lora=False,
+            active_lora_slots={0},
+            token_lora_indices=torch.tensor([0, -1], dtype=torch.long),
+        ),
+        layer_lora_slots={0},
+        use_ep=True,
+        replicated_batch=False,
+        top_k=1,
+        local_num_experts=1,
+        gathered_lora_indices=torch.tensor([0], dtype=torch.long),
+        exchanged_lora_indices=torch.tensor([0], dtype=torch.long),
+    )
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        has_moe_lora(dp_gt1_ctx)
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        should_disable_all2all_quant_for_lora(dp_gt1_ctx, quant_type=QuantType.W8A8)
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        should_exchange_all2all_lora_indices(dp_gt1_ctx, quant_type=QuantType.W8A8)
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        should_gather_allgather_lora_indices(dp_gt1_ctx)
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        should_use_unfused_quant_moe_for_lora(dp_gt1_ctx, QuantType.W4A8)
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        slice_local_lora_indices(dp_gt1_ctx, num_tokens=2)
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        _recover_moe_lora_routing_allgather(dp_gt1_ctx, torch.tensor([0]), torch.tensor([[0]]))
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        _recover_moe_lora_routing_all2all(dp_gt1_ctx, torch.tensor([1]))
 
 
 def test_request_ids_resolve_to_slots_without_treating_base_as_adapter():
@@ -509,16 +564,6 @@ def test_add_lora_fused_moe_skips_when_adapter_slots_empty():
         (None, None, False, False),
         (
             SimpleNamespace(
-                punica_wrapper=SimpleNamespace(no_lora=False, active_lora_slots={0}),
-                layer_lora_slots=set(),
-                replicated_batch=False,
-            ),
-            None,
-            True,
-            True,
-        ),
-        (
-            SimpleNamespace(
                 punica_wrapper=SimpleNamespace(no_lora=True, active_lora_slots=set()),
                 layer_lora_slots=set(),
                 replicated_batch=True,
@@ -526,36 +571,6 @@ def test_add_lora_fused_moe_skips_when_adapter_slots_empty():
             None,
             False,
             False,
-        ),
-        (
-            SimpleNamespace(
-                punica_wrapper=SimpleNamespace(no_lora=True, active_lora_slots=set()),
-                layer_lora_slots=set(),
-                replicated_batch=False,
-            ),
-            QuantType.W8A8,
-            True,
-            True,
-        ),
-        (
-            SimpleNamespace(
-                punica_wrapper=SimpleNamespace(no_lora=True, active_lora_slots=set()),
-                layer_lora_slots=set(),
-                replicated_batch=False,
-            ),
-            QuantType.W4A8MXFP,
-            False,
-            False,
-        ),
-        (
-            SimpleNamespace(
-                punica_wrapper=SimpleNamespace(no_lora=True, active_lora_slots=set()),
-                layer_lora_slots={0},
-                replicated_batch=False,
-            ),
-            None,
-            True,
-            True,
         ),
         (
             SimpleNamespace(
@@ -622,6 +637,19 @@ def test_add_lora_fused_moe_skips_when_adapter_slots_empty():
 def test_should_disable_all2all_quant_for_lora(context, quant_type, expected_disable, expected_exchange):
     assert should_disable_all2all_quant_for_lora(context, quant_type=quant_type) is expected_disable
     assert should_exchange_all2all_lora_indices(context, quant_type=quant_type) is expected_exchange
+
+
+@pytest.mark.parametrize("quant_type", [None, QuantType.W8A8, QuantType.W4A8MXFP])
+def test_all2all_helpers_reject_dp_gt1(quant_type) -> None:
+    context = SimpleNamespace(
+        punica_wrapper=SimpleNamespace(no_lora=True, active_lora_slots=set()),
+        layer_lora_slots={0},
+        replicated_batch=False,
+    )
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        should_disable_all2all_quant_for_lora(context, quant_type=quant_type)
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        should_exchange_all2all_lora_indices(context, quant_type=quant_type)
 
 
 def test_all2all_lora_index_helpers_handle_empty_and_short_tensors() -> None:
@@ -738,7 +766,8 @@ def test_should_gather_allgather_lora_indices() -> None:
         layer_lora_slots=set(),
         replicated_batch=False,
     )
-    assert should_gather_allgather_lora_indices(dp_gt1_empty_ctx)
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        should_gather_allgather_lora_indices(dp_gt1_empty_ctx)
 
     with patch("vllm_ascend.lora.fused_moe._is_lora_graph_capturing", return_value=True):
         assert should_gather_allgather_lora_indices(replicated_empty_ctx)
@@ -750,13 +779,13 @@ def test_slice_local_lora_indices_truncates_and_pads_minus_one() -> None:
     assert slice_local_lora_indices(context, num_tokens=6).tolist() == [2, -1, 0, 9, -1, -1]
 
 
-def test_allgather_routing_dp2_ep_translates_experts_and_ignores_inactive_rows() -> None:
+def test_allgather_routing_ep_gathered_indices_translates_experts_and_ignores_inactive_rows() -> None:
     context = SimpleNamespace(
         top_k=2,
         use_ep=True,
         ep_rank=1,
         local_num_experts=2,
-        replicated_batch=False,
+        replicated_batch=True,
         gathered_lora_indices=torch.tensor([-1, -1, 0, 1]),
     )
     # EP rank 1 owns global experts [2, 3]. Global routing pairs across 4 gathered tokens:
@@ -770,19 +799,22 @@ def test_allgather_routing_dp2_ep_translates_experts_and_ignores_inactive_rows()
     assert lora_slots.tolist() == [-1, -1, 0, 1, 1, -1, -1, -1]
 
 
-def test_allgather_routing_dp_gt1_requires_gathered_indices() -> None:
+def test_allgather_routing_rejects_dp_gt1() -> None:
     context = SimpleNamespace(
         top_k=1,
         use_ep=True,
         replicated_batch=False,
         punica_wrapper=SimpleNamespace(token_lora_indices=torch.tensor([0])),
     )
-    with pytest.raises(AssertionError, match="gathered_lora_indices"):
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+        _recover_moe_lora_routing_allgather(context, torch.tensor([0]), torch.tensor([[0]]))
+
+    context.gathered_lora_indices = torch.tensor([0])
+    with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
         _recover_moe_lora_routing_allgather(context, torch.tensor([0]), torch.tensor([[0]]))
 
 
-@pytest.mark.parametrize(("base_rank", "adapter_rank"), [(0, 1), (1, 0)])
-def test_graph_allgather_dp2_base_and_adapter_ranks(base_rank: int, adapter_rank: int) -> None:
+def test_graph_allgather_dp1_ep2_mixed_base_and_adapter_tokens() -> None:
     from vllm.config.compilation import CUDAGraphMode
     from vllm.model_executor.layers.fused_moe import FusedMoEConfig
 
@@ -806,12 +838,12 @@ def test_graph_allgather_dp2_base_and_adapter_ranks(base_rank: int, adapter_rank
             enable_expert_parallel=True,
             world_size_across_dp=2,
             pipeline_parallel_size=1,
-            tensor_parallel_size=1,
+            tensor_parallel_size=2,
             prefill_context_parallel_size=1,
             decode_context_parallel_size=1,
         ),
         compilation_config=SimpleNamespace(cudagraph_mode=CUDAGraphMode.FULL_DECODE_ONLY),
-        lora_config=SimpleNamespace(max_loras=1),
+        lora_config=SimpleNamespace(max_loras=2),
     )
     with (
         patch.object(afc, "is_moe_model", return_value=True),
@@ -825,30 +857,25 @@ def test_graph_allgather_dp2_base_and_adapter_ranks(base_rank: int, adapter_rank
     torch.manual_seed(0)
     hidden_size, inter_size, lora_rank = 6, 3, 2
     num_experts, num_local_experts, top_k = 4, 2, 2
-    max_tokens_across_dp = 3
+    num_tokens = 4
 
     w13_base = torch.randn(num_experts, hidden_size, inter_size * 2) * 0.2
     w2_base = torch.randn(num_experts, inter_size, hidden_size) * 0.2
-    w13_lora_a = torch.randn(1, num_experts, lora_rank, hidden_size) * 0.3
-    w13_lora_b = torch.randn(1, num_experts, inter_size * 2, lora_rank) * 0.3
-    w2_lora_a = torch.randn(1, num_experts, lora_rank, inter_size) * 0.3
-    w2_lora_b = torch.randn(1, num_experts, hidden_size, lora_rank) * 0.3
+    w13_lora_a = torch.randn(2, num_experts, lora_rank, hidden_size) * 0.3
+    w13_lora_b = torch.randn(2, num_experts, inter_size * 2, lora_rank) * 0.3
+    w2_lora_a = torch.randn(2, num_experts, lora_rank, inter_size) * 0.3
+    w2_lora_b = torch.randn(2, num_experts, hidden_size, lora_rank) * 0.3
 
-    per_rank_tokens = {
-        base_rank: torch.randn(2, hidden_size),
-        adapter_rank: torch.randn(3, hidden_size),
-    }
-    # Force routing across both local and remote experts for every token so
-    # each DP rank hits both rank 0's experts [0, 1] and rank 1's experts [2, 3].
-    per_rank_router = {
-        0: torch.tensor([[5.0, 1.0, 4.0, 0.5], [0.5, 4.0, 5.0, 1.0]]),
-        1: torch.tensor([[4.5, 0.2, 5.0, 0.1], [0.2, 4.0, 0.5, 5.0], [5.0, 3.0, 0.2, 0.1]]),
-    }
-    if base_rank == 1:
-        per_rank_router = {
-            0: torch.tensor([[4.5, 0.2, 5.0, 0.1], [0.2, 4.0, 0.5, 5.0], [5.0, 3.0, 0.2, 0.1]]),
-            1: torch.tensor([[5.0, 1.0, 4.0, 0.5], [0.5, 4.0, 5.0, 1.0]]),
-        }
+    tokens = torch.randn(num_tokens, hidden_size)
+    router_logits = torch.tensor(
+        [
+            [5.0, 1.0, 4.0, 0.5],
+            [0.5, 4.0, 5.0, 1.0],
+            [4.5, 0.2, 5.0, 0.1],
+            [0.2, 4.0, 0.5, 5.0],
+        ]
+    )
+    token_slots = [-1, 0, 1, -1]
 
     def fake_bgmv_shrink(x, a_flat, shrink_out, combined_idx, scale):
         for row, idx in enumerate(combined_idx.tolist()):
@@ -861,114 +888,30 @@ def test_graph_allgather_dp2_base_and_adapter_ranks(base_rank: int, adapter_rank
             if idx >= 0:
                 y[row, offset : offset + out_size] += (delta[row] @ b_flat[idx].transpose(0, 1).float()).to(y.dtype)
 
-    def make_punica(token_indices: list[int], *, num_tokens: int, no_lora: bool):
-        wrapper = object.__new__(PunicaWrapperNPU)
-        wrapper.no_lora = no_lora
-        wrapper.active_lora_slots = set() if no_lora else {0}
-        wrapper.indices_len = [num_tokens]
-        wrapper._token_lora_indices = torch.tensor(token_indices, dtype=torch.long)
-        wrapper.bgmv_shrink = fake_bgmv_shrink
-        wrapper.bgmv_expand_slice = fake_bgmv_expand_slice
-        return wrapper
-
-    punica_by_rank = {
-        base_rank: make_punica([-1, -1, 0, 0], num_tokens=2, no_lora=True),
-        adapter_rank: make_punica([0, 0, 0, -1], num_tokens=3, no_lora=False),
-    }
-    contexts = {}
-    prepares = {}
-    dispatchers = {}
-    for rank in range(2):
-        moe_config = MagicMock(spec=FusedMoEConfig)
-        moe_config.dp_size = 2
-        moe_config.pcp_size = 1
-        moe_config.tp_size = 1
-        moe_config.ep_size = 2
-        moe_config.num_experts = num_experts
-        moe_config.num_local_experts = num_local_experts
-        moe_config.experts_per_token = top_k
-        moe_config.is_sequence_parallel = False
-        contexts[rank] = SimpleNamespace(
-            punica_wrapper=punica_by_rank[rank],
-            use_ep=True,
-            ep_rank=rank,
-            local_num_experts=num_local_experts,
-            top_k=top_k,
-            layer_lora_slots={0},
-            replicated_batch=False,
-            adapter_enabled=torch.tensor([True]),
-            w13_lora_a_stacked=(w13_lora_a[:, rank * num_local_experts : (rank + 1) * num_local_experts],),
-            w13_lora_b_stacked=(w13_lora_b[:, rank * num_local_experts : (rank + 1) * num_local_experts],),
-            w2_lora_a_stacked=(w2_lora_a[:, rank * num_local_experts : (rank + 1) * num_local_experts],),
-            w2_lora_b_stacked=(w2_lora_b[:, rank * num_local_experts : (rank + 1) * num_local_experts],),
-        )
-        prepares[rank] = PrepareAndFinalizeWithAllGather(moe_config)
-        prepares[rank].set_lora_context(contexts[rank])
-        dispatchers[rank] = TokenDispatcherWithAllGather(
-            top_k=top_k,
-            num_experts=num_experts,
-            num_local_experts=num_local_experts,
-        )
-        dispatchers[rank].set_lora_context(contexts[rank])
-
-    # Build the synchronized 2-rank all_gather outputs and assert each rank's prepare
-    # passes the exact expected local padded tensors (with -1 padding on LoRA indices).
-    padded_hidden = {}
-    padded_router = {}
-    padded_lora = {}
-    for rank in range(2):
-        h = per_rank_tokens[rank]
-        r = per_rank_router[rank]
-        pad_size = max_tokens_across_dp - h.shape[0]
-        li = slice_local_lora_indices(contexts[rank], num_tokens=h.shape[0], pad_size=pad_size, device=h.device)
-        padded_hidden[rank] = torch.nn.functional.pad(h, (0, 0, 0, pad_size)) if pad_size > 0 else h
-        padded_router[rank] = torch.nn.functional.pad(r, (0, 0, 0, pad_size)) if pad_size > 0 else r
-        padded_lora[rank] = li
-    global_hidden = torch.cat([padded_hidden[0], padded_hidden[1]], dim=0)
-    global_router = torch.cat([padded_router[0], padded_router[1]], dim=0)
-    global_lora = torch.cat([padded_lora[0], padded_lora[1]], dim=0)
-
-    def _dp_all_gather(rank: int, tensor: torch.Tensor, _dim: int) -> torch.Tensor:
-        if tensor.ndim == 1:
-            assert torch.equal(tensor, padded_lora[rank])
-            return global_lora
-        if tensor.shape[-1] == hidden_size:
-            assert torch.equal(tensor, padded_hidden[rank])
-            return global_hidden
-        assert torch.equal(tensor, padded_router[rank])
-        return global_router
-
-    prepared = {}
-    for rank in range(2):
-        prepares[rank].moe_config.dp_group = SimpleNamespace(
-            all_gather=lambda tensor, dim, rank=rank: _dp_all_gather(rank, tensor, dim)
-        )
-        with patch("vllm_ascend.ops.fused_moe.prepare_finalize._EXTRA_CTX", SimpleNamespace(max_tokens_across_dp=3)):
-            prepared[rank] = prepares[rank].prepare(per_rank_tokens[rank], per_rank_router[rank])
-
-    assert contexts[0].gathered_lora_indices.tolist() == global_lora.tolist()
-    assert contexts[1].gathered_lora_indices.tolist() == global_lora.tolist()
+    punica = object.__new__(PunicaWrapperNPU)
+    punica.no_lora = False
+    punica.active_lora_slots = {0, 1}
+    punica.indices_len = [num_tokens]
+    punica._token_lora_indices = torch.tensor(token_slots, dtype=torch.long)
+    punica.bgmv_shrink = fake_bgmv_shrink
+    punica.bgmv_expand_slice = fake_bgmv_expand_slice
 
     def cpu_init_routing(hidden_states, topk_ids, *, active_expert_range, **_kwargs):
         first, last = active_expert_range
-        num_tokens = hidden_states.shape[0]
-        expanded = torch.full((num_tokens * top_k,), -1, dtype=torch.int32)
-        rows_per_expert = []
+        n_tok = hidden_states.shape[0]
+        expanded = torch.full((n_tok * top_k,), -1, dtype=torch.int32)
+        rows = []
         dst = 0
         for local_e in range(first, last):
-            count = 0
-            for t in range(num_tokens):
+            for t in range(n_tok):
                 for k in range(top_k):
                     if int(topk_ids[t, k]) == local_e:
                         expanded[t * top_k + k] = dst
-                        rows_per_expert.append(hidden_states[t])
+                        rows.append(hidden_states[t])
                         dst += 1
-                        count += 1
-            rows_per_expert.append(torch.empty((0, hidden_size))) if count == 0 else None
-        active_rows = [r for r in rows_per_expert if r is not None and r.ndim == 1]
-        out = torch.full((num_tokens * top_k, hidden_size), 999.0, dtype=hidden_states.dtype)
-        if active_rows:
-            stacked = torch.stack(active_rows, dim=0)
+        out = torch.full((n_tok * top_k, hidden_size), 999.0, dtype=hidden_states.dtype)
+        if rows:
+            stacked = torch.stack(rows, dim=0)
             out[: stacked.shape[0]] = stacked
         expert_counts = torch.tensor(
             [int((topk_ids == local_e).sum()) for local_e in range(first, last)],
@@ -977,28 +920,65 @@ def test_graph_allgather_dp2_base_and_adapter_ranks(base_rank: int, adapter_rank
         return out, expanded, expert_counts, None
 
     def cpu_unpermute(*, permuted_tokens, sorted_indices, probs, **_kwargs):
-        num_tokens = probs.shape[0]
-        flat_idx = sorted_indices.reshape(num_tokens, top_k)
-        out = torch.zeros((num_tokens, hidden_size), dtype=permuted_tokens.dtype)
-        for t in range(num_tokens):
+        n_tok = probs.shape[0]
+        flat_idx = sorted_indices.reshape(n_tok, top_k)
+        out = torch.zeros((n_tok, hidden_size), dtype=permuted_tokens.dtype)
+        for t in range(n_tok):
             for k in range(top_k):
                 idx = int(flat_idx[t, k])
                 if idx >= 0:
                     out[t] += probs[t, k] * permuted_tokens[idx]
         return out
 
-    partial_outputs = {}
+    topk_weights, topk_ids = torch.topk(router_logits, k=top_k, dim=-1)
+    topk_weights = torch.softmax(topk_weights, dim=-1)
     expert_maps = {
         0: torch.tensor([0, 1, -1, -1]),
         1: torch.tensor([-1, -1, 0, 1]),
     }
-    topk_weights, topk_ids = torch.topk(global_router, k=top_k, dim=-1)
-    topk_weights = torch.softmax(topk_weights, dim=-1)
 
+    partial_outputs = {}
     for rank in range(2):
-        assert has_moe_lora(contexts[rank])
+        moe_config = MagicMock(spec=FusedMoEConfig)
+        moe_config.dp_size = 1
+        moe_config.pcp_size = 1
+        moe_config.tp_size = 2
+        moe_config.ep_size = 2
+        moe_config.num_experts = num_experts
+        moe_config.num_local_experts = num_local_experts
+        moe_config.experts_per_token = top_k
+        moe_config.is_sequence_parallel = False
+
+        sl = slice(rank * num_local_experts, (rank + 1) * num_local_experts)
+        context = SimpleNamespace(
+            punica_wrapper=punica,
+            use_ep=True,
+            ep_rank=rank,
+            local_num_experts=num_local_experts,
+            top_k=top_k,
+            layer_lora_slots={0, 1},
+            replicated_batch=True,
+            adapter_enabled=torch.tensor([True, True]),
+            w13_lora_a_stacked=(w13_lora_a[:, sl].contiguous(),),
+            w13_lora_b_stacked=(w13_lora_b[:, sl].contiguous(),),
+            w2_lora_a_stacked=(w2_lora_a[:, sl].contiguous(),),
+            w2_lora_b_stacked=(w2_lora_b[:, sl].contiguous(),),
+        )
+        prepare_layer = PrepareAndFinalizeWithAllGather(moe_config)
+        prepare_layer.set_lora_context(context)
+        prepared = prepare_layer.prepare(tokens, router_logits)
+        assert not hasattr(context, "gathered_lora_indices")
+
+        dispatcher = TokenDispatcherWithAllGather(
+            top_k=top_k,
+            num_experts=num_experts,
+            num_local_experts=num_local_experts,
+        )
+        dispatcher.set_lora_context(context)
+        assert has_moe_lora(context)
+
         td_input = MoETokenDispatchInput(
-            hidden_states=prepared[rank].hidden_states,
+            hidden_states=prepared.hidden_states,
             topk_weights=topk_weights.clone(),
             topk_ids=topk_ids.to(torch.int32),
             routing=MoeRouterInput(
@@ -1023,9 +1003,9 @@ def test_graph_allgather_dp2_base_and_adapter_ranks(base_rank: int, adapter_rank
                 side_effect=cpu_unpermute,
             ),
         ):
-            dispatched = dispatchers[rank].token_dispatch(td_input)
+            dispatched = dispatcher.token_dispatch(td_input)
             lora_routing = _recover_moe_lora_routing_allgather(
-                contexts[rank],
+                context,
                 dispatched.combine_metadata.expanded_row_idx,
                 topk_ids,
             )
@@ -1039,7 +1019,7 @@ def test_graph_allgather_dp2_base_and_adapter_ranks(base_rank: int, adapter_rank
                 gate_up_out[row] = sorted_h[row] @ w13_base[global_e]
 
             moe_lora_apply_w13(
-                contexts[rank],
+                context,
                 gate_up_out=gate_up_out,
                 hidden_states=sorted_h,
                 lora_routing=lora_routing,
@@ -1052,547 +1032,29 @@ def test_graph_allgather_dp2_base_and_adapter_ranks(base_rank: int, adapter_rank
                 down_out[row] = silu_out[row] @ w2_base[global_e]
 
             moe_lora_apply_w2(
-                contexts[rank],
+                context,
                 down_out=down_out,
                 silu_out=silu_out,
                 lora_routing=lora_routing,
             )
-            partial_outputs[rank] = dispatchers[rank].token_combine(down_out, dispatched.combine_metadata)
-            assert not hasattr(contexts[rank], "gathered_lora_indices")
+            partial_outputs[rank] = dispatcher.token_combine(down_out, dispatched.combine_metadata)
             assert not (lora_per_row[active_rows:] >= 0).any()
 
-    summed_global = partial_outputs[0] + partial_outputs[1]
-    finalized = {}
-    with patch("vllm_ascend.ops.fused_moe.prepare_finalize.get_dp_group") as mock_dp_group:
-        for rank in range(2):
-            mock_dp_group.return_value = SimpleNamespace(
-                reduce_scatter=lambda _hidden, _dim, rank=rank: summed_global.chunk(2, dim=0)[rank]
-            )
-            finalized[rank] = prepares[rank].finalize(partial_outputs[rank], reduce_results=True)
-
-    # Pure-PyTorch global reference: rank tokens routed with or without adapter 0.
-    offset = 0
-    for rank in range(2):
-        tokens = per_rank_tokens[rank]
-        is_adapter_rank = rank == adapter_rank
-        expected = torch.zeros_like(tokens)
-        for local_idx in range(tokens.shape[0]):
-            g_idx = offset + local_idx
-            x = tokens[local_idx]
-            for k in range(top_k):
-                e = int(topk_ids[g_idx, k])
-                prob = topk_weights[g_idx, k]
-                gu = x @ w13_base[e]
-                if is_adapter_rank:
-                    gu = gu + (x @ w13_lora_a[0, e].T) @ w13_lora_b[0, e].T
-                g, u = gu.chunk(2, dim=-1)
-                act = torch.nn.functional.silu(g) * u
-                dn = act @ w2_base[e]
-                if is_adapter_rank:
-                    dn = dn + (act @ w2_lora_a[0, e].T) @ w2_lora_b[0, e].T
-                expected[local_idx] += prob * dn
-        torch.testing.assert_close(finalized[rank], expected, atol=1e-5, rtol=1e-5)
-        offset += max_tokens_across_dp
-
-
-def test_punica_update_metadata_tracks_slot_to_lora_id_in_place() -> None:
-    wrapper = PunicaWrapperNPU(
-        max_num_batched_tokens=8,
-        max_batches=4,
-        device=torch.device("cpu"),
-        lora_config=SimpleNamespace(
-            max_loras=2,
-            max_lora_rank=16,
-            fully_sharded_loras=False,
-            lora_dtype=torch.bfloat16,
-        ),
-    )
-    slot_tensor = wrapper.slot_to_lora_id
-    assert slot_tensor is not None
-    slot_ptr = slot_tensor.data_ptr()
-    assert slot_tensor.tolist() == [-1, -1]
-
-    wrapper.update_metadata(LoRAMapping((11, 22, 0), (11, 22, 0), is_prefill=True), [11, 22], 2, 100)
-    assert wrapper.slot_to_lora_id is slot_tensor
-    assert wrapper.slot_to_lora_id.data_ptr() == slot_ptr
-    assert wrapper.slot_to_lora_id.tolist() == [11, 22]
-    assert wrapper.lora_index_to_id == (11, 22)
-    assert wrapper.token_lora_indices.tolist() == [0, 1, -1]
-
-    wrapper.update_metadata(LoRAMapping((22, 0), (22, 0), is_prefill=False), [22, None], 2, 100)
-    assert wrapper.slot_to_lora_id.data_ptr() == slot_ptr
-    assert wrapper.slot_to_lora_id.tolist() == [22, -1]
-    assert wrapper.lora_index_to_id == (22, None)
-    assert wrapper.token_lora_indices.tolist() == [0, -1]
-
-
-def test_dp2_ep_heterogeneous_slot_mapping_allgather_and_all2all() -> None:
-    from vllm.model_executor.layers.fused_moe import FusedMoEConfig
-
-    from vllm_ascend.ops.fused_moe.dataclass.moe_quant import MoEQuantParams
-    from vllm_ascend.ops.fused_moe.dataclass.router_input import MoeRouterInput
-    from vllm_ascend.ops.fused_moe.dataclass.token_dispatcher import MoETokenDispatchInput
-    from vllm_ascend.ops.fused_moe.prepare_finalize import PrepareAndFinalizeWithAllGather
-    from vllm_ascend.ops.fused_moe.token_dispatcher import TokenDispatcherWithAllGather
-
-    torch.manual_seed(7)
-    hidden_size, inter_size, lora_rank = 6, 3, 2
-    num_experts, num_local_experts, top_k = 4, 2, 2
-    max_tokens_across_dp = 3
-
-    w13_base = torch.randn(num_experts, hidden_size, inter_size * 2) * 0.2
-    w2_base = torch.randn(num_experts, inter_size, hidden_size) * 0.2
-    adapter_weights = {
-        11: (
-            torch.randn(num_experts, lora_rank, hidden_size) * 0.4,
-            torch.randn(num_experts, inter_size * 2, lora_rank) * 0.4,
-            torch.randn(num_experts, lora_rank, inter_size) * 0.4,
-            torch.randn(num_experts, hidden_size, lora_rank) * 0.4,
-        ),
-        22: (
-            torch.randn(num_experts, lora_rank, hidden_size) * 0.4 + 0.25,
-            torch.randn(num_experts, inter_size * 2, lora_rank) * 0.4 - 0.2,
-            torch.randn(num_experts, lora_rank, inter_size) * 0.4 + 0.15,
-            torch.randn(num_experts, hidden_size, lora_rank) * 0.4 - 0.1,
-        ),
-    }
-
-    # Both DP workers place their active adapter in local slot 0, but slot 0 on
-    # worker 0 is adapter 11 while slot 0 on worker 1 is adapter 22.
-    worker_slot_orders = {
-        0: (11, 22),
-        1: (22, 11),
-    }
-    per_rank_tokens = {
-        0: torch.randn(2, hidden_size),
-        1: torch.randn(3, hidden_size),
-    }
-    per_rank_router = {
-        0: torch.tensor([[5.0, 1.0, 4.0, 0.5], [0.5, 4.0, 5.0, 1.0]]),
-        1: torch.tensor([[4.5, 0.2, 5.0, 0.1], [0.2, 4.0, 0.5, 5.0], [5.0, 3.0, 0.2, 0.1]]),
-    }
-
-    def fake_bgmv_shrink(x, a_flat, shrink_out, combined_idx, scale):
-        for row, idx in enumerate(combined_idx.tolist()):
-            if idx >= 0:
-                shrink_out[row] = scale * (x[row].float() @ a_flat[idx].transpose(0, 1).float())
-
-    def fake_bgmv_expand_slice(delta, b_flat, y, combined_idx, offset, out_size, add_inputs=True):
-        del add_inputs
-        for row, idx in enumerate(combined_idx.tolist()):
-            if idx >= 0:
-                y[row, offset : offset + out_size] += (delta[row] @ b_flat[idx].transpose(0, 1).float()).to(y.dtype)
-
-    def make_punica(slot_ids: tuple[int, ...], token_indices: list[int], active_slots: set[int]):
-        wrapper = PunicaWrapperNPU(
-            max_num_batched_tokens=8,
-            max_batches=4,
-            device=torch.device("cpu"),
-            lora_config=SimpleNamespace(
-                max_loras=len(slot_ids),
-                max_lora_rank=lora_rank,
-                fully_sharded_loras=False,
-                lora_dtype=torch.float32,
-            ),
-        )
-        wrapper.no_lora = not active_slots
-        wrapper.active_lora_slots = active_slots
-        wrapper.indices_len = [len(token_indices)]
-        wrapper._token_lora_indices[: len(token_indices)] = torch.tensor(token_indices, dtype=torch.long)
-        wrapper._update_slot_to_lora_id(list(slot_ids))
-        wrapper.bgmv_shrink = fake_bgmv_shrink
-        wrapper.bgmv_expand_slice = fake_bgmv_expand_slice
-        return wrapper
-
-    punica_by_rank = {
-        0: make_punica(worker_slot_orders[0], [0, -1], {0}),
-        1: make_punica(worker_slot_orders[1], [0, 0, -1], {0}),
-    }
-    assert torch.equal(
-        encode_local_lora_ids(SimpleNamespace(punica_wrapper=punica_by_rank[0]), torch.tensor([0, 1, -1])),
-        torch.tensor([11, 22, -1]),
-    )
-    assert torch.equal(
-        encode_local_lora_ids(SimpleNamespace(punica_wrapper=punica_by_rank[1]), torch.tensor([0, 1, -1])),
-        torch.tensor([22, 11, -1]),
-    )
-
-    contexts = {}
-    prepares = {}
-    dispatchers = {}
-    for rank in range(2):
-        order = worker_slot_orders[rank]
-        sl = slice(rank * num_local_experts, (rank + 1) * num_local_experts)
-        w13_a = torch.stack([adapter_weights[aid][0][sl] for aid in order], dim=0)
-        w13_b = torch.stack([adapter_weights[aid][1][sl] for aid in order], dim=0)
-        w2_a = torch.stack([adapter_weights[aid][2][sl] for aid in order], dim=0)
-        w2_b = torch.stack([adapter_weights[aid][3][sl] for aid in order], dim=0)
-
-        moe_config = MagicMock(spec=FusedMoEConfig)
-        moe_config.dp_size = 2
-        moe_config.pcp_size = 1
-        moe_config.tp_size = 1
-        moe_config.ep_size = 2
-        moe_config.num_experts = num_experts
-        moe_config.num_local_experts = num_local_experts
-        moe_config.experts_per_token = top_k
-        moe_config.is_sequence_parallel = False
-        contexts[rank] = SimpleNamespace(
-            punica_wrapper=punica_by_rank[rank],
-            use_ep=True,
-            ep_rank=rank,
-            local_num_experts=num_local_experts,
-            top_k=top_k,
-            layer_lora_slots={0, 1},
-            replicated_batch=False,
-            adapter_enabled=torch.tensor([True, True]),
-            w13_lora_a_stacked=(w13_a,),
-            w13_lora_b_stacked=(w13_b,),
-            w2_lora_a_stacked=(w2_a,),
-            w2_lora_b_stacked=(w2_b,),
-        )
-        prepares[rank] = PrepareAndFinalizeWithAllGather(moe_config)
-        prepares[rank].set_lora_context(contexts[rank])
-        dispatchers[rank] = TokenDispatcherWithAllGather(
-            top_k=top_k,
-            num_experts=num_experts,
-            num_local_experts=num_local_experts,
-        )
-        dispatchers[rank].set_lora_context(contexts[rank])
-
-    padded_hidden = {
-        0: torch.nn.functional.pad(per_rank_tokens[0], (0, 0, 0, 1)),
-        1: per_rank_tokens[1],
-    }
-    padded_router = {
-        0: torch.nn.functional.pad(per_rank_router[0], (0, 0, 0, 1)),
-        1: per_rank_router[1],
-    }
-    expected_local_ids = {
-        0: torch.tensor([11, -1, -1], dtype=torch.long),
-        1: torch.tensor([22, 22, -1], dtype=torch.long),
-    }
-    global_hidden = torch.cat([padded_hidden[0], padded_hidden[1]], dim=0)
-    global_router = torch.cat([padded_router[0], padded_router[1]], dim=0)
-    global_lora_ids = torch.cat([expected_local_ids[0], expected_local_ids[1]], dim=0)
-
-    def _dp_all_gather(rank: int, tensor: torch.Tensor, _dim: int) -> torch.Tensor:
-        if tensor.ndim == 1:
-            assert torch.equal(tensor, expected_local_ids[rank])
-            return global_lora_ids
-        if tensor.shape[-1] == hidden_size:
-            return global_hidden
-        return global_router
-
-    prepared = {}
-    for rank in range(2):
-        prepares[rank].moe_config.dp_group = SimpleNamespace(
-            all_gather=lambda tensor, dim, rank=rank: _dp_all_gather(rank, tensor, dim)
-        )
-        with patch("vllm_ascend.ops.fused_moe.prepare_finalize._EXTRA_CTX", SimpleNamespace(max_tokens_across_dp=3)):
-            prepared[rank] = prepares[rank].prepare(per_rank_tokens[rank], per_rank_router[rank])
-
-    assert contexts[0].gathered_lora_indices.tolist() == [11, -1, -1, 22, 22, -1]
-    assert contexts[1].gathered_lora_indices.tolist() == [11, -1, -1, 22, 22, -1]
-
-    def cpu_init_routing(hidden_states, topk_ids, *, active_expert_range, **_kwargs):
-        first, last = active_expert_range
-        num_tokens = hidden_states.shape[0]
-        expanded = torch.full((num_tokens * top_k,), -1, dtype=torch.int32)
-        rows = []
-        dst = 0
-        for local_e in range(first, last):
-            for t in range(num_tokens):
-                for k in range(top_k):
-                    if int(topk_ids[t, k]) == local_e:
-                        expanded[t * top_k + k] = dst
-                        rows.append(hidden_states[t])
-                        dst += 1
-        out = torch.full((num_tokens * top_k, hidden_size), 999.0, dtype=hidden_states.dtype)
-        if rows:
-            stacked = torch.stack(rows, dim=0)
-            out[: stacked.shape[0]] = stacked
-        expert_counts = torch.tensor(
-            [int((topk_ids == local_e).sum()) for local_e in range(first, last)],
-            dtype=torch.int32,
-        )
-        return out, expanded, expert_counts, None
-
-    def cpu_unpermute(*, permuted_tokens, sorted_indices, probs, **_kwargs):
-        num_tokens = probs.shape[0]
-        flat_idx = sorted_indices.reshape(num_tokens, top_k)
-        out = torch.zeros((num_tokens, hidden_size), dtype=permuted_tokens.dtype)
-        for t in range(num_tokens):
-            for k in range(top_k):
-                idx = int(flat_idx[t, k])
-                if idx >= 0:
-                    out[t] += probs[t, k] * permuted_tokens[idx]
-        return out
-
-    topk_weights, topk_ids = torch.topk(global_router, k=top_k, dim=-1)
-    topk_weights = torch.softmax(topk_weights, dim=-1)
-    expert_maps = {
-        0: torch.tensor([0, 1, -1, -1]),
-        1: torch.tensor([-1, -1, 0, 1]),
-    }
-    partial_outputs = {}
-    for rank in range(2):
-        td_input = MoETokenDispatchInput(
-            hidden_states=prepared[rank].hidden_states,
-            topk_weights=topk_weights.clone(),
-            topk_ids=topk_ids.to(torch.int32),
-            routing=MoeRouterInput(
-                expert_map=expert_maps[rank],
-                global_redundant_expert_num=0,
-                mc2_mask=None,
-                apply_router_weight_on_input=False,
-            ),
-            quant=MoEQuantParams(),
-        )
-        with (
-            patch(
-                "vllm_ascend.ops.fused_moe.token_dispatcher.get_ep_group",
-                return_value=SimpleNamespace(rank_in_group=rank),
-            ),
-            patch(
-                "vllm_ascend.ops.fused_moe.token_dispatcher.DeviceOperator.npu_moe_init_routing",
-                side_effect=cpu_init_routing,
-            ),
-            patch(
-                "vllm_ascend.ops.fused_moe.token_dispatcher.DeviceOperator.npu_moe_token_unpermute",
-                side_effect=cpu_unpermute,
-            ),
-        ):
-            dispatched = dispatchers[rank].token_dispatch(td_input)
-            lora_routing = _recover_moe_lora_routing_allgather(
-                contexts[rank],
-                dispatched.combine_metadata.expanded_row_idx,
-                topk_ids,
-            )
-            expert_per_row, _ = lora_routing
-            active_rows = int(dispatched.group_list.sum().item())
-            sorted_h = dispatched.hidden_states
-            gate_up_out = torch.zeros((sorted_h.shape[0], inter_size * 2), dtype=sorted_h.dtype)
-            local_offset = rank * num_local_experts
-            for row in range(active_rows):
-                global_e = local_offset + int(expert_per_row[row])
-                gate_up_out[row] = sorted_h[row] @ w13_base[global_e]
-
-            moe_lora_apply_w13(
-                contexts[rank],
-                gate_up_out=gate_up_out,
-                hidden_states=sorted_h,
-                lora_routing=lora_routing,
-            )
-            gate, up = gate_up_out.chunk(2, dim=-1)
-            silu_out = torch.nn.functional.silu(gate) * up
-            down_out = torch.zeros_like(sorted_h)
-            for row in range(active_rows):
-                global_e = local_offset + int(expert_per_row[row])
-                down_out[row] = silu_out[row] @ w2_base[global_e]
-
-            moe_lora_apply_w2(
-                contexts[rank],
-                down_out=down_out,
-                silu_out=silu_out,
-                lora_routing=lora_routing,
-            )
-            partial_outputs[rank] = dispatchers[rank].token_combine(down_out, dispatched.combine_metadata)
-
-    summed_global = partial_outputs[0] + partial_outputs[1]
-    finalized = {}
-    with patch("vllm_ascend.ops.fused_moe.prepare_finalize.get_dp_group") as mock_dp_group:
-        for rank in range(2):
-            mock_dp_group.return_value = SimpleNamespace(
-                reduce_scatter=lambda _hidden, _dim, rank=rank: summed_global.chunk(2, dim=0)[rank]
-            )
-            finalized[rank] = prepares[rank].finalize(partial_outputs[rank], reduce_results=True)
-
-    token_adapters = {0: [11, None], 1: [22, 22, None]}
-    wrong_slot0_adapters = {0: [11, None], 1: [11, 11, None]}
-    offset = 0
-    for rank in range(2):
-        tokens = per_rank_tokens[rank]
-        expected = torch.zeros_like(tokens)
-        wrong_expected = torch.zeros_like(tokens)
-        for local_idx in range(tokens.shape[0]):
-            g_idx = offset + local_idx
-            x = tokens[local_idx]
-            aid = token_adapters[rank][local_idx]
-            for k in range(top_k):
-                e = int(topk_ids[g_idx, k])
-                prob = topk_weights[g_idx, k]
-                gu = x @ w13_base[e]
-                if aid is not None:
-                    wa, wb, w2a, w2b = adapter_weights[aid]
-                    gu = gu + (x @ wa[e].T) @ wb[e].T
-                    g, u = gu.chunk(2, dim=-1)
-                    act = torch.nn.functional.silu(g) * u
-                    dn = act @ w2_base[e] + (act @ w2a[e].T) @ w2b[e].T
-                else:
-                    g, u = gu.chunk(2, dim=-1)
-                    act = torch.nn.functional.silu(g) * u
-                    dn = act @ w2_base[e]
-                expected[local_idx] += prob * dn
-
-                if wrong_slot0_adapters[rank][local_idx] is not None and e < num_local_experts:
-                    wa0, wb0, w2a0, w2b0 = adapter_weights[11]
-                    gu_w = (x @ w13_base[e]) + (x @ wa0[e].T) @ wb0[e].T
-                    gw, uw = gu_w.chunk(2, dim=-1)
-                    act_w = torch.nn.functional.silu(gw) * uw
-                    dn_w = act_w @ w2_base[e] + (act_w @ w2a0[e].T) @ w2b0[e].T
-                    wrong_expected[local_idx] += prob * dn_w
-                elif aid is not None:
-                    wrong_expected[local_idx] += prob * dn
-                else:
-                    wrong_expected[local_idx] += prob * dn
-        torch.testing.assert_close(finalized[rank], expected, atol=1e-5, rtol=1e-5)
-        if rank == 1:
-            assert not torch.allclose(finalized[rank], wrong_expected, atol=1e-3, rtol=1e-3)
-        offset += max_tokens_across_dp
-
-    # Verify AlltoAll path encodes local slots -> global IDs and resolves back per receiver.
-    prepare_lora_indices(contexts[0], num_tokens=2, pad_size=0, tp_size=1, tp_rank=0)
-    prepare_lora_indices(contexts[1], num_tokens=2, pad_size=0, tp_size=1, tp_rank=0)
-    assert contexts[0].split_lora_indices.tolist() == [11, -1]
-    assert contexts[1].split_lora_indices.tolist() == [22, 22]
-
-    contexts[0].exchanged_lora_indices = torch.tensor([11, 22], dtype=torch.long)
-    contexts[1].exchanged_lora_indices = torch.tensor([11, 22], dtype=torch.long)
-    _, rank0_slots = _recover_moe_lora_routing_all2all(contexts[0], torch.tensor([1, 1]))
-    _, rank1_slots = _recover_moe_lora_routing_all2all(contexts[1], torch.tensor([1, 1]))
-    assert rank0_slots.tolist() == [0, 1]
-    assert rank1_slots.tolist() == [1, 0]
-
-    # Receiver missing peer's adapter masks unresident adapter IDs to -1 (never slot 0).
-    partial_receiver = SimpleNamespace(punica_wrapper=make_punica((11,), [0, -1], {0}))
-    assert resolve_received_lora_slots(partial_receiver, torch.tensor([11, 22, -1], dtype=torch.long)).tolist() == [
-        0,
-        -1,
-        -1,
-    ]
-
-
-@pytest.mark.parametrize(("base_rank", "adapter_rank"), [(0, 1), (1, 0)])
-def test_uncaptured_prefill_allgather_dp2_base_only_and_lora_active_ranks(base_rank: int, adapter_rank: int) -> None:
-    from vllm.model_executor.layers.fused_moe import FusedMoEConfig
-
-    from vllm_ascend.lora.fused_moe import _is_lora_graph_capturing
-    from vllm_ascend.ops.fused_moe.prepare_finalize import PrepareAndFinalizeWithAllGather
-
-    hidden_size, num_experts, num_local_experts, top_k = 4, 4, 2, 2
-
-    def make_prefill_punica(slot_ids: list[int | None], token_indices: list[int], active_slots: set[int]):
-        wrapper = PunicaWrapperNPU(
-            max_num_batched_tokens=8,
-            max_batches=4,
-            device=torch.device("cpu"),
-            lora_config=SimpleNamespace(
-                max_loras=len(slot_ids),
-                max_lora_rank=8,
-                fully_sharded_loras=False,
-                lora_dtype=torch.bfloat16,
-            ),
-        )
-        wrapper.no_lora = not active_slots
-        wrapper.active_lora_slots = active_slots
-        wrapper.indices_len = [len(token_indices)]
-        wrapper._token_lora_indices[: len(token_indices)] = torch.tensor(token_indices, dtype=torch.long)
-        wrapper._update_slot_to_lora_id(slot_ids)
-        return wrapper
-
-    punica_by_rank = {
-        base_rank: make_prefill_punica([None], [-1, -1], set()),
-        adapter_rank: make_prefill_punica([7], [0, 0, 0], {0}),
-    }
-    contexts = {
-        base_rank: SimpleNamespace(
-            punica_wrapper=punica_by_rank[base_rank],
-            use_ep=True,
-            ep_rank=base_rank,
-            local_num_experts=num_local_experts,
-            top_k=top_k,
-            layer_lora_slots=set(),
-            replicated_batch=False,
-        ),
-        adapter_rank: SimpleNamespace(
-            punica_wrapper=punica_by_rank[adapter_rank],
-            use_ep=True,
-            ep_rank=adapter_rank,
-            local_num_experts=num_local_experts,
-            top_k=top_k,
-            layer_lora_slots={0},
-            replicated_batch=False,
-        ),
-    }
-
-    per_rank_tokens = {
-        base_rank: torch.randn(2, hidden_size),
-        adapter_rank: torch.randn(3, hidden_size),
-    }
-    per_rank_router = {
-        base_rank: torch.randn(2, num_experts),
-        adapter_rank: torch.randn(3, num_experts),
-    }
-    padded_hidden = {
-        base_rank: torch.nn.functional.pad(per_rank_tokens[base_rank], (0, 0, 0, 1)),
-        adapter_rank: per_rank_tokens[adapter_rank],
-    }
-    padded_router = {
-        base_rank: torch.nn.functional.pad(per_rank_router[base_rank], (0, 0, 0, 1)),
-        adapter_rank: per_rank_router[adapter_rank],
-    }
-    expected_sent_lora = {
-        base_rank: [-1, -1, -1],
-        adapter_rank: [7, 7, 7],
-    }
-    global_hidden = torch.cat([padded_hidden[0], padded_hidden[1]], dim=0)
-    global_router = torch.cat([padded_router[0], padded_router[1]], dim=0)
-    global_lora = torch.tensor(expected_sent_lora[0] + expected_sent_lora[1], dtype=torch.long)
-
-    dp_mocks = {}
-    with (
-        patch("vllm_ascend.lora.fused_moe._EXTRA_CTX", SimpleNamespace(capturing=False)),
-        patch(
-            "vllm_ascend.ops.fused_moe.prepare_finalize._EXTRA_CTX",
-            SimpleNamespace(capturing=False, max_tokens_across_dp=3),
-        ),
-    ):
-        assert not _is_lora_graph_capturing()
-        for rank in range(2):
-            moe_config = MagicMock(spec=FusedMoEConfig)
-            moe_config.dp_size = 2
-            moe_config.pcp_size = 1
-            moe_config.is_sequence_parallel = False
-
-            def _dp_gather(tensor: torch.Tensor, _dim: int, rank: int = rank) -> torch.Tensor:
-                if tensor.ndim == 1:
-                    assert tensor.tolist() == expected_sent_lora[rank]
-                    return global_lora
-                if tensor.shape[-1] == hidden_size:
-                    return global_hidden
-                return global_router
-
-            mock_dp_group = MagicMock()
-            mock_dp_group.all_gather.side_effect = _dp_gather
-            moe_config.dp_group = mock_dp_group
-            dp_mocks[rank] = mock_dp_group
-
-            layer = PrepareAndFinalizeWithAllGather(moe_config)
-            layer.set_lora_context(contexts[rank])
-            layer.prepare(per_rank_tokens[rank], per_rank_router[rank])
-
-    assert dp_mocks[base_rank].all_gather.call_count == 3
-    assert dp_mocks[adapter_rank].all_gather.call_count == 3
-    assert contexts[base_rank].gathered_lora_indices.tolist() == global_lora.tolist()
-    assert contexts[adapter_rank].gathered_lora_indices.tolist() == global_lora.tolist()
-    assert not has_moe_lora(contexts[base_rank])
-    assert has_moe_lora(contexts[adapter_rank])
-
-    topk_ids = torch.zeros((6, top_k), dtype=torch.long)
-    expanded_row_idx = torch.arange(6 * top_k, dtype=torch.int32)
-    _, resolved_on_adapter = _recover_moe_lora_routing_allgather(contexts[adapter_rank], expanded_row_idx, topk_ids)
-    expected_resolved = (
-        [-1] * (3 * top_k) + [0] * (3 * top_k) if base_rank == 0 else [0] * (3 * top_k) + [-1] * (3 * top_k)
-    )
-    assert resolved_on_adapter.tolist() == expected_resolved
+    actual = partial_outputs[0] + partial_outputs[1]
+    expected = torch.zeros_like(tokens)
+    for t in range(num_tokens):
+        x = tokens[t]
+        slot = token_slots[t]
+        for k in range(top_k):
+            e = int(topk_ids[t, k])
+            prob = topk_weights[t, k]
+            gu = x @ w13_base[e]
+            if slot >= 0:
+                gu = gu + (x @ w13_lora_a[slot, e].T) @ w13_lora_b[slot, e].T
+            g, u = gu.chunk(2, dim=-1)
+            act = torch.nn.functional.silu(g) * u
+            dn = act @ w2_base[e]
+            if slot >= 0:
+                dn = dn + (act @ w2_lora_a[slot, e].T) @ w2_lora_b[slot, e].T
+            expected[t] += prob * dn
+    torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)

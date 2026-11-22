@@ -64,22 +64,35 @@ def has_lora(lora_context) -> bool:
     return lora_context is not None and not lora_context.punica_wrapper.no_lora
 
 
-def has_moe_lora(lora_context) -> bool:
-    """Keep the base kernel when this layer has no active or routed expert adapter.
+def assert_moe_lora_dp1_supported(dp_size: int) -> None:
+    if dp_size > 1:
+        raise NotImplementedError(
+            "Ascend MoE LoRA does not support data_parallel_size > 1. "
+            "vLLM loads and evicts LoRA adapters independently per DP rank from local "
+            "requests, so cross-DP expert routing cannot guarantee that a remote rank's "
+            "adapter is resident on the receiving expert rank. "
+            "Set data_parallel_size=1 (tensor parallelism and expert parallelism remain supported)."
+        )
 
-    Request activity is tracked separately from layer slot residency. Under
-    DP>1 (non-replicated batches), do not use local request activity to suppress
-    MoE LoRA: remote peers may route adapter tokens to this rank.
+
+def _assert_replicated_moe_lora_batch(lora_context) -> None:
+    if getattr(lora_context, "replicated_batch", True) is False:
+        assert_moe_lora_dp1_supported(2)
+
+
+def has_moe_lora(lora_context) -> bool:
+    """Keep the base kernel when this layer has no active expert adapter.
+
+    Ascend MoE LoRA requires ``data_parallel_size == 1`` (replicated batches
+    across TP/EP ranks), so all ranks share identical slot residency and active
+    adapter slots.
     """
     if lora_context is None:
         return False
+    _assert_replicated_moe_lora_batch(lora_context)
     slots = getattr(lora_context, "layer_lora_slots", None)
     if slots is not None and not slots:
         return False
-    if getattr(lora_context, "replicated_batch", True) is False or (
-        getattr(lora_context, "use_ep", False) is True and getattr(lora_context, "replicated_batch", False) is not True
-    ):
-        return True
     if not has_lora(lora_context):
         return False
     punica_wrapper = getattr(lora_context, "punica_wrapper", None)
@@ -91,14 +104,9 @@ def should_disable_all2all_quant_for_lora(lora_context, quant_type=None) -> bool
     """Return whether AlltoAll dispatch must stay floating-point for MoE LoRA.
 
     Every EP rank must agree on whether to issue the extra activation-scale
-    AlltoAll exchange. When ``replicated_batch`` is True (DP=1), both
-    ``layer_lora_slots`` and active request slots match across ranks. Under
-    ``DP > 1`` (``replicated_batch is not True``), rank-local
-    ``layer_lora_slots`` can differ across DP workers (for example, one worker
-    has loaded an expert adapter while another only served base requests), so
-    all ranks must participate uniformly for unquantized and LoRA-supported
-    quantized backends while unsupported quant types (for example, MXFP) stay
-    quantized on every rank.
+    AlltoAll exchange. Under ``DP=1``, both ``layer_lora_slots`` and active
+    request slots match across ranks while unsupported quant types (for
+    example, MXFP) stay quantized on every rank.
 
     When ``quant_type`` is supplied and routes through the unfused LoRA
     boundary (``should_use_unfused_quant_moe_for_lora``), dispatch must also
@@ -107,60 +115,39 @@ def should_disable_all2all_quant_for_lora(lora_context, quant_type=None) -> bool
     """
     if lora_context is None:
         return False
+    _assert_replicated_moe_lora_batch(lora_context)
     if _is_unsupported_quant_moe_lora_type(quant_type):
         return False
-    if getattr(lora_context, "replicated_batch", False) is not True:
-        return True
     if quant_type is not None and should_use_unfused_quant_moe_for_lora(lora_context, quant_type):
         return True
-    slots = getattr(lora_context, "layer_lora_slots", None)
-    if slots is not None and not slots:
-        return False
-    if not has_lora(lora_context):
-        return False
-    punica_wrapper = getattr(lora_context, "punica_wrapper", None)
-    active = getattr(punica_wrapper, "active_lora_slots", None)
-    return slots is None or active is None or bool(slots.intersection(active))
+    return has_moe_lora(lora_context)
 
 
 def should_exchange_all2all_lora_indices(lora_context, quant_type=None) -> bool:
-    """Return whether AlltoAll dispatch must exchange per-token adapter IDs.
+    """Return whether AlltoAll dispatch must exchange per-token adapter slots.
 
-    Shares rank consistency with ``should_disable_all2all_quant_for_lora``
-    under ``DP > 1`` so base-only and adapter-active workers execute the exact
-    same AlltoAll collective count (base-only workers exchange ``-1`` sentinels),
-    while avoiding unnecessary index exchanges on ``DP=1`` base batches that only
-    keep the quantized unfused boundary active.
+    Avoids unnecessary index exchanges on ``DP=1`` base batches that only keep
+    the quantized unfused boundary active.
     """
     if lora_context is None:
         return False
+    _assert_replicated_moe_lora_batch(lora_context)
     if _is_unsupported_quant_moe_lora_type(quant_type):
         return False
-    if getattr(lora_context, "replicated_batch", False) is not True:
-        return True
-    slots = getattr(lora_context, "layer_lora_slots", None)
-    if slots is not None and not slots:
-        return False
-    if not has_lora(lora_context):
-        return False
-    punica_wrapper = getattr(lora_context, "punica_wrapper", None)
-    active = getattr(punica_wrapper, "active_lora_slots", None)
-    return slots is None or active is None or bool(slots.intersection(active))
+    return has_moe_lora(lora_context)
 
 
 def should_gather_allgather_lora_indices(lora_context) -> bool:
-    """Return whether AllGather prepare must gather per-token adapter IDs.
+    """Return whether AllGather prepare must gather per-token adapter slots.
 
-    Under ``DP > 1`` (``replicated_batch is not True``) or ACL graph capture,
-    every rank must participate uniformly in the LoRA collective so a worker
-    with no loaded adapter sends ``-1`` sentinels rather than hanging peer DP
-    workers that hold active adapters.
+    Serves ``DP=1`` paths that shard tokens before MoE (sequence parallelism or
+    PCP) and ACL graph capture so every rank participates uniformly in the LoRA
+    collective.
     """
     if lora_context is None:
         return False
+    _assert_replicated_moe_lora_batch(lora_context)
     if _is_lora_graph_capturing():
-        return True
-    if getattr(lora_context, "replicated_batch", False) is not True:
         return True
     slots = getattr(lora_context, "layer_lora_slots", None)
     return slots is None or bool(slots)
@@ -181,20 +168,18 @@ def _is_lora_graph_capturing() -> bool:
 def should_use_unfused_quant_moe_for_lora(lora_context, quant_type) -> bool:
     """Keep quantized MoE on its unfused BF16 boundary for zero-delta parity.
 
-    When an expert adapter is loaded, ``DP > 1`` (where another DP rank may have
-    loaded adapters and dispatched BF16 tokens), or ACL graph capture is running
-    for a LoRA-capable quantized MoE type, base requests stay on the same unfused
+    When an expert adapter is loaded or ACL graph capture is running for a
+    LoRA-capable quantized MoE type, base requests stay on the same unfused
     quant -> gmm1 -> activation -> quant -> gmm2 sequence as the quantized MoE
     LoRA backend while skipping the LoRA kernels themselves.
     """
     if lora_context is None:
         return False
+    _assert_replicated_moe_lora_batch(lora_context)
     from vllm_ascend.lora.quant_moe import has_quant_moe_lora_impl
 
     if not has_quant_moe_lora_impl(quant_type):
         return False
-    if getattr(lora_context, "replicated_batch", True) is False:
-        return True
     slots = getattr(lora_context, "layer_lora_slots", None)
     has_loaded_slots = isinstance(slots, (set, frozenset, list, tuple)) and bool(slots)
     return has_moe_lora(lora_context) or has_loaded_slots or _is_lora_graph_capturing()
@@ -206,50 +191,6 @@ def reset_lora_indices(lora_context) -> None:
             delattr(lora_context, field)
 
 
-def _get_slot_to_lora_id(lora_context, device: torch.device) -> torch.Tensor | None:
-    punica_wrapper = getattr(lora_context, "punica_wrapper", None)
-    if punica_wrapper is None:
-        return None
-    slot_to_lora_id = getattr(punica_wrapper, "slot_to_lora_id", None)
-    if isinstance(slot_to_lora_id, torch.Tensor):
-        if slot_to_lora_id.device != device:
-            return slot_to_lora_id.to(device)
-        return slot_to_lora_id
-    lora_index_to_id = getattr(punica_wrapper, "lora_index_to_id", None)
-    if lora_index_to_id is not None:
-        return torch.tensor(
-            [int(lora_id) if (lora_id is not None and lora_id > 0) else -1 for lora_id in lora_index_to_id],
-            dtype=torch.long,
-            device=device,
-        )
-    return None
-
-
-def encode_local_lora_ids(lora_context, local_slots: torch.Tensor) -> torch.Tensor:
-    """Map worker-local LoRA cache slots to stable global adapter IDs."""
-    slot_to_lora_id = _get_slot_to_lora_id(lora_context, local_slots.device)
-    if slot_to_lora_id is None:
-        return local_slots
-    if slot_to_lora_id.numel() == 0:
-        return torch.full_like(local_slots, -1)
-    valid = (local_slots >= 0) & (local_slots < slot_to_lora_id.numel())
-    safe_slots = local_slots.clamp(min=0, max=slot_to_lora_id.numel() - 1)
-    return torch.where(valid, slot_to_lora_id[safe_slots], torch.full_like(local_slots, -1))
-
-
-def resolve_received_lora_slots(lora_context, received_lora_ids: torch.Tensor) -> torch.Tensor:
-    """Resolve gathered/exchanged stable adapter IDs into receiver-local slots."""
-    slot_to_lora_id = _get_slot_to_lora_id(lora_context, received_lora_ids.device)
-    if slot_to_lora_id is None or received_lora_ids.numel() == 0:
-        return received_lora_ids
-    if slot_to_lora_id.numel() == 0:
-        return torch.full_like(received_lora_ids, -1)
-    matches = (received_lora_ids.unsqueeze(1) == slot_to_lora_id.unsqueeze(0)) & (received_lora_ids.unsqueeze(1) > 0)
-    has_match = matches.any(dim=1)
-    matched_slot = matches.to(torch.int64).argmax(dim=1)
-    return torch.where(has_match, matched_slot, torch.full_like(matched_slot, -1))
-
-
 def slice_local_lora_indices(
     lora_context,
     *,
@@ -257,13 +198,12 @@ def slice_local_lora_indices(
     pad_size: int = 0,
     device: torch.device | None = None,
 ) -> torch.Tensor:
-    """Slice and right-pad local per-token adapter IDs to match routed tokens.
+    """Slice and right-pad local per-token adapter slots to match routed tokens.
 
     Pads inactive/padding positions with ``-1`` (never ``0``, which selects
-    adapter slot 0). Encodes local cache slots to stable global adapter IDs so
-    DP workers with independent LRU slot assignments resolve received tokens to
-    the right adapter.
+    adapter slot 0).
     """
+    _assert_replicated_moe_lora_batch(lora_context)
     punica_wrapper = getattr(lora_context, "punica_wrapper", None)
     token_indices = getattr(punica_wrapper, "token_lora_indices", None)
     slots = getattr(lora_context, "layer_lora_slots", None)
@@ -293,7 +233,7 @@ def slice_local_lora_indices(
         token_indices = token_indices.to(torch.long)
     if device is not None and token_indices.device != device:
         token_indices = token_indices.to(device)
-    return encode_local_lora_ids(lora_context, token_indices)
+    return token_indices
 
 
 def prepare_lora_indices(
@@ -412,6 +352,9 @@ def sync_lora_context(quant_method, lora_context):
 
 
 def _assert_ascend_moe_lora_supported(base_layer: nn.Module) -> None:
+    moe_config = getattr(base_layer, "moe_config", None)
+    if moe_config is not None:
+        assert_moe_lora_dp1_supported(getattr(moe_config, "dp_size", 1))
     if getattr(base_layer, "dynamic_eplb", False):
         raise AssertionError(
             "Ascend MoE LoRA is incompatible with dynamic EPLB "
@@ -440,9 +383,10 @@ def _recover_moe_lora_routing_allgather(lora_context, expanded_row_idx, topk_ids
     outside the rank's ``active_expert_range`` under EP. Sending ``-1`` past
     all valid indices keeps inactive tail rows from colliding with sorted row 1
     while keeping ``argsort`` output shape static and graph-capturable. Under
-    DP > 1, looks up ``gathered_lora_indices`` aligned with the gathered tokens
-    rather than the rank-local Punica array.
+    sequence-parallel or PCP prepare paths, looks up ``gathered_lora_indices``
+    aligned with the gathered tokens rather than the rank-local Punica array.
     """
+    _assert_replicated_moe_lora_batch(lora_context)
     top_k = lora_context.top_k
     flat_expanded = expanded_row_idx.reshape(-1)
     num_expanded = flat_expanded.numel()
@@ -462,9 +406,7 @@ def _recover_moe_lora_routing_allgather(lora_context, expanded_row_idx, topk_ids
 
     gathered_lora_indices = getattr(lora_context, "gathered_lora_indices", None)
     if gathered_lora_indices is not None:
-        token_lora_indices = resolve_received_lora_slots(lora_context, gathered_lora_indices.reshape(-1).to(torch.long))
-    elif getattr(lora_context, "replicated_batch", True) is False:
-        raise AssertionError("AllGather MoE LoRA under DP > 1 requires gathered_lora_indices in lora_context.")
+        token_lora_indices = gathered_lora_indices.reshape(-1).to(torch.long)
     else:
         # token_lora_indices is a 1D LongTensor sized to max_num_batched_tokens
         # (host-known constant). Clamping defensively to the last index is a
@@ -496,6 +438,7 @@ def _recover_moe_lora_routing_all2all(
         expert_per_row: [num_dispatched_tokens] local expert id (0..E-1)
         lora_per_row:   [num_dispatched_tokens] lora adapter id (-1 = none)
     """
+    _assert_replicated_moe_lora_batch(lora_context)
     num_local_experts = lora_context.local_num_experts
     exchanged_lora_indices = getattr(lora_context, "exchanged_lora_indices", None)
     if exchanged_lora_indices is None:
@@ -507,7 +450,7 @@ def _recover_moe_lora_routing_all2all(
         group_list,
     )
 
-    lora_per_row = resolve_received_lora_slots(lora_context, exchanged_lora_indices.reshape(-1).to(torch.long))
+    lora_per_row = exchanged_lora_indices.reshape(-1).to(torch.long)
     if expert_per_row.numel() != lora_per_row.numel():
         raise AssertionError(
             "AlltoAll MoE LoRA routing metadata is misaligned: "
