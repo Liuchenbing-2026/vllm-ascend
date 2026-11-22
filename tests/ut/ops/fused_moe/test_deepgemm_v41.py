@@ -40,10 +40,9 @@ def context():
     dependency = MagicMock()
     dependency.transform_weights_for_mega_moe.side_effect = lambda a, b: (a, b)
 
-    def buffer(group, experts, capacity, topk, hidden, intermediate, num_shared_experts, base=None, mma_type="fp8xfp4"):
+    def buffer(group, experts, capacity, topk, hidden, intermediate, num_shared_experts, base=None):
         return SimpleNamespace(
             num_bytes=1234,
-            mma_type=mma_type,
             base=base,
             num_shared_experts=num_shared_experts,
             x=torch.empty((capacity, hidden), dtype=torch.float8_e4m3fn),
@@ -147,7 +146,7 @@ def test_draft_cannot_own_initial_allocation(context):
         backend.DeepGemmV41Experts(layer(128, 3))
 
 
-@pytest.mark.parametrize("block,fp32_scale", [(0, False), (32, False), (32, True), (128, True)])
+@pytest.mark.parametrize("block,fp32_scale", [(0, False), (32, False), (32, True), (128, False), (128, True)])
 def test_shared_checkpoint_scales_and_kernel_weight_ownership(context, block, fp32_scale):
     backend, config, _, _, dependency = context
     config.model_config.hf_text_config.n_shared_experts = 1
@@ -307,70 +306,57 @@ def test_rejects_incompatible_symmetric_buffer_scheduling(context, name, value):
     dependency.transform_weights_for_mega_moe.assert_not_called()
 
 
-def fp8_layer():
-    item = layer()
-    for name in ("w13_weight", "w2_weight"):
-        old = getattr(item, name)
-        old.data = torch.zeros((*old.shape[:-1], old.shape[-1] * 2), dtype=torch.float8_e4m3fn)
-    return item
-
-
-def test_dsv4_fp8_preserves_dtype_and_separates_buffer_format(context):
+@pytest.mark.parametrize("experts,routed_scaling_factor", [(256, 1.5), (384, 2.5)])
+def test_dsv4_fp4_accepts_model_and_scales_routed_weights(context, experts, routed_scaling_factor):
     backend, config, _, _, dependency = context
     config.model_config.hf_text_config.model_type = "deepseek_v4"
-    fp4 = backend.DeepGemmV41Experts(layer())
-    item = fp8_layer()
-    original = item.w13_weight_scale.clone()
-    fp8 = backend.DeepGemmV41Experts(item, mma_type="fp8xfp8")
-    assert fp8.buffer is not fp4.buffer
-    assert fp8.buffer.base is fp4.buffer
-    assert fp8.buffer.mma_type == "fp8xfp8"
-    pair = dependency.transform_weights_for_mega_moe.call_args.args[0]
-    assert pair[0].dtype == torch.float8_e4m3fn
-    assert torch.equal(pair[1].view(torch.uint8), original)
-
-
-def test_fp8_requires_native_capability_before_mutating_weights(context):
-    backend, _, _, _, dependency = context
-    dependency.SymmBuffer.supports_mma_type.return_value = False
-    with pytest.raises(RuntimeError, match="Rebuild DeepGEMM"):
-        backend.DeepGemmV41Experts(fp8_layer(), mma_type="fp8xfp8")
-    dependency.transform_weights_for_mega_moe.assert_not_called()
-
-
-@pytest.mark.parametrize("error", ["weight", "scale_dtype", "scale_shape"])
-def test_fp8_rejects_incompatible_checkpoint_layout(context, error):
-    backend, _, _, _, dependency = context
-    item = fp8_layer()
-    if error == "weight":
-        item.w2_weight.data = item.w2_weight.data.view(torch.uint8)
-    elif error == "scale_dtype":
-        item.w2_weight_scale.data = item.w2_weight_scale.data.float()
-    else:
-        item.w2_weight_scale.data = item.w2_weight_scale.data[..., :4]
-    with pytest.raises(ValueError):
-        backend.DeepGemmV41Experts(item, mma_type="fp8xfp8")
-    dependency.transform_weights_for_mega_moe.assert_not_called()
-
-
-def test_fp8_shared_non_power_two_scales_are_requantized(context):
-    backend, config, _, _, dependency = context
+    config.model_config.hf_text_config.n_routed_experts = experts
     config.model_config.hf_text_config.n_shared_experts = 1
-    item, shared = fp8_layer(), shared_module(block=128, fp32_scale=True)
-    shared.gate_up_proj.weight.data.fill_(1)
-    shared.gate_up_proj.weight_scale.data.fill_(0.3)
+    item = layer(experts=experts)
+    # Force strided routed weights to verify contiguous-safe int8 viewing.
+    item.w13_weight.data = item.w13_weight.data.transpose(1, 2).contiguous().transpose(1, 2)
+    item.w2_weight.data = item.w2_weight.data.transpose(1, 2).contiguous().transpose(1, 2)
+    shared = shared_module(block=128, fp32_scale=False)
+    shared_orig_scale = shared.gate_up_proj.weight_scale.detach().clone()
     item._deepgemm_v41_shared_experts = weakref.ref(shared)
-    inputs = []
+    item._deepgemm_v41_routed_scaling_factor = routed_scaling_factor
+    shared.forward = MagicMock(side_effect=AssertionError("Shared experts must only execute inside MegaMoE"))
 
-    def quant(resolved, **kwargs):
-        inputs.append(resolved.clone())
-        return resolved.to(torch.float8_e4m3fn), torch.full(
-            (resolved.shape[0], resolved.shape[1] // 32), 127, dtype=torch.uint8
-        )
+    adapter = backend.DeepGemmV41Experts(item)
 
-    with patch.object(backend.torch_npu, "npu_dynamic_mx_quant", side_effect=quant, create=True):
-        backend.DeepGemmV41Experts(item, mma_type="fp8xfp8")
-    assert len(inputs) == 2
-    torch.testing.assert_close(inputs[0], torch.full_like(inputs[0], 0.3))
-    shared_pair = dependency.transform_weights_for_mega_moe.call_args_list[0].args[0]
-    assert shared_pair[1].dtype == torch.int16
+    shared_l1 = dependency.transform_weights_for_mega_moe.call_args_list[0].args[0]
+    routed_l1 = dependency.transform_weights_for_mega_moe.call_args_list[1].args[0]
+    assert routed_l1[0].dtype == torch.int8
+    assert routed_l1[1].dtype == torch.int16
+    assert shared_l1[0].dtype == torch.float8_e4m3fn
+    assert shared_l1[1].dtype == torch.int16
+    assert torch.equal(
+        shared_l1[1].view(torch.uint8),
+        shared_orig_scale.repeat_interleave(128, dim=0).repeat_interleave(4, dim=1),
+    )
+    assert "mma_type" not in dependency.SymmBuffer.call_args.kwargs
+    assert dependency.SymmBuffer.call_args.kwargs["num_shared_experts"] == 1
+    assert adapter.num_shared_experts == adapter.buffer.num_shared_experts == 1
+
+    weights = torch.full((2, 6), 0.25)
+    indices = torch.tensor([[0, 32, 64, 96, 128, 160]] * 2, dtype=torch.int32)
+    x = torch.ones((2, 256), dtype=torch.bfloat16)
+    quantized = x.to(torch.float8_e4m3fn)
+    scales = torch.full((2, 8), 127, dtype=torch.uint8)
+    stream = SimpleNamespace(record_event=lambda: object())
+    result_module = SimpleNamespace(FusedExpertsResult=lambda **kwargs: SimpleNamespace(**kwargs))
+    dependency.fp8_fp4_mega_moe.side_effect = lambda out, *args, **kwargs: out.fill_(3)
+    with (
+        patch.object(torch, "npu", SimpleNamespace(current_stream=lambda: stream), create=True),
+        patch.object(backend.torch_npu, "npu_dynamic_mx_quant", return_value=(quantized, scales)),
+        patch.dict(sys.modules, {"vllm_ascend.ops.fused_moe.moe_comm_method": result_module}),
+    ):
+        result = adapter.apply(item, x, weights, indices)
+    assert torch.equal(adapter.buffer.topk_weights[:2], weights * routed_scaling_factor)
+    assert torch.equal(adapter.buffer.topk_idx[:2], indices)
+    assert torch.equal(result.routed_out, torch.full_like(x, 3))
+    kwargs = dependency.fp8_fp4_mega_moe.call_args.kwargs
+    assert kwargs["shared_l1_weights"] is adapter.shared_l1_weights
+    assert kwargs["shared_l2_weights"] is adapter.shared_l2_weights
+    shared.forward.assert_not_called()
+    dependency.fp8_fp4_mega_moe.assert_called_once()

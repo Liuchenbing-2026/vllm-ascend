@@ -9,31 +9,16 @@ including FP8 shared experts, through the Ascend MoE runner. It is opt-in:
 
 The supported experiment is DeepSeek V4.1, BF16 activations, MXFP4 routed
 weights, FP8 shared weights, TP1 and linear EP8 without EPLB replicas.
+This adapter also accepts DeepSeek V4 FP4 checkpoints (`model_type="deepseek_v4"`,
+`expert_dtype="fp4"`, including `[128, 128]` UE8M0 or FP32 block scales on shared
+experts) on the same pure-FP4 `fp8_fp4_mega_moe` kernel without any DeepGEMM
+source patch; DSv4 hardware validation (compile, accuracy, and performance) on
+Ascend 950 remains pending, and earlier V4.1 numbers below do not validate DSv4.
 The target must load before its DSpark draft. Target and draft execute
 serially and reuse symmetric storage. This implementation does not support
 concurrent microbatches or weight hot reload; disable it for those workflows.
 The ordinary MoE backend remains selected when the option is false.
 The MLA lifetime adjustment below also applies with ordinary MoE selected.
-
-## Experimental DSV4 routed FP8 extension
-
-The DSV4 extension also accepts `deepseek_v4` with `expert_dtype="fp8"`.
-It resolves checkpoint FP32 block scales through the existing block-FP8 scheme,
-requantizes weights to per-32 MXFP8, and selects `mma_type="fp8xfp8"`.
-The patched native kernel stages routed FP8 NZ bytes directly through AIV0
-instead of unpacking FP4. Shared FP32 block scales are also requantized instead
-of being reinterpreted as exponent bytes. The TP1/linear-EP8 restrictions remain.
-
-The pinned source patch is applied **before** building both the native binding
-and device headers; the wheel manifest records its SHA-256. An older external
-NPU package is rejected for FP8 with an explicit rebuild error. FP4 keeps the
-existing path. Remove the patch after pinning an upstream revision containing
-the equivalent feature, and rerun both format regressions.
-
-This extension has host-only tests; 950DT compilation, numerical accuracy,
-graph execution and performance acceptance are pending. Earlier V4.1 hardware
-results below do not validate this FP8 extension. See
-[the implementation and reproduction record](../../../../tools/deepgemm/README.md).
 
 ## Relationship to vLLM's DeepGEMM backend
 

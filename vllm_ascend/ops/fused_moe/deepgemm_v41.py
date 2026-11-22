@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM Ascend project
-"""DeepSeek V4/V4.1 FP8 x FP4 or FP8 MegaMoE on Ascend 950.
+"""DeepSeek V4/V4.1 FP8 x FP4 MegaMoE on Ascend 950.
 
 Like the CUDA adapter, load checkpoint weights once into the kernel layout,
 stage local tokens and global expert IDs into symmetric memory, then run the
 fused dispatch/GEMM/SwiGLU/combine operation, including the shared FP8 experts.
 Only TP1, linear EP8 and serialized target/draft calls are supported by this
-initial V4.1 integration.
+initial V4/V4.1 integration.
 """
 
 import math
@@ -23,13 +23,13 @@ from vllm_ascend.ascend_config import get_ascend_config
 class DeepGemmV41Experts:
     """One layer's weights over process-group-owned symmetric scratch."""
 
-    def __init__(self, layer, mma_type="fp8xfp4"):
+    def __init__(self, layer):
         # Import in workers only; the dependency owns native NPU state.
         from vllm_ascend.ops.fused_moe.deepgemm_loader import load_deepgemm
 
         config = get_current_vllm_config()
         text = config.model_config.hf_text_config
-        # vLLM flattens HF text_config into DeepseekV41Config.
+        # vLLM flattens HF text_config into DeepseekV4Config / DeepseekV41Config.
         if text.model_type not in ("deepseek_v4", "deepseek_v41"):
             raise ValueError("deepgemm_mega_moe supports DeepSeek V4/V4.1 only")
         if get_tensor_model_parallel_world_size() != 1:
@@ -61,23 +61,20 @@ class DeepGemmV41Experts:
         if not math.isfinite(self.routed_scaling_factor) or self.routed_scaling_factor <= 0:
             raise ValueError("V4.1 MegaMoE requires a positive finite routed scaling factor")
         deep_gemm = load_deepgemm()
-        if mma_type not in ("fp8xfp4", "fp8xfp8"):
-            raise ValueError(f"Unsupported MegaMoE format: {mma_type}")
-        if mma_type == "fp8xfp8":
-            supports = getattr(deep_gemm.SymmBuffer, "supports_mma_type", None)
-            if supports is None or not supports(mma_type):
-                raise RuntimeError("Rebuild DeepGEMM with the routed FP8 patch before enabling FP8 MegaMoE")
-        self.mma_type = mma_type
         self.kernel = deep_gemm.fp8_fp4_mega_moe
-        routed_l1 = self._routed_weight_pair(layer.w13_weight, layer.w13_weight_scale)
-        routed_l2 = self._routed_weight_pair(layer.w2_weight, layer.w2_weight_scale)
         self._prepare_shared_weights(layer, text, deep_gemm.transform_weights_for_mega_moe)
 
         # Byte-paired UE8M0 is packed along K, not the NZ-transposed layout
         # used by the existing CANN grouped matmul backend.
         (w13, s13), (w2, s2) = deep_gemm.transform_weights_for_mega_moe(
-            routed_l1,
-            routed_l2,
+            (
+                layer.w13_weight.data.contiguous().view(torch.int8),
+                layer.w13_weight_scale.data.view(torch.uint8).contiguous().view(torch.int16),
+            ),
+            (
+                layer.w2_weight.data.contiguous().view(torch.int8),
+                layer.w2_weight_scale.data.view(torch.uint8).contiguous().view(torch.int16),
+            ),
         )
         layer.w13_weight.data = w13
         layer.w13_weight_scale.data = s13
@@ -87,15 +84,7 @@ class DeepGemmV41Experts:
         # The target loads before DSpark. All layers with the same shape use
         # one view; draft layouts reuse the target allocation through the
         # dependency's public base= API, which checks group and capacity.
-        key = (
-            self.num_experts,
-            self.topk,
-            self.hidden,
-            self.intermediate,
-            self.max_tokens,
-            self.num_shared_experts,
-            mma_type,
-        )
+        key = (self.num_experts, self.topk, self.hidden, self.intermediate, self.max_tokens, self.num_shared_experts)
         buffers = getattr(group, "_deepgemm_v41_buffers", None)
         if buffers is None:
             buffers = {}
@@ -112,7 +101,6 @@ class DeepGemmV41Experts:
                 self.hidden,
                 self.intermediate,
                 num_shared_experts=self.num_shared_experts,
-                mma_type=mma_type,
                 base=base,
             )
             logger.info(
@@ -128,23 +116,8 @@ class DeepGemmV41Experts:
             )
         self.buffer = buffers[key]
 
-    def _routed_weight_pair(self, weight, scale):
-        weight, scale = weight.data, scale.data
-        fp8 = self.mma_type == "fp8xfp8"
-        expected = (torch.float8_e4m3fn,) if fp8 else (torch.uint8, torch.int8)
-        if weight.ndim != 3 or weight.dtype not in expected:
-            raise ValueError(f"Routed weights must be raw ND {self.mma_type} checkpoint tensors")
-        columns = weight.shape[-1] * (1 if fp8 else 2)
-        if columns % 64 or scale.shape != (*weight.shape[:-1], columns // 32):
-            raise ValueError("Routed scales must have one UE8M0 byte per output row and 32 K values")
-        if scale.dtype not in (torch.uint8, getattr(torch, "float8_e8m0fnu", None)):
-            raise ValueError("Routed scales must be UE8M0; convert FP32 block scales before MegaMoE packing")
-        return (
-            weight.contiguous() if fp8 else weight.contiguous().view(torch.int8),
-            scale.view(torch.uint8).contiguous().view(torch.int16),
-        )
-
-    def _shared_weight_pair(self, linear):
+    @staticmethod
+    def _shared_weight_pair(linear):
         """Expand checkpoint block scales to per-output, per-32 UE8M0."""
         weight, scale = linear.weight.data, linear.weight_scale.data
         if weight.ndim != 2 or weight.dtype != torch.float8_e4m3fn:
@@ -155,12 +128,6 @@ class DeepGemmV41Experts:
         row_repeat, block_k = rows // scale.shape[0], columns // scale.shape[1]
         if row_repeat not in (1, block_k) or block_k not in (32, 128) or columns % 64:
             raise ValueError("Shared experts require per-32 or square 32/128 checkpoint block scales")
-        if scale.dtype == torch.float32 and self.mma_type == "fp8xfp8":
-            expanded = scale.repeat_interleave(row_repeat, dim=0).repeat_interleave(block_k, dim=1)
-            resolved = (weight.float() * expanded).to(torch.bfloat16)
-            weight, scale = torch_npu.npu_dynamic_mx_quant(resolved, dst_type=torch.float8_e4m3fn)
-            packed_scale = scale.view(torch.uint8).reshape(rows, columns // 32).contiguous().view(torch.int16)
-            return weight.contiguous(), packed_scale
         if scale.dtype == torch.float32:
             # Match the DS checkpoint conversion: FP32 powers of two to UE8M0.
             scale = ((scale.view(torch.int32) >> 23) & 0xFF).to(torch.uint8)
