@@ -19,6 +19,7 @@ import threading
 import time
 import unittest
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import tests.ut.distributed.ascend_store._mock_deps  # noqa: F401, E402
@@ -506,7 +507,12 @@ class TestAscendStoreAsyncLoadLifecycle(unittest.TestCase):
         )
         thread.start()
         self.assertTrue(thread.ready_event.wait(timeout=2.0))
-        self.addCleanup(lambda: (thread.stop(), thread.join(timeout=2.0)))
+
+        def _cleanup_thread() -> None:
+            thread.stop()
+            thread.join(timeout=2.0)
+
+        self.addCleanup(_cleanup_thread)
 
         req1 = ReqMeta(
             req_id="r-timeout",
@@ -703,8 +709,10 @@ class TestAscendStoreAsyncLoadLifecycle(unittest.TestCase):
         scheduler.build_connector_meta(_make_scheduler_output())
         scheduler.build_connector_meta(_make_scheduler_output(finished_req_ids={"req-reset"}))
 
+        assert scheduler.client is not None
+        reset_mock = cast(MagicMock, scheduler.client.reset)
         self.assertFalse(scheduler.reset_store())
-        scheduler.client.reset.assert_not_called()
+        reset_mock.assert_not_called()
 
         scheduler._block_pool = None
         self.assertFalse(scheduler.reset_store())
@@ -713,7 +721,7 @@ class TestAscendStoreAsyncLoadLifecycle(unittest.TestCase):
         scheduler.update_connector_output(KVConnectorOutput(finished_recving={"req-reset"}))
         free_blocks = 15  # Only null block remains used (used == 1).
         self.assertTrue(scheduler.reset_store())
-        scheduler.client.reset.assert_called_once_with()
+        reset_mock.assert_called_once_with()
 
     def test_worker_reset_store_drains_recv_thread_and_clears_stale_completions(self):
         worker = KVPoolWorker.__new__(KVPoolWorker)
@@ -721,12 +729,17 @@ class TestAscendStoreAsyncLoadLifecycle(unittest.TestCase):
 
         send_queue = MagicMock()
         send_queue.join.side_effect = lambda: order.append("send_join")
-        worker.kv_send_thread = SimpleNamespace(request_queue=send_queue)
+        worker.kv_send_thread = cast(Any, SimpleNamespace(request_queue=send_queue))
 
         recv_queue = MagicMock()
         recv_queue.join.side_effect = lambda: order.append("recv_join")
         recv_thread = MagicMock(_fatal_error=None, request_queue=recv_queue)
-        recv_thread.get_and_clear_finished_requests.side_effect = lambda: order.append("recv_clear") or {"stale"}
+
+        def _recv_clear() -> set[str]:
+            order.append("recv_clear")
+            return {"stale"}
+
+        recv_thread.get_and_clear_finished_requests.side_effect = _recv_clear
         worker.kv_recv_thread = recv_thread
 
         worker.m_store = MagicMock()
@@ -890,6 +903,7 @@ class TestAscendStoreAsyncLoadLifecycle(unittest.TestCase):
                 completed_once.add(done_id)
                 entry = scheduler_requests.get(done_id)
                 self.assertIsNotNone(entry, f"Completed unknown req {done_id}")
+                assert entry is not None, f"Completed unknown req {done_id}"
                 if entry["status"] == "WAITING_FOR_REMOTE_KVS":
                     finished_req_ids_queue.add(done_id)
                 aborted_kv_loads.discard(done_id)
