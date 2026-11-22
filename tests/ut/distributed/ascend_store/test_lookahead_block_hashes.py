@@ -74,6 +74,7 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     KeyMetadata,
     ReqMeta,
     RequestTracker,
+    get_block_hashes,
     get_reusable_prefix_length,
     get_sharded_mamba_group_ids,
     hashed_prefix_length,
@@ -1242,10 +1243,12 @@ class _RefMambaManager:
         pcp_world_size=1,
     ):
         bs = block_size or kv_cache_spec.block_size
+        hash_bs = getattr(block_pool, "hash_block_size", bs) or bs
+        group_hashes = get_block_hashes(list(block_hashes), bs, hash_bs) if bs != hash_bs else list(block_hashes)
         computed: tuple[list[Any], ...] = tuple([] for _ in kv_cache_group_ids)
-        max_blocks = min(max_length // bs, len(block_hashes))
+        max_blocks = min(max_length // bs, len(group_hashes))
         for idx in range(max_blocks - 1, -1, -1):
-            cached = block_pool.get_cached_block(block_hashes[idx], kv_cache_group_ids)
+            cached = block_pool.get_cached_block(group_hashes[idx], kv_cache_group_ids)
             if cached:
                 for blocks, blk in zip(computed, cached):
                     blocks.extend([block_pool.null_block] * idx)
@@ -1289,8 +1292,9 @@ class TestLookaheadForkBoundaries(unittest.TestCase):
         prefix_tokens: list[int],
         num_hash_lookahead_tokens: int,
         with_coordinator: bool = True,
+        mamba_block_size: int = 128,
     ):
-        groups = [_make_full_group(["layers.0.attn"], 128), _make_mamba_group(["layers.1.mamba"], 128)]
+        groups = [_make_full_group(["layers.0.attn"], 128), _make_mamba_group(["layers.1.mamba"], mamba_block_size)]
         kv_cache_config = SimpleNamespace(
             kv_cache_groups=groups,
             prefix_cache_retention_interval=None,
@@ -1306,9 +1310,9 @@ class TestLookaheadForkBoundaries(unittest.TestCase):
             with patch.object(coord_mod, "_get_group_manager_class", side_effect=_fake_ref_manager):
                 coord = AscendStoreCoordinator(
                     groups,
-                    scheduler_block_size=128,
+                    scheduler_block_size=mamba_block_size,
                     hash_block_size=128,
-                    group_block_sizes=[128, 128],
+                    group_block_sizes=[128, mamba_block_size],
                     group_cache_families=["default", "default"],
                     use_eagle=False,
                     retention_interval=None,
@@ -1320,7 +1324,7 @@ class TestLookaheadForkBoundaries(unittest.TestCase):
                 KeyMetadata(model_name="qwen3", dcp_rank=0, head_or_tp_rank=0, pp_rank=0, kv_cache_group_id=0),
                 KeyMetadata(model_name="qwen3", dcp_rank=0, head_or_tp_rank=0, pp_rank=0, kv_cache_group_id=1),
             ],
-            block_size=[128, 128],
+            block_size=[128, mamba_block_size],
             partitions=None,
             hash_block_size=128,
         )
@@ -1334,13 +1338,17 @@ class TestLookaheadForkBoundaries(unittest.TestCase):
             ):
                 stored_keys.add(key_str)
         # Include layerwise keys as well: "<gid>:<hash_str>"
-        stored_lw = {(gid, bh) for gid in (0, 1) for bh in prefix_hashes}
+        stored_lw = {
+            (gid, bh)
+            for gid, gbs in ((0, 128), (1, mamba_block_size))
+            for bh in get_block_hashes(prefix_hashes, gbs, 128)
+        }
 
         worker = KVPoolWorker.__new__(KVPoolWorker)
         worker.num_hash_lookahead_tokens = num_hash_lookahead_tokens
         worker.hash_block_size = 128
         worker.max_model_len = 8192
-        worker.cache_transfer_granularity = 128
+        worker.cache_transfer_granularity = mamba_block_size
         worker.num_kv_cache_groups = 2
         worker.cacheable_group_ids = [0, 1]
         worker.group_uses_align_state = [False, True]
@@ -1362,8 +1370,10 @@ class TestLookaheadForkBoundaries(unittest.TestCase):
         sched.kv_cache_config = kv_cache_config
         sched.kv_cache_group_ids = [0, 1]
         sched.kv_cache_group_families = ["default", "default"]
-        sched.original_block_size = [128, 128]
-        sched.grouped_block_size = [128, 128]
+        sched.original_block_size = [128, mamba_block_size]
+        sched.grouped_block_size = [128, mamba_block_size]
+        sched.lcm_block_size = mamba_block_size
+        sched.cache_transfer_granularity = mamba_block_size
         sched.cacheable_group_ids = [0, 1]
         sched.cache_coordinator = coord
         sched.client = _HashAwareFakeLookupClient(worker)
@@ -1376,8 +1386,10 @@ class TestLookaheadForkBoundaries(unittest.TestCase):
         lw_sched.kv_cache_config = kv_cache_config
         lw_sched.kv_cache_group_ids = [0, 1]
         lw_sched.kv_cache_group_families = ["default", "default"]
-        lw_sched.original_block_size = [128, 128]
-        lw_sched.grouped_block_size = [128, 128]
+        lw_sched.original_block_size = [128, mamba_block_size]
+        lw_sched.grouped_block_size = [128, mamba_block_size]
+        lw_sched.lcm_block_size = mamba_block_size
+        lw_sched.cache_transfer_granularity = mamba_block_size
         lw_sched.cacheable_group_ids = [0, 1]
         lw_sched.cache_coordinator = coord
         lw_sched.use_block_key_layerwise = False
@@ -1388,13 +1400,45 @@ class TestLookaheadForkBoundaries(unittest.TestCase):
         lw_sched.layerwise_max_transfer_blocks = 0
         lw_sched.tp_size = 1
         lw_sched.put_step = 1
-        stored_lw_hex = {f"{gid}:{bh.hex()}" for gid, bh in stored_lw}
+        stored_lw_hex = {f"{gid}:{bh.hex() if isinstance(bh, (bytes, bytearray)) else bh}" for gid, bh in stored_lw}
         lw_sched.block_key_hybrid = False
         lw_sched.layerwise_keys = SimpleNamespace(make_hit_check_keys=lambda gid, bh, ranks: [f"{gid}:{bh}"])
         lw_sched.store_scheduler = SimpleNamespace(
             batch_is_readable=lambda batch: [key in stored_lw_hex for key in batch]
         )
         return sched, worker, lw_sched
+
+    def test_hybrid_lcm512_mamba_lookahead_fork_boundaries(self):
+        base_prompt = list(range(1537))
+        sched, _, lw_sched = self._build_hybrid_fork_env(
+            prefix_tokens=base_prompt,
+            num_hash_lookahead_tokens=1,
+            with_coordinator=True,
+            mamba_block_size=512,
+        )
+        expected_cases = (
+            (None, 1536),
+            (256, 0),
+            (257, 0),
+            (512, 0),
+            (513, 512),
+            (1024, 512),
+            (1025, 1024),
+        )
+        for fork, expected in expected_cases:
+            toks = list(base_prompt)
+            if fork is not None:
+                toks[fork] += 10000
+            req = SimpleNamespace(
+                request_id=f"lcm512-fork-{fork}",
+                prompt_token_ids=toks,
+                num_tokens=len(toks),
+                block_hashes=_hash_tokens_with_lookahead(toks, hash_block_size=128, num_hash_lookahead_tokens=1),
+            )
+            for mode_name, target_sched in (("blockwise", sched), ("layerwise", lw_sched)):
+                with self.subTest(fork=fork, mode=mode_name):
+                    hit, _ = target_sched.get_num_new_matched_tokens(req, 0)
+                    self.assertEqual(hit, expected)
 
     def test_fb01_1536_prefix_fork_256_and_257_exact_hits(self):
         base_prompt = list(range(1539))
@@ -1871,11 +1915,9 @@ class TestPost66234KVCacheGroupLookaheadLifecycle(unittest.TestCase):
             {"layerwise_num_shared_buffers": 1, "layerwise_prefetch_layers": 1, "layerwise_independent_layers": []},
             spec_reuse_rules={_MixedSpec: True},  # type: ignore[dict-item]
         )
+        layout_mod = "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.layerwise_cache_layout"
         with (
-            patch(
-                "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.layerwise_cache_layout.get_dtype_size",
-                return_value=2,
-            ),
+            patch(f"{layout_mod}.get_dtype_size", return_value=2),
             patch(
                 "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.cache_planner.round_up",
                 side_effect=lambda val, align: (val + align - 1) // align * align,
