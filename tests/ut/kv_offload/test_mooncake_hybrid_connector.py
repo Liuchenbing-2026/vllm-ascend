@@ -1615,7 +1615,7 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
             ready_event.set()
             return MagicMock(is_alive=MagicMock(return_value=True))
 
-        non_hybrid_caches = {
+        non_hybrid_caches: dict[str, Any] = {
             "target.0": (torch.empty((2, 4), dtype=torch.uint8), torch.empty((2, 4), dtype=torch.uint8)),
             "dspark.0": torch.empty((2, 4), dtype=torch.uint8),
         }
@@ -1643,7 +1643,7 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         # 2) Mamba hybrid path (including shared data_ptr deduplication and consumer wiring).
         shared_tensor = torch.empty((2, 8), dtype=torch.uint8)
         mamba_draft = torch.empty((2, 8), dtype=torch.uint8)
-        mamba_caches = {
+        mamba_caches: dict[str, Any] = {
             "target.0": [shared_tensor],
             "shared.mtp.0": [shared_tensor],
             "dspark.0": [mamba_draft],
