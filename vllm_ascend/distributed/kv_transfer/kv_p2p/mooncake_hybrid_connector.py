@@ -1276,7 +1276,7 @@ class KVCacheRecvingThread(threading.Thread):
             )
             raise
         except Exception:
-            if sock is not None:
+            if isinstance(sock, zmq.Socket):  # type: ignore
                 self._close_socket(sock)
                 sock = None
             raise
@@ -1327,7 +1327,7 @@ class KVCacheRecvingThread(threading.Thread):
             )
             logger.warning("Peer lost while sending done recving signal. error=%s. ", e)
         except RuntimeError as e:
-            if sock is not None:
+            if isinstance(sock, zmq.Socket):  # type: ignore
                 self._close_socket(sock)
                 sock = None
                 logger.warning("Unexpected error occurred in socket. error=%s. ", e)

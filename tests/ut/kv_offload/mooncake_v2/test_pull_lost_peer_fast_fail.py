@@ -34,6 +34,7 @@ from unittest.mock import MagicMock
 import msgspec
 import pytest
 import zmq
+from cachetools import TTLCache
 from vllm.distributed.kv_transfer.kv_connector.v1.base import (
     KVConnectorRole,
     KVConnectorTransferResults,
@@ -174,7 +175,7 @@ def _make_v2_scheduler(*, policy: str = "fail") -> pull_scheduler.MooncakePullCo
     sched._sending_thread = None
     sched._heartbeat_thread = None
     sched._reqs_recv_info = {}
-    sched._validated_producer_leases = {}
+    sched._validated_producer_leases = TTLCache(maxsize=16, ttl=60)
     return sched
 
 
@@ -667,8 +668,8 @@ def test_v2_pull_scheduler_evicts_socket_pool_and_lease_on_failure(
     recving_spy = MagicMock()
     sched._recving_thread = recving_spy
     sched._reqs_recv_info["req-1"] = (host, port, "remote-req-1")
-    sched._validated_producer_leases[(host, port)] = 1.0
-    sched._validated_producer_leases[("10.0.0.2", port)] = 2.0
+    sched._validated_producer_leases[(host, port)] = ("engine-p", 30)
+    sched._validated_producer_leases[("10.0.0.2", port)] = ("engine-p-2", 30)
     connector_output = SimpleNamespace(
         finished_sending=set(),
         finished_recving={"req-1"},
@@ -721,7 +722,9 @@ def test_v1_connector_peer_lost_isolation_and_context_sharing(
         block_strides=[64],
         kv_group2layeridx={},
     )
-    thread.decoder.decode.side_effect = [meta_a, meta_b]
+    decoder_mock = MagicMock()
+    decoder_mock.decode.side_effect = [meta_a, meta_b]
+    thread.decoder = decoder_mock
     sock_a = MagicMock()
     sock_b = MagicMock()
     thread.remote_sockets[make_zmq_path("tcp", "10.0.0.1", 6000)].append(sock_a)
@@ -787,10 +790,12 @@ def test_hybrid_connector_propagates_errors_and_isolates_lost_peer(
         use_request_level_recv_errors=use_request_level,
     )
     sock_b = MagicMock()
-    thread.decoder.decode.side_effect = [
+    decoder_mock = MagicMock()
+    decoder_mock.decode.side_effect = [
         SimpleNamespace(engine_id="engine-a", te_rpc_port=9001, kv_caches_base_addr=[0x1000]),
         SimpleNamespace(engine_id="engine-b", te_rpc_port=9002, kv_caches_base_addr=[0x2000]),
     ]
+    thread.decoder = decoder_mock
     thread.remote_sockets[make_zmq_path("tcp", "10.0.0.1", 6000)].append(MagicMock())
     thread.remote_sockets[make_zmq_path("tcp", "10.0.0.2", 6000)].append(sock_b)
     monkeypatch.setattr(hybrid_connector, "ensure_zmq_send", MagicMock())
@@ -847,6 +852,37 @@ def test_hybrid_connector_propagates_errors_and_isolates_lost_peer(
 # ---------------------------------------------------------------------------
 
 
+def _assert_legacy_connector_failure_surface(
+    recv_thread: Any,
+    worker: Any,
+    conn: Any,
+    *,
+    request_level: bool,
+) -> None:
+    recv_thread.task_tracker.add_req_to_process("req-lost")
+    recv_thread.task_tracker.update_done_task_count("req-lost")
+    recv_thread._mark_failed_recv_request("req-lost", ([41, 42],))
+
+    worker.kv_role = "kv_consumer"
+    worker.tp_rank = 0
+    worker.kv_recv_thread = recv_thread
+    worker.kv_send_thread = None
+
+    conn._role = KVConnectorRole.WORKER
+    conn.connector_worker = worker
+    conn.connector_scheduler = None
+
+    res = conn.get_transfer_results({"req-lost"})
+    blocks = conn.get_block_ids_with_load_errors()
+    assert res.finished_recving == {"req-lost"}
+    if request_level:
+        assert res.failed_recving == {"req-lost"}
+        assert blocks == set()
+    else:
+        assert res.failed_recving == set()
+        assert blocks == {41, 42}
+
+
 @pytest.mark.parametrize("policy", ["fail", "recompute"])
 def test_kv_load_failure_policy_surfaces_failed_recving_and_invalid_blocks(policy: str) -> None:
     """V2, V1, and Hybrid expose failed_recving and invalid_block_ids under both policies."""
@@ -863,44 +899,23 @@ def test_kv_load_failure_policy_surfaces_failed_recving_and_invalid_blocks(polic
 
     v2_sched = _make_v2_scheduler(policy=policy)
     v2_sched._reqs_recv_info["req-lost"] = ("10.0.0.1", 6000, "remote-req-lost")
-    v2_sched._validated_producer_leases[("10.0.0.1", 6000)] = 10.0
+    v2_sched._validated_producer_leases[("10.0.0.1", 6000)] = ("engine-p", 30)
     v2_sched.update_connector_output(v2_results)  # type: ignore[arg-type]
     assert ("10.0.0.1", 6000) not in v2_sched._validated_producer_leases
 
     # V1 & Hybrid connector worker surfaces
-    for mod, request_level in ((v1_connector, False), (hybrid_connector, True)):
-        recv_thread = (
-            _make_v1_recving_thread(use_request_level_recv_errors=request_level)
-            if mod is v1_connector
-            else _make_hybrid_recving_thread(
-                use_hybrid=request_level,
-                use_request_level_recv_errors=request_level,
-            )
-        )
-        recv_thread.task_tracker.add_req_to_process("req-lost")
-        recv_thread.task_tracker.update_done_task_count("req-lost")
-        recv_thread._mark_failed_recv_request("req-lost", ([41, 42],))
-
-        worker = mod.MooncakeConnectorWorker.__new__(mod.MooncakeConnectorWorker)
-        worker.kv_role = "kv_consumer"
-        worker.tp_rank = 0
-        worker.kv_recv_thread = recv_thread
-        worker.kv_send_thread = None
-
-        conn = mod.MooncakeConnector.__new__(mod.MooncakeConnector)
-        conn._role = KVConnectorRole.WORKER
-        conn.connector_worker = worker
-        conn.connector_scheduler = None
-
-        res = conn.get_transfer_results({"req-lost"})
-        blocks = conn.get_block_ids_with_load_errors()
-        assert res.finished_recving == {"req-lost"}
-        if request_level:
-            assert res.failed_recving == {"req-lost"}
-            assert blocks == set()
-        else:
-            assert res.failed_recving == set()
-            assert blocks == {41, 42}
+    _assert_legacy_connector_failure_surface(
+        _make_v1_recving_thread(use_request_level_recv_errors=False),
+        v1_connector.MooncakeConnectorWorker.__new__(v1_connector.MooncakeConnectorWorker),
+        v1_connector.MooncakeConnector.__new__(v1_connector.MooncakeConnector),
+        request_level=False,
+    )
+    _assert_legacy_connector_failure_surface(
+        _make_hybrid_recving_thread(use_hybrid=True, use_request_level_recv_errors=True),
+        hybrid_connector.MooncakeConnectorWorker.__new__(hybrid_connector.MooncakeConnectorWorker),
+        hybrid_connector.MooncakeConnector.__new__(hybrid_connector.MooncakeConnector),
+        request_level=True,
+    )
 
 
 # ---------------------------------------------------------------------------
