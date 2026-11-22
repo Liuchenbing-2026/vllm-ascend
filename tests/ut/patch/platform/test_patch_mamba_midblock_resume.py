@@ -139,10 +139,15 @@ def test_midblock_resume_uses_resumed_block_for_checkpoint_and_masks_hash() -> N
     coordinator.cache_blocks(req_b, 450)
 
     # Block 0 holds an off-boundary checkpoint state (384 != 256), so it must
-    # never receive the full-block hash for position 256.
+    # be keyed at checkpoint position 384 and never receive the full-block
+    # hash for position 256.
     assert mamba_mgr._mid_block_states[req_b.request_id][0] == 384
     assert mamba_mgr._refine_block_mask(req_b, 0, 1, None) == [False]
-    assert mamba_mgr.req_to_blocks[req_b.request_id][0].block_hash is None
+    block0 = mamba_mgr.req_to_blocks[req_b.request_id][0]
+    assert block0.block_hash_num_tokens == 384
+    hit_384 = coordinator.block_pool.get_cached_block(req_b.block_hashes[2], [1])
+    assert hit_384 is not None and hit_384[0] is block0
+    assert coordinator.block_pool.get_cached_block(req_b.block_hashes[1], [1]) is None
 
     mamba_mgr.pop_blocks_for_free(req_b.request_id)
     assert req_b.request_id not in mamba_mgr._mid_block_states
@@ -212,7 +217,7 @@ def test_sparse_decode_boundary_state_held_and_cached_on_free() -> None:
 
 
 def test_coordinator_and_kv_manager_free_support_request_and_legacy_str() -> None:
-    coordinator, mamba_mgr = _make_hybrid_coordinator(retention_interval=256)
+    coordinator, mamba_mgr = _make_hybrid_coordinator(retention_interval=512)
     kv_mgr = KVCacheManager.__new__(KVCacheManager)
     kv_mgr.coordinator = coordinator
 
@@ -225,8 +230,13 @@ def test_coordinator_and_kv_manager_free_support_request_and_legacy_str() -> Non
         num_in_flight_tokens=10,
         shared_prefix_boundary=0,
     )
+    coordinator.allocate_new_blocks(req.request_id, 64, 64)
+    coordinator.new_step_starts()
     coordinator.allocate_new_blocks(req.request_id, 260, 260)
     target_block = mamba_mgr.req_to_blocks[req.request_id][0]
+    assert not target_block.is_null
+    mamba_mgr.remove_skipped_blocks(req.request_id, processed_computed_tokens=280, num_prompt_tokens=64)
+    coordinator.cache_blocks(req, 280)
     assert target_block.block_hash is None
 
     kv_mgr.free(req)

@@ -156,15 +156,13 @@ def _patch_kimi_gdn_linear_attn(nvidia_kda_mod: Any | None) -> None:
         attn_metadata_raw = get_forward_context().attn_metadata
         attn_metadata = attn_metadata_raw.get(self.prefix) if isinstance(attn_metadata_raw, dict) else None
         checkpoint = getattr(attn_metadata, "checkpoint", None)
-        if checkpoint is None or getattr(attn_metadata, "num_prefills", 0) <= 0:
+        if attn_metadata is None or checkpoint is None or getattr(attn_metadata, "num_prefills", 0) <= 0:
             return orig_forward(self, mixed_qkv, g1, g2, beta, core_attn_out, *args, **kwargs)
 
         trimmed_qkv = mixed_qkv[: attn_metadata.num_actual_tokens]
-        if (
-            getattr(attn_metadata, "spec_sequence_masks", None) is not None
-            and getattr(attn_metadata, "non_spec_token_indx", None) is not None
-        ):
-            raw_qkv_ns = trimmed_qkv.index_select(0, attn_metadata.non_spec_token_indx)
+        non_spec_token_indx = getattr(attn_metadata, "non_spec_token_indx", None)
+        if getattr(attn_metadata, "spec_sequence_masks", None) is not None and non_spec_token_indx is not None:
+            raw_qkv_ns = trimmed_qkv.index_select(0, non_spec_token_indx)
         else:
             raw_qkv_ns = trimmed_qkv
 

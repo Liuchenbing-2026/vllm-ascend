@@ -299,7 +299,7 @@ class AscendKimiK3DeltaAttention(KimiK3DeltaAttention):
         initialize_kda_checkpoints(self, vllm_config)
 
     def get_prefill_checkpoint_alignment(self) -> int | None:
-        if self._ascend_internal_checkpoint_enabled:
+        if getattr(self, "_ascend_internal_checkpoint_enabled", False):
             return kda_prefill_checkpoint_alignment("triton")
         return None
 
@@ -921,7 +921,8 @@ class AscendKimiK3DeltaAttention(KimiK3DeltaAttention):
                 assert attn_metadata.prefill_has_initial_state is not None
                 prefill_meta = attn_metadata.non_spec_prefill_metadata
                 assert prefill_meta is not None
-                if attn_metadata.checkpoint is not None and self._ascend_internal_checkpoint_enabled:
+                checkpoint = getattr(attn_metadata, "checkpoint", None)
+                if checkpoint is not None and getattr(self, "_ascend_internal_checkpoint_enabled", False):
                     raw_qkv_prefill = raw_mixed_non_spec[num_decode_tokens:] if split_non_spec else raw_mixed_non_spec
                     core_prefill = self._run_prefill_with_checkpoint(
                         q_non_spec,
@@ -936,7 +937,7 @@ class AscendKimiK3DeltaAttention(KimiK3DeltaAttention):
                         attn_metadata.prefill_has_initial_state,
                         attn_metadata.prefill_query_start_loc,
                         prefill_meta.chunk,
-                        attn_metadata.checkpoint,
+                        checkpoint,
                     )
                 else:
                     core_prefill = self._run_prefill(

@@ -159,9 +159,11 @@ def _patch_mamba_midblock_state_tracking(base_mamba_cls: type[Any]) -> None:
             orig_init(self, kv_cache_spec, block_pool, **kwargs)
             if self.mamba_cache_mode == "align":
                 if not hasattr(self, "_req_chunk_ranges"):
-                    self._req_chunk_ranges: dict[str, tuple[int, int]] = {}
+                    req_chunk_ranges: dict[str, tuple[int, int]] = {}
+                    self._req_chunk_ranges = req_chunk_ranges
                 if not hasattr(self, "_mid_block_states"):
-                    self._mid_block_states: dict[str, dict[int, int]] = {}
+                    mid_block_states: dict[str, dict[int, int]] = {}
+                    self._mid_block_states = mid_block_states
 
         setattr(_init_midblock, _MIDBLOCK_MANAGER_ATTR, True)
         base_mamba_cls.__init__ = _init_midblock

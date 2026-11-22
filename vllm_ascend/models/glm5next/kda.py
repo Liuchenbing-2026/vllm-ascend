@@ -507,7 +507,7 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
         default_weight_loader(param, loaded_weight.narrow(2, self.tp_rank * shard_size, shard_size))
 
     def get_prefill_checkpoint_alignment(self) -> int | None:
-        if self._ascend_internal_checkpoint_enabled:
+        if getattr(self, "_ascend_internal_checkpoint_enabled", False):
             return kda_prefill_checkpoint_alignment("triton")
         return None
 
@@ -836,7 +836,8 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
                 output_buffer=core_attn_out if direct_output else None,
             )
         if metadata.num_prefills > 0:
-            if metadata.checkpoint is not None and self._ascend_internal_checkpoint_enabled:
+            checkpoint = getattr(metadata, "checkpoint", None)
+            if checkpoint is not None and getattr(self, "_ascend_internal_checkpoint_enabled", False):
                 chunk_meta = metadata.non_spec_prefill_metadata.chunk
                 state_indices = metadata.prefill_state_indices
                 has_initial_state = metadata.prefill_has_initial_state
@@ -862,7 +863,7 @@ class Glm5NextLinearAttention(GatedDeltaNetAttention):
                 prefill_output, final_state = run_kda_checkpoint_prefill(
                     exporter=self._checkpoint_exporter,
                     checkpoint_spec=self._triton_checkpoint_spec,
-                    checkpoint=metadata.checkpoint,
+                    checkpoint=checkpoint,
                     q=q_ns[:, decode_tokens:],
                     k=k_ns[:, decode_tokens:],
                     v=v_ns[:, decode_tokens:],

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from vllm.exceptions import VLLMValidationError
@@ -12,8 +13,13 @@ from vllm.renderers.base import BaseRenderer
 from vllm_ascend.patch.platform import patch_renderer_vocab_guard as mod
 
 
+class _DummyRenderer(BaseRenderer):
+    def render_messages(self, messages: Any, params: Any) -> Any:
+        raise NotImplementedError
+
+
 def _make_renderer(*, model_vocab_size: int, is_multimodal: bool, tokenizer_max_id: int | None) -> BaseRenderer:
-    renderer = BaseRenderer.__new__(BaseRenderer)
+    renderer = _DummyRenderer.__new__(_DummyRenderer)
     renderer.model_config = SimpleNamespace(
         get_vocab_size=lambda: model_vocab_size,
         is_multimodal_model=is_multimodal,
