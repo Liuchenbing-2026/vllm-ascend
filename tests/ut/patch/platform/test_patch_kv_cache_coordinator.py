@@ -454,5 +454,12 @@ def test_per_group_lookup_preserves_replicated_draft_positions():
     assert _RecordingMamba.calls[-1]["dcp_world_size"] == 1
 
 
+def test_lookahead_mode_does_not_enable_eagle_drop_on_flagged_groups(monkeypatch):
+    coordinator = _make_coordinator(monkeypatch, use_eagle=False, mamba_eagle=True)
+    assert coordinator.drop_eagle_group_ids == set()
+    assert all(not group.use_eagle for group in coordinator.attention_groups)
+    assert all(not manager.use_eagle for manager in coordinator.single_type_managers)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

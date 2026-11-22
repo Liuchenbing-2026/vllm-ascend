@@ -41,6 +41,8 @@ import vllm_ascend.patch.platform.patch_balance_schedule  # noqa
 import vllm_ascend.patch.platform.patch_engine_core  # noqa
 import vllm_ascend.patch.platform.patch_metrics_level  # noqa
 
+import vllm_ascend.patch.platform.patch_lookahead_block_hashes  # noqa
+
 import vllm_ascend.patch.platform.patch_kv_cache_coordinator  # noqa
 import vllm_ascend.patch.platform.patch_speculative_config  # noqa
 import vllm_ascend.patch.platform.patch_replayssm_config  # noqa
@@ -116,3 +118,31 @@ import vllm_ascend.patch.platform.patch_example_connector  # noqa
 # Upstream plan: contribute physical-block accounting to vLLM and remove this
 # patch once both supported vLLM versions cover first-time and shared-block
 # admission accounting.
+#
+# ** File: platform/patch_lookahead_block_hashes.py **
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `KVConnectorBase_V1.supports_lookahead_block_hashes` &
+#      `MultiConnector.supports_lookahead_block_hashes`
+#   2. `VllmConfig.num_hash_lookahead_tokens` &
+#      `MultiConnector._get_connector_classes_and_configs`
+#   3. `replay_boundaries` & `KVCacheCoordinator.cache_blocks`
+#    Why:
+#       On vLLM v0.33.x (pre-vllm#64096 / pre-vllm#65448),
+#       `VllmConfig.num_hash_lookahead_tokens` unconditionally returns 0 whenever
+#       `kv_transfer_config` is set, and `KVConnectorBase_V1` lacks
+#       `supports_lookahead_block_hashes()`. Consequently EngineCore and
+#       AscendStore fall back to legacy full-prefix hashes (`L=0`) even though
+#       the core block hasher and scheduler already support lookahead hashing.
+#    How:
+#       Feature-detect missing `_resolve_num_hash_lookahead_tokens` /
+#       `supports_lookahead_block_hashes` / `replay_boundaries` parameters and
+#       backport connector capability negotiation onto v0.33.x, propagating
+#       resolved lookahead to `MultiConnector` child configs. Strictly a no-op
+#       when running against vLLM revisions carrying `vllm#64096` + `#65448`.
+#    Related PR (if no, explain why):
+#       https://github.com/vllm-project/vllm/pull/64096
+#       https://github.com/vllm-project/vllm/pull/65448
+#       https://github.com/vllm-project/vllm-ascend/issues/22693
+#    Future Plan:
+#       Remove this patch once `v0.33.0` release support is retired in favor
+#       of vLLM revisions containing `vllm#64096` and `vllm#65448`.
