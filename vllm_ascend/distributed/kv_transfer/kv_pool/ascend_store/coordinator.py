@@ -54,9 +54,6 @@ _FIND_HIT_BASE_KWARGS = frozenset(
         "alignment_tokens",
     )
 )
-# manager class -> accepted parameter names per static method.
-_REACHABLE_MASK_KWARGS_CACHE: dict[type[SingleTypeKVCacheManager], frozenset[str]] = {}
-_FIND_HIT_KWARGS_CACHE: dict[type[SingleTypeKVCacheManager], frozenset[str]] = {}
 
 # Per-group pool query used by the shared reachable hit lookup: returns the
 # subset of ``group_block_hashes`` present in the pool (all replicas valid).
@@ -177,6 +174,8 @@ class AscendStoreCoordinator:
             if self.use_eagle and not self.eagle_group_ids:
                 self.eagle_group_ids = set(range(len(kv_cache_groups)))
 
+        self._reachable_mask_kwargs_cache: dict[type[SingleTypeKVCacheManager], frozenset[str]] = {}
+        self._find_hit_kwargs_cache: dict[type[SingleTypeKVCacheManager], frozenset[str]] = {}
         self._verify_and_split_kv_cache_groups()
         # Do not keep the coordinator alive through its cache while GC is frozen.
         self._cached_reachable_masks = lru_cache(maxsize=_REACHABLE_MASK_CACHE_SIZE)(
@@ -315,6 +314,7 @@ class AscendStoreCoordinator:
             manager_cls = _get_group_manager_class(group, _group_spec(group))
             mask = _reachable_block_mask(
                 manager_cls,
+                cache=self._reachable_mask_kwargs_cache,
                 start_block=0,
                 end_block=num_chunks,
                 alignment_tokens=self.lcm_block_size,
@@ -468,6 +468,7 @@ class AscendStoreCoordinator:
             hashes = self.block_hashes_for_spec(block_hashes, spec)
             hit_blocks, hit_length = _find_longest_cache_hit(
                 manager_cls,
+                cache=self._find_hit_kwargs_cache,
                 block_hashes=hashes,
                 max_length=max_length,
                 kv_cache_group_ids=group_ids,
@@ -510,6 +511,7 @@ class AscendStoreCoordinator:
                 hashes = self.block_hashes_for_spec(block_hashes, spec)
                 hit_blocks, new_hit_length = _find_longest_cache_hit(
                     manager_cls,
+                    cache=self._find_hit_kwargs_cache,
                     block_hashes=hashes,
                     max_length=max_group_length,
                     kv_cache_group_ids=group_ids,
@@ -624,15 +626,16 @@ def _get_manager_class(spec: KVCacheSpec) -> type[SingleTypeKVCacheManager]:
 
 
 def _accepted_manager_kwargs(
-    cache: dict[type[SingleTypeKVCacheManager], frozenset[str]],
+    cache: dict[type[SingleTypeKVCacheManager], frozenset[str]] | None,
     manager_cls: type[SingleTypeKVCacheManager],
     method: Any,
     fallback_kwargs: frozenset[str],
 ) -> frozenset[str]:
     """Return parameter names accepted by a ``SingleTypeKVCacheManager`` classmethod."""
-    cached = cache.get(manager_cls, _CACHE_MISSING)
-    if cached is not _CACHE_MISSING:
-        return cast(frozenset[str], cached)
+    if cache is not None:
+        cached = cache.get(manager_cls, _CACHE_MISSING)
+        if cached is not _CACHE_MISSING:
+            return cast(frozenset[str], cached)
 
     accepted = fallback_kwargs
     try:
@@ -644,14 +647,15 @@ def _accepted_manager_kwargs(
             accepted = fallback_kwargs
         else:
             accepted = frozenset(parameters)
-    cache[manager_cls] = accepted
+    if cache is not None:
+        cache[manager_cls] = accepted
     return accepted
 
 
 def _filter_manager_kwargs(
     manager_cls: type[SingleTypeKVCacheManager],
     method_name: str,
-    cache: dict[type[SingleTypeKVCacheManager], frozenset[str]],
+    cache: dict[type[SingleTypeKVCacheManager], frozenset[str]] | None,
     method: Any,
     fallback_kwargs: frozenset[str],
     kwargs: dict[str, Any],
@@ -670,13 +674,15 @@ def _filter_manager_kwargs(
 
 def _find_longest_cache_hit(
     manager_cls: type[SingleTypeKVCacheManager],
+    *,
+    cache: dict[type[SingleTypeKVCacheManager], frozenset[str]] | None = None,
     **kwargs: Any,
 ) -> tuple[tuple[list[KVCacheBlock], ...], int]:
     find_longest = manager_cls.find_longest_cache_hit
     filtered = _filter_manager_kwargs(
         manager_cls,
         "find_longest_cache_hit",
-        _FIND_HIT_KWARGS_CACHE,
+        cache,
         find_longest,
         _FIND_HIT_BASE_KWARGS,
         kwargs,
@@ -688,6 +694,8 @@ def _find_longest_cache_hit(
 def _reachable_mask_accepted_kwargs(
     manager_cls: type[SingleTypeKVCacheManager],
     reachable_block_mask: Any,
+    *,
+    cache: dict[type[SingleTypeKVCacheManager], frozenset[str]] | None = None,
 ) -> frozenset[str]:
     """Parameter names a manager's ``reachable_block_mask`` accepts.
 
@@ -695,7 +703,7 @@ def _reachable_mask_accepted_kwargs(
     implementation swallows everything via ``**kwargs``.
     """
     return _accepted_manager_kwargs(
-        _REACHABLE_MASK_KWARGS_CACHE,
+        cache,
         manager_cls,
         reachable_block_mask,
         _REACHABLE_MASK_BASE_KWARGS | _REACHABLE_MASK_OPTIONAL_KWARGS,
@@ -704,6 +712,8 @@ def _reachable_mask_accepted_kwargs(
 
 def _reachable_block_mask(
     manager_cls: type[SingleTypeKVCacheManager],
+    *,
+    cache: dict[type[SingleTypeKVCacheManager], frozenset[str]] | None = None,
     **kwargs: Any,
 ) -> list[bool] | None:
     reachable_block_mask = getattr(manager_cls, "reachable_block_mask", None)
@@ -716,7 +726,7 @@ def _reachable_block_mask(
     filtered = _filter_manager_kwargs(
         manager_cls,
         "reachable_block_mask",
-        _REACHABLE_MASK_KWARGS_CACHE,
+        cache,
         reachable_block_mask,
         _REACHABLE_MASK_BASE_KWARGS | _REACHABLE_MASK_OPTIONAL_KWARGS,
         kwargs,

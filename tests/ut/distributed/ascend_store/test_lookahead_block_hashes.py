@@ -537,6 +537,123 @@ class TestCoordinatorLookaheadAndBaselines(unittest.TestCase):
         self.assertEqual(hit_call["block_size"], 128)
         self.assertEqual(hit_call["manager_config"].params, "fa")
 
+    def test_coordinator_module_has_no_mutable_globals_and_uses_instance_caches(self):
+        coord_path = (
+            Path(__file__).resolve().parents[4]
+            / "vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/coordinator.py"
+        )
+        tree = ast.parse(coord_path.read_text(encoding="utf-8"))
+        forbidden_names = {"_FIND_HIT_KWARGS_CACHE", "_REACHABLE_MASK_KWARGS_CACHE"}
+        mutable_call_names = {"dict", "list", "set", "defaultdict"}
+
+        def _is_mutable_expr(node: ast.AST | None) -> bool:
+            if isinstance(node, (ast.Dict, ast.List, ast.Set, ast.DictComp, ast.ListComp, ast.SetComp)):
+                return True
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                return node.func.id in mutable_call_names
+            return False
+
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name):
+                        self.assertNotIn(target.id, forbidden_names)
+                        self.assertFalse(
+                            _is_mutable_expr(stmt.value),
+                            f"Unexpected mutable module global {target.id}",
+                        )
+            elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                self.assertNotIn(stmt.target.id, forbidden_names)
+                self.assertFalse(
+                    _is_mutable_expr(stmt.value),
+                    f"Unexpected mutable module global {stmt.target.id}",
+                )
+
+        self.assertFalse(hasattr(coord_mod, "_FIND_HIT_KWARGS_CACHE"))
+        self.assertFalse(hasattr(coord_mod, "_REACHABLE_MASK_KWARGS_CACHE"))
+
+        class _MaskManager:
+            @staticmethod
+            def reachable_block_mask(start_block, end_block, alignment_tokens, kv_cache_spec, use_eagle):
+                return [True for _ in range(start_block, end_block)]
+
+        class _HitManager(_MaskManager):
+            @staticmethod
+            def find_longest_cache_hit(
+                block_hashes,
+                max_length,
+                kv_cache_group_ids,
+                block_pool,
+                kv_cache_spec,
+                drop_eagle_block=False,
+                alignment_tokens=16,
+            ):
+                blocks = tuple([KVCacheBlock(i)] for i in range(len(kv_cache_group_ids)))
+                return blocks, min(max_length, len(block_hashes) * alignment_tokens)
+
+        self.assertEqual(
+            coord_mod._reachable_block_mask(
+                _MaskManager,
+                start_block=0,
+                end_block=2,
+                alignment_tokens=128,
+                kv_cache_spec=_full_spec(128),
+                use_eagle=False,
+                reachable_boundaries=(128,),
+            ),
+            [True, True],
+        )
+        direct_blocks, direct_hit = coord_mod._find_longest_cache_hit(
+            _HitManager,
+            block_hashes=_hashes(1),
+            max_length=128,
+            kv_cache_group_ids=[0],
+            block_pool=ExternalCachedBlockPool(128),
+            kv_cache_spec=_full_spec(128),
+            block_size=128,
+            manager_config=None,
+            drop_eagle_block=False,
+            alignment_tokens=128,
+        )
+        self.assertEqual(direct_hit, 128)
+        self.assertEqual(len(direct_blocks), 1)
+
+        group_a = SimpleNamespace(
+            kv_cache_specs={"layers.0.attn": _full_spec(128)},
+            manager_config=SimpleNamespace(manager_cls=_HitManager, params="a"),
+            block_size=128,
+            prefix_cacheable=True,
+        )
+        group_b = SimpleNamespace(
+            kv_cache_specs={"layers.0.attn": _full_spec(128)},
+            manager_config=SimpleNamespace(manager_cls=_HitManager, params="b"),
+            block_size=128,
+            prefix_cacheable=True,
+        )
+        coord_a = AscendStoreCoordinator(
+            [group_a],
+            scheduler_block_size=128,
+            hash_block_size=128,
+            group_block_sizes=[128],
+            group_cache_families=["default"],
+        )
+        coord_b = AscendStoreCoordinator(
+            [group_b],
+            scheduler_block_size=128,
+            hash_block_size=128,
+            group_block_sizes=[128],
+            group_cache_families=["default"],
+        )
+        self.assertIsNot(coord_a._find_hit_kwargs_cache, coord_b._find_hit_kwargs_cache)
+        self.assertIsNot(coord_a._reachable_mask_kwargs_cache, coord_b._reachable_mask_kwargs_cache)
+
+        coord_a.store_mask(256, num_prompt_tokens=256, num_block_hashes=2)
+        coord_a.find_longest_cache_hit(_hashes(2), 256, ExternalCachedBlockPool(128))
+        self.assertIn(_HitManager, coord_a._reachable_mask_kwargs_cache)
+        self.assertIn(_HitManager, coord_a._find_hit_kwargs_cache)
+        self.assertNotIn(_HitManager, coord_b._reachable_mask_kwargs_cache)
+        self.assertNotIn(_HitManager, coord_b._find_hit_kwargs_cache)
+
 
 class TestReqMetaAndInFlightSaveTracker(unittest.TestCase):
     def test_from_request_tracker_bounds_unhashed_tail_and_slices_lookahead_tokens(self):

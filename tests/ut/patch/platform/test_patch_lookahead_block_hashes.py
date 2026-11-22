@@ -433,12 +433,13 @@ class TestPatchLookaheadBlockHashes(unittest.TestCase):
         from vllm.distributed.kv_transfer.kv_connector.v1.multi_connector import MultiConnector
         from vllm.v1.core.kv_cache_utils import get_request_block_hasher, init_none_hash
 
-        from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ascend_store_connector import (
-            AscendStoreConnector,
-        )
-
         self.assertTrue(callable(getattr(KVConnectorBase_V1, "supports_lookahead_block_hashes", None)))
         self.assertTrue(callable(getattr(MultiConnector, "supports_lookahead_block_hashes", None)))
+
+        class _LookaheadConnector(KVConnectorBase_V1):
+            @classmethod
+            def supports_lookahead_block_hashes(cls, kv_transfer_config) -> bool:
+                return True
 
         class _OptOutConnector(KVConnectorBase_V1):
             @classmethod
@@ -448,7 +449,7 @@ class TestPatchLookaheadBlockHashes(unittest.TestCase):
         registry = getattr(KVConnectorFactory, "_registry", None)
         orig_registry = dict(registry) if isinstance(registry, dict) else None
         fake_registry = {
-            "AscendStoreConnector": lambda: AscendStoreConnector,
+            "LookaheadConnector": lambda: _LookaheadConnector,
             "MultiConnector": lambda: MultiConnector,
             "OptOutConnector": lambda: _OptOutConnector,
         }
@@ -473,12 +474,12 @@ class TestPatchLookaheadBlockHashes(unittest.TestCase):
                     registry.clear()
                     registry.update(fake_registry)
 
-                ktc_ascend = KVTransferConfig(kv_connector="AscendStoreConnector", kv_role="kv_both")
+                ktc_lookahead = KVTransferConfig(kv_connector="LookaheadConnector", kv_role="kv_both")
                 ktc_multi = KVTransferConfig(
                     kv_connector="MultiConnector",
                     kv_role="kv_both",
                     kv_connector_extra_config={
-                        "connectors": [{"kv_connector": "AscendStoreConnector", "kv_role": "kv_both"}]
+                        "connectors": [{"kv_connector": "LookaheadConnector", "kv_role": "kv_both"}]
                     },
                 )
                 ktc_multi_opt_out = KVTransferConfig(
@@ -486,17 +487,17 @@ class TestPatchLookaheadBlockHashes(unittest.TestCase):
                     kv_role="kv_both",
                     kv_connector_extra_config={
                         "connectors": [
-                            {"kv_connector": "AscendStoreConnector", "kv_role": "kv_both"},
+                            {"kv_connector": "LookaheadConnector", "kv_role": "kv_both"},
                             {"kv_connector": "OptOutConnector", "kv_role": "kv_both"},
                         ]
                     },
                 )
 
-                self.assertTrue(AscendStoreConnector.supports_lookahead_block_hashes(ktc_ascend))
+                self.assertTrue(_LookaheadConnector.supports_lookahead_block_hashes(ktc_lookahead))
                 self.assertTrue(MultiConnector.supports_lookahead_block_hashes(ktc_multi))
                 self.assertFalse(MultiConnector.supports_lookahead_block_hashes(ktc_multi_opt_out))
 
-                lookahead = resolve_live_lookahead(ktc_ascend)
+                lookahead = resolve_live_lookahead(ktc_lookahead)
                 self.assertEqual(lookahead, 1)
                 self.assertEqual(resolve_live_lookahead(ktc_multi), 1)
                 if not hasattr(VllmConfig, "_resolve_num_hash_lookahead_tokens"):
