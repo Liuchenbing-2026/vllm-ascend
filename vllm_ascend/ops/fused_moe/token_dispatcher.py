@@ -580,7 +580,7 @@ class TokenDispatcherWithAll2AllV(MoETokenDispatcher[MoEAllToAllCombineMetadata]
             global_input_tokens_local_experts_indices,
             hidden_shape,
             hidden_shape_before_permute,
-        ) = self._dispatch_preprocess(hidden_states, topk_ids)
+        ) = self._dispatch_preprocess(hidden_states, topk_ids, quant_type=quant_type)
 
         dynamic_scale_after_all2all = None
         if with_quant:
@@ -599,7 +599,7 @@ class TokenDispatcherWithAll2AllV(MoETokenDispatcher[MoEAllToAllCombineMetadata]
         permute1_ep_all_to_all_handle.wait()
         permutated_local_input_tokens.untyped_storage().resize_(0)
 
-        if should_exchange_all2all_lora_indices(self.lora_context):
+        if should_exchange_all2all_lora_indices(self.lora_context, quant_type=quant_type):
             all2all_lora_indices(
                 self.lora_context,
                 output_splits=output_splits,
@@ -615,6 +615,7 @@ class TokenDispatcherWithAll2AllV(MoETokenDispatcher[MoEAllToAllCombineMetadata]
                 global_input_tokens_local_experts_indices,
                 with_quant,
                 dst_type,
+                quant_type=quant_type,
             )
         )
 
@@ -655,7 +656,7 @@ class TokenDispatcherWithAll2AllV(MoETokenDispatcher[MoEAllToAllCombineMetadata]
 
         return output
 
-    def _dispatch_preprocess(self, hidden_states, topk_ids):
+    def _dispatch_preprocess(self, hidden_states, topk_ids, quant_type=None):
         hidden_shape = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_states.size(-1))
         (
@@ -676,7 +677,7 @@ class TokenDispatcherWithAll2AllV(MoETokenDispatcher[MoEAllToAllCombineMetadata]
             num_out_tokens=num_out_tokens,
         )
 
-        if should_exchange_all2all_lora_indices(self.lora_context):
+        if should_exchange_all2all_lora_indices(self.lora_context, quant_type=quant_type):
             preprocess_lora_indices(
                 self.lora_context,
                 topk_ids=topk_ids,
@@ -759,6 +760,7 @@ class TokenDispatcherWithAll2AllV(MoETokenDispatcher[MoEAllToAllCombineMetadata]
         global_input_tokens_local_experts_indices,
         with_quant,
         dst_type,
+        quant_type=None,
     ):
         # Early return if no local experts or no tokens
         if self.num_local_experts <= 1:
@@ -784,7 +786,7 @@ class TokenDispatcherWithAll2AllV(MoETokenDispatcher[MoEAllToAllCombineMetadata]
             global_input_tokens, reversed_global_input_permutation_mapping = torch_npu.npu_moe_token_permute(
                 global_input_tokens, global_input_tokens_local_experts_indices
             )
-        if should_exchange_all2all_lora_indices(self.lora_context):
+        if should_exchange_all2all_lora_indices(self.lora_context, quant_type=quant_type):
             postprocess_lora_indices(
                 self.lora_context,
                 reversed_permutation_mapping=reversed_global_input_permutation_mapping,

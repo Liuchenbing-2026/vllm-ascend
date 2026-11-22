@@ -1346,7 +1346,7 @@ class TestTokenDispatcherWithAll2AllV(TestBase):
         self.assertEqual(self.mock_async_all_to_all.call_count, 1)
 
     def test_all2all_keeps_quant_when_layer_has_no_loaded_expert_adapter(self):
-        """Unloaded MoE layers must not fail on unregistered quant types or lose quant dispatch."""
+        """Unloaded DP=1 layers stay quantized; DP>1 base workers align supported quant dispatch."""
         hidden_states = torch.randn(8, 16, dtype=torch.bfloat16)
         topk_weights = torch.rand(8, 4)
         topk_ids = torch.randint(0, 4, (8, 2)).long()
@@ -1358,7 +1358,7 @@ class TestTokenDispatcherWithAll2AllV(TestBase):
             SimpleNamespace(
                 punica_wrapper=SimpleNamespace(no_lora=False, active_lora_slots={0}),
                 layer_lora_slots=set(),
-                replicated_batch=False,
+                replicated_batch=True,
                 split_lora_indices=None,
             )
         )
@@ -1381,6 +1381,58 @@ class TestTokenDispatcherWithAll2AllV(TestBase):
             self.mock_npu_dynamic_quant.assert_called_once()
             self.assertIsNotNone(result.dynamic_scale)
             self.assertEqual(self.mock_async_all_to_all.call_count, 2)
+
+        self.dispatcher.set_lora_context(
+            SimpleNamespace(
+                punica_wrapper=SimpleNamespace(no_lora=True, active_lora_slots=set()),
+                layer_lora_slots=set(),
+                replicated_batch=False,
+                split_lora_indices=None,
+            )
+        )
+        self.mock_npu_dynamic_quant.reset_mock()
+        self.mock_async_all_to_all.reset_mock()
+        with (
+            self._mock_split_copy_state(self.dispatcher),
+            patch("vllm_ascend.ops.fused_moe.token_dispatcher.all2all_lora_indices"),
+        ):
+            mxfp_res = self.dispatcher.token_dispatch(
+                token_dispatch_input=build_token_dispatch_input_fixture(
+                    hidden_states=hidden_states,
+                    topk_weights=topk_weights,
+                    topk_ids=topk_ids,
+                    expert_map=expert_map,
+                    quant_type=QuantType.W4A8MXFP,
+                )
+            )
+        self.mock_npu_dynamic_quant.assert_called_once()
+        self.assertIsNotNone(mxfp_res.dynamic_scale)
+        self.assertEqual(self.mock_async_all_to_all.call_count, 2)
+
+        self.mock_npu_dynamic_quant.reset_mock()
+        self.mock_async_all_to_all.reset_mock()
+        self.mock_npu_moe_token_permute.side_effect = lambda tokens, *args, **kwargs: (
+            torch.zeros(16, 16, dtype=tokens.dtype),
+            torch.arange(16),
+        )
+        self.mock_async_all_to_all.side_effect = lambda x, *args, **kwargs: (None, torch.zeros_like(x), MagicMock())
+        with (
+            self._mock_split_copy_state(self.dispatcher),
+            patch("vllm_ascend.ops.fused_moe.token_dispatcher.all2all_lora_indices") as mock_all2all,
+        ):
+            w8a8_res = self.dispatcher.token_dispatch(
+                token_dispatch_input=build_token_dispatch_input_fixture(
+                    hidden_states=hidden_states,
+                    topk_weights=topk_weights,
+                    topk_ids=topk_ids,
+                    expert_map=expert_map,
+                    quant_type=QuantType.W8A8,
+                )
+            )
+        self.mock_npu_dynamic_quant.assert_not_called()
+        self.assertIsNone(w8a8_res.dynamic_scale)
+        self.assertEqual(self.mock_async_all_to_all.call_count, 1)
+        mock_all2all.assert_called_once()
 
     def test_all2all_disables_quant_for_dp1_base_batch_with_loaded_quant_moe_adapter(self):
         hidden_states = torch.randn(8, 16, dtype=torch.bfloat16)
@@ -1577,7 +1629,7 @@ class TestTokenDispatcherWithAll2AllV(TestBase):
             SimpleNamespace(
                 punica_wrapper=SimpleNamespace(no_lora=False, active_lora_slots={0}),
                 layer_lora_slots=set(),
-                replicated_batch=False,
+                replicated_batch=True,
                 split_lora_indices=None,
             )
         )
@@ -1600,6 +1652,49 @@ class TestTokenDispatcherWithAll2AllV(TestBase):
         mock_pre.assert_not_called()
         mock_all2all.assert_not_called()
         mock_post.assert_not_called()
+
+        self.dispatcher.set_lora_context(
+            SimpleNamespace(
+                punica_wrapper=SimpleNamespace(no_lora=True, active_lora_slots=set()),
+                layer_lora_slots=set(),
+                replicated_batch=False,
+                split_lora_indices=None,
+            )
+        )
+        with (
+            self._mock_split_copy_state(self.dispatcher),
+            patch("vllm_ascend.ops.fused_moe.token_dispatcher.preprocess_lora_indices") as mock_pre,
+            patch("vllm_ascend.ops.fused_moe.token_dispatcher.all2all_lora_indices") as mock_all2all,
+            patch("vllm_ascend.ops.fused_moe.token_dispatcher.postprocess_lora_indices") as mock_post,
+        ):
+            self.dispatcher.token_dispatch(
+                token_dispatch_input=build_token_dispatch_input_fixture(
+                    hidden_states=hidden_states,
+                    topk_weights=topk_weights,
+                    topk_ids=topk_ids,
+                    expert_map=expert_map,
+                    quant_type=QuantType.W4A8MXFP,
+                )
+            )
+        mock_pre.assert_not_called()
+        mock_all2all.assert_not_called()
+        mock_post.assert_not_called()
+
+        self.mock_npu_moe_token_permute.side_effect = lambda tokens, *args, **kwargs: (
+            torch.zeros(16, 16, dtype=tokens.dtype),
+            torch.arange(16),
+        )
+        self.mock_async_all_to_all.side_effect = lambda x, *args, **kwargs: (None, torch.zeros_like(x), MagicMock())
+        with (
+            self._mock_split_copy_state(self.dispatcher),
+            patch("vllm_ascend.ops.fused_moe.token_dispatcher.preprocess_lora_indices") as mock_pre,
+            patch("vllm_ascend.ops.fused_moe.token_dispatcher.all2all_lora_indices") as mock_all2all,
+            patch("vllm_ascend.ops.fused_moe.token_dispatcher.postprocess_lora_indices") as mock_post,
+        ):
+            self.dispatcher.token_dispatch(token_dispatch_input=token_dispatch_input)
+        mock_pre.assert_called_once()
+        mock_all2all.assert_called_once()
+        mock_post.assert_called_once()
 
     @pytest.mark.skip("Skip as register_kernels has NPU SocName checking in CANN 8.5.0.")
     def test_token_combine(self):
