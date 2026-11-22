@@ -161,16 +161,17 @@ class PrepareAndFinalizeWithAll2All(PrepareAndFinalize):
             MoEPrepareOutput where `mc2_mask` is None for All2All path.
         """
         self.replace_allreduce = replace_allreduce
-        if self.lora_context is not None:
+        lora_context = getattr(self, "lora_context", None)
+        if lora_context is not None:
             assert_moe_lora_dp1_supported(self.moe_config.dp_size)
 
         padded_hidden_states_shape = hidden_states.shape
         if not self.replace_allreduce:
             self.num_tokens, _ = hidden_states.shape
             pad_size = self.tp_size - self.num_tokens  # Pad to TP size (cyclic)
-            if should_exchange_all2all_lora_indices(self.lora_context, quant_type=quant_type):
+            if should_exchange_all2all_lora_indices(lora_context, quant_type=quant_type):
                 prepare_lora_indices(
-                    self.lora_context,
+                    lora_context,
                     num_tokens=self.num_tokens,
                     pad_size=pad_size,
                     tp_size=self.tp_size,
@@ -333,8 +334,6 @@ class PrepareAndFinalizeWithMC2(PrepareAndFinalizeWithAll2All):
             MoEPrepareOutput, possibly sliced/padded.
         """
         self.replace_allreduce = replace_allreduce
-        if self.lora_context is not None:
-            assert_moe_lora_dp1_supported(self.moe_config.dp_size)
         mc2_mask = _EXTRA_CTX.mc2_mask
         if self.replace_allreduce:
             # SP shards use the local token count, not the largest DP batch.
@@ -473,7 +472,7 @@ class PrepareAndFinalizeWithAllGather(PrepareAndFinalize):
     def _prepare_with_ep_group(
         self, hidden_states: torch.Tensor, router_logits: torch.Tensor, quant_type=QuantType.NONE
     ) -> MoEPrepareOutput:
-        lora_context = self.lora_context
+        lora_context = getattr(self, "lora_context", None)
         if lora_context is not None:
             assert_moe_lora_dp1_supported(self.moe_config.dp_size)
         local_sp_tokens = hidden_states.shape[0]
@@ -541,7 +540,7 @@ class PrepareAndFinalizeWithAllGather(PrepareAndFinalize):
         Returns:
             MoEPrepareOutput with global tensors.
         """
-        lora_context = self.lora_context
+        lora_context = getattr(self, "lora_context", None)
         if lora_context is not None:
             assert_moe_lora_dp1_supported(self.moe_config.dp_size)
         gather_lora_indices = (
