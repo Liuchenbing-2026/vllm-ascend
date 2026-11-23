@@ -27,6 +27,7 @@ import tests.ut.distributed.ascend_store._mock_deps  # noqa: F401, E402
 # isort: split
 from vllm.v1.outputs import KVConnectorOutput
 
+from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ascend_store_connector import AscendStoreConnector
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import backend_map, get_backend_class
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend.base import Backend
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend.memcache_backend import MemcacheBackend
@@ -972,6 +973,223 @@ class TestAscendStoreAsyncLoadLifecycle(unittest.TestCase):
         for worker in workers:
             self.assertEqual(worker.kv_recv_thread.finished_requests, set())
         self.assertTrue(scheduler.reset_store())
+
+    def test_recving_thread_tp_mismatch_exception_keeps_thread_alive_and_marks_finished(self):
+        worker = MagicMock()
+        worker.tp_mismatch = True
+        worker._load_kv_tp_mismatch.side_effect = [RuntimeError("tp mismatch get boom"), None, False]
+        invalid_blocks: set[int] = set()
+        thread = KVCacheStoreRecvingThread(
+            m_store=_DummyBackend(),
+            token_database=_DummyTokenDatabase(),
+            block_size=16,
+            tp_rank=0,
+            dcp_size=1,
+            ready_event=threading.Event(),
+            invalid_block_ids=invalid_blocks,
+            invalid_block_ids_lock=threading.Lock(),
+            worker=worker,
+        )
+        thread.start()
+        self.assertTrue(thread.ready_event.wait(timeout=2.0))
+
+        def _cleanup_thread() -> None:
+            thread.stop()
+            thread.join(timeout=2.0)
+
+        self.addCleanup(_cleanup_thread)
+
+        req1 = ReqMeta(
+            req_id="r-tp-err",
+            token_len_chunk=32,
+            block_ids_by_group=[[1, 2]],
+            block_hashes=[b"h0", b"h1"],
+            load_spec=LoadSpec(vllm_cached_tokens=0, kvpool_cached_tokens=32, can_load=True, token_len=32),
+        )
+        req2 = ReqMeta(
+            req_id="r-tp-ok",
+            token_len_chunk=16,
+            block_ids_by_group=[[3]],
+            block_hashes=[b"h2"],
+            load_spec=LoadSpec(vllm_cached_tokens=0, kvpool_cached_tokens=16, can_load=True, token_len=16),
+        )
+        req3 = ReqMeta(
+            req_id="r-tp-false",
+            token_len_chunk=16,
+            block_ids_by_group=[[4]],
+            block_hashes=[b"h3"],
+            load_spec=LoadSpec(vllm_cached_tokens=0, kvpool_cached_tokens=16, can_load=True, token_len=16),
+        )
+
+        thread.add_request(req1)
+        _wait_until(lambda: "r-tp-err" in thread.finished_requests)
+        self.assertTrue(thread.is_alive())
+        self.assertIsNone(thread._fatal_error)
+        self.assertFalse(req1.can_save)
+        self.assertEqual(invalid_blocks, {1, 2})
+        self.assertEqual(thread.get_and_clear_finished_requests({"r-tp-err"}), {"r-tp-err"})
+
+        thread.add_request(req2)
+        _wait_until(lambda: "r-tp-ok" in thread.finished_requests)
+        self.assertEqual(thread.get_and_clear_finished_requests({"r-tp-ok"}), {"r-tp-ok"})
+
+        thread.add_request(req3)
+        _wait_until(lambda: "r-tp-false" in thread.finished_requests)
+        self.assertFalse(req3.can_save)
+        self.assertTrue(thread.save_disabled.is_set())
+        self.assertEqual(invalid_blocks, {1, 2, 4})
+        self.assertEqual(thread.get_and_clear_finished_requests({"r-tp-false"}), {"r-tp-false"})
+        self.assertEqual(thread.request_queue.unfinished_tasks, 0)
+
+    def test_overlapping_hybrid_load_failure_waits_for_pending_count_zero(self):
+        fail_started = threading.Event()
+        release_fail = threading.Event()
+        second_started = threading.Event()
+        release_second = threading.Event()
+        call_idx = 0
+
+        def scripted_get(keys, addrs, sizes):
+            nonlocal call_idx
+            idx = call_idx
+            call_idx += 1
+            if idx == 0:
+                fail_started.set()
+                self.assertTrue(release_fail.wait(timeout=3.0))
+                raise RuntimeError("first load failed")
+            if idx == 1:
+                second_started.set()
+                self.assertTrue(release_second.wait(timeout=3.0))
+                return [0] * len(keys)
+            if idx == 2:
+                fail_started.set()
+                self.assertTrue(release_fail.wait(timeout=3.0))
+                raise RuntimeError("round2 first load failed")
+            if idx == 3:
+                second_started.set()
+                self.assertTrue(release_second.wait(timeout=3.0))
+                raise RuntimeError("round2 second load failed")
+            return [0] * len(keys)
+
+        thread = KVCacheStoreRecvingThread(
+            m_store=_DummyBackend(get_fn=scripted_get),
+            token_database=_DummyTokenDatabase(),
+            block_size=[16, 16],
+            tp_rank=0,
+            dcp_size=1,
+            ready_event=threading.Event(),
+            invalid_block_ids=set(),
+            invalid_block_ids_lock=threading.Lock(),
+        )
+        thread.start()
+        self.assertTrue(thread.ready_event.wait(timeout=2.0))
+
+        def _cleanup_thread() -> None:
+            release_fail.set()
+            release_second.set()
+            thread.stop()
+            thread.join(timeout=2.0)
+
+        self.addCleanup(_cleanup_thread)
+
+        def make_hybrid_req() -> ReqMeta:
+            return ReqMeta(
+                req_id="r-overlap",
+                token_len_chunk=16,
+                block_ids_by_group=[[5], [6]],
+                block_hashes=[b"h0"],
+                kv_cache_group_ids=[0],
+                load_spec=LoadSpec(vllm_cached_tokens=0, kvpool_cached_tokens=16, can_load=True, token_len=16),
+            )
+
+        # Case 1: load #1 fails while load #2 is in flight -> no premature finish/failure; load #2 succeeds.
+        thread.add_request(make_hybrid_req())
+        self.assertTrue(fail_started.wait(timeout=2.0))
+        thread.add_request(make_hybrid_req())
+        release_fail.set()
+        self.assertTrue(second_started.wait(timeout=2.0))
+        self.assertEqual(thread.finished_requests, set())
+        self.assertEqual(thread.failed_requests, set())
+        release_second.set()
+        _wait_until(lambda: "r-overlap" in thread.finished_requests)
+        self.assertEqual(thread.get_and_clear_failed_requests(), set())
+        self.assertEqual(thread.get_and_clear_finished_requests({"r-overlap"}), {"r-overlap"})
+
+        # Case 2: load #1 and load #2 both fail -> failed_requests is exposed only when load #2 completes.
+        fail_started.clear()
+        release_fail.clear()
+        second_started.clear()
+        release_second.clear()
+        thread.add_request(make_hybrid_req())
+        self.assertTrue(fail_started.wait(timeout=2.0))
+        thread.add_request(make_hybrid_req())
+        release_fail.set()
+        self.assertTrue(second_started.wait(timeout=2.0))
+        self.assertEqual(thread.finished_requests, set())
+        self.assertEqual(thread.failed_requests, set())
+        release_second.set()
+        _wait_until(lambda: "r-overlap" in thread.finished_requests)
+        self.assertEqual(thread.failed_requests, {"r-overlap"})
+
+        # Case 3: a fresh add_request discards stale unconsumed failed_requests and succeeds cleanly.
+        thread.add_request(make_hybrid_req())
+        self.assertEqual(thread.failed_requests, set())
+        _wait_until(lambda: "r-overlap" in thread.finished_requests)
+        self.assertEqual(thread.get_and_clear_failed_requests(), set())
+        self.assertEqual(thread.get_and_clear_finished_requests({"r-overlap"}), {"r-overlap"})
+
+    def test_preempted_failed_request_discarded_and_filtered_by_loading_req_ids(self):
+        def failing_get(keys, addrs, sizes):
+            raise RuntimeError("hybrid failure")
+
+        thread = KVCacheStoreRecvingThread(
+            m_store=_DummyBackend(get_fn=failing_get),
+            token_database=_DummyTokenDatabase(),
+            block_size=[16, 16],
+            tp_rank=0,
+            dcp_size=1,
+            ready_event=threading.Event(),
+            invalid_block_ids=set(),
+            invalid_block_ids_lock=threading.Lock(),
+        )
+        req = ReqMeta(
+            req_id="r-preempt",
+            token_len_chunk=16,
+            block_ids_by_group=[[5], [6]],
+            block_hashes=[b"h0"],
+            kv_cache_group_ids=[0],
+            load_spec=LoadSpec(vllm_cached_tokens=0, kvpool_cached_tokens=16, can_load=True, token_len=16),
+        )
+        thread.add_request(req)
+        thread._handle_request(thread.request_queue.get())
+        self.assertEqual(thread.finished_requests, {"r-preempt"})
+        self.assertEqual(thread.failed_requests, {"r-preempt"})
+
+        thread.discard_finished_requests({"r-preempt"})
+        self.assertEqual(thread.finished_requests, set())
+        self.assertEqual(thread.failed_requests, set())
+        self.assertEqual(thread.get_and_clear_failed_requests(), set())
+
+        connector = AscendStoreConnector.__new__(AscendStoreConnector)
+        connector.use_layerwise = False
+        connector.connector_worker = MagicMock(load_async=True)
+        connector.connector_worker.get_failed_requests.return_value = {"r-stale", "r-live"}
+        cast(Any, connector)._connector_metadata = AscendConnectorMetadata(
+            preempted_req_ids=set(),
+            loading_req_ids={"r-live", "r-ok"},
+        )
+        cast(Any, connector).get_finished = MagicMock(return_value=(set(), {"r-ok"}))
+
+        def _make_results(**kwargs: Any) -> SimpleNamespace:
+            return SimpleNamespace(**kwargs)
+
+        with patch(
+            "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ascend_store_connector.KVConnectorTransferResults",
+            side_effect=_make_results,
+        ):
+            results = cast(Any, connector.get_transfer_results(set()))
+
+        self.assertEqual(results.finished_recving, {"r-ok", "r-live"})
+        self.assertEqual(results.failed_recving, {"r-live"})
 
 
 if __name__ == "__main__":

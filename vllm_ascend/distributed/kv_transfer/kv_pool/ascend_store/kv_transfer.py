@@ -144,6 +144,7 @@ class KVTransferThread(threading.Thread):
     def discard_finished_requests(self, req_ids: set[str]) -> None:
         with self.done_task_lock:
             self.finished_requests -= req_ids
+            self.failed_requests -= req_ids
 
     def raise_if_failed(self) -> None:
         if self._fatal_error is not None:
@@ -1092,18 +1093,19 @@ class KVCacheStoreRecvingThread(KVTransferThread):
                         self._fatal_error,
                     )
                 if isinstance(request, ReqMeta):
-                    self._record_load_failure(request)
-                    self._finish_load_request(request.req_id)
+                    failed = self._record_load_failure(request)
+                    self._finish_load_request(request.req_id, failed=failed)
                 return
             if isinstance(request, ReqMeta):
                 with self.done_task_lock:
-                    # Discard any unconsumed completion from an earlier load of
-                    # this req_id and keep an outstanding count per submission.
+                    # Discard any unconsumed completion or failure from an earlier
+                    # load of this req_id and track an outstanding count per submission.
                     self.finished_requests.discard(request.req_id)
+                    self.failed_requests.discard(request.req_id)
                     self._pending_load_counts[request.req_id] = self._pending_load_counts.get(request.req_id, 0) + 1
             self.request_queue.put(request)
 
-    def _finish_load_request(self, req_id: str) -> None:
+    def _finish_load_request(self, req_id: str, *, failed: bool = False) -> None:
         with self.done_task_lock:
             remaining = self._pending_load_counts.get(req_id, 0)
             if remaining > 1:
@@ -1111,26 +1113,27 @@ class KVCacheStoreRecvingThread(KVTransferThread):
                 return
             self._pending_load_counts.pop(req_id, None)
             self.finished_requests.add(req_id)
+            if failed:
+                self.failed_requests.add(req_id)
 
-    def _record_load_failure(self, req_meta: ReqMeta) -> None:
-        if isinstance(self.m_store, MemcacheBackend):
-            self._mark_failed_requests([req_meta])
-            return
+    def _record_load_failure(self, req_meta: ReqMeta, *, disable_save: bool = False) -> bool:
+        if disable_save or isinstance(self.m_store, MemcacheBackend):
+            logger.error("Memcache transfer failed for requests=%s", [req_meta.req_id])
+            self.save_disabled.set()
         req_meta.can_save = False
         if len(req_meta.block_ids_by_group) > 1:
-            with self.done_task_lock:
-                self.failed_requests.add(req_meta.req_id)
-        else:
-            with self._invalid_block_ids_lock:
-                self._invalid_block_ids.update(
-                    block_id for group in req_meta.block_ids_by_group for block_id in group if block_id > 0
-                )
+            return True
+        with self._invalid_block_ids_lock:
+            self._invalid_block_ids.update(
+                block_id for group in req_meta.block_ids_by_group for block_id in group if block_id > 0
+            )
+        return False
 
     def _handle_request_exception(self, request_data: Any) -> None:
         def finish_failed_load(failed_request: Any) -> None:
             if isinstance(failed_request, ReqMeta):
-                self._record_load_failure(failed_request)
-                self._finish_load_request(failed_request.req_id)
+                failed = self._record_load_failure(failed_request)
+                self._finish_load_request(failed_request.req_id, failed=failed)
 
         queued_request_count = self.request_queue.qsize()
         current_needs_ack = self.request_queue.unfinished_tasks > queued_request_count
@@ -1155,22 +1158,21 @@ class KVCacheStoreRecvingThread(KVTransferThread):
                 self._finish_load_request(req_id)
                 return
 
-            token_len = load_spec.token_len
-            if self.worker is not None and getattr(self.worker, "tp_mismatch", False):
-                group_block_size = self._get_block_size(0)
-                mask_num = load_spec.vllm_cached_tokens // group_block_size * group_block_size
-                loaded = self.worker._load_kv_tp_mismatch(
-                    req_meta.block_hashes,
-                    req_meta.block_ids_by_group[0],
-                    token_len,
-                    mask_num,
-                )
-                if loaded is False:
-                    self._mark_failed_requests([req_meta])
-                self._finish_load_request(req_id)
-                return
-
             try:
+                token_len = load_spec.token_len
+                if self.worker is not None and getattr(self.worker, "tp_mismatch", False):
+                    group_block_size = self._get_block_size(0)
+                    mask_num = load_spec.vllm_cached_tokens // group_block_size * group_block_size
+                    loaded = self.worker._load_kv_tp_mismatch(
+                        req_meta.block_hashes,
+                        req_meta.block_ids_by_group[0],
+                        token_len,
+                        mask_num,
+                    )
+                    failed = self._record_load_failure(req_meta, disable_save=True) if loaded is False else False
+                    self._finish_load_request(req_id, failed=failed)
+                    return
+
                 addr_list = []
                 size_list = []
                 key_list = []
@@ -1235,8 +1237,8 @@ class KVCacheStoreRecvingThread(KVTransferThread):
                 if isinstance(self.m_store, MemcacheBackend) and (
                     ret is None or len(ret) != len(key_list_c) or any(r != 0 for r in ret)
                 ):
-                    self._mark_failed_requests([req_meta])
-                    self._finish_load_request(req_id)
+                    failed = self._record_load_failure(req_meta, disable_save=True)
+                    self._finish_load_request(req_id, failed=failed)
                     return
                 if ret is not None and any(r != 0 for r in ret):
                     missing_block_ids = record_failed_blocks(
@@ -1280,8 +1282,8 @@ class KVCacheStoreRecvingThread(KVTransferThread):
                 self._finish_load_request(req_id)
             except Exception:
                 logger.exception("KV pool async recv failed for request %s", req_meta.req_id)
-                self._record_load_failure(req_meta)
-                self._finish_load_request(req_meta.req_id)
+                failed = self._record_load_failure(req_meta)
+                self._finish_load_request(req_meta.req_id, failed=failed)
         finally:
             self.request_queue.task_done()
 

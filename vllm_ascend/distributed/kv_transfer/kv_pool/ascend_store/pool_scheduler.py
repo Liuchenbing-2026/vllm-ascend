@@ -671,9 +671,9 @@ class BaseKVPoolScheduler(ABC):
                     load_specs.pop(req_id, None)
 
         meta = AscendConnectorMetadata(
-            preempted_req_ids,
-            self._async_loading_req_ids.copy(),
-            cancelled_loading_req_ids,
+            preempted_req_ids=preempted_req_ids,
+            loading_req_ids=self._async_loading_req_ids.copy(),
+            cancelled_loading_req_ids=cancelled_loading_req_ids,
         )
 
         for request in scheduler_output.scheduled_new_reqs:

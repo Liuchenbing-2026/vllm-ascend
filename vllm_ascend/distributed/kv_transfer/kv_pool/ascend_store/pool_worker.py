@@ -949,6 +949,9 @@ class BaseKVPoolWorker(ABC):
             if not isinstance(getattr(recv_thread, "_fatal_error", None), BaseException):
                 recv_thread.request_queue.join()
             recv_thread.get_and_clear_finished_requests()
+            clear_failed = getattr(recv_thread, "get_and_clear_failed_requests", None)
+            if clear_failed is not None:
+                clear_failed()
         self.m_store.remove_all()
 
     def lookup(
