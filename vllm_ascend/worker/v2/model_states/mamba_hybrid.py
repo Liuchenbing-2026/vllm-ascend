@@ -511,6 +511,12 @@ class AscendMambaHybridModelState(MambaHybridModelState, AscendModelState):
         max_query_len = getattr(input_batch, "max_query_len", None)
         if max_query_len is None:
             max_query_len = input_batch.num_scheduled_tokens.max().item()
+        seq_lens_np = AscendModelState._sync_dummy_context_metadata(
+            input_batch,
+            block_tables,
+            kv_cache_config,
+            input_batch.num_reqs,
+        )
         return build_attn_metadata(
             attn_groups=attn_groups,
             num_reqs=num_reqs,
@@ -528,7 +534,7 @@ class AscendMambaHybridModelState(MambaHybridModelState, AscendModelState):
             kv_cache_config=kv_cache_config,
             dcp_local_seq_lens=input_batch.dcp_local_seq_lens,
             parallel_config=self.vllm_config.parallel_config,
-            seq_lens_np=input_batch.seq_lens_np,
+            seq_lens_np=seq_lens_np,
             positions=input_batch.positions,
             attn_state=input_batch.attn_state,
             model_specific_attn_metadata=model_specific_metadata,

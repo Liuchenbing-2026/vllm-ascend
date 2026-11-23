@@ -351,3 +351,46 @@ def test_attention_keeps_actual_queries_and_padded_dummy_inputs(
     assert kwargs["max_query_len"] == 2
     assert kwargs["query_start_loc_cpu"].tolist() == [0, 2]
     assert kwargs["seq_lens_np"].tolist() == [2]
+
+
+@pytest.mark.parametrize("state_type", [AscendModelState, AscendMambaHybridModelState])
+@pytest.mark.parametrize("mode,for_capture", [(CUDAGraphMode.NONE, False), (CUDAGraphMode.FULL, True)])
+def test_prepare_attn_syncs_dummy_context_seq_lens(buffers, state_type, mode, for_capture):
+    num_reqs = 2
+    with patch("vllm_ascend.worker.v2.input_batch.update_cos_sin"):
+        batch = AscendInputBatch.make_dummy(num_reqs, num_reqs, buffers)
+    blocks = SimpleNamespace(
+        input_block_tables=[torch.zeros((num_reqs, 8), dtype=torch.int32)],
+        block_sizes=[16],
+        kernel_block_sizes=[16],
+        blocks_per_kv_block=[1],
+    )
+    set_dummy_context(batch, blocks, 8192, 64, 16384)
+    assert batch.seq_lens_np[:num_reqs].tolist() == [1, 1]
+    assert batch.seq_lens_cpu_upper_bound[:num_reqs].tolist() == [8193, 8193]
+
+    state = state_type.__new__(state_type)
+    state.decoder_replay = None
+    state.recoverssm = None
+    state.vllm_config = SimpleNamespace(
+        parallel_config=SimpleNamespace(prefill_context_parallel_size=1), num_speculative_tokens=0
+    )
+    state.model_config = SimpleNamespace(max_model_len=16384)
+    state.pcp_manager = None
+    state.kvpp_runtime = None
+    state.kvpp_is_dummy_run = False
+    state.device_metadata = None
+    with patch(f"{state_type.__module__}.build_attn_metadata", return_value={}) as build:
+        assert (
+            state.prepare_attn(
+                batch,
+                mode,
+                tuple(blocks.input_block_tables),
+                torch.full((1, num_reqs), -1, dtype=torch.int64),
+                [],
+                None,
+                for_capture=for_capture,
+            )
+            == {}
+        )
+    assert build.call_args.kwargs["seq_lens_np"][:num_reqs].tolist() == [8193, 8193]

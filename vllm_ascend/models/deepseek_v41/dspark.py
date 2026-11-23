@@ -82,6 +82,18 @@ def _get_dspark_num_mtp_layers(config: PretrainedConfig) -> int:
     return int(num_layers or 3)
 
 
+def _should_enable_confidence_head(config: PretrainedConfig) -> bool:
+    """Resolve ``enable_confidence_head`` defaulting ``None``/missing to True."""
+    raw = getattr(config, "enable_confidence_head", None)
+    if raw is None:
+        return True
+    if isinstance(raw, bool):
+        return raw
+    raise ValueError(
+        f"Expected config.enable_confidence_head to be a bool or None, got {raw!r} ({type(raw).__name__})."
+    )
+
+
 class DeepseekV41DSparkSWACache(AscendDeepseekV41SWACache):
     """DeepSeek V4.1 DSpark draft SWA cache layer.
 
@@ -246,11 +258,15 @@ class DeepseekV41DSparkModel(torch.nn.Module):
             config.dspark_markov_rank,
             prefix=maybe_prefix(prefix, f"layers.{last_layer_idx}.markov_head"),
         )
-        self.confidence_head = DSparkConfidenceHead(
-            input_dim=config.hidden_size + config.dspark_markov_rank,
-            prefix=maybe_prefix(prefix, "confidence_head"),
-            bias=False,
-            with_markov=True,
+        self.confidence_head: DSparkConfidenceHead | None = (
+            DSparkConfidenceHead(
+                input_dim=config.hidden_size + config.dspark_markov_rank,
+                prefix=maybe_prefix(prefix, "confidence_head"),
+                bias=False,
+                with_markov=True,
+            )
+            if _should_enable_confidence_head(config)
+            else None
         )
         last_layer = self.layers[str(last_layer_idx)]
         last_layer.norm = self.norm
@@ -406,6 +422,7 @@ class DSparkDeepseekV41ForCausalLM(torch.nn.Module, DeepseekV41MixtureOfExperts,
 
         self.rotation_path = get_rotation_path(vllm_config) if vllm_config.quant_config is not None else None
         self.model = DeepseekV41DSparkModel(vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model"))
+        self.enable_confidence_head: bool = self.model.confidence_head is not None
         from vllm.model_executor.layers.logits_processor import LogitsProcessor
         from vllm.model_executor.layers.vocab_parallel_embedding import ParallelLMHead
 
@@ -491,6 +508,8 @@ class DSparkDeepseekV41ForCausalLM(torch.nn.Module, DeepseekV41MixtureOfExperts,
 
     def compute_confidence(self, head_hidden: torch.Tensor, markov_embed: torch.Tensor) -> torch.Tensor:
         """Per-position acceptance probability for each drafted token."""
+        if not self.enable_confidence_head or self.model.confidence_head is None:
+            raise RuntimeError("The DSpark confidence head is disabled.")
         return torch.sigmoid(self.model.confidence_head(head_hidden, markov_embed))
 
     def get_draft_kv_cache_layer_names(self) -> list[str]:
@@ -633,7 +652,7 @@ class DSparkDeepseekV41ForCausalLM(torch.nn.Module, DeepseekV41MixtureOfExperts,
         rest = m.group(2)
 
         if stage == self.model.num_dspark_layers - 1 and rest.startswith("confidence_head."):
-            return f"model.{rest}"
+            return None if self.model.confidence_head is None else f"model.{rest}"
 
         if stage == 0 and rest == "embed.weight":
             return "model.embed_tokens.weight"

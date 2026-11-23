@@ -38,6 +38,7 @@ from vllm.v1.worker.utils import AttentionGroup
 
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.attention.utils import apply_prefill_as_decode_mask
+from vllm_ascend.core.kv_cache_interface import is_circular_kv_cache_spec
 from vllm_ascend.distributed.kv_transfer.kv_p2p.sfa_pd_rd2h import get_prebound_copy_sfa_slots
 from vllm_ascend.distributed.kv_transfer.sparse_kv_offload.copy_sfa_topk_slots import CopySfaRequestStates
 from vllm_ascend.distributed.kv_transfer.sparse_kv_offload.request_identity import RequestIdentityRegistry
@@ -449,6 +450,43 @@ class AscendModelState(DefaultModelState):
             **self._get_engram_device_inputs(input_batch),
         )
 
+    @staticmethod
+    def _sync_dummy_context_metadata(
+        input_batch: AscendInputBatch,
+        block_tables: tuple[torch.Tensor, ...],
+        kv_cache_config: KVCacheConfig | None,
+        num_actual_reqs: int,
+    ) -> np.ndarray | None:
+        """Keep CPU lengths and ring pages consistent after set_dummy_context."""
+        seq_lens_np = getattr(input_batch, "seq_lens_np", None)
+        if not getattr(input_batch, "is_dummy", False) or num_actual_reqs <= 0:
+            return seq_lens_np
+
+        upper_bound = getattr(input_batch, "seq_lens_cpu_upper_bound", None)
+        if seq_lens_np is not None and upper_bound is not None:
+            seq_lens_np[:num_actual_reqs] = upper_bound[:num_actual_reqs].numpy()
+
+        computed = getattr(input_batch, "num_computed_tokens_np", None)
+        if (
+            ring_state_update_skipped()
+            or kv_cache_config is None
+            or getattr(kv_cache_config, "num_blocks", 0) <= num_actual_reqs
+            or computed is None
+            or not np.any(computed[:num_actual_reqs] > 0)
+        ):
+            return seq_lens_np
+
+        for gid, group in enumerate(getattr(kv_cache_config, "kv_cache_groups", ())):
+            if gid < len(block_tables) and is_circular_kv_cache_spec(group.kv_cache_spec):
+                ring_table = block_tables[gid]
+                ring_table[:num_actual_reqs, 0] = torch.arange(
+                    1,
+                    num_actual_reqs + 1,
+                    dtype=ring_table.dtype,
+                    device=ring_table.device,
+                )
+        return seq_lens_np
+
     def prepare_dummy_inputs(self, num_reqs: int, num_tokens: int) -> dict[str, Any]:
         model_inputs = super().prepare_dummy_inputs(num_reqs, num_tokens)
         model_inputs.update(self.prepare_engram_dummy_inputs(num_reqs, num_tokens))
@@ -619,6 +657,12 @@ class AscendModelState(DefaultModelState):
             build_metadata = partial(self.device_metadata.run_build, build_attn_metadata)
         self._decoder_replay_common_metadata = {}
         xlite_cfg: XliteGraphConfig | None = getattr(get_ascend_config(), "xlite_graph_config", None)
+        seq_lens_np = self._sync_dummy_context_metadata(
+            input_batch,
+            block_tables,
+            kv_cache_config,
+            num_actual_reqs,
+        )
         self.attn_metadata = build_metadata(
             attn_groups=attn_groups,
             num_reqs=num_reqs,
@@ -638,7 +682,7 @@ class AscendModelState(DefaultModelState):
             dcp_local_seq_lens=input_batch.dcp_local_seq_lens,
             parallel_config=self.vllm_config.parallel_config,
             # extra attributes for ascend npus.
-            seq_lens_np=input_batch.seq_lens_np,
+            seq_lens_np=seq_lens_np,
             positions=input_batch.positions,
             attn_state=input_batch.attn_state,
             pcp_context=pcp_context,

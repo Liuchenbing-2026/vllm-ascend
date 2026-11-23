@@ -1198,6 +1198,7 @@ class NPUModelRunner(GPUModelRunner):
             cu_num_logits=cu_num_logits,
             cu_num_logits_np=cu_num_logits_np,
             has_structured_output_reqs=scheduler_output.has_structured_output_requests,
+            max_query_len=(int(num_scheduled_tokens_upper_bound.max()) if adaptive_verification_active else None),
             # TODO: only populated for R-SWA (not supported yet).
             prompt_lens=prompt_lens,
             # extra attributes for ascend npus.

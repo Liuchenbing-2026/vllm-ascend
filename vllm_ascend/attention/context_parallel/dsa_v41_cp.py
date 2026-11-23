@@ -260,6 +260,11 @@ class AscendDSAV41PCPMetadataBuilder(_ReplicatedCacheMetadataBuilder):
 
     _request_capacity_factor: ClassVar[int] = 2
 
+    @classmethod
+    def get_varlen_cudagraph_max_query_len(cls, vllm_config, kv_cache_spec) -> int | None:
+        del vllm_config, kv_cache_spec
+        return None
+
     def __init__(self, kv_cache_spec, layer_names, vllm_config, device):
         if vllm_config.parallel_config.decode_context_parallel_size != 1:
             raise NotImplementedError("V4.1 PCP currently requires DCP=1 for replicated caches.")

@@ -3,7 +3,7 @@
 # ruff: noqa: E402
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -16,7 +16,7 @@ pytest.importorskip(
 
 import torch
 import torch_npu
-from vllm.config import set_current_vllm_config
+from vllm.config import CUDAGraphMode, set_current_vllm_config
 from vllm.transformers_utils.configs.deepseek_v41 import DeepseekV41Config
 
 # vLLM #61183 moved the KV-cache planning helpers to `kv_cache_planning` on main.
@@ -1835,3 +1835,468 @@ def test_v41_query_bound_is_independent_of_adaptive_policy(method, enabled, num_
 def test_v41_query_bound_without_speculation():
     config = SimpleNamespace(speculative_config=None)
     assert AscendDSAV41MetadataBuilder.get_varlen_cudagraph_max_query_len(config, object()) == 1
+
+
+@pytest.mark.parametrize(
+    "cudagraph_mode,for_capture,context_len,expected_seq_lens,expected_cache_seq_len,expected_ring_pages",
+    [
+        (CUDAGraphMode.NONE, False, 8192, [8193, 8193], 4096, [1, 2]),
+        (CUDAGraphMode.FULL, True, 8192, [8193, 8193], 4096, [1, 2]),
+        (CUDAGraphMode.FULL, True, 0, [1, 1], 1, [3, 4]),
+    ],
+)
+def test_v41_dummy_context_profiling_syncs_seq_lens_and_ring_pages(
+    runtime,
+    monkeypatch,
+    cudagraph_mode,
+    for_capture,
+    context_len,
+    expected_seq_lens,
+    expected_cache_seq_len,
+    expected_ring_pages,
+):
+    from vllm.v1.kv_cache_interface import UniformTypeKVCacheSpecs
+    from vllm.v1.worker.gpu.input_batch import set_dummy_context
+    from vllm.v1.worker.utils import AttentionGroup
+
+    from vllm_ascend.core.kv_cache_interface import is_circular_kv_cache_spec
+    from vllm_ascend.worker.v2 import input_batch as ascend_input_batch
+    from vllm_ascend.worker.v2.input_batch import AscendInputBatch, AscendInputBuffers
+    from vllm_ascend.worker.v2.model_states import default
+
+    monkeypatch.setattr("vllm_ascend.models.deepseek_v41.cache_config.uses_a5_packed_cache", lambda: False)
+    runtime.model_config.max_model_len = 16384
+    runtime.scheduler_config.max_num_batched_tokens = 16
+    runtime.scheduler_config.max_num_seqs = 4
+    kv_config = make_cache_config(
+        16,
+        block_size=runtime.cache_config.block_size,
+        head_size=runtime.model_config.hf_text_config.head_dim,
+        index_size=runtime.model_config.hf_text_config.index_head_dim,
+    )
+
+    builder_by_layer = {}
+    attn_groups = []
+    block_sizes = []
+    for gid, group in enumerate(kv_config.kv_cache_groups):
+        spec = group.kv_cache_spec
+        if isinstance(spec, UniformTypeKVCacheSpecs):
+            spec = spec.kv_cache_specs[group.layer_names[0]]
+        block_sizes.append(spec.block_size)
+        if isinstance(spec, CircularBufferSpec):
+            builder_cls: Any = dsa_v41.AscendDSAV41StateMetadataBuilder
+        elif isinstance(spec, AscendSlidingWindowMLASpec):
+            builder_cls = dsa_v41.AscendDSAV41SWAMetadataBuilder
+        elif spec.scale_dim:
+            builder_cls = dsa_v41.AscendDSAV41IndexerMetadataBuilder
+        else:
+            builder_cls = dsa_v41.AscendDSAV41AttentionMetadataBuilder
+        builder = builder_cls(spec, group.layer_names, runtime, torch.device("cpu"))
+        for name in group.layer_names:
+            builder_by_layer[name] = builder
+        attn_groups.append(
+            [
+                AttentionGroup(
+                    backend=cast(Any, SimpleNamespace(get_builder_cls=lambda cls=builder_cls: cls)),
+                    layer_names=group.layer_names,
+                    kv_cache_spec=spec,
+                    kv_cache_group_id=gid,
+                    metadata_builders=[builder],
+                )
+            ]
+        )
+
+    state = default.AscendModelState.__new__(default.AscendModelState)
+    state.vllm_config = runtime
+    state.model_config = runtime.model_config
+    state.kvpp_runtime = None
+    state.kvpp_is_dummy_run = False
+    state.decoder_replay = None
+    state.device_metadata = None
+    state.pcp_manager = None
+    monkeypatch.setattr(default, "get_ascend_config", lambda: SimpleNamespace(xlite_graph_config=None))
+    monkeypatch.setattr(ascend_input_batch, "update_cos_sin", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        dsa_v41,
+        "get_cos_and_sin_dsa",
+        lambda positions, **_kwargs: (
+            {name: torch.zeros(positions.shape[0], 1, 1, 64) for name in builder_by_layer},
+            {name: torch.zeros(positions.shape[0], 1, 1, 64) for name in builder_by_layer},
+        ),
+    )
+
+    buffers = AscendInputBuffers(4, 16, torch.device("cpu"))
+    num_reqs = 2
+    batch = AscendInputBatch.make_dummy(num_reqs, num_reqs, buffers)
+    ring_gid = next(
+        gid for gid, group in enumerate(kv_config.kv_cache_groups) if is_circular_kv_cache_spec(group.kv_cache_spec)
+    )
+    block_tables = tuple(
+        torch.zeros((4, 1 if is_circular_kv_cache_spec(group.kv_cache_spec) else 256), dtype=torch.int32)
+        for group in kv_config.kv_cache_groups
+    )
+    if context_len > 0:
+        block_tables[ring_gid][:num_reqs, 0] = torch.arange(1, num_reqs + 1, dtype=torch.int32)
+        dummy_provider = SimpleNamespace(block_sizes=block_sizes)
+        # Upstream set_dummy_context updates GPU seq_lens / seq_lens_cpu_upper_bound and overwrites all block_tables.
+        set_dummy_context(
+            batch,
+            dummy_provider,
+            context_len=context_len,
+            num_kv_blocks=16,
+            max_model_len=16384,
+            input_block_tables=block_tables,
+        )
+        assert block_tables[ring_gid][:num_reqs, 0].tolist() == [0, 1]
+    else:
+        # Pure capture must preserve pre-assigned ring pages without touching live ring state.
+        block_tables[ring_gid][:num_reqs, 0] = torch.tensor(expected_ring_pages, dtype=torch.int32)
+    slot_mappings = torch.full((len(kv_config.kv_cache_groups), num_reqs), -1, dtype=torch.int64)
+
+    metadata = state.prepare_attn(
+        batch,
+        cudagraph_mode,
+        block_tables,
+        slot_mappings,
+        attn_groups,
+        kv_config,
+        for_capture=for_capture,
+    )
+
+    c2_indexer_meta = metadata["model.layers.2.self_attn.indexer.k_cache"]
+    assert c2_indexer_meta.seq_lens_cpu[:num_reqs].tolist() == expected_seq_lens
+    assert c2_indexer_meta.max_cache_seq_len == expected_cache_seq_len
+
+    state_meta = metadata["model.layers.2.self_attn.compressor.state_cache"]
+    assert block_tables[ring_gid][:num_reqs, 0].tolist() == expected_ring_pages
+    assert state_meta.block_table[:num_reqs, 0].tolist() == expected_ring_pages
+    assert state_meta.c2_ring_metadata[4][:num_reqs].tolist() == expected_ring_pages
+
+
+@pytest.mark.parametrize("with_ori_topk_length", [False, True])
+def test_v41_a5_smla_metadata_zeroes_padded_ori_tail_rows(runtime, monkeypatch, with_ori_topk_length):
+    captured_calls = []
+
+    class FakeDeviceBackend:
+        def mixed_quant_sparse_flash_mla_metadata(self, ori, cmp, **kwargs):
+            captured_calls.append((ori.clone(), cmp.clone(), kwargs))
+            return torch.zeros(dsa_v41.V41_METADATA_BUFFER_SIZE, dtype=torch.int32)
+
+    monkeypatch.setattr("vllm_ascend.models.deepseek_v41.cache_config.uses_a5_packed_cache", lambda: False)
+    runtime.model_config.hf_text_config.compress_ratios = [0, 2]
+    spec = make_swa_cache_spec(
+        block_size=runtime.cache_config.block_size,
+        window_size=128,
+        head_size=512,
+        dtype=torch.bfloat16,
+        cache_dtype="auto",
+    )
+    builder = dsa_v41.AscendDSAV41SWAMetadataBuilder(
+        spec, ["model.layers.0.self_attn.swa_cache"], runtime, torch.device("cpu")
+    )
+    builder._supports_device_ops = True
+    builder._uses_a5_packed_cache = True
+    builder._device_backend = FakeDeviceBackend()
+    builder._a5_smla_metadata = torch.empty(dsa_v41.V41_METADATA_BUFFER_SIZE, dtype=torch.int32)
+    builder._a5_smla_length_rows = torch.empty((16, 1), dtype=torch.int32)
+    builder._device_metadata_in_graph = True
+
+    common = SimpleNamespace(
+        num_reqs=4,
+        num_actual_reqs=2,
+        num_actual_tokens=3,
+        num_input_tokens=8,
+        max_query_len=6,
+        max_seq_len=5000,
+        query_start_loc=torch.tensor([0, 2, 3, 3, 3], dtype=torch.int32),
+        query_start_loc_cpu=torch.tensor([0, 2, 3, 3, 3], dtype=torch.int32),
+        seq_lens=torch.tensor([20, 30, 0, 0], dtype=torch.int32),
+        seq_lens_cpu=torch.tensor([20, 30, 0, 0], dtype=torch.int32),
+        block_table_tensor=torch.zeros((4, 4), dtype=torch.int32),
+        slot_mapping=torch.full((8,), -1, dtype=torch.int64),
+        # Padded tail positions remain non-zero after prepare_pos_seq_lens.
+        positions=torch.tensor([18, 19, 29, 999, 999, 999, 999, 999], dtype=torch.int64),
+        is_prefilling=torch.zeros(4, dtype=torch.bool),
+    )
+
+    builder.common_v41_metadata = {}
+    builder.common_v41_batch_metadata = {}
+    builder._request_counts_metadata = {
+        "num_decodes": 4,
+        "num_decode_tokens": 3,
+        "num_prefills": 0,
+        "num_prefill_tokens": 0,
+    }
+    builder.common_v41_batch_metadata["batch"] = builder._build_batch_metadata(common, 4, 2, 8)
+    builder.common_v41_smla_metadata = builder.common_v41_batch_metadata
+    req = builder._new_req_metadata(common, 2)
+    if with_ori_topk_length:
+        req.ori_topk_length = torch.tensor([[19], [20], [30], [128], [128], [128], [128], [128]], dtype=torch.int32)
+    else:
+        req.ori_topk_length = None
+    dsa_v41.AscendDSAV41AttentionMetadataBuilder._build_smla_metadata(
+        builder, common, req, max_ori_seq_len=30, smla_plan_ratios=(0, 2)
+    )
+
+    assert len(captured_calls) == 2
+    for ori, cmp, _kwargs in captured_calls:
+        assert ori[:3, 0].tolist() == [19, 20, 30]
+        assert ori[3:, 0].tolist() == [0, 0, 0, 0, 0]
+        assert cmp[3:, 0].tolist() == [0, 0, 0, 0, 0]
+
+
+@pytest.mark.parametrize("kind", ["swa", "long_c1", "long_c2"])
+def test_v41_non_a5_cache_slots_mask_padded_tail_for_swa_and_c1(runtime, monkeypatch, kind):
+    monkeypatch.setattr("vllm_ascend.models.deepseek_v41.cache_config.uses_a5_packed_cache", lambda: False)
+    if kind == "swa":
+        spec = make_swa_cache_spec(
+            block_size=runtime.cache_config.block_size,
+            window_size=128,
+            head_size=512,
+            dtype=torch.bfloat16,
+            cache_dtype="auto",
+        )
+        builder = dsa_v41.AscendDSAV41SWAMetadataBuilder(spec, ["layer.swa_cache"], runtime, torch.device("cpu"))
+    else:
+        ratio = 1 if kind == "long_c1" else 2
+        spec = make_mla_cache_spec(
+            block_size=runtime.cache_config.block_size,
+            head_size=512,
+            compress_ratio=ratio,
+        )
+        builder = dsa_v41.AscendDSAV41AttentionMetadataBuilder(
+            spec, ["layer.long_kv_cache"], runtime, torch.device("cpu")
+        )
+    builder._uses_a5_packed_cache = False
+
+    # Stale non-negative slots exist beyond active tokens [0:4].
+    common = SimpleNamespace(
+        num_reqs=4,
+        num_actual_reqs=2,
+        num_actual_tokens=4,
+        num_input_tokens=8,
+        max_query_len=6,
+        max_seq_len=32,
+        query_start_loc=torch.tensor([0, 3, 4, 4, 4], dtype=torch.int32),
+        query_start_loc_cpu=torch.tensor([0, 3, 4, 4, 4], dtype=torch.int32),
+        seq_lens=torch.tensor([11, 14, 0, 0], dtype=torch.int32),
+        seq_lens_cpu=torch.tensor([11, 14, 0, 0], dtype=torch.int32),
+        block_table_tensor=torch.zeros((4, 4), dtype=torch.int32),
+        slot_mapping=torch.tensor([10, 11, 12, 13, 15, 17, 19, 21], dtype=torch.int64),
+        positions=torch.tensor([8, 9, 10, 13, 1, 3, 5, 7], dtype=torch.int64),
+        is_prefilling=torch.zeros(4, dtype=torch.bool),
+    )
+
+    metadata = builder.build(0, common, num_actual_reqs=2, full_graph_mode=True)
+
+    assert metadata.flat_slot_mapping[4:].tolist() == [-1, -1, -1, -1]
+    assert metadata.slot_mapping[4:].tolist() == [[-1, -1], [-1, -1], [-1, -1], [-1, -1]]
+    if kind == "long_c2":
+        assert metadata.flat_slot_mapping[:4].tolist() == [-1, 5, -1, 6]
+    else:
+        assert metadata.flat_slot_mapping[:4].tolist() == [10, 11, 12, 13]
+
+
+@pytest.mark.parametrize("role", ["SWA", "Attention", "Indexer", "State", "FoldedIndex"])
+def test_v41_pcp_builders_reject_varlen_cudagraph(runtime, role):
+    from vllm_ascend.attention.context_parallel import dsa_v41_cp
+
+    builder_cls = getattr(dsa_v41_cp, f"AscendDSAV41PCP{role}MetadataBuilder")
+    runtime.speculative_config = SimpleNamespace(
+        method="dspark",
+        enable_adaptive_verification=True,
+        num_speculative_tokens=5,
+        max_num_new_slots_for_drafting=0,
+        parallel_drafting=False,
+    )
+    assert builder_cls.get_varlen_cudagraph_max_query_len(runtime, object()) is None
+
+    groups = [
+        [
+            SimpleNamespace(
+                backend=getattr(dsa_v41, f"DeepseekV41{role}Backend"),
+                layer_names=[role],
+                kv_cache_spec=object(),
+                get_metadata_builder=lambda _index, cls=builder_cls: cls,
+            )
+        ]
+    ]
+    with pytest.raises(ValueError, match="per-request query lengths vary"):
+        adaptive_verification.maybe_create_adaptive_verification_manager(
+            enable_adaptive_verification=True,
+            attn_groups=groups,
+            req_states=SimpleNamespace(num_speculative_steps=5),
+            query_start_loc=torch.zeros(5, dtype=torch.int32),
+            num_bonus_tokens=1,
+            max_total_logits=128,
+            vllm_config=runtime,
+        )
+
+
+@pytest.mark.parametrize(
+    "num_spec,extra_slots,expected",
+    [
+        (0, 0, 1),
+        (True, 0, None),
+        (False, 0, None),
+        (-1, 0, None),
+        (5, True, None),
+        (5, False, None),
+        (5, -1, None),
+    ],
+)
+def test_v41_query_bound_rejects_bool_and_negative_spec_fields(runtime, num_spec, extra_slots, expected):
+    from vllm.v1.attention.backend import AttentionCGSupport
+
+    runtime.speculative_config = SimpleNamespace(
+        method="dspark",
+        enable_adaptive_verification=True,
+        num_speculative_tokens=num_spec,
+        max_num_new_slots_for_drafting=extra_slots,
+        parallel_drafting=False,
+    )
+    assert AscendDSAV41MetadataBuilder.get_cudagraph_support(runtime, object()) is AttentionCGSupport.UNIFORM_BATCH
+    assert AscendDSAV41MetadataBuilder.get_varlen_cudagraph_max_query_len(runtime, object()) is expected
+
+    if expected is None:
+        groups = [
+            [
+                SimpleNamespace(
+                    backend=dsa_v41.DeepseekV41AttentionBackend,
+                    layer_names=["target"],
+                    kv_cache_spec=object(),
+                    get_metadata_builder=lambda _index: dsa_v41.AscendDSAV41AttentionMetadataBuilder,
+                )
+            ]
+        ]
+        with pytest.raises(ValueError, match="per-request query lengths vary"):
+            adaptive_verification.maybe_create_adaptive_verification_manager(
+                enable_adaptive_verification=True,
+                attn_groups=groups,
+                req_states=SimpleNamespace(num_speculative_steps=5),
+                query_start_loc=torch.zeros(5, dtype=torch.int32),
+                num_bonus_tokens=1,
+                max_total_logits=128,
+                vllm_config=runtime,
+            )
+
+
+def test_v41_non_a5_metadata_forwards_max_query_len_and_seq_lens(monkeypatch, runtime):
+    monkeypatch.setattr("vllm_ascend.models.deepseek_v41.cache_config.uses_a5_packed_cache", lambda: False)
+    smla_calls = []
+    qli_calls = []
+
+    def _fake_smla(*args, **kwargs):
+        smla_calls.append((args, kwargs))
+        return torch.zeros(dsa_v41.V41_METADATA_BUFFER_SIZE, dtype=torch.int32)
+
+    def _fake_qli(*args, **kwargs):
+        qli_calls.append((args, kwargs))
+        return torch.zeros(dsa_v41.V41_METADATA_BUFFER_SIZE, dtype=torch.int32)
+
+    monkeypatch.setattr(torch.ops._C_ascend, "npu_sparse_flash_mla_metadata", _fake_smla, raising=False)
+    monkeypatch.setattr(torch.ops._C_ascend, "npu_quant_lightning_indexer_v2_metadata", _fake_qli, raising=False)
+
+    attn_spec = make_mla_cache_spec(
+        block_size=runtime.cache_config.block_size,
+        head_size=runtime.model_config.hf_text_config.head_dim,
+        compress_ratio=2,
+    )
+    idx_spec = make_index_cache_spec(
+        block_size=runtime.cache_config.block_size,
+        head_size=runtime.model_config.hf_text_config.index_head_dim,
+        compress_ratio=2,
+    )
+    attn_builder = dsa_v41.AscendDSAV41AttentionMetadataBuilder(
+        attn_spec, ["model.layers.2.self_attn.long_kv_cache"], runtime, torch.device("cpu")
+    )
+    idx_builder = dsa_v41.AscendDSAV41IndexerMetadataBuilder(
+        idx_spec, ["model.layers.2.self_attn.indexer.k_cache"], runtime, torch.device("cpu")
+    )
+    for builder in (attn_builder, idx_builder):
+        builder._uses_a5_packed_cache = False
+        builder._supports_device_ops = True
+
+    common = SimpleNamespace(
+        num_reqs=4,
+        num_actual_reqs=2,
+        num_actual_tokens=6,
+        num_input_tokens=8,
+        # Compacted CPU boundary shows max=3 while device reallocated request 0 to 6 tokens.
+        max_query_len=6,
+        max_seq_len=30,
+        query_start_loc=torch.tensor([0, 3, 6, 6, 6], dtype=torch.int32),
+        query_start_loc_cpu=torch.tensor([0, 3, 6, 6, 6], dtype=torch.int32),
+        seq_lens=torch.tensor([20, 30, 0, 0], dtype=torch.int32),
+        seq_lens_cpu=torch.tensor([20, 30, 0, 0], dtype=torch.int32),
+        block_table_tensor=torch.zeros((4, 4), dtype=torch.int32),
+        slot_mapping=torch.full((8,), -1, dtype=torch.int64),
+        positions=torch.arange(8, dtype=torch.int64),
+        is_prefilling=torch.zeros(4, dtype=torch.bool),
+    )
+
+    attn_meta = attn_builder.build(0, common, num_actual_reqs=2, full_graph_mode=True)
+    idx_meta = idx_builder.build(0, common, num_actual_reqs=2, full_graph_mode=True)
+
+    assert attn_meta.max_query_len == 6
+    assert idx_meta.max_cache_seq_len == 15
+    assert len(smla_calls) == 1
+    assert smla_calls[0][1]["max_seqlen_q"] == 6
+    assert smla_calls[0][1]["max_seqlen_ori_kv"] == 30
+    assert smla_calls[0][1]["max_seqlen_cmp_kv"] == 15
+    assert len(qli_calls) == 1
+    assert qli_calls[0][1]["max_seqlen_q"] == 6
+    assert qli_calls[0][1]["max_seqlen_k"] == 15
+
+
+def test_v41_sync_dummy_context_metadata_guards(monkeypatch):
+    import numpy as np
+
+    from vllm_ascend.worker.v2.attn_utils import skip_ring_state_update
+    from vllm_ascend.worker.v2.model_states.default import AscendModelState
+
+    monkeypatch.setattr("vllm_ascend.models.deepseek_v41.cache_config.uses_a5_packed_cache", lambda: False)
+    kv_config = make_cache_config(16, block_size=64, head_size=8, index_size=4)
+    ring_gid = next(
+        gid
+        for gid, group in enumerate(kv_config.kv_cache_groups)
+        if any("state_cache" in name for name in group.layer_names)
+    )
+    block_tables = tuple(
+        torch.zeros((4, 1 if gid == ring_gid else 4), dtype=torch.int32)
+        for gid in range(len(kv_config.kv_cache_groups))
+    )
+    seq_lens_np = np.array([1, 1, 0, 0], dtype=np.int32)
+    upper_bound = torch.tensor([8193, 8193, 0, 0], dtype=torch.int32)
+
+    live_batch = SimpleNamespace(
+        is_dummy=False,
+        seq_lens_np=seq_lens_np,
+        seq_lens_cpu_upper_bound=upper_bound,
+        num_computed_tokens_np=np.array([8192, 8192, 0, 0], dtype=np.int32),
+    )
+    out = AscendModelState._sync_dummy_context_metadata(live_batch, block_tables, kv_config, 2)
+    assert out is seq_lens_np
+    assert out[:2].tolist() == [1, 1]
+    assert block_tables[ring_gid][:2, 0].tolist() == [0, 0]
+
+    dummy_batch = SimpleNamespace(
+        is_dummy=True,
+        seq_lens_np=seq_lens_np,
+        seq_lens_cpu_upper_bound=upper_bound,
+        num_computed_tokens_np=np.array([8192, 8192, 0, 0], dtype=np.int32),
+    )
+    with skip_ring_state_update(True):
+        out = AscendModelState._sync_dummy_context_metadata(dummy_batch, block_tables, kv_config, 2)
+    assert out is not None
+    assert out[:2].tolist() == [8193, 8193]
+    assert block_tables[ring_gid][:2, 0].tolist() == [0, 0]
+
+    zero_ctx_batch = SimpleNamespace(
+        is_dummy=True,
+        seq_lens_np=np.array([1, 1, 0, 0], dtype=np.int32),
+        seq_lens_cpu_upper_bound=torch.tensor([1, 1, 0, 0], dtype=torch.int32),
+        num_computed_tokens_np=np.array([0, 0, 0, 0], dtype=np.int32),
+    )
+    AscendModelState._sync_dummy_context_metadata(zero_ctx_batch, block_tables, kv_config, 2)
+    assert block_tables[ring_gid][:2, 0].tolist() == [0, 0]

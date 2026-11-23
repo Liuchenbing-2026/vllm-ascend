@@ -3023,3 +3023,61 @@ def test_load_failure_closes_unpublished_host_owners(published_model, cleanup_fa
             runner.shutdown()
         assert first.close_host_offload.call_count == 2
         assert runner._shared_engram_shutdown_pending == []
+
+
+@pytest.mark.parametrize("adaptive_active", [False, True])
+def test_prepare_inputs_sets_max_query_len_for_adaptive_verification(adaptive_active):
+    runner, scheduler_output, batch_req_state, batch_desc = _prepare_inputs_runner(draft=True, full_cg=adaptive_active)
+    runner.speculative_config = SimpleNamespace(num_speculative_tokens=5)
+    runner.req_states.num_computed_tokens_np = np.array([10, 20, 0, 0], dtype=np.int32)
+    runner.req_states.num_computed_tokens_cpu = torch.tensor([10, 20, 0, 0], dtype=torch.int32)
+    scheduler_output.num_scheduled_tokens = {"r0": 6, "r1": 4}
+    scheduler_output.scheduled_spec_decode_tokens = {"r0": [1, 2, 3, 4, 5], "r1": [6, 7, 8]}
+    batch_req_state.num_tokens = 10
+    batch_req_state.num_scheduled_tokens = np.array([6, 4], dtype=np.int32)
+    batch_req_state.has_prefill = False
+    batch_req_state.is_prefilling_np = np.array([False, False], dtype=np.bool_)
+    batch_req_state.prefill_len_np = np.array([5, 5], dtype=np.int32)
+    batch_req_state.num_computed_prefill_tokens_np = np.array([5, 5], dtype=np.int32)
+    batch_desc.num_tokens = 12 if adaptive_active else 10
+
+    if adaptive_active:
+        compacted_lens = np.array([3, 3], dtype=np.int32)
+        compacted_cu_logits = np.array([0, 3, 6], dtype=np.int32)
+        device_qsl = torch.tensor([0, 6, 6, 6, 6], dtype=torch.int32)
+        device_cu_logits = torch.tensor([0, 6, 7], dtype=torch.int32)
+        runner.adaptive_verification = SimpleNamespace(
+            _batch_budget=({"r0": 5, "r1": 3}, {"r0": 1, "r1": 1}, 4),
+            req_states=runner.req_states,
+            _stale_confidences=[SimpleNamespace(np=np.ones((4, 5), dtype=np.float32))],
+            _stale_idx=0,
+            num_speculative_steps=5,
+            _max_total_logits=16,
+            num_bonus_tokens=1,
+            cost_tables=(np.ones(8, dtype=np.float64), np.ones(16, dtype=np.float64)),
+            compact_batch=MagicMock(return_value=(compacted_lens, compacted_cu_logits)),
+            reallocate_drafts=MagicMock(return_value=(device_cu_logits, device_qsl, 4, None)),
+        )
+    else:
+        runner.adaptive_verification = None
+
+    with (
+        patch("vllm_ascend.worker.v2.model_runner.async_copy_to_gpu", side_effect=_fake_async_copy),
+        patch("vllm_ascend.worker.v2.model_runner.build_attn_state", return_value="attn"),
+        patch("vllm_ascend.worker.v2.model_runner.prepare_prefill_inputs"),
+        patch("vllm_ascend.worker.v2.model_runner.prepare_pos_seq_lens"),
+        patch("vllm_ascend.worker.v2.model_runner.prepare_dcp_local_seq_lens", create=True),
+        patch(
+            "vllm_ascend.worker.v2.model_runner.combine_sampled_and_draft_tokens",
+            return_value=torch.arange(6, dtype=torch.int32),
+        ),
+        patch(
+            "vllm_ascend.worker.v2.model_runner.expand_idx_mapping",
+            return_value=(torch.zeros(6, dtype=torch.int32), torch.zeros(6, dtype=torch.int32)),
+        ),
+        patch("vllm_ascend.worker.v2.model_runner.update_cos_sin"),
+    ):
+        prepared = runner.prepare_inputs(scheduler_output, batch_req_state, batch_desc, 0)
+
+    expected_max_query_len = 6 if adaptive_active else None
+    assert prepared.max_query_len == expected_max_query_len

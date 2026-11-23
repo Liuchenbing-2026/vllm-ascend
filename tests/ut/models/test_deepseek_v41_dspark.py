@@ -453,3 +453,110 @@ def test_context_kv_uses_one_stacked_wkv_projection(monkeypatch):
     assert [call[3] for call in projected] == [rope, rope]
     assert stored[0][1] is slot_mappings[0]
     assert stored[1][1] is slot_mappings[2]
+
+
+def _make_dspark_confidence_vllm_config(*, enable_confidence_head):
+    config_kwargs = dict(
+        hc_mult=4,
+        hidden_size=8,
+        head_dim=4,
+        vocab_size=32,
+        draft_vocab_size=32,
+        dspark_block_size=6,
+        dspark_target_layer_ids=[37, 38, 39],
+        dspark_markov_rank=4,
+        num_hidden_layers=40,
+        rms_norm_eps=1e-6,
+    )
+    if enable_confidence_head != "missing":
+        config_kwargs["enable_confidence_head"] = enable_confidence_head
+    config = SimpleNamespace(**config_kwargs)
+    from vllm.config import CompilationMode
+
+    return SimpleNamespace(
+        speculative_config=SimpleNamespace(
+            draft_model_config=SimpleNamespace(
+                hf_text_config=config,
+                hf_config=SimpleNamespace(quantization_config=None),
+            )
+        ),
+        parallel_config=SimpleNamespace(use_sequence_parallel_moe=False),
+        model_config=SimpleNamespace(dtype=torch.float16),
+        compilation_config=SimpleNamespace(mode=CompilationMode.NONE),
+        quant_config=None,
+    )
+
+
+def _patch_dspark_model_deps(monkeypatch):
+    module = deepseek_v41_dspark_module
+
+    def layer(*args, **kwargs):
+        result = torch.nn.Module()
+        result.mlp = SimpleNamespace(gate=SimpleNamespace(tid2eid=None, bias_vl=None))
+        result.self_attn = SimpleNamespace(dsa_attn=SimpleNamespace(dsa_attn=SimpleNamespace(impl=object())))
+        return result
+
+    monkeypatch.setattr(module, "DeepseekV41DSparkDecoderLayer", layer)
+    monkeypatch.setattr(module, "VocabParallelEmbedding", lambda *a, **kw: torch.nn.Identity())
+    monkeypatch.setattr(module, "ColumnParallelLinear", MagicMock(return_value=torch.nn.Identity()))
+    monkeypatch.setattr(module, "MergedColumnParallelLinear", MagicMock(return_value=torch.nn.Identity()))
+    monkeypatch.setattr(module, "RMSNorm", lambda *a, **kw: torch.nn.Identity())
+
+
+@pytest.mark.parametrize(
+    ("enable_confidence_head", "expected_enabled"),
+    [("missing", True), (None, True), (True, True), (False, False)],
+)
+def test_dspark_v41_enable_confidence_head_controls_module_and_weight_remap(
+    monkeypatch, enable_confidence_head, expected_enabled
+):
+    vllm_config = _make_dspark_confidence_vllm_config(enable_confidence_head=enable_confidence_head)
+    module = deepseek_v41_dspark_module
+    _patch_dspark_model_deps(monkeypatch)
+    confidence_sentinel = MagicMock(return_value=torch.zeros(2, 1))
+    with (
+        patch.object(module.DeviceOperator, "get_dsv41_packed_cache_ops", return_value=None),
+        patch.object(module, "DSparkMarkovHead", autospec=True, return_value=torch.nn.Identity()),
+        patch.object(module, "DSparkConfidenceHead", autospec=True, return_value=confidence_sentinel) as confidence,
+        patch(
+            "vllm.model_executor.layers.vocab_parallel_embedding.ParallelLMHead",
+            lambda *a, **kw: torch.nn.Identity(),
+        ),
+        patch("vllm.model_executor.layers.logits_processor.LogitsProcessor", lambda *a, **kw: torch.nn.Identity()),
+        patch("vllm_ascend.ops.fused_moe.moe_comm_method.get_moe_comm_method", lambda *a, **kw: None),
+    ):
+        wrapper = DSparkDeepseekV41ForCausalLM(vllm_config=vllm_config, prefix="")
+
+    assert wrapper.enable_confidence_head is expected_enabled
+    remapped = wrapper._remap_checkpoint_name("mtp.2.confidence_head.weight")
+    head_hidden = torch.zeros(2, 8)
+    markov_embed = torch.zeros(2, 4)
+    if expected_enabled:
+        confidence.assert_called_once()
+        assert wrapper.model.confidence_head is confidence_sentinel
+        assert remapped == "model.confidence_head.weight"
+        prob = wrapper.compute_confidence(head_hidden, markov_embed)
+        assert prob.tolist() == [[0.5], [0.5]]
+        wrapper.enable_confidence_head = False
+        with pytest.raises(RuntimeError, match="confidence head is disabled"):
+            wrapper.compute_confidence(head_hidden, markov_embed)
+    else:
+        confidence.assert_not_called()
+        assert wrapper.model.confidence_head is None
+        assert remapped is None
+        with pytest.raises(RuntimeError, match="confidence head is disabled"):
+            wrapper.compute_confidence(head_hidden, markov_embed)
+
+
+@pytest.mark.parametrize("bad_enable_confidence_head", ["false", 0, 1])
+def test_dspark_v41_enable_confidence_head_rejects_non_bool(monkeypatch, bad_enable_confidence_head):
+    vllm_config = _make_dspark_confidence_vllm_config(enable_confidence_head=bad_enable_confidence_head)
+    module = deepseek_v41_dspark_module
+    _patch_dspark_model_deps(monkeypatch)
+    with (
+        patch.object(module.DeviceOperator, "get_dsv41_packed_cache_ops", return_value=None),
+        patch.object(module, "DSparkMarkovHead", autospec=True, return_value=torch.nn.Identity()),
+        patch.object(module, "DSparkConfidenceHead", autospec=True, return_value=torch.nn.Identity()),
+        pytest.raises(ValueError, match="enable_confidence_head"),
+    ):
+        DeepseekV41DSparkModel(vllm_config=vllm_config, prefix="model")

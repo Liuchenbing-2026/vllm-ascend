@@ -840,6 +840,12 @@ class AscendDSAV41MetadataBuilder(AttentionMetadataBuilder[AscendDSAV41Metadata]
         # Every proposed row is written to the C2 ring before rejection. Keep
         # the first accepted row available when the next step rolls back to it.
         # Wider blocks could overwrite that row even if only the anchor survives.
+        spec_config = getattr(vllm_config, "speculative_config", None)
+        if spec_config is not None:
+            for field in ("num_speculative_tokens", "max_num_new_slots_for_drafting"):
+                val = getattr(spec_config, field, None)
+                if val is not None and (isinstance(val, bool) or not isinstance(val, int) or val < 0):
+                    return None
         return min(max_decode_query_len(vllm_config), STATE_RING_ROWS)
 
     def __init__(
@@ -1191,15 +1197,16 @@ class AscendDSAV41MetadataBuilder(AttentionMetadataBuilder[AscendDSAV41Metadata]
                     if compressed and req.compress_ratio != 1:
                         active_slots = compressed_slot_mapping(active_slots, req.compress_ratio)
                     # The common slot-mapping producer already marks padding as PAD.
-                    valid = active_slots >= 0
+                    # Full decode graphs can still carry stale tail slots beyond live tokens.
+                    valid_end = common.query_start_loc[req.num_actual_reqs].clamp_max(req.num_actual_tokens)
+                    valid = (active_slots >= 0) & (
+                        torch.arange(req.num_input_tokens, device=active_slots.device) < valid_end
+                    )
                     if compressed and req.compress_ratio == 2:
                         if kwargs.get("skip_ring_state_update", False):
                             valid.zero_()
-                        else:
-                            valid_end = common.query_start_loc[req.num_actual_reqs].clamp_max(req.num_actual_tokens)
-                            valid &= torch.arange(req.num_input_tokens, device=active_slots.device) < valid_end
-                            if req.positions is not None:
-                                valid &= req.positions.remainder(2) == 1
+                        elif req.positions is not None:
+                            valid &= req.positions.remainder(2) == 1
                     physical = active_slots.clamp_min(0)
                     self._slot_mapping_2d[: req.num_input_tokens, 0].copy_(
                         torch.where(
@@ -1601,6 +1608,9 @@ class AscendDSAV41AttentionMetadataBuilder(AscendDSAV41MetadataBuilder):
                     positions = req.positions
                     ori = plan_ori[:metadata_tokens]
                     cmp = plan_cmp[:metadata_tokens]
+                    rows = torch.arange(metadata_tokens, device=ori.device)
+                    ends = common.query_start_loc[1 : req.num_reqs + 1]
+                    live_rows = rows < ends[-1]
                     if req.ori_topk_length is not None:
                         lengths = req.ori_topk_length[:metadata_tokens]
                         ori[: lengths.shape[0]].copy_(lengths.reshape(-1, 1))
@@ -1610,6 +1620,7 @@ class AscendDSAV41AttentionMetadataBuilder(AscendDSAV41MetadataBuilder):
                     else:
                         assert positions is not None
                         ori.copy_((positions[:metadata_tokens] + 1).clamp(0, self._window_size).reshape(-1, 1))
+                    ori.masked_fill_(~live_rows.unsqueeze(-1), 0)
                     if plan_ratio:
                         # Graph padding can carry position=0 with an empty KV
                         # sequence. Bound visibility by the request length too.
@@ -1618,11 +1629,9 @@ class AscendDSAV41AttentionMetadataBuilder(AscendDSAV41MetadataBuilder):
                         submission = get_device_metadata_submission()
                         if submission is None or visible_submission is not submission:
                             assert positions is not None
-                            rows = torch.arange(metadata_tokens, device=positions.device)
-                            ends = common.query_start_loc[1 : req.num_reqs + 1]
                             owners = (rows[:, None] >= ends[None, :]).sum(-1).clamp_max(req.num_reqs - 1)
                             visible = torch.minimum(positions[:metadata_tokens] + 1, req.seq_lens[owners]).clamp_min(0)
-                            visible = torch.where(rows < ends[-1], visible, 0)
+                            visible = torch.where(live_rows, visible, 0)
                             visible_submission = submission
                         assert visible is not None
                         cmp.copy_(
