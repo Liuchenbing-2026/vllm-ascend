@@ -41,7 +41,6 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
     DEFAULT_PULL_ZMQ_TIMEOUT_MS,
     PULL_HEARTBEAT_IVL_MS,
     PULL_HEARTBEAT_TIMEOUT_MS,
-    MooncakePeerLostError,
     close_zmq_socket,
     ensure_zmq_recv,
     ensure_zmq_send,
@@ -372,12 +371,9 @@ class MooncakeSchedulerRecvingThread(threading.Thread):
                 )
             if response != ACK_MSG:
                 raise RuntimeError(f"Unexpected Mooncake scheduler completion response: {response!r}")
-        except MooncakePeerLostError:
-            close_zmq_socket(sock)
-            self._discard_remote_sockets(path)
-            raise
         except Exception:
             close_zmq_socket(sock)
+            self._discard_remote_sockets(path)
             raise
         self._return_remote_socket(path, sock)
 

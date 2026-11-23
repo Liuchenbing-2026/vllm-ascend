@@ -15,6 +15,7 @@ from collections import OrderedDict
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Final, TypeVar, cast
 
 import httpx
@@ -44,10 +45,17 @@ PULL_LOST_PEER_EVENTS: Final[int] = int(getattr(zmq, "EVENT_DISCONNECTED", 0)) |
     getattr(zmq, "EVENT_CONNECT_RETRIED", 0)
 )
 # ZMTP heartbeats detect frozen processes or unreachable hosts.
-PULL_HEARTBEAT_IVL_MS: Final[int] = 2000
-PULL_HEARTBEAT_TIMEOUT_MS: Final[int] = 10000
-DEFAULT_PULL_ZMQ_TIMEOUT_MS: Final[int] = 1000
+# Keep a single pull receive timeout strictly above IVL + TIMEOUT so a frozen
+# peer triggers EVENT_DISCONNECTED (MooncakePeerLostError) before recv times
+# out with a generic RuntimeError.
+PULL_HEARTBEAT_IVL_MS: Final[int] = 1000
+PULL_HEARTBEAT_TIMEOUT_MS: Final[int] = 3000
+DEFAULT_PULL_ZMQ_TIMEOUT_MS: Final[int] = 5000
 _ZMQ_MONITOR_EVENT_STRUCT_SIZE: Final[int] = 6
+
+
+class _DefaultOption(Enum):
+    UNSET = "unset"
 
 
 class MooncakePeerLostError(RuntimeError):
@@ -216,11 +224,15 @@ def make_mooncake_client_socket(
     socket_type: Any,
     *,
     linger: int | None = 0,
-    heartbeat_ivl_ms: int | None = PULL_HEARTBEAT_IVL_MS,
-    heartbeat_timeout_ms: int | None = PULL_HEARTBEAT_TIMEOUT_MS,
+    heartbeat_ivl_ms: int | None | _DefaultOption = _DefaultOption.UNSET,
+    heartbeat_timeout_ms: int | None | _DefaultOption = _DefaultOption.UNSET,
     make_socket_fn: Any | None = None,
 ) -> Any:
     """Create a client ZMQ socket with pre-connect LINGER and heartbeat options."""
+    resolved_hb_ivl = PULL_HEARTBEAT_IVL_MS if heartbeat_ivl_ms is _DefaultOption.UNSET else heartbeat_ivl_ms
+    resolved_hb_timeout = (
+        PULL_HEARTBEAT_TIMEOUT_MS if heartbeat_timeout_ms is _DefaultOption.UNSET else heartbeat_timeout_ms
+    )
     factory = make_zmq_socket if make_socket_fn is None else make_socket_fn
     if _make_zmq_socket_supports_heartbeat(factory):
         return factory(
@@ -229,15 +241,15 @@ def make_mooncake_client_socket(
             socket_type=socket_type,
             bind=False,
             linger=linger,
-            heartbeat_ivl_ms=heartbeat_ivl_ms,
-            heartbeat_timeout_ms=heartbeat_timeout_ms,
+            heartbeat_ivl_ms=resolved_hb_ivl,
+            heartbeat_timeout_ms=resolved_hb_timeout,
         )
 
     wrapped_ctx = _PreConnectOptionContext(
         ctx,
         linger=linger,
-        heartbeat_ivl_ms=heartbeat_ivl_ms,
-        heartbeat_timeout_ms=heartbeat_timeout_ms,
+        heartbeat_ivl_ms=resolved_hb_ivl,
+        heartbeat_timeout_ms=resolved_hb_timeout,
     )
     kwargs: dict[str, Any] = {
         "ctx": wrapped_ctx,
@@ -266,8 +278,8 @@ def zmq_ctx(
     addr: str,
     *,
     linger: int = 0,
-    heartbeat_ivl_ms: int | None = PULL_HEARTBEAT_IVL_MS,
-    heartbeat_timeout_ms: int | None = PULL_HEARTBEAT_TIMEOUT_MS,
+    heartbeat_ivl_ms: int | None | _DefaultOption = _DefaultOption.UNSET,
+    heartbeat_timeout_ms: int | None | _DefaultOption = _DefaultOption.UNSET,
 ) -> Iterator[Any]:
     """Create a Mooncake ROUTER, REQ, or DEALER socket and clean up its context."""
     if socket_type not in (zmq.ROUTER, zmq.REQ, zmq.DEALER):  # type: ignore[attr-defined]

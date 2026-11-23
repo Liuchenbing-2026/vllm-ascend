@@ -64,6 +64,7 @@ from vllm_ascend.core.kv_cache_interface import (
     AscendSlidingWindowMLASpec,
 )
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
+    DEFAULT_PULL_ZMQ_TIMEOUT_MS,
     PULL_HEARTBEAT_IVL_MS,
     PULL_HEARTBEAT_TIMEOUT_MS,
     MooncakePeerLostError,
@@ -534,7 +535,7 @@ class KVCacheRecvingThread(threading.Thread):
         ] = defaultdict(  # type: ignore
             deque
         )
-        self.timeout = 1.0  # seconds
+        self.timeout = DEFAULT_PULL_ZMQ_TIMEOUT_MS / 1000.0  # seconds
 
         assert vllm_config is not None
         self.vllm_config: VllmConfig = vllm_config
@@ -781,6 +782,11 @@ class KVCacheRecvingThread(threading.Thread):
                 except Exception as e:
                     transfer_failed = True
                     self._mark_failed_recv_request(request_id, req_meta["local_block_ids"])
+                    self._invalidate_remote_metadata(
+                        req_meta.get("remote_engine_id"),
+                        remote_host=remote_host,
+                        remote_handshake_port=remote_handshake_port,
+                    )
                     logger.exception("Failed to transfer KV cache for request %s: %s", remote_request_id, e)
         finally:
             all_tasks_done = self._mark_request_task_done(request_id, all_task_done)
@@ -1635,6 +1641,13 @@ class KVCacheRecvingThread(threading.Thread):
             if isinstance(sock, zmq.Socket):  # type: ignore
                 self._close_socket(sock)
                 sock = None
+                self._discard_remote_sockets(remote_host, remote_handshake_port)
+            elif sock is None:
+                self._discard_remote_sockets(remote_host, remote_handshake_port)
+            self._invalidate_remote_metadata(
+                remote_host=remote_host,
+                remote_handshake_port=remote_handshake_port,
+            )
             raise
         finally:
             if sock is not None:
@@ -1683,11 +1696,18 @@ class KVCacheRecvingThread(threading.Thread):
                 remote_handshake_port=remote_handshake_port,
             )
             logger.warning("Peer lost while sending done recving signal. error=%s. ", e)
-        except RuntimeError as e:
+        except Exception as e:
             if isinstance(sock, zmq.Socket):  # type: ignore
                 self._close_socket(sock)
                 sock = None
-                logger.warning("Unexpected error occurred in socket. error=%s. ", e)
+                self._discard_remote_sockets(remote_host, remote_handshake_port)
+            elif sock is None:
+                self._discard_remote_sockets(remote_host, remote_handshake_port)
+            self._invalidate_remote_metadata(
+                remote_host=remote_host,
+                remote_handshake_port=remote_handshake_port,
+            )
+            logger.warning("Unexpected error occurred in socket. error=%s. ", e)
         finally:
             if sock is not None:
                 self._return_remote_socket(sock, remote_host, remote_handshake_port)

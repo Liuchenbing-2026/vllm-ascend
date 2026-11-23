@@ -2167,8 +2167,9 @@ def test_wire_transfer_failure_does_not_poison_next_request(wire_transfer_contra
     worker, receiver, engine, _, peer = wire_transfer_contract
     module = sys.modules[MooncakeConnectorWorker.__module__]
     socket = MagicMock(spec=Socket)
-    socket.recv.side_effect = [msgspec.msgpack.encode(peer), done_ack, b"ACK"]
-    socket_pool = receiver.remote_sockets[make_zmq_path("tcp", "127.0.0.1", 6000)]
+    socket.recv.side_effect = [msgspec.msgpack.encode(peer), done_ack, msgspec.msgpack.encode(peer), b"ACK"]
+    socket_path = make_zmq_path("tcp", "127.0.0.1", 6000)
+    socket_pool = receiver.remote_sockets[socket_path]
     socket_pool.clear()
     socket_pool.append(socket)
     used_sockets = [socket]
@@ -2188,9 +2189,10 @@ def test_wire_transfer_failure_does_not_poison_next_request(wire_transfer_contra
         if request_id == "b" and done_ack != b"ACK":
             socket.close.assert_called_once_with()
             assert not socket_pool  # The failed connection must not be reused.
+            assert socket_path not in receiver.remote_sockets
             replacement = MagicMock(spec=Socket)
-            replacement.recv.return_value = b"ACK"
-            socket_pool.append(replacement)
+            replacement.recv.side_effect = [msgspec.msgpack.encode(peer), b"ACK"]
+            receiver.remote_sockets[socket_path].append(replacement)
             used_sockets.append(replacement)
         metadata = MooncakeConnectorMetadata()
         metadata.reqs_in_batch.add(request_id)
@@ -2220,6 +2222,7 @@ def test_wire_transfer_failure_does_not_poison_next_request(wire_transfer_contra
     assert [msgspec.msgpack.decode(call.args[0]) for sock in used_sockets for call in sock.send.call_args_list] == [
         [GET_META_MSG, ""],
         [DONE_RECVING_MSG, "prefill-a", {}],
+        [GET_META_MSG, ""],
         [DONE_RECVING_MSG, "prefill-b", {}],
     ]
     assert failures[0][:2] == ("transfer", "prefill-a")
