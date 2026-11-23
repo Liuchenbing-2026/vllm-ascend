@@ -3,12 +3,20 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 import torch
+import vllm.lora.utils as upstream_lora_utils
+from vllm.config import LoRAConfig
 from vllm.lora.layers import LoRAMapping
 from vllm.lora.layers.base import BaseLayerWithLoRA
 from vllm.lora.layers.fused_moe import FusedMoEWithLoRA
+from vllm.lora.model_manager import LRUCacheLoRAModelManager
 from vllm.lora.punica_wrapper.punica_base import PunicaWrapperBase
+from vllm.model_executor.custom_op import maybe_get_oot_by_class
+from vllm.model_executor.layers.fused_moe import MoERunner
+from vllm.model_executor.layers.linear import ReplicatedLinear
+from vllm.model_executor.models import SupportsLoRA
 
 from vllm_ascend.lora.fused_moe import (
+    AscendFusedMoE3DWithLoRA,
     AscendFusedMoEWithLoRA,
     _assert_ascend_moe_lora_supported,
     _recover_moe_lora_routing_all2all,
@@ -31,6 +39,11 @@ from vllm_ascend.lora.fused_moe import (
     sync_lora_context,
 )
 from vllm_ascend.lora.punica_npu import PunicaWrapperNPU
+from vllm_ascend.lora.utils import (
+    AscendReplicatedLinearWithLoRA,
+    install_dp_moe_lora_load_guard,
+    refresh_all_lora_classes,
+)
 from vllm_ascend.quantization.quant_type import QuantType
 
 
@@ -484,6 +497,245 @@ def test_moe_lora_rejects_dp_gt1_at_init_and_runtime():
         _recover_moe_lora_routing_allgather(dp_gt1_ctx, torch.tensor([0]), torch.tensor([[0]]))
     with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
         _recover_moe_lora_routing_all2all(dp_gt1_ctx, torch.tensor([1]))
+
+
+def test_ascend_moe_lora_can_replace_layer_respects_dp_size() -> None:
+    moe_cls = maybe_get_oot_by_class(MoERunner)
+    layer_dp1 = object.__new__(moe_cls)
+    torch.nn.Module.__init__(layer_dp1)
+    layer_dp1.moe_config = SimpleNamespace(dp_size=1)
+    layer_dp2 = object.__new__(moe_cls)
+    torch.nn.Module.__init__(layer_dp2)
+    layer_dp2.moe_config = SimpleNamespace(dp_size=2)
+
+    lora_config = LoRAConfig(max_loras=1, max_lora_rank=8, lora_dtype=torch.bfloat16)
+    assert AscendFusedMoEWithLoRA.can_replace_layer(layer_dp1, lora_config, ["w1", "w3"], None) is True
+    assert AscendFusedMoE3DWithLoRA.can_replace_layer(layer_dp1, lora_config, ["w1", "w3"], None) is False
+    assert AscendFusedMoEWithLoRA.can_replace_layer(layer_dp1, lora_config, ["w13"], None) is False
+    assert AscendFusedMoE3DWithLoRA.can_replace_layer(layer_dp1, lora_config, ["w13"], None) is True
+    assert AscendFusedMoEWithLoRA.can_replace_layer(layer_dp2, lora_config, ["w1", "w3"], None) is False
+    assert AscendFusedMoE3DWithLoRA.can_replace_layer(layer_dp2, lora_config, ["w13"], None) is False
+
+
+def _make_dp_test_replicated_linear(prefix: str, in_dim: int = 4, out_dim: int = 6) -> torch.nn.Module:
+    replicated_cls = maybe_get_oot_by_class(ReplicatedLinear)
+    layer = object.__new__(replicated_cls)
+    torch.nn.Module.__init__(layer)
+    layer.input_size = in_dim
+    layer.output_size = out_dim
+    layer.output_partition_sizes = [out_dim]
+    layer.input_size_per_partition = in_dim
+    layer.tp_size = 1
+    layer.tp_rank = 0
+    layer.skip_bias_add = False
+    layer.return_bias = False
+    layer.bias = None
+    layer.prefix = prefix
+    layer.quant_method = None
+    layer.weight = torch.nn.Parameter(torch.zeros(out_dim, in_dim, dtype=torch.bfloat16))
+    return layer
+
+
+def _make_dp_test_moe_runner(dp_size: int, shared_experts: torch.nn.Module) -> torch.nn.Module:
+    moe_cls = maybe_get_oot_by_class(MoERunner)
+    runner = object.__new__(moe_cls)
+    torch.nn.Module.__init__(runner)
+    runner.moe_config = SimpleNamespace(
+        dp_size=dp_size,
+        hidden_dim=4,
+        num_local_experts=2,
+        num_experts=2,
+        intermediate_size_per_partition=4,
+        experts_per_token=1,
+        moe_parallel_config=SimpleNamespace(tp_size=1, tp_rank=0, ep_rank=0, use_ep=False),
+        is_act_and_mul=True,
+    )
+    runner.routed_experts = SimpleNamespace(quant_method=SimpleNamespace(is_monolithic=False))
+    runner._shared_experts = shared_experts
+    runner.set_lora_context = MagicMock()
+    return runner
+
+
+class _FakeDP2MoEModel(torch.nn.Module):
+    supports_lora = SupportsLoRA.supports_lora
+    config = None
+    is_3d_moe_weight = False
+    is_non_gated_moe = False
+    embedding_modules: dict[str, str] = {}
+    packed_modules_mapping: dict[str, list[str]] = {}
+    lora_skip_prefixes: list[str] = []
+
+    def __init__(self, *, dp_size: int = 2, multimodal_prefix: bool = False) -> None:
+        super().__init__()
+        self._multimodal_prefix = multimodal_prefix
+        layer0 = torch.nn.Module()
+        layer0.self_attn = torch.nn.Module()
+        prefix = "language_model.model.layers.0" if multimodal_prefix else "model.layers.0"
+        layer0.self_attn.wq_a = _make_dp_test_replicated_linear(f"{prefix}.self_attn.wq_a")
+        layer0.mlp = torch.nn.Module()
+        layer0.mlp.shared_experts = torch.nn.Module()
+        layer0.mlp.shared_experts.down_proj = _make_dp_test_replicated_linear(f"{prefix}.mlp.shared_experts.down_proj")
+        layer0.mlp.experts = _make_dp_test_moe_runner(dp_size, layer0.mlp.shared_experts)
+        inner = torch.nn.Module()
+        inner.layers = torch.nn.ModuleList([layer0])
+        if multimodal_prefix:
+            language_model = torch.nn.Module()
+            language_model.model = inner
+            self.language_model = language_model
+        else:
+            self.model = inner
+
+    def get_mm_mapping(self):
+        return SimpleNamespace(language_model=("language_model.",), tower_model=(), connector=())
+
+    def get_expert_mapping(self) -> list[tuple[str, str, int, str]]:
+        return [
+            ("experts.0.w1", "experts.0.gate_proj.", 0, "w1"),
+            ("experts.0.w2", "experts.0.down_proj.", 0, "w2"),
+            ("experts.0.w3", "experts.0.up_proj.", 0, "w3"),
+        ]
+
+
+def test_default_config_dp_gt1_allows_attention_only_startup_and_rejects_expert_loads() -> None:
+    original_classes = upstream_lora_utils._all_lora_classes
+    try:
+        refresh_all_lora_classes()
+        model = _FakeDP2MoEModel(dp_size=2)
+        moe_runner = model.model.layers[0].mlp.experts
+        lora_config = LoRAConfig(max_loras=1, max_lora_rank=8, lora_dtype=torch.bfloat16, max_cpu_loras=2)
+        vllm_config = SimpleNamespace(
+            lora_config=lora_config,
+            parallel_config=SimpleNamespace(enable_expert_parallel=False),
+            model_config=None,
+        )
+        punica_wrapper = object.__new__(PunicaWrapperNPU)
+        PunicaWrapperBase.__init__(punica_wrapper, 16, 2, "cpu")
+
+        with patch("vllm.lora.model_manager.get_punica_wrapper", return_value=punica_wrapper):
+            manager = LRUCacheLoRAModelManager(
+                model=model,
+                max_num_seqs=2,
+                max_num_batched_tokens=16,
+                vocab_size=32,
+                lora_config=lora_config,
+                device=torch.device("cpu"),
+                vllm_config=vllm_config,
+            )
+
+        assert "model.layers.0.self_attn.wq_a" in manager.modules
+        assert "model.layers.0.mlp.shared_experts.down_proj" in manager.modules
+        assert isinstance(manager.modules["model.layers.0.self_attn.wq_a"], AscendReplicatedLinearWithLoRA)
+        shared_expert_lora = manager.modules["model.layers.0.mlp.shared_experts.down_proj"]
+        assert isinstance(shared_expert_lora, AscendReplicatedLinearWithLoRA)
+        assert "model.layers.0.mlp.experts" not in manager.modules
+        assert model.model.layers[0].mlp.experts is moe_runner
+        moe_runner.set_lora_context.assert_not_called()
+
+        dummy = manager.create_dummy_lora(lora_id=1, rank=4, embedding_modules=model.embedding_modules)
+        assert set(dummy.loras.keys()) == {
+            "model.layers.0.self_attn.wq_a",
+            "model.layers.0.mlp.shared_experts.down_proj",
+        }
+        assert manager.add_adapter(dummy) is True
+        assert manager.activate_adapter(dummy.id) is True
+
+        registered: dict[int, object] = {}
+
+        def _fake_load(lora_request):
+            return lora_request.loaded_model
+
+        def _fake_add_adapter(lora_request):
+            lora_model = worker_manager._load_adapter(lora_request)
+            registered[lora_model.id] = lora_model
+            return True
+
+        worker_manager = SimpleNamespace(_adapter_manager=manager, _load_adapter=_fake_load)
+        install_dp_moe_lora_load_guard(worker_manager)
+
+        attn_shared_adapter = SimpleNamespace(
+            id=1,
+            loras={
+                "model.layers.0.self_attn.wq_a": object(),
+                "model.layers.0.mlp.shared_experts.down_proj": object(),
+            },
+        )
+        assert _fake_add_adapter(SimpleNamespace(loaded_model=attn_shared_adapter)) is True
+        assert set(registered.keys()) == {1}
+
+        for bad_id, bad_loras in (
+            (2, {"model.layers.0.mlp.experts.0.gate_proj": object()}),
+            (3, {"model.layers.0.mlp.experts": object()}),
+            (4, {"model.layers.0.mlp.experts.base_layer": object()}),
+        ):
+            bad_adapter = SimpleNamespace(
+                id=bad_id,
+                loras={
+                    "model.layers.0.self_attn.wq_a": object(),
+                    **bad_loras,
+                },
+            )
+            with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+                _fake_add_adapter(SimpleNamespace(loaded_model=bad_adapter))
+        assert set(registered.keys()) == {1}
+
+        mm_model = _FakeDP2MoEModel(dp_size=2, multimodal_prefix=True)
+        mm_manager = SimpleNamespace(
+            model=mm_model,
+            modules={"language_model.model.layers.0.self_attn.wq_a": object()},
+            _get_text_lora_names=lambda name: ["model.layers.0.mlp.experts"] if name.endswith("experts") else [],
+        )
+        mm_worker = SimpleNamespace(
+            _adapter_manager=mm_manager,
+            _load_adapter=lambda req: SimpleNamespace(id=5, loras={"model.layers.0.mlp.experts.0.gate_proj": object()}),
+        )
+        install_dp_moe_lora_load_guard(mm_worker)
+        with pytest.raises(NotImplementedError, match="data_parallel_size > 1"):
+            mm_worker._load_adapter(SimpleNamespace())
+
+        explicit_expert_config = LoRAConfig(
+            max_loras=1,
+            max_lora_rank=8,
+            lora_dtype=torch.bfloat16,
+            max_cpu_loras=2,
+            target_modules=["experts"],
+        )
+        with (
+            patch("vllm.lora.model_manager.get_punica_wrapper", return_value=punica_wrapper),
+            pytest.raises(ValueError, match="experts"),
+        ):
+            LRUCacheLoRAModelManager(
+                model=_FakeDP2MoEModel(dp_size=2),
+                max_num_seqs=2,
+                max_num_batched_tokens=16,
+                vocab_size=32,
+                lora_config=explicit_expert_config,
+                device=torch.device("cpu"),
+                vllm_config=SimpleNamespace(
+                    lora_config=explicit_expert_config,
+                    parallel_config=SimpleNamespace(enable_expert_parallel=False),
+                    model_config=None,
+                ),
+            )
+    finally:
+        upstream_lora_utils._all_lora_classes = original_classes
+
+
+def test_model_runner_load_lora_model_installs_dp_moe_guard() -> None:
+    from vllm.v1.worker.gpu.model_runner import GPUModelRunner
+
+    from vllm_ascend.worker.v2.model_runner import NPUModelRunner
+
+    runner = object.__new__(NPUModelRunner)
+    runner.lora_manager = SimpleNamespace(marker="worker_lora_manager")
+    sentinel_model = object()
+    with (
+        patch.object(GPUModelRunner, "load_lora_model", return_value=sentinel_model) as super_load,
+        patch("vllm_ascend.lora.utils.install_dp_moe_lora_load_guard") as install_guard,
+    ):
+        result = runner.load_lora_model(sentinel_model, SimpleNamespace(), torch.device("cpu"))
+    assert result is sentinel_model
+    super_load.assert_called_once()
+    install_guard.assert_called_once_with(runner.lora_manager)
 
 
 def test_request_ids_resolve_to_slots_without_treating_base_as_adapter():

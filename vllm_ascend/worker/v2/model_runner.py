@@ -708,6 +708,19 @@ class NPUModelRunner(GPUModelRunner):
             layer = self.compilation_config.static_forward_context[layer_name]
             layer.impl.bind_copy_sfa_kv_cache(manager, layer_name)
 
+    def load_lora_model(
+        self,
+        model: torch.nn.Module,
+        vllm_config: VllmConfig,
+        device: torch.device,
+    ) -> torch.nn.Module:
+        model = super().load_lora_model(model, vllm_config, device)
+        if getattr(self, "lora_manager", None) is not None:
+            from vllm_ascend.lora.utils import install_dp_moe_lora_load_guard
+
+            install_dp_moe_lora_load_guard(self.lora_manager)
+        return model
+
     def add_lora(self, lora_request: LoRARequest) -> bool:
         added = super().add_lora(lora_request)
         if added and getattr(self, "lora_manager", None) is not None:

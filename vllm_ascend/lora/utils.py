@@ -12,8 +12,10 @@ from vllm.lora.layers import (
     RowParallelLinearWithLoRA,
 )
 from vllm.lora.layers.base_linear import BaseLinearLayerWithLoRA
+from vllm.lora.layers.fused_moe import FusedMoE3DWithLoRA, FusedMoEWithLoRA
 from vllm.lora.layers.utils import _not_fully_sharded_can_replace
 from vllm.model_executor.custom_op import maybe_get_oot_by_class
+from vllm.model_executor.layers.fused_moe import MoERunner
 from vllm.model_executor.layers.linear import (
     ColumnParallelLinear,
     MergedColumnParallelLinear,
@@ -25,6 +27,7 @@ from vllm.platforms import current_platform
 from vllm_ascend.lora.fused_moe import (
     AscendFusedMoE3DWithLoRA,
     AscendFusedMoEWithLoRA,
+    assert_moe_lora_dp1_supported,
 )
 from vllm_ascend.ops.linear import AscendQKVParallelLinear
 
@@ -427,6 +430,88 @@ def warn_unmatched_lora_modules(lora_manager, lora_request) -> list[str]:
     return unmatched
 
 
+def _collect_skipped_dp_moe_prefixes(adapter_manager) -> tuple[int, tuple[str, ...]]:
+    model = getattr(adapter_manager, "model", None)
+    if model is None or not callable(getattr(model, "named_modules", None)):
+        return 1, ()
+    wrapped_modules = getattr(adapter_manager, "modules", None) or {}
+    moe_cls = maybe_get_oot_by_class(MoERunner)
+    moe_types = (MoERunner,) if moe_cls is MoERunner else (MoERunner, moe_cls)
+    get_text_names = getattr(adapter_manager, "_get_text_lora_names", None)
+
+    max_dp_size = 1
+    prefixes: set[str] = set()
+    for name, module in model.named_modules():
+        if not name or not isinstance(module, moe_types) or name in wrapped_modules:
+            continue
+        moe_config = getattr(module, "moe_config", None)
+        dp_size = getattr(moe_config, "dp_size", 1) if moe_config is not None else 1
+        if dp_size <= 1:
+            continue
+        max_dp_size = max(max_dp_size, dp_size)
+        prefixes.add(name)
+        prefixes.add(name.removeprefix("model."))
+        if callable(get_text_names):
+            for text_name in get_text_names(name):
+                prefixes.add(text_name)
+                prefixes.add(text_name.removeprefix("model."))
+    return max_dp_size, tuple(sorted(prefixes))
+
+
+def validate_dp_moe_lora_adapter(
+    adapter_manager,
+    lora_model,
+    *,
+    skipped_dp_info: tuple[int, tuple[str, ...]] | None = None,
+) -> None:
+    """Reject adapters targeting MoE expert layers skipped under DP > 1."""
+    dp_size, prefixes = (
+        skipped_dp_info if skipped_dp_info is not None else _collect_skipped_dp_moe_prefixes(adapter_manager)
+    )
+    if dp_size <= 1 or not prefixes:
+        return
+    loras = getattr(lora_model, "loras", None)
+    if not isinstance(loras, dict) or not loras:
+        return
+    dot_prefixes = tuple(f"{prefix}." for prefix in prefixes)
+    prefix_set = set(prefixes)
+    matched = sorted(key for key in loras if key in prefix_set or key.startswith(dot_prefixes))
+    if matched:
+        assert_moe_lora_dp1_supported(dp_size, matched_keys=matched)
+
+
+class _DPMoELoadGuard:
+    """Wrap WorkerLoRAManager._load_adapter to reject DP > 1 expert adapters before cache write."""
+
+    def __init__(self, orig_load_adapter, adapter_manager, skipped_dp_info: tuple[int, tuple[str, ...]]) -> None:
+        self._orig_load_adapter = orig_load_adapter
+        self._adapter_manager = adapter_manager
+        self._skipped_dp_info = skipped_dp_info
+
+    def __call__(self, lora_request):
+        lora_model = self._orig_load_adapter(lora_request)
+        validate_dp_moe_lora_adapter(
+            self._adapter_manager,
+            lora_model,
+            skipped_dp_info=self._skipped_dp_info,
+        )
+        return lora_model
+
+
+def install_dp_moe_lora_load_guard(lora_manager) -> None:
+    """Reject expert-weight LoRA loads before cache insertion when DP > 1 skipped MoERunner."""
+    adapter_manager = getattr(lora_manager, "_adapter_manager", None)
+    if adapter_manager is None:
+        return
+    skipped_dp_info = _collect_skipped_dp_moe_prefixes(adapter_manager)
+    if skipped_dp_info[0] <= 1 or not skipped_dp_info[1]:
+        return
+    orig_load_adapter = getattr(lora_manager, "_load_adapter", None)
+    if not callable(orig_load_adapter) or isinstance(orig_load_adapter, _DPMoELoadGuard):
+        return
+    lora_manager._load_adapter = _DPMoELoadGuard(orig_load_adapter, adapter_manager, skipped_dp_info)
+
+
 def refresh_all_lora_classes():
     ascend_classes = (
         AscendReplicatedLinearWithLoRA,
@@ -437,7 +522,9 @@ def refresh_all_lora_classes():
         AscendFusedMoEWithLoRA,
         AscendFusedMoE3DWithLoRA,
     )
-    existing_classes = tuple(cls for cls in vllm.lora.utils._all_lora_classes if cls not in ascend_classes)
+    # Exclude GPU FusedMoE wrappers so skipping MoE wrapping on DP > 1 never falls back to GPU classes.
+    excluded_classes = (*ascend_classes, FusedMoEWithLoRA, FusedMoE3DWithLoRA)
+    existing_classes = tuple(cls for cls in vllm.lora.utils._all_lora_classes if cls not in excluded_classes)
     vllm.lora.utils._all_lora_classes = (
         *ascend_classes,
         *existing_classes,

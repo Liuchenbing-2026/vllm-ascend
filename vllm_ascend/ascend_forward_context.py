@@ -462,11 +462,16 @@ def select_moe_comm_method(
     lora_config = getattr(vllm_config, "lora_config", None)
     if not vllm_config.parallel_config.enable_expert_parallel or get_ep_group().world_size == 1:
         moe_comm_type = MoECommType.ALLGATHER
-    elif lora_config is not None and vllm_config.parallel_config.enable_expert_parallel:
-        # LoRA + EP cannot use MC2/FUSED_MC2: both are single fused C++ ops and
-        # LoRA has to patch the MoE GEMM from Python. ALLTOALL is data
-        # dependent (its split sizes come from a device-to-host copy), so ACL
-        # graph capture rejects it (EE1016) and it is only usable when graphs
+    elif (
+        lora_config is not None
+        and vllm_config.parallel_config.enable_expert_parallel
+        and getattr(vllm_config.parallel_config, "data_parallel_size", 1) == 1
+    ):
+        # LoRA + EP under DP=1 cannot use MC2/FUSED_MC2: both are single fused C++ ops
+        # and routed-expert LoRA has to patch the MoE GEMM from Python. DP > 1 skips
+        # MoE expert LoRA wrapping (attention/shared-expert LoRA only), so MoE comm stays
+        # on the hardware policy. ALLTOALL is data dependent (split sizes come from D2H),
+        # so ACL graph capture rejects it (EE1016) and it is only usable when graphs
         # are off. ALLGATHER builds every routing tensor on device and stays
         # capturable, so prefer it whenever ACL graph is enabled. This covers
         # both the normal model forward and _dummy_run during profile_run.

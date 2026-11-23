@@ -21,6 +21,7 @@ import torch
 import vllm.lora.utils as lora_utils
 from vllm.config import LoRAConfig
 from vllm.lora.layers.base_linear import BaseLinearLayerWithLoRA
+from vllm.lora.layers.fused_moe import FusedMoE3DWithLoRA, FusedMoEWithLoRA
 from vllm.model_executor.custom_op import maybe_get_oot_by_class
 from vllm.model_executor.layers.linear import (
     ColumnParallelLinear,
@@ -46,7 +47,7 @@ def test_refresh_all_lora_classes_prepends_ascend_wrappers() -> None:
     sentinel = object()
     original = lora_utils._all_lora_classes
     try:
-        lora_utils._all_lora_classes = (sentinel,)
+        lora_utils._all_lora_classes = (FusedMoEWithLoRA, sentinel, FusedMoE3DWithLoRA)
         refresh_all_lora_classes()
         classes = list(lora_utils._all_lora_classes)
         expected_prefix = [
@@ -59,7 +60,9 @@ def test_refresh_all_lora_classes_prepends_ascend_wrappers() -> None:
             AscendFusedMoE3DWithLoRA,
         ]
         assert classes[: len(expected_prefix)] == expected_prefix
-        assert classes[-1] is sentinel
+        assert classes[len(expected_prefix) :] == [sentinel]
+        assert FusedMoEWithLoRA not in classes
+        assert FusedMoE3DWithLoRA not in classes
         # Upstream model_manager still matches the GPU class names.
         assert AscendFusedMoEWithLoRA.__name__ == "FusedMoEWithLoRA"
         assert AscendFusedMoE3DWithLoRA.__name__ == "FusedMoE3DWithLoRA"

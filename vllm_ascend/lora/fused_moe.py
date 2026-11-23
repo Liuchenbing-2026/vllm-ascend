@@ -29,6 +29,8 @@ the MoE wrapper is mapped.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
 from torch import nn
 from vllm import envs
@@ -41,6 +43,10 @@ from vllm.lora.layers.utils import _get_lora_device
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.ascend_forward_context import _EXTRA_CTX
 from vllm_ascend.ops.fused_moe.moe_utils import async_all_to_all
+
+if TYPE_CHECKING:
+    from transformers import PretrainedConfig
+    from vllm.config import LoRAConfig
 
 _MOE_LORA_INDEX_FIELDS = (
     "split_lora_indices",
@@ -64,15 +70,36 @@ def has_lora(lora_context) -> bool:
     return lora_context is not None and not lora_context.punica_wrapper.no_lora
 
 
-def assert_moe_lora_dp1_supported(dp_size: int) -> None:
+def assert_moe_lora_dp1_supported(
+    dp_size: int,
+    *,
+    matched_keys: list[str] | None = None,
+) -> None:
     if dp_size > 1:
+        matched_hint = f" Matched expert adapter key(s): {matched_keys[:3]}." if matched_keys else ""
         raise NotImplementedError(
             "Ascend MoE LoRA does not support data_parallel_size > 1. "
             "vLLM loads and evicts LoRA adapters independently per DP rank from local "
             "requests, so cross-DP expert routing cannot guarantee that a remote rank's "
             "adapter is resident on the receiving expert rank. "
             "Set data_parallel_size=1 (tensor parallelism and expert parallelism remain supported)."
+            f"{matched_hint}"
         )
+
+
+def _can_wrap_ascend_moe_lora_layer(source_layer: nn.Module) -> bool:
+    """Skip routed-expert LoRA wrapping under DP > 1 so attention-only adapters can start."""
+    moe_config = getattr(source_layer, "moe_config", None)
+    dp_size = getattr(moe_config, "dp_size", 1) if moe_config is not None else 1
+    if dp_size > 1:
+        logger.warning_once(
+            "Ascend MoE LoRA does not support data_parallel_size > 1 (dp_size=%d); "
+            "skipping routed-expert LoRA wrapping so attention and shared-expert adapters "
+            "can run. Loading adapters with routed-expert weights will be rejected.",
+            dp_size,
+        )
+        return False
+    return True
 
 
 def _assert_replicated_moe_lora_batch(lora_context) -> None:
@@ -623,6 +650,23 @@ class AscendFusedMoEWithLoRA(FusedMoEWithLoRA):
         BaseLayerWithLoRA.set_mapping(self, punica_wrapper)
         self.base_layer.set_lora_context(self._build_lora_context())
 
+    @classmethod
+    def can_replace_layer(
+        cls,
+        source_layer: nn.Module,
+        lora_config: LoRAConfig,
+        packed_modules_list: list,
+        model_config: PretrainedConfig | None = None,
+    ) -> bool:
+        if not FusedMoEWithLoRA.can_replace_layer(
+            source_layer=source_layer,
+            lora_config=lora_config,
+            packed_modules_list=packed_modules_list,
+            model_config=model_config,
+        ):
+            return False
+        return _can_wrap_ascend_moe_lora_layer(source_layer)
+
 
 class AscendFusedMoE3DWithLoRA(AscendFusedMoEWithLoRA, FusedMoE3DWithLoRA):
     """For checkpoints that already fuse w1+w3 into a 3D weight (single slice)."""
@@ -631,6 +675,23 @@ class AscendFusedMoE3DWithLoRA(AscendFusedMoEWithLoRA, FusedMoE3DWithLoRA):
         AscendFusedMoEWithLoRA.__init__(self, base_layer)
         # Override: 3D MoE LoRA uses a single w13 slice.
         self._w13_slices = 1
+
+    @classmethod
+    def can_replace_layer(
+        cls,
+        source_layer: nn.Module,
+        lora_config: LoRAConfig,
+        packed_modules_list: list,
+        model_config: PretrainedConfig | None = None,
+    ) -> bool:
+        if not FusedMoE3DWithLoRA.can_replace_layer(
+            source_layer=source_layer,
+            lora_config=lora_config,
+            packed_modules_list=packed_modules_list,
+            model_config=model_config,
+        ):
+            return False
+        return _can_wrap_ascend_moe_lora_layer(source_layer)
 
 
 # ----------------------------------------------------------------------
