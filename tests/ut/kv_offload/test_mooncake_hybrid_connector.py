@@ -18,7 +18,9 @@ fake_engine.TransferEngine = MagicMock()  # type: ignore[attr-defined]
 sys.modules["mooncake.engine"] = fake_engine
 
 from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorTransferResults  # noqa: E402
-from vllm.v1.kv_cache_interface import MambaSpec  # noqa: E402
+from vllm.v1.core.kv_cache_manager import KVCacheBlocks  # noqa: E402
+from vllm.v1.core.kv_cache_utils import KVCacheBlock  # noqa: E402
+from vllm.v1.kv_cache_interface import FullAttentionSpec, MambaSpec, UniformTypeKVCacheSpecs  # noqa: E402
 from vllm.v1.request import RequestStatus  # noqa: E402
 
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector import (  # noqa: E402
@@ -34,6 +36,7 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector import
     SizedDict,
     _reconstruct_shared_pages,
     _validate_remote_kv_layout,
+    group_concurrent_contiguous,
 )
 
 
@@ -2162,3 +2165,599 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
             thread._handle_request(req_meta)
         self.assertFalse(thread.failed_recv_requests)
         self.assertFalse(thread.invalid_block_ids)
+
+    def _make_block(self, block_id: int, *, hashed: bool = False, is_null: bool = False) -> KVCacheBlock:
+        blk = KVCacheBlock(block_id=block_id, is_null=is_null)
+        if hashed:
+            blk.set_block_hash(object())  # type: ignore[arg-type]
+        return blk
+
+    def _make_mtp_worker_specs(
+        self,
+        *,
+        block_size: int = 128,
+        mamba_cache_mode: str = "align",
+        num_spec_blocks: int = 3,
+    ) -> tuple[list[Any], list[Any]]:
+        attn_spec = FullAttentionSpec(block_size=block_size, num_kv_heads=1, head_size=64, dtype=torch.bfloat16)
+        specs: list[Any] = [attn_spec]
+        groups: list[Any] = [types.SimpleNamespace(kv_cache_spec=attn_spec, layer_names=["target.layer.0"])]
+        for idx in range(3):
+            layer_name = f"mamba.layer.{idx}"
+            mamba_spec = MambaSpec(
+                block_size=block_size,
+                shapes=((4, 64), (8, 64, 64)),
+                dtypes=(torch.bfloat16, torch.float32),
+                mamba_cache_mode=mamba_cache_mode,
+                num_speculative_blocks=num_spec_blocks,
+            )
+            wrapped = UniformTypeKVCacheSpecs(block_size=block_size, kv_cache_specs={layer_name: mamba_spec})
+            specs.append(wrapped)
+            groups.append(types.SimpleNamespace(kv_cache_spec=wrapped, layer_names=[layer_name]))
+        return specs, groups
+
+    def _make_hybrid_mtp_scheduler(
+        self,
+        *,
+        block_size: int = 128,
+        mamba_cache_mode: str = "align",
+        num_spec_blocks: int = 3,
+    ) -> MooncakeConnectorScheduler:
+        scheduler = object.__new__(MooncakeConnectorScheduler)
+        scheduler.use_hybrid = True
+        scheduler.use_compress = False
+        scheduler.need_truncate = True
+        scheduler.block_size = block_size
+        scheduler.group_block_size = [block_size] * 4
+        scheduler.num_swa_blocks = [0, 0, 0, 0]
+        scheduler.engine_id = "decode-engine"
+        scheduler.side_channel_host = "127.0.0.1"
+        scheduler.side_channel_port = 32000
+        scheduler.tp_size = 1
+        scheduler.pcp_size = 1
+        scheduler.multi_nodes_meta_mapping = {}
+        scheduler._reqs_need_recv = {}
+        scheduler._reqs_need_send = {}
+        scheduler._reqs_in_batch = set()
+        worker_specs, kv_groups = self._make_mtp_worker_specs(
+            block_size=block_size,
+            mamba_cache_mode=mamba_cache_mode,
+            num_spec_blocks=num_spec_blocks,
+        )
+        scheduler.kv_cache_specs = [
+            [worker_specs[0]],
+            *[list(spec.kv_cache_specs.values()) for spec in worker_specs[1:]],
+        ]
+        scheduler.kv_cache_config = types.SimpleNamespace(kv_cache_groups=kv_groups)
+        scheduler.vllm_config = types.SimpleNamespace(
+            cache_config=types.SimpleNamespace(block_size=block_size, mamba_cache_mode=mamba_cache_mode),
+            speculative_config=(
+                types.SimpleNamespace(method="mtp", num_speculative_tokens=num_spec_blocks)
+                if num_spec_blocks > 0
+                else None
+            ),
+        )
+        return scheduler
+
+    def _assert_all_remote_maps_evicted(
+        self,
+        thread: KVCacheRecvingThread,
+        engine_id: str,
+        handshake_port: int,
+    ) -> None:
+        for cache_map in (
+            thread.kv_caches_base_addr,
+            thread.remote_te_port,
+            thread.remote_block_lens,
+            thread.remote_entry_layer_names,
+            thread.remote_spec_method,
+        ):
+            self.assertNotIn(handshake_port, cache_map.get(engine_id, {}))
+
+    def test_group_concurrent_contiguous_rejects_mismatched_lengths(self):
+        cases = [
+            ([13], [1, 2, 3, 4], "len(src)=1", "len(dst)=4"),
+            ([], [1], "len(src)=0", "len(dst)=1"),
+            ([1, 2, 3, 4], [1], "len(src)=4", "len(dst)=1"),
+        ]
+        for src, dst, src_msg, dst_msg in cases:
+            with self.subTest(src=src, dst=dst):
+                with self.assertRaises(ValueError) as ctx:
+                    group_concurrent_contiguous(src, dst)
+                self.assertIn(src_msg, str(ctx.exception))
+                self.assertIn(dst_msg, str(ctx.exception))
+
+        self.assertEqual(
+            group_concurrent_contiguous([10, 11, 15], [20, 21, 25]),
+            ([[10, 11], [15]], [[20, 21], [25]]),
+        )
+
+    def test_scheduler_trims_mamba_mtp_speculative_and_align_null_blocks(self):
+        # Short aligned prompt (48 tokens, P truncated to 47): 1 block per group on P and D.
+        scheduler = self._make_hybrid_mtp_scheduler(mamba_cache_mode="align", num_spec_blocks=3)
+        p_short = scheduler._compute_transfer_block_ids(
+            ([13], [12, 50, 51, 52], [8, 60, 61, 62], [4, 70, 71, 72]),
+            prompt_len=47,
+        )
+        self.assertEqual(p_short, ([13], [12], [8], [4]))
+
+        d_req_short = MockRequest(
+            "req-short",
+            prompt_token_ids=list(range(48)),
+            kv_transfer_params={
+                "do_remote_prefill": True,
+                "remote_block_ids": p_short,
+                "remote_engine_id": "prefill-engine",
+                "remote_host": "192.0.2.1",
+                "remote_port": 31000,
+                "remote_request_id": "p-req-short",
+            },
+            status=RequestStatus.RUNNING,
+        )
+        d_blocks_short = KVCacheBlocks(
+            (
+                [self._make_block(1)],
+                [self._make_block(2), self._make_block(20), self._make_block(21), self._make_block(22)],
+                [self._make_block(3), self._make_block(30), self._make_block(31), self._make_block(32)],
+                [self._make_block(4), self._make_block(40), self._make_block(41), self._make_block(42)],
+            )
+        )
+        scheduler.update_state_after_alloc(d_req_short, d_blocks_short, num_external_tokens=47)
+        self.assertEqual(scheduler._reqs_need_recv["req-short"][1], ([1], [2], [3], [4]))
+
+        # Long aligned prompt (300 tokens, block_size=128): drop leading null blocks and trailing spec blocks.
+        p_long = scheduler._compute_transfer_block_ids(
+            ([10, 11, 12], [0, 0, 22, 50, 51, 52], [0, 0, 23, 60, 61, 62], [0, 0, 24, 70, 71, 72]),
+            prompt_len=299,
+        )
+        self.assertEqual(p_long, ([10, 11, 12], [22], [23], [24]))
+
+        d_req_long = MockRequest(
+            "req-long",
+            prompt_token_ids=list(range(300)),
+            kv_transfer_params={
+                "do_remote_prefill": True,
+                "remote_block_ids": p_long,
+                "remote_engine_id": "prefill-engine",
+                "remote_host": "192.0.2.1",
+                "remote_port": 31000,
+                "remote_request_id": "p-req-long",
+            },
+            status=RequestStatus.RUNNING,
+        )
+        # Include a local prefix hit on attention block 0; unhashed tail and Mamba state must align.
+        d_blocks_long = KVCacheBlocks(
+            (
+                [self._make_block(100, hashed=True), self._make_block(101), self._make_block(102)],
+                [
+                    self._make_block(0, is_null=True),
+                    self._make_block(0, is_null=True),
+                    self._make_block(12),
+                    self._make_block(20),
+                    self._make_block(21),
+                    self._make_block(22),
+                ],
+                [
+                    self._make_block(0, is_null=True),
+                    self._make_block(0, is_null=True),
+                    self._make_block(13),
+                    self._make_block(30),
+                    self._make_block(31),
+                    self._make_block(32),
+                ],
+                [
+                    self._make_block(0, is_null=True),
+                    self._make_block(0, is_null=True),
+                    self._make_block(14),
+                    self._make_block(40),
+                    self._make_block(41),
+                    self._make_block(42),
+                ],
+            )
+        )
+        scheduler.update_state_after_alloc(d_req_long, d_blocks_long, num_external_tokens=171)
+        self.assertEqual(scheduler._reqs_need_recv["req-long"][1], ([101, 102], [12], [13], [14]))
+
+        # Non-aligned Mamba mode ("none") keeps all 3 prompt blocks while dropping trailing 3 spec blocks.
+        none_scheduler = self._make_hybrid_mtp_scheduler(mamba_cache_mode="none", num_spec_blocks=3)
+        p_none = none_scheduler._compute_transfer_block_ids(
+            ([10, 11, 12], [30, 31, 32, 50, 51, 52], [40, 41, 42, 60, 61, 62], [50, 51, 52, 70, 71, 72]),
+            prompt_len=299,
+        )
+        self.assertEqual(p_none, ([10, 11, 12], [30, 31, 32], [40, 41, 42], [50, 51, 52]))
+        d_req_none = MockRequest(
+            "req-none",
+            prompt_token_ids=list(range(300)),
+            kv_transfer_params={
+                "do_remote_prefill": True,
+                "remote_block_ids": p_none,
+                "remote_engine_id": "prefill-engine",
+                "remote_host": "192.0.2.1",
+                "remote_port": 31000,
+                "remote_request_id": "p-req-none",
+            },
+            status=RequestStatus.RUNNING,
+        )
+        d_blocks_none = KVCacheBlocks(
+            (
+                [self._make_block(100), self._make_block(101), self._make_block(102)],
+                [self._make_block(b) for b in (200, 201, 202, 290, 291, 292)],
+                [self._make_block(b) for b in (300, 301, 302, 390, 391, 392)],
+                [self._make_block(b) for b in (400, 401, 402, 490, 491, 492)],
+            )
+        )
+        none_scheduler.update_state_after_alloc(d_req_none, d_blocks_none, num_external_tokens=299)
+        self.assertEqual(
+            none_scheduler._reqs_need_recv["req-none"][1],
+            ([100, 101, 102], [200, 201, 202], [300, 301, 302], [400, 401, 402]),
+        )
+
+        # Fallback path when lightweight mock lacks `.blocks`.
+        fallback_blocks = MagicMock(spec=["get_unhashed_block_ids_all_groups"])
+        fallback_blocks.get_unhashed_block_ids_all_groups.return_value = ([9], [8], [7], [6])
+        d_req_fallback = MockRequest(
+            "req-fallback",
+            prompt_token_ids=list(range(48)),
+            kv_transfer_params={
+                "do_remote_prefill": True,
+                "remote_block_ids": ([13], [12], [8], [4]),
+                "remote_engine_id": "prefill-engine",
+                "remote_host": "192.0.2.1",
+                "remote_port": 31000,
+                "remote_request_id": "p-req-fb",
+            },
+            status=RequestStatus.RUNNING,
+        )
+        scheduler.update_state_after_alloc(d_req_fallback, fallback_blocks, num_external_tokens=47)
+        fallback_blocks.get_unhashed_block_ids_all_groups.assert_called_once()
+        self.assertEqual(scheduler._reqs_need_recv["req-fallback"][1], ([9], [8], [7], [6]))
+
+    def test_worker_trims_trailing_mamba_speculative_blocks_on_symmetric_mtp(self):
+        specs, kv_groups = self._make_mtp_worker_specs(mamba_cache_mode="align", num_spec_blocks=3)
+        layer_names = [["target.layer.0"], ["mamba.layer.0"], ["mamba.layer.1"], ["mamba.layer.2"]]
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000, 0x3000, 0x4000],
+            local_block_lens=[64, 32, 32, 32],
+            local_entry_layer_names=layer_names,
+            local_spec_method="mtp",
+            hma_group_size=4,
+            addr_group_idx=[[0], [1], [2], [3]],
+            kv_cache_groups=kv_groups,
+        )
+        thread.kv_cache_specs = specs
+        thread.vllm_config = types.SimpleNamespace(
+            cache_config=types.SimpleNamespace(mamba_cache_mode="align"),
+            speculative_config=types.SimpleNamespace(method="mtp", num_speculative_tokens=3),
+        )
+        remote_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x10000, 0x20000, 0x30000, 0x40000],
+            num_blocks=32,
+            block_lens=[64, 32, 32, 32],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=layer_names,
+            spec_method="mtp",
+        )
+        self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(remote_meta))
+
+        thread.task_tracker.add_req_to_process("req-mtp-ok")
+        thread.add_request(
+            request_id="req-mtp-ok",
+            remote_request_id="remote-req-mtp-ok",
+            local_block_ids=([1], [2, 20, 21, 22], [3, 30, 31, 32], [4, 40, 41, 42]),
+            remote_block_ids=([13], [12], [8], [4]),
+            remote_engine_id="prefill-engine",
+            remote_host="192.0.2.1",
+            remote_handshake_port=31000,
+            offset=0,
+            tp_num_need_pulls=1,
+            all_task_done=True,
+        )
+        req_meta = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(req_meta)
+        with (
+            patch.object(thread, "_send_done_recv_signal"),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                return_value="127.0.0.1",
+            ),
+        ):
+            thread._handle_request(req_meta)
+
+        thread.engine.batch_transfer_sync_read.assert_called_once_with(
+            "192.0.2.1:7777",
+            [0x1000 + 1 * 64, 0x2000 + 2 * 32, 0x3000 + 3 * 32, 0x4000 + 4 * 32],
+            [0x10000 + 13 * 64, 0x20000 + 12 * 32, 0x30000 + 8 * 32, 0x40000 + 4 * 32],
+            [64, 32, 32, 32],
+        )
+        connector, _ = self._wrap_consumer_connector(thread)
+        self.assertEqual(
+            connector.get_transfer_results(set()),
+            KVConnectorTransferResults(finished_recving={"req-mtp-ok"}, failed_recving=set()),
+        )
+        self.assertEqual(connector.get_block_ids_with_load_errors(), set())
+
+    def _run_mismatch_case(
+        self,
+        *,
+        specs: list[Any],
+        kv_groups: list[Any],
+        num_spec_tokens: int,
+        local_block_ids: tuple[list[int], ...],
+        remote_block_ids: tuple[list[int], ...],
+        expected_err_substrings: tuple[str, ...],
+    ) -> None:
+        layer_names = [["target.layer.0"], ["mamba.layer.0"], ["mamba.layer.1"], ["mamba.layer.2"]]
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000, 0x3000, 0x4000],
+            local_block_lens=[64, 32, 32, 32],
+            local_entry_layer_names=layer_names,
+            local_spec_method="mtp" if num_spec_tokens > 0 else "",
+            hma_group_size=4,
+            addr_group_idx=[[0], [1], [2], [3]],
+            kv_cache_groups=kv_groups,
+        )
+        thread.kv_cache_specs = specs
+        thread.vllm_config = types.SimpleNamespace(
+            cache_config=types.SimpleNamespace(mamba_cache_mode="align"),
+            speculative_config=(
+                types.SimpleNamespace(method="mtp", num_speculative_tokens=num_spec_tokens)
+                if num_spec_tokens > 0
+                else None
+            ),
+        )
+        remote_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x10000, 0x20000, 0x30000, 0x40000],
+            num_blocks=32,
+            block_lens=[64, 32, 32, 32],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=layer_names,
+            spec_method="mtp" if num_spec_tokens > 0 else "",
+        )
+        self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(remote_meta))
+
+        req_meta = self._make_req_meta(
+            request_id="req-bad-cnt",
+            local_block_ids=local_block_ids,
+            remote_block_ids=remote_block_ids,
+        )
+        with self.assertRaises(ValueError) as ctx:
+            thread._transfer_kv_cache_all_groups(req_meta)
+        for substr in expected_err_substrings:
+            self.assertIn(substr, str(ctx.exception))
+
+        thread.task_tracker.add_req_to_process("req-bad-cnt")
+        thread.request_queue.put(req_meta)
+        queued_meta = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(queued_meta)
+        with (
+            patch.object(thread, "_send_done_recv_signal"),
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.logger.exception"),
+        ):
+            thread._handle_request(queued_meta)
+
+        thread.engine.batch_transfer_sync_read.assert_not_called()
+        self._assert_all_remote_maps_evicted(thread, "prefill-engine", 31000)
+        connector, _ = self._wrap_consumer_connector(thread)
+        self.assertEqual(
+            connector.get_transfer_results(set()),
+            KVConnectorTransferResults(finished_recving={"req-bad-cnt"}, failed_recving={"req-bad-cnt"}),
+        )
+        self.assertEqual(connector.get_block_ids_with_load_errors(), set())
+
+    def test_worker_rejects_unexplained_block_count_mismatch_and_marks_failed(self):
+        specs_k0, groups_k0 = self._make_mtp_worker_specs(num_spec_blocks=0)
+        self._run_mismatch_case(
+            specs=specs_k0,
+            kv_groups=groups_k0,
+            num_spec_tokens=0,
+            local_block_ids=([1], [2, 20, 21, 22], [3], [4]),
+            remote_block_ids=([13], [12], [8], [4]),
+            expected_err_substrings=("group=1", "mamba.layer.0", "remote_blocks=1", "local_blocks=4"),
+        )
+
+        specs_k3, groups_k3 = self._make_mtp_worker_specs(num_spec_blocks=3)
+        self._run_mismatch_case(
+            specs=specs_k3,
+            kv_groups=groups_k3,
+            num_spec_tokens=3,
+            local_block_ids=([1, 2, 3, 4], [2], [3], [4]),
+            remote_block_ids=([13], [12], [8], [4]),
+            expected_err_substrings=(
+                "group=0",
+                "FullAttentionSpec",
+                "target.layer.0",
+                "remote_blocks=1",
+                "local_blocks=4",
+            ),
+        )
+        self._run_mismatch_case(
+            specs=specs_k3,
+            kv_groups=groups_k3,
+            num_spec_tokens=3,
+            local_block_ids=([1], [2, 20, 21, 22, 23], [3], [4]),
+            remote_block_ids=([13], [12], [8], [4]),
+            expected_err_substrings=("group=1", "mamba.layer.0", "remote_blocks=1", "local_blocks=5"),
+        )
+
+        # Non-hybrid single-group path raises ValueError and populates invalid_block_ids instead of assertion error.
+        single_thread = self._make_recv_thread(
+            local_addrs=[0x1000],
+            local_block_lens=[64],
+            local_entry_layer_names=[["target.layer.0"]],
+            use_hybrid=False,
+            hma_group_size=1,
+            kv_cache_groups=[types.SimpleNamespace(layer_names=["target.layer.0"])],
+        )
+        single_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x4000],
+            num_blocks=8,
+            block_lens=[64],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=[["target.layer.0"]],
+            spec_method="",
+        )
+        self._fetch_metadata(single_thread, msgspec.msgpack.Encoder().encode(single_meta))
+        single_req = self._make_req_meta(
+            request_id="req-nonhybrid-cnt",
+            local_block_ids=([10, 11, 12],),
+            remote_block_ids=([20],),
+        )
+        with self.assertRaises(ValueError) as single_ctx:
+            single_thread._transfer_kv_cache(single_req)
+        self.assertIn("exceeds remote block count", str(single_ctx.exception))
+
+        single_thread.task_tracker.add_req_to_process("req-nonhybrid-cnt")
+        single_thread.request_queue.put(single_req)
+        queued_single = single_thread.request_queue.get_nowait()
+        single_thread._mark_request_task_submitted(queued_single)
+        with (
+            patch.object(single_thread, "_send_done_recv_signal"),
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.logger.exception"),
+        ):
+            single_thread._handle_request(queued_single)
+
+        single_thread.engine.batch_transfer_sync_read.assert_not_called()
+        self._assert_all_remote_maps_evicted(single_thread, "prefill-engine", 31000)
+        single_connector, _ = self._wrap_consumer_connector(single_thread)
+        self.assertEqual(
+            single_connector.get_transfer_results(set()),
+            KVConnectorTransferResults(finished_recving={"req-nonhybrid-cnt"}, failed_recving=set()),
+        )
+        self.assertEqual(single_connector.get_block_ids_with_load_errors(), {10, 11, 12})
+
+    def test_ac04_hot_recovery_symmetric_mtp_after_asymmetric_failure(self):
+        # Model D with 48 base KV entries across 4 groups (12 per group) + 2 MTP draft entries = 50 total entries.
+        specs, kv_groups = self._make_mtp_worker_specs(mamba_cache_mode="align", num_spec_blocks=3)
+        base_layers = [([f"target.{idx}"], 64, 0) for idx in range(12)] + [
+            ([f"mamba.g{grp}.{idx}"], 32, grp) for grp in range(1, 4) for idx in range(12)
+        ]
+        local_entries = base_layers + [(["mtp.layers.0.self_attn"], 64, 0), (["mtp.layers.0.shared"], 32, 0)]
+        local_layer_names = [layers for layers, _, _ in local_entries]
+        local_block_lens = [blk_len for _, blk_len, _ in local_entries]
+        local_addrs = [0x10000 + i * 0x1000 for i in range(50)]
+        addr_group_idx = [[grp] for _, _, grp in local_entries]
+
+        thread = self._make_recv_thread(
+            local_addrs=local_addrs,
+            local_block_lens=local_block_lens,
+            local_entry_layer_names=local_layer_names,
+            local_spec_method="mtp",
+            hma_group_size=4,
+            addr_group_idx=addr_group_idx,
+            kv_cache_groups=kv_groups,
+        )
+        thread.kv_cache_specs = specs
+        thread.vllm_config = types.SimpleNamespace(
+            cache_config=types.SimpleNamespace(mamba_cache_mode="align"),
+            speculative_config=types.SimpleNamespace(method="mtp", num_speculative_tokens=3),
+        )
+        connector, _ = self._wrap_consumer_connector(thread)
+
+        # Phase 1 (AC-03): P runs nospec (48 entries) while D runs mtp K=3 (50 entries) -> fail & evict.
+        nospec_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7770,
+            block_size=128,
+            kv_caches_base_addr=[0x100000 + i * 0x1000 for i in range(48)],
+            num_blocks=32,
+            block_lens=local_block_lens[:48],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=local_layer_names[:48],
+            spec_method="",
+        )
+        sym_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7771,
+            block_size=128,
+            kv_caches_base_addr=[0x200000 + i * 0x1000 for i in range(50)],
+            num_blocks=32,
+            block_lens=local_block_lens,
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=local_layer_names,
+            spec_method="mtp",
+        )
+        encoder = msgspec.msgpack.Encoder()
+        sock = MagicMock(spec=zmq.Socket)
+        sock.recv.side_effect = [encoder.encode(nospec_meta), encoder.encode(sym_meta)]
+
+        thread.task_tracker.add_req_to_process("req-ac03")
+        thread.add_request(
+            request_id="req-ac03",
+            remote_request_id="remote-req-ac03",
+            local_block_ids=([1], [2, 20, 21, 22], [3, 30, 31, 32], [4, 40, 41, 42]),
+            remote_block_ids=([13], [12], [8], [4]),
+            remote_engine_id="prefill-engine",
+            remote_host="192.0.2.1",
+            remote_handshake_port=31000,
+            offset=0,
+            tp_num_need_pulls=1,
+            all_task_done=True,
+        )
+        req_ac03 = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(req_ac03)
+        with (
+            patch.object(thread, "_get_remote_socket", return_value=sock),
+            patch.object(thread, "_return_remote_socket"),
+            patch.object(thread, "_send_done_recv_signal"),
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.logger.exception"),
+        ):
+            thread._handle_request(req_ac03)
+
+        thread.engine.batch_transfer_sync_read.assert_not_called()
+        self._assert_all_remote_maps_evicted(thread, "prefill-engine", 31000)
+        self.assertEqual(
+            connector.get_transfer_results(set()),
+            KVConnectorTransferResults(finished_recving={"req-ac03"}, failed_recving={"req-ac03"}),
+        )
+        self.assertEqual(connector.get_block_ids_with_load_errors(), set())
+
+        # Phase 2 (AC-04): P restarts on same port with symmetric mtp K=3 (50 entries); D recovers without restart.
+        thread.task_tracker.add_req_to_process("req-ac04")
+        thread.add_request(
+            request_id="req-ac04",
+            remote_request_id="remote-req-ac04",
+            local_block_ids=([1], [2, 20, 21, 22], [3, 30, 31, 32], [4, 40, 41, 42]),
+            remote_block_ids=([13], [12], [8], [4]),
+            remote_engine_id="prefill-engine",
+            remote_host="192.0.2.1",
+            remote_handshake_port=31000,
+            offset=0,
+            tp_num_need_pulls=1,
+            all_task_done=True,
+        )
+        req_ac04 = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(req_ac04)
+        with (
+            patch.object(thread, "_get_remote_socket", return_value=sock),
+            patch.object(thread, "_return_remote_socket"),
+            patch.object(thread, "_send_done_recv_signal"),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                return_value="127.0.0.1",
+            ),
+        ):
+            thread._handle_request(req_ac04)
+
+        thread.engine.batch_transfer_sync_read.assert_called_once()
+        session_id, src_list, _, _ = thread.engine.batch_transfer_sync_read.call_args.args
+        self.assertEqual(session_id, "192.0.2.1:7771")
+        self.assertEqual(len(src_list), 50)
+        self.assertEqual(
+            connector.get_transfer_results(set()),
+            KVConnectorTransferResults(finished_recving={"req-ac04"}, failed_recving=set()),
+        )
+        self.assertEqual(connector.get_block_ids_with_load_errors(), set())

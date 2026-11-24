@@ -9,7 +9,7 @@ import struct
 import threading
 import time
 from collections import OrderedDict, defaultdict, deque
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypedDict
@@ -111,6 +111,94 @@ def _get_spec_method(vllm_config: Any) -> str:
     spec_config = getattr(vllm_config, "speculative_config", None)
     method = getattr(spec_config, "method", None)
     return method if isinstance(method, str) else ""
+
+
+def _get_mamba_spec(spec: Any) -> MambaSpec | None:
+    """Return the underlying MambaSpec for a direct, uniform, or grouped spec."""
+    if isinstance(spec, MambaSpec):
+        return spec
+    if isinstance(spec, UniformTypeKVCacheSpecs):
+        kv_cache_specs = getattr(spec, "kv_cache_specs", None)
+        if isinstance(kv_cache_specs, dict):
+            for layer_spec in kv_cache_specs.values():
+                if isinstance(layer_spec, MambaSpec):
+                    return layer_spec
+    if isinstance(spec, (list, tuple)):
+        for item in spec:
+            if isinstance(item, MambaSpec):
+                return item
+    return None
+
+
+def _is_aligned_mamba_cache_mode(mamba_spec: MambaSpec, vllm_config: Any) -> bool:
+    """Return whether Mamba state allocation uses block-aligned single-state transfers."""
+    cache_mode = getattr(getattr(vllm_config, "cache_config", None), "mamba_cache_mode", None)
+    spec_mode = getattr(mamba_spec, "mamba_cache_mode", None)
+    return cache_mode == "align" or (isinstance(spec_mode, str) and spec_mode == "align")
+
+
+def _get_mamba_num_speculative_blocks(mamba_spec: MambaSpec, vllm_config: Any) -> int:
+    """Return the extra speculative blocks allocated per Mamba group on decode."""
+    spec_blocks = getattr(mamba_spec, "num_speculative_blocks", None)
+    if isinstance(spec_blocks, int) and not isinstance(spec_blocks, bool) and spec_blocks > 0:
+        return spec_blocks
+    spec_config = getattr(vllm_config, "speculative_config", None)
+    num_spec_tokens = getattr(spec_config, "num_speculative_tokens", None)
+    if isinstance(num_spec_tokens, int) and not isinstance(num_spec_tokens, bool) and num_spec_tokens > 0:
+        return num_spec_tokens
+    return 0
+
+
+def _align_group_transfer_block_ids(
+    remote_block_ids: list[int],
+    local_block_ids: list[int],
+    kv_cache_spec: Any,
+    vllm_config: Any,
+    *,
+    request_id: str,
+    group_idx: int,
+    group_layers: Sequence[str] = (),
+) -> tuple[list[int], list[int]]:
+    """Align per-group producer/consumer block IDs before contiguous grouping."""
+    mamba_spec = _get_mamba_spec(kv_cache_spec)
+    if mamba_spec is None:
+        if len(local_block_ids) < len(remote_block_ids):
+            remote_block_ids = remote_block_ids[-len(local_block_ids) :]
+    else:
+        # MambaManager allocates trailing speculative blocks even when load_kv_async disables lookahead.
+        num_spec_blocks = _get_mamba_num_speculative_blocks(mamba_spec, vllm_config)
+        if num_spec_blocks > 0 and len(local_block_ids) == len(remote_block_ids) + num_spec_blocks:
+            local_block_ids = local_block_ids[:-num_spec_blocks]
+
+    if len(remote_block_ids) != len(local_block_ids):
+        layer_summary = f", layers={_format_layer_summary(list(group_layers))}" if group_layers else ""
+        raise ValueError(
+            f"Mooncake KV block count mismatch for request {request_id!r}, group={group_idx} "
+            f"(spec={type(kv_cache_spec).__name__}{layer_summary}): "
+            f"remote_blocks={len(remote_block_ids)}, local_blocks={len(local_block_ids)}."
+        )
+    return remote_block_ids, local_block_ids
+
+
+def _slice_group_transfer_blocks(
+    blocks: Sequence[Any],
+    block_size: int,
+    prompt_len: int,
+    group_specs: Any,
+    vllm_config: Any,
+) -> list[Any]:
+    """Select the prompt-aligned or state-aligned slice of blocks for one group."""
+    if group_specs and all(is_circular_kv_cache_spec(spec) for spec in group_specs):
+        return list(blocks)
+    if block_size <= 0 or prompt_len <= 0:
+        return []
+    group_block_len = math.ceil(prompt_len / block_size)
+    mamba_spec = _get_mamba_spec(group_specs)
+    if mamba_spec is not None and _is_aligned_mamba_cache_mode(mamba_spec, vllm_config):
+        if 0 < group_block_len <= len(blocks):
+            return list(blocks[group_block_len - 1 : group_block_len])
+        return []
+    return list(blocks[:group_block_len])
 
 
 def _format_layer_summary(layers: list[str]) -> str:
@@ -1114,17 +1202,24 @@ class KVCacheRecvingThread(threading.Thread):
                 "Verify that prefill and decode use compatible KV cache group and speculative layouts."
             )
 
+        kv_groups = getattr(getattr(self, "kv_cache_config", None), "kv_cache_groups", None) or ()
         req_start_time = time.perf_counter()
         src_list, dst_list, length_list = [], [], []
         for i in range(self.hma_group_size):
             if not remote_block_ids[i] or not local_block_ids[i]:
                 continue
-            cur_remote_block_ids = remote_block_ids[i]
-            cur_local_block_ids = local_block_ids[i]
-            if not isinstance(self.kv_cache_specs[i], MambaSpec) and len(cur_local_block_ids) < len(
-                cur_remote_block_ids
-            ):
-                cur_remote_block_ids = cur_remote_block_ids[-len(cur_local_block_ids) :]
+            kv_cache_specs = getattr(self, "kv_cache_specs", ())
+            kv_cache_spec = kv_cache_specs[i] if i < len(kv_cache_specs) else None
+            group_layers = list(getattr(kv_groups[i], "layer_names", ())) if i < len(kv_groups) else []
+            cur_remote_block_ids, cur_local_block_ids = _align_group_transfer_block_ids(
+                remote_block_ids[i],
+                local_block_ids[i],
+                kv_cache_spec,
+                getattr(self, "vllm_config", None),
+                request_id=remote_request_id,
+                group_idx=i,
+                group_layers=group_layers,
+            )
             grouped_remote_block_ids, grouped_local_block_ids = group_concurrent_contiguous(
                 cur_remote_block_ids, cur_local_block_ids
             )
@@ -1181,7 +1276,11 @@ class KVCacheRecvingThread(threading.Thread):
             return
 
         num_remote_blocks = len(remote_block_ids)
-        assert num_local_blocks <= num_remote_blocks
+        if num_local_blocks > num_remote_blocks:
+            raise ValueError(
+                f"Mooncake KV local block count ({num_local_blocks}) exceeds remote block count "
+                f"({num_remote_blocks}) for request {remote_request_id!r}."
+            )
         if num_local_blocks < num_remote_blocks:
             remote_block_ids = remote_block_ids[-num_local_blocks:]
 
@@ -1867,19 +1966,53 @@ class MooncakeConnectorScheduler:
             params["_p_side_truncated"] = True
 
     def _compute_transfer_block_ids(self, block_ids: BlockIds, prompt_len: int) -> BlockIds:
-        transfer_block_ids = []
         kv_cache_specs = getattr(self, "kv_cache_specs", ())
-        for i, blocks in enumerate(block_ids):
-            if i < len(kv_cache_specs) and all(is_circular_kv_cache_spec(spec) for spec in kv_cache_specs[i]):
-                transfer_block_ids.append(blocks)
-                continue
-            group_token_len = prompt_len
-            group_block_len = math.ceil(group_token_len / self.group_block_size[i])
-            if group_block_len > 0:
-                transfer_block_ids.append(blocks[:group_block_len])
+        vllm_config = getattr(self, "vllm_config", None)
+        return tuple(
+            _slice_group_transfer_blocks(
+                blocks,
+                self.group_block_size[i],
+                prompt_len,
+                kv_cache_specs[i] if i < len(kv_cache_specs) else (),
+                vllm_config,
+            )
+            for i, blocks in enumerate(block_ids)
+        )
+
+    def _select_local_transfer_block_ids(self, request: "Request", blocks: "KVCacheBlocks") -> BlockIds:
+        """Select unhashed local blocks matching producer transfer granularity."""
+        raw_blocks = getattr(blocks, "blocks", None)
+        group_block_size = getattr(self, "group_block_size", ())
+        if not isinstance(raw_blocks, (list, tuple)) or len(raw_blocks) != len(group_block_size):
+            return blocks.get_unhashed_block_ids_all_groups()
+        prompt_ids = getattr(request, "prompt_token_ids", None)
+        prompt_len = len(prompt_ids) if prompt_ids is not None else getattr(request, "num_prompt_tokens", 0)
+        if not isinstance(prompt_len, int) or isinstance(prompt_len, bool) or prompt_len <= 0:
+            return blocks.get_unhashed_block_ids_all_groups()
+        actual_prompt_tokens = self._state_prefill_token_count(prompt_len)
+        if actual_prompt_tokens <= 0:
+            return blocks.get_unhashed_block_ids_all_groups()
+
+        kv_cache_specs = getattr(self, "kv_cache_specs", ())
+        vllm_config = getattr(self, "vllm_config", None)
+        selected_groups: list[list[int]] = []
+        for i, group in enumerate(raw_blocks):
+            block_size = group_block_size[i]
+            if not isinstance(block_size, int) or isinstance(block_size, bool) or block_size <= 0:
+                selected = list(group)
             else:
-                transfer_block_ids.append([])
-        return tuple(transfer_block_ids)
+                group_specs = kv_cache_specs[i] if i < len(kv_cache_specs) else ()
+                selected = _slice_group_transfer_blocks(
+                    group,
+                    block_size,
+                    actual_prompt_tokens,
+                    group_specs,
+                    vllm_config,
+                )
+            selected_groups.append(
+                [blk.block_id for blk in selected if blk.block_hash is None and not getattr(blk, "is_null", False)]
+            )
+        return tuple(selected_groups)
 
     def on_new_request(self, request: "Request") -> None:
         # The scheduler looks up local KV before asking connectors for hits.
@@ -1935,7 +2068,9 @@ class MooncakeConnectorScheduler:
         if params is not None and params.get("do_remote_prefill"):
             if params.get("remote_block_ids"):
                 if all(p in params for p in ("remote_engine_id", "remote_host", "remote_port", "remote_request_id")):
-                    local_block_ids = blocks.get_unhashed_block_ids_all_groups() if num_external_tokens > 0 else []
+                    local_block_ids = (
+                        self._select_local_transfer_block_ids(request, blocks) if num_external_tokens > 0 else []
+                    )
                     # Get unhashed blocks to pull from remote.
                     self._reqs_need_recv[request.request_id] = (request, local_block_ids, num_external_tokens)
                 else:
@@ -2625,6 +2760,12 @@ def group_concurrent_contiguous(
     """Vectorised NumPy implementation."""
     src_indices: npt.NDArray[np.int64] = np.array(src, dtype=np.int64)
     dst_indices: npt.NDArray[np.int64] = np.array(dst, dtype=np.int64)
+
+    if src_indices.size != dst_indices.size:
+        raise ValueError(
+            "group_concurrent_contiguous requires src and dst block ID lists of equal length, "
+            f"got len(src)={src_indices.size}, len(dst)={dst_indices.size}."
+        )
 
     if src_indices.size == 0:
         return [], []
