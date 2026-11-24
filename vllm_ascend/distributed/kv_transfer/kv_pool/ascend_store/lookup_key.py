@@ -44,8 +44,29 @@ DEFAULT_LOOKUP_MAX_INFLIGHT: int = 64
 DEFAULT_ASYNC_LOOKUP_TTL_S: float = 5.0
 _ASYNC_DRAIN_GRACE_S: float = 0.5
 _MAX_ZMQ_TIMEOUT_MS: int = (1 << 31) - 1
+_LOOKUP_BUDGET_FRAME_PREFIX: bytes = b"budget:"
+_LOOKUP_BUDGET_FRAME_LEN: int = len(_LOOKUP_BUDGET_FRAME_PREFIX) + 4
 
 LookupSignature = tuple[int, int, int, bytes, bytes]
+
+
+def _encode_lookup_budget_frame(timeout_ms: int) -> bytes:
+    """Encode an explicit client lookup timeout budget frame (in ms)."""
+    clamped_ms = max(1, min(_MAX_ZMQ_TIMEOUT_MS, int(timeout_ms)))
+    return _LOOKUP_BUDGET_FRAME_PREFIX + clamped_ms.to_bytes(4, byteorder="big")
+
+
+def _split_hash_and_budget_frames(
+    hash_and_optional_frames: Sequence[Any],
+) -> tuple[list[Any], int | None]:
+    """Separate trailing client budget frame from serialized block-hash frames."""
+    frames = list(hash_and_optional_frames)
+    if len(frames) >= 2:
+        tail = bytes(frames[-1])
+        if len(tail) == _LOOKUP_BUDGET_FRAME_LEN and tail.startswith(_LOOKUP_BUDGET_FRAME_PREFIX):
+            budget_ms = int.from_bytes(tail[len(_LOOKUP_BUDGET_FRAME_PREFIX) :], byteorder="big")
+            return frames[:-1], (budget_ms if budget_ms > 0 else None)
+    return frames, None
 
 
 @dataclass(frozen=True)
@@ -390,17 +411,17 @@ class LookupKeyClient:
             self.socket.setsockopt(zmq.RCVTIMEO, target_ms)  # type: ignore[attr-defined]
             self._current_rcvtimeo_ms = target_ms
 
-    def _sync_receive_timeout(self, deadline: float | None) -> bool:
+    def _sync_receive_timeout(self, deadline: float | None) -> int | None:
         if deadline is None:
             target_ms = self._lookup_timeout_ms
         else:
             remaining_ms = int((deadline - time.monotonic()) * 1000)
             if remaining_ms <= 0:
                 logger.warning("KV pool lookup skipped: deadline expired before ZMQ RPC")
-                return False
+                return None
             target_ms = max(1, min(self._lookup_timeout_ms, remaining_ms))
         self._set_receive_timeout_ms(target_ms)
-        return True
+        return target_ms
 
     def lookup(
         self,
@@ -425,10 +446,12 @@ class LookupKeyClient:
         with self._lock:
             if self._closed:
                 return 0
-            if not self._sync_receive_timeout(deadline):
+            target_ms = self._sync_receive_timeout(deadline)
+            if target_ms is None:
                 return 0
+            frames_to_send = [*all_frames, _encode_lookup_budget_frame(target_ms)]
             try:
-                self.socket.send_multipart(all_frames, copy=False)
+                self.socket.send_multipart(frames_to_send, copy=False)
                 resp = self.socket.recv()
             except zmq.ZMQError:  # type: ignore[attr-defined]
                 logger.exception("KV pool lookup failed; reporting 0 hit tokens")
@@ -523,8 +546,9 @@ class LookupKeyServer:
                             token_len = int.from_bytes(all_frames[1], byteorder="big")
                             kv_group_ids = self.decoder.decode([all_frames[2]])
                             hbm_hit_tokens = int.from_bytes(all_frames[3], byteorder="big")
-                            hashes_str = self.decoder.decode(all_frames[4:])
-                            deadline = time.monotonic() + self._lookup_timeout_s
+                            hash_frames, client_budget_ms = _split_hash_and_budget_frames(all_frames[4:])
+                            hashes_str = self.decoder.decode(hash_frames)
+                            deadline = self._resolve_lookup_deadline(client_budget_ms)
                             result = self.pool_worker.lookup_scheduler(
                                 token_len,
                                 hashes_str,
@@ -563,6 +587,13 @@ class LookupKeyServer:
 
         self.thread = threading.Thread(target=process_request, daemon=True)
         self.thread.start()
+
+    def _resolve_lookup_deadline(self, client_budget_ms: int | None) -> float:
+        """Compute the tightened server deadline bounded by server and client timeouts."""
+        timeout_s = self._lookup_timeout_s
+        if client_budget_ms is not None:
+            timeout_s = min(timeout_s, client_budget_ms / 1000.0)
+        return time.monotonic() + timeout_s
 
     def close(self):
         if self._closed:

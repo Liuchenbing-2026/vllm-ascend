@@ -32,6 +32,7 @@ from vllm.v1.kv_cache_interface import (
     RSWASpec,
     SlidingWindowSpec,
 )
+from vllm.v1.serial_utils import MsgpackDecoder, MsgpackEncoder
 # isort: on
 
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ascend_store_connector import AscendStoreConnector
@@ -48,6 +49,8 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key import 
     AsyncLookupManager,
     LookupKeyClient,
     LookupKeyServer,
+    _encode_lookup_budget_frame,
+    _split_hash_and_budget_frames,
     make_lookup_signature,
     parse_lookup_config,
 )
@@ -235,7 +238,8 @@ def _make_worker_stub(
             if chunk_mask is not None and not (idx < len(chunk_mask) and chunk_mask[idx]):
                 continue
             bh = block_hashes[(start + g_bs) // worker.hash_block_size - 1]
-            key = f"model@pp_rank:0@dcp:0@head_or_tp_rank:0@group:{kv_cache_group_id}@{bh.hex()}"
+            bh_hex = bh if isinstance(bh, str) else bh.hex()
+            key = f"model@pp_rank:0@dcp:0@head_or_tp_rank:0@group:{kv_cache_group_id}@{bh_hex}"
             yield start, start + g_bs, key, bh
 
     def build_lookup_keys(token_len, block_hashes, group_id):
@@ -680,6 +684,198 @@ class TestLookupDeadlineBudget(unittest.TestCase):
         self.assertEqual(lookup_res, [32])
         self.assertEqual(reset_res, [True])
         self.assertEqual(events, ["lookup_send", "lookup_recv", "reset_send", "reset_recv"])
+        client.close()
+
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.threading.Thread")
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.zmq.Poller")
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.make_zmq_socket")
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.zmq")
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.MsgpackEncoder")
+    def test_lookup_client_propagates_clamped_budget_frame_to_server(
+        self, mock_encoder_cls, mock_zmq, mock_make_socket, mock_poller_cls, mock_thread_cls
+    ):
+        mock_zmq.REQ = 3
+        mock_zmq.REP = 4
+        mock_zmq.RCVTIMEO = 27
+        mock_zmq.POLLIN = 1
+        mock_zmq.ZMQError = RuntimeError
+        mock_encoder_cls.return_value.encode.side_effect = lambda x: [b"encoded"]
+
+        client_socket = MagicMock()
+        server_socket = MagicMock()
+        mock_make_socket.side_effect = [client_socket, server_socket]
+
+        sent_batches: list[list[Any]] = []
+        client_socket.send_multipart.side_effect = lambda frames, **_kw: sent_batches.append(list(frames))
+        client_socket.recv.return_value = (32).to_bytes(4, "big")
+
+        client = LookupKeyClient(_make_scheduler_config(extra_config={"lookup_timeout_ms": 500}))
+        self.assertEqual(client.lookup(64, _make_hashes(2), deadline=time.monotonic() + 0.08), 32)
+        self.assertEqual(client.lookup(64, _make_hashes(2)), 32)
+        self.assertEqual(len(sent_batches), 2)
+
+        tight_frames, default_frames = sent_batches
+        self.assertEqual(len(tight_frames), 6)
+        self.assertTrue(tight_frames[-1].startswith(b"budget:"))
+        tight_budget_ms = int.from_bytes(tight_frames[-1][len(b"budget:") :], "big")
+        self.assertGreaterEqual(tight_budget_ms, 1)
+        self.assertLessEqual(tight_budget_ms, 85)
+        self.assertEqual(default_frames[-1], _encode_lookup_budget_frame(500))
+
+        mock_poller = MagicMock()
+        mock_poller.poll.side_effect = [[(server_socket, 1)], [(server_socket, 1)]]
+        mock_poller_cls.return_value = mock_poller
+        pool_worker = MagicMock()
+        pool_worker.lookup_scheduler.return_value = 32
+        server = LookupKeyServer(pool_worker, _make_scheduler_config(extra_config={"lookup_timeout_ms": 1000}))
+        server.decoder = MagicMock()
+        server.decoder.decode.side_effect = [[0], ["00" * 32, "11" * 32]]
+
+        recv_calls = {"n": 0}
+
+        def recv_frames(*_args, **_kwargs):
+            recv_calls["n"] += 1
+            if recv_calls["n"] == 1:
+                return tight_frames
+            server.running = False
+            return [b"reset"]
+
+        server_socket.recv_multipart.side_effect = recv_frames
+        before = time.monotonic()
+        mock_thread_cls.call_args.kwargs["target"]()
+        after = time.monotonic()
+
+        server.decoder.decode.assert_any_call([b"encoded"])
+        server_deadline = pool_worker.lookup_scheduler.call_args.kwargs["deadline"]
+        self.assertGreaterEqual(server_deadline, before)
+        self.assertLessEqual(server_deadline, after + 0.12)
+        client.close()
+
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.threading.Thread")
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.zmq.Poller")
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.make_zmq_socket")
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.zmq.Context")
+    def test_lookup_server_budget_clamping_and_wire_compatibility(
+        self, mock_ctx, mock_make_socket, mock_poller_cls, mock_thread_cls
+    ):
+        del mock_ctx
+        scenarios = [
+            (1000, [b"h", _encode_lookup_budget_frame(60)], 0.02, 0.12),
+            (200, [b"h", _encode_lookup_budget_frame(5000)], 0.15, 0.28),
+            (200, [b"h"], 0.15, 0.28),
+            (200, [b"h", b"budget:" + (0).to_bytes(4, "big")], 0.15, 0.28),
+        ]
+        for server_timeout_ms, tail_frames, min_delta_s, max_delta_s in scenarios:
+            with self.subTest(server_timeout_ms=server_timeout_ms, tail_len=len(tail_frames)):
+                mock_socket = MagicMock()
+                mock_make_socket.return_value = mock_socket
+                mock_poller = MagicMock()
+                mock_poller.poll.side_effect = [[(mock_socket, 1)], [(mock_socket, 1)]]
+                mock_poller_cls.return_value = mock_poller
+                pool_worker = MagicMock()
+                pool_worker.lookup_scheduler.return_value = 64
+
+                server = LookupKeyServer(
+                    pool_worker, _make_scheduler_config(extra_config={"lookup_timeout_ms": server_timeout_ms})
+                )
+                server.decoder = MagicMock()
+                server.decoder.decode.side_effect = [[0], ["00" * 32]]
+                calls = {"n": 0}
+
+                def recv_frames(
+                    *_args,
+                    _calls: dict[str, int] = calls,
+                    _server: LookupKeyServer = server,
+                    _tail: list[bytes] = tail_frames,
+                    **_kwargs,
+                ):
+                    _calls["n"] += 1
+                    if _calls["n"] == 1:
+                        return [b"lookup", (64).to_bytes(4, "big"), b"g", (0).to_bytes(4, "big"), *_tail]
+                    _server.running = False
+                    return [b"reset"]
+
+                mock_socket.recv_multipart.side_effect = recv_frames
+                before = time.monotonic()
+                mock_thread_cls.call_args.kwargs["target"]()
+                after = time.monotonic()
+
+                server.decoder.decode.assert_any_call([b"h"])
+                deadline = pool_worker.lookup_scheduler.call_args.kwargs["deadline"]
+                self.assertGreaterEqual(deadline, before + min_delta_s)
+                self.assertLessEqual(deadline, after + max_delta_s)
+
+        if isinstance(MsgpackEncoder, type) and isinstance(MsgpackDecoder, type):
+            hash_strs = [h.hex() for h in _make_hashes(3)]
+            wire_frames = [*MsgpackEncoder().encode(hash_strs), _encode_lookup_budget_frame(60)]
+            self.assertEqual(MsgpackDecoder().decode(wire_frames), hash_strs)
+            stripped, budget_ms = _split_hash_and_budget_frames(wire_frames)
+            self.assertEqual(budget_ms, 60)
+            self.assertEqual(MsgpackDecoder().decode(stripped), hash_strs)
+
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.threading.Thread")
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.zmq.Poller")
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.make_zmq_socket")
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.zmq")
+    @patch("vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.MsgpackEncoder")
+    def test_client_server_tight_budget_stops_slow_backend_early(
+        self, mock_encoder_cls, mock_zmq, mock_make_socket, mock_poller_cls, mock_thread_cls
+    ):
+        mock_zmq.REQ = 3
+        mock_zmq.REP = 4
+        mock_zmq.RCVTIMEO = 27
+        mock_zmq.POLLIN = 1
+        mock_zmq.ZMQError = RuntimeError
+        mock_encoder_cls.return_value.encode.side_effect = lambda x: [b"encoded"]
+
+        client_socket = MagicMock()
+        server_socket = MagicMock()
+        mock_make_socket.side_effect = [client_socket, server_socket]
+
+        sent_batches: list[list[Any]] = []
+        client_socket.send_multipart.side_effect = lambda frames, **_kw: sent_batches.append(list(frames))
+        client_socket.recv.return_value = (128).to_bytes(4, "big")
+
+        clock = {"now": 100.0}
+        hashes = _make_hashes(200)
+        worker = _make_worker_stub(extra_config={"lookup_batch_size": 4, "lookup_timeout_ms": 1000})
+
+        def slow_exists(keys):
+            clock["now"] += 0.03
+            return [1] * len(keys)
+
+        worker.m_store.exists.side_effect = slow_exists
+        server_config = _make_scheduler_config(extra_config={"lookup_batch_size": 4, "lookup_timeout_ms": 1000})
+
+        with (
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key.time.monotonic",
+                side_effect=lambda: clock["now"],
+            ),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.pool_worker.time.monotonic",
+                side_effect=lambda: clock["now"],
+            ),
+        ):
+            client = LookupKeyClient(server_config)
+            client.lookup(3200, hashes, deadline=100.055)
+
+            mock_poller = MagicMock()
+            mock_poller.poll.side_effect = [[(server_socket, 1)]]
+            mock_poller_cls.return_value = mock_poller
+            server = LookupKeyServer(worker, server_config)
+            server.decoder = MagicMock()
+            server.decoder.decode.side_effect = [[0], [h.hex() for h in hashes]]
+
+            def recv_frames(*_args, **_kwargs):
+                server.running = False
+                return sent_batches[0]
+
+            server_socket.recv_multipart.side_effect = recv_frames
+            mock_thread_cls.call_args.kwargs["target"]()
+
+        self.assertEqual(worker.m_store.exists.call_count, 2)
+        server_socket.send.assert_called_once_with((128).to_bytes(4, "big"))
         client.close()
 
 
