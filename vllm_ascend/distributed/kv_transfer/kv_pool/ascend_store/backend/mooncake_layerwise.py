@@ -11,10 +11,15 @@ from copy import copy
 from typing import Any
 
 from vllm.config.utils import hash_config
-from vllm.v1.kv_cache_interface import MambaSpec, SlidingWindowSpec, UniformTypeKVCacheSpecs
+from vllm.v1.core.single_type_kv_cache_manager import SlidingWindowManager
+from vllm.v1.kv_cache_interface import MambaSpec, SlidingWindowSpec
 
 from vllm_ascend.ascend_config import KVPPConfig
-from vllm_ascend.core.kv_cache_interface import is_prefix_cacheable
+from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
+    get_group_layer_specs,
+    get_group_mamba_cache_mode,
+    is_group_prefix_cacheable,
+)
 
 
 def make_block_key(
@@ -114,8 +119,12 @@ def validate_dcp_groups(kv_cache_config: Any) -> None:
         return None
     group_block_sizes: list[int] = []
     for group in groups:
-        spec = group.kv_cache_spec
-        specs = spec.kv_cache_specs.values() if isinstance(spec, UniformTypeKVCacheSpecs) else (spec,)
+        manager_cls = getattr(getattr(group, "manager_config", None), "manager_cls", None)
+        if isinstance(manager_cls, type) and issubclass(manager_cls, SlidingWindowManager):
+            raise ValueError("Mooncake layerwise DCP does not support sliding-window cache groups.")
+        specs = get_group_layer_specs(group)
+        if get_group_mamba_cache_mode(group, specs[0] if specs else None) == "align":
+            raise ValueError("Mooncake layerwise DCP does not support recurrent/align-state cache groups.")
         for sub_spec in specs:
             if isinstance(sub_spec, SlidingWindowSpec):
                 raise ValueError("Mooncake layerwise DCP does not support sliding-window cache groups.")
@@ -126,7 +135,7 @@ def validate_dcp_groups(kv_cache_config: Any) -> None:
                     "Mooncake layerwise DCP requires every cache group to be DCP-sharded; "
                     f"found {type(sub_spec).__name__}."
                 )
-        if not is_prefix_cacheable(spec):
+        if not is_group_prefix_cacheable(group):
             continue
         block_size_signature = group_block_size_signature(group)
         if len(block_size_signature) != 1:
@@ -154,8 +163,7 @@ def group_block_size_signature(group) -> tuple[int, ...]:
     shape to the set of block sizes it contains rather than reading a single
     representative (which depends on dict order).
     """
-    spec = group.kv_cache_spec
-    specs = spec.kv_cache_specs.values() if isinstance(spec, UniformTypeKVCacheSpecs) else (spec,)
+    specs = get_group_layer_specs(group)
     return tuple(sorted({int(sub.block_size) for sub in specs}))
 
 

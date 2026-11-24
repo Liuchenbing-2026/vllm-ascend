@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import uuid
+from collections.abc import Mapping, Sequence
 
 from vllm.logger import logger
 from vllm.v1.core.block_pool import BlockPool
@@ -13,6 +16,16 @@ class InFlightSaveBlockTracker:
         self.expected_worker_count = expected_worker_count
         self.sending_blocks: dict[int, list[int]] = {}
         self.sending_events: dict[int, int] = {}
+
+    def _pin_blocks(self, req_meta: ReqMeta, block_ids: list[int], block_pool: BlockPool) -> None:
+        event_id = uuid.uuid4().int
+        while event_id in self.sending_events:
+            event_id = uuid.uuid4().int
+        req_meta.event_id = event_id
+        logger.debug("event: %s touch blocks: %s", event_id, block_ids)
+        block_pool.touch([block_pool.blocks[block_id] for block_id in block_ids])
+        self.sending_blocks[event_id] = block_ids
+        self.sending_events[event_id] = 0
 
     def retain(
         self,
@@ -34,14 +47,35 @@ class InFlightSaveBlockTracker:
             return
 
         assert block_pool is not None
-        event_id = uuid.uuid4().int
-        while event_id in self.sending_events:
-            event_id = uuid.uuid4().int
-        req_meta.event_id = event_id
-        logger.debug("event: %s touch blocks: %s", event_id, block_ids)
-        block_pool.touch([block_pool.blocks[block_id] for block_id in block_ids])
-        self.sending_blocks[event_id] = block_ids
-        self.sending_events[event_id] = 0
+        self._pin_blocks(req_meta, block_ids, block_pool)
+
+    def retain_finished(
+        self,
+        req_meta: ReqMeta,
+        cacheable_group_ids: Sequence[int],
+        speculative_blocks_by_group: Mapping[int, int],
+        block_pool: BlockPool | None,
+    ) -> bool:
+        """Retain blocks of a finished request until lookahead-delayed saves complete."""
+        if not req_meta.can_save or block_pool is None:
+            return False
+
+        raw_block_ids: list[int] = []
+        for group_id in cacheable_group_ids:
+            if group_id >= len(req_meta.block_ids_by_group):
+                continue
+            group_block_ids = req_meta.block_ids_by_group[group_id]
+            num_speculative_blocks = speculative_blocks_by_group.get(group_id, 0)
+            non_spec_block_ids = (
+                group_block_ids[:-num_speculative_blocks] if num_speculative_blocks > 0 else group_block_ids
+            )
+            raw_block_ids.extend(block_id for block_id in non_spec_block_ids if block_id > 0)
+
+        block_ids = list(dict.fromkeys(raw_block_ids))
+        if not block_ids:
+            return False
+        self._pin_blocks(req_meta, block_ids, block_pool)
+        return True
 
     def complete(self, completed_events: dict[int, int], block_pool: BlockPool) -> None:
         for event_id, count in completed_events.items():

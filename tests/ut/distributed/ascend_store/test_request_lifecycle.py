@@ -6,6 +6,7 @@ import ctypes
 import time
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 import pytest
@@ -17,21 +18,13 @@ from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorRole
 from vllm.utils.hashing import sha256
 from vllm.v1.core.kv_cache_utils import get_request_block_hasher, init_none_hash, resolve_kv_cache_block_sizes
 from vllm.v1.core.sched.scheduler import Scheduler
-from vllm.v1.core.single_type_kv_cache_manager import register_all_kvcache_specs
-from vllm.v1.kv_cache_interface import (
-    CircularBufferSpec,
-    FullAttentionSpec,
-    KVCacheConfig,
-    KVCacheGroupSpec,
-    UniformTypeKVCacheSpecs,
-)
+from vllm.v1.kv_cache_interface import KVCacheConfig
 from vllm.v1.outputs import DraftTokenIds, KVConnectorOutput
 from vllm.v1.request import Request, RequestStatus
 from vllm.v1.structured_output import StructuredOutputManager
 
 from tests.ut.distributed.ascend_store.cache_config_helpers import make_resolved_cache_config
 from tests.ut.kv_offload.utils import assert_scheduler_empty, create_model_runner_output, create_vllm_config
-from vllm_ascend.core.kv_cache_interface import AscendMLAAttentionSpec, AscendSlidingWindowMLASpec, is_prefix_cacheable
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store import pool_worker
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import backend_map
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend.base import Backend
@@ -39,6 +32,50 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.kv_transfer import
     KVCacheStoreRecvingThread,
     KVCacheStoreSendingThread,
 )
+from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
+    get_group_layer_spec_map,
+    is_group_prefix_cacheable,
+)
+
+try:
+    from vllm.v1.core.single_type_kv_cache_manager import register_all_kvcache_specs
+except ImportError:
+    register_all_kvcache_specs = None  # type: ignore[assignment]
+
+try:
+    from vllm.v1.kv_cache_interface import (
+        CircularBufferSpec,
+        FullAttentionSpec,
+        KVCacheGroupSpec,
+        UniformTypeKVCacheSpecs,
+    )
+except ImportError:
+    CircularBufferSpec = None  # type: ignore[assignment,misc]
+    FullAttentionSpec = None  # type: ignore[assignment,misc]
+    KVCacheGroupSpec = None  # type: ignore[assignment,misc]
+    UniformTypeKVCacheSpecs = None  # type: ignore[assignment,misc]
+
+try:
+    from vllm.v1.core.single_type_kv_cache_manager import (
+        CircularBufferManager,
+        FullAttentionManager,
+        SlidingWindowManager,
+    )
+    from vllm.v1.kv_cache_interface import AttentionSpec, KVCacheGroup, ManagerConfig, MLAAttentionSpec
+except ImportError:
+    AttentionSpec = None  # type: ignore[assignment,misc]
+    CircularBufferManager = None  # type: ignore[assignment,misc]
+    FullAttentionManager = None  # type: ignore[assignment,misc]
+    KVCacheGroup = None  # type: ignore[assignment,misc]
+    MLAAttentionSpec = None  # type: ignore[assignment,misc]
+    ManagerConfig = None  # type: ignore[assignment,misc]
+    SlidingWindowManager = None  # type: ignore[assignment,misc]
+
+try:
+    from vllm_ascend.core.kv_cache_interface import AscendMLAAttentionSpec, AscendSlidingWindowMLASpec
+except ImportError:
+    AscendMLAAttentionSpec = None  # type: ignore[assignment,misc]
+    AscendSlidingWindowMLASpec = None  # type: ignore[assignment,misc]
 
 
 def aligned_buffer(size):
@@ -88,6 +125,36 @@ class MemoryBackend(Backend):
         return [0] * len(keys)
 
 
+def _has_legacy_kv_cache_api() -> bool:
+    return (
+        KVCacheGroupSpec is not None
+        and FullAttentionSpec is not None
+        and CircularBufferSpec is not None
+        and UniformTypeKVCacheSpecs is not None
+        and AscendMLAAttentionSpec is not None
+        and AscendSlidingWindowMLASpec is not None
+    )
+
+
+def _make_single_circular_plan() -> KVCacheConfig:
+    if _has_legacy_kv_cache_api():
+        assert CircularBufferSpec is not None and KVCacheGroupSpec is not None
+        spec = CircularBufferSpec(block_size=32, num_kv_heads=1, head_size=16, head_size_v=0, dtype=torch.float32)
+        groups: list[Any] = [KVCacheGroupSpec(["model.layers.0.state_cache"], spec)]
+    else:
+        assert AttentionSpec is not None and KVCacheGroup is not None
+        assert ManagerConfig is not None and CircularBufferManager is not None
+        spec = AttentionSpec(block_size=32, num_kv_heads=1, head_size=16, head_size_v=0, dtype=torch.float32)
+        groups = [
+            KVCacheGroup(
+                kv_cache_specs={"model.layers.0.state_cache": spec},
+                manager_config=ManagerConfig(CircularBufferManager, CircularBufferManager.Params()),
+                block_size=32,
+            )
+        ]
+    return KVCacheConfig(num_blocks=128, kv_cache_tensors=[], kv_cache_groups=groups)
+
+
 @pytest.fixture(params=[None, "mtp", "dspark"])
 def speculative_method(request):
     return request.param
@@ -96,64 +163,139 @@ def speculative_method(request):
 @pytest.fixture(params=["private-state", "full-attention", "full-and-swa"])
 def cache_layout(request, speculative_method):
     """Dense attention or mixed C1/C2 + SWA, with optional private state."""
-    specs = {
-        "model.layers.0.long_kv_cache": AscendMLAAttentionSpec(
+    if _has_legacy_kv_cache_api():
+        assert AscendMLAAttentionSpec is not None and AscendSlidingWindowMLASpec is not None
+        assert CircularBufferSpec is not None and FullAttentionSpec is not None
+        assert KVCacheGroupSpec is not None and UniformTypeKVCacheSpecs is not None
+        specs = {
+            "model.layers.0.long_kv_cache": AscendMLAAttentionSpec(
+                block_size=128,
+                num_kv_heads=1,
+                head_size=8,
+                dtype=torch.bfloat16,
+                tokens_per_state=2,
+            ),
+            "model.layers.1.long_kv_cache": AscendMLAAttentionSpec(
+                block_size=128,
+                num_kv_heads=1,
+                head_size=8,
+                dtype=torch.bfloat16,
+            ),
+        }
+        ring = CircularBufferSpec(block_size=32, num_kv_heads=1, head_size=16, head_size_v=0, dtype=torch.float32)
+        swa = AscendSlidingWindowMLASpec(
             block_size=128,
             num_kv_heads=1,
             head_size=8,
             dtype=torch.bfloat16,
-            tokens_per_state=2,
-        ),
-        "model.layers.1.long_kv_cache": AscendMLAAttentionSpec(
-            block_size=128,
-            num_kv_heads=1,
-            head_size=8,
-            dtype=torch.bfloat16,
-        ),
-    }
-    ring = CircularBufferSpec(block_size=32, num_kv_heads=1, head_size=16, head_size_v=0, dtype=torch.float32)
-    swa = AscendSlidingWindowMLASpec(
-        block_size=128,
-        num_kv_heads=1,
-        head_size=8,
-        dtype=torch.bfloat16,
-        sliding_window=128,
-    )
-    plan = KVCacheConfig(
-        num_blocks=128,
-        kv_cache_tensors=[],
-        kv_cache_groups=[
-            KVCacheGroupSpec(list(specs), UniformTypeKVCacheSpecs(block_size=128, kv_cache_specs=specs)),
-            KVCacheGroupSpec(["model.layers.0.state_cache"], ring),
-            KVCacheGroupSpec(["model.layers.0.swa_cache"], swa),
-        ],
-    )
-
-    if request.param != "private-state":
-        plan.kv_cache_groups.pop(1)
-    if request.param == "full-attention":
-        plan.kv_cache_groups.pop()
-        plan.kv_cache_groups[0].kv_cache_spec = FullAttentionSpec(
-            block_size=128, num_kv_heads=1, head_size=8, dtype=torch.bfloat16
+            sliding_window=128,
         )
-    if speculative_method:
-        draft_names = [f"mtp.{i}.self_attn" for i in range(3 if speculative_method == "dspark" else 1)]
+        plan = KVCacheConfig(
+            num_blocks=128,
+            kv_cache_tensors=[],
+            kv_cache_groups=[
+                KVCacheGroupSpec(list(specs), UniformTypeKVCacheSpecs(block_size=128, kv_cache_specs=specs)),
+                KVCacheGroupSpec(["model.layers.0.state_cache"], ring),
+                KVCacheGroupSpec(["model.layers.0.swa_cache"], swa),
+            ],
+        )
+
+        if request.param != "private-state":
+            plan.kv_cache_groups.pop(1)
         if request.param == "full-attention":
-            plan.kv_cache_groups[0].layer_names.extend(draft_names)
-            plan.kv_cache_groups[0].is_eagle_group = True
-        else:
-            plan.kv_cache_groups.append(KVCacheGroupSpec(draft_names, swa, is_eagle_group=True))
+            plan.kv_cache_groups.pop()
+            plan.kv_cache_groups[0].kv_cache_spec = FullAttentionSpec(
+                block_size=128, num_kv_heads=1, head_size=8, dtype=torch.bfloat16
+            )
+        if speculative_method:
+            draft_names = [f"mtp.{i}.self_attn" for i in range(3 if speculative_method == "dspark" else 1)]
+            if request.param == "full-attention":
+                plan.kv_cache_groups[0].layer_names.extend(draft_names)
+                plan.kv_cache_groups[0].is_eagle_group = True
+            else:
+                plan.kv_cache_groups.append(KVCacheGroupSpec(draft_names, swa, is_eagle_group=True))
+    else:
+        if speculative_method == "dspark":
+            pytest.skip("dspark speculative method requires Ascend SpeculativeConfig patch")
+        assert KVCacheGroup is not None and ManagerConfig is not None
+        assert AttentionSpec is not None and MLAAttentionSpec is not None
+        assert FullAttentionManager is not None and SlidingWindowManager is not None
+        assert CircularBufferManager is not None
+        specs_post = {
+            "model.layers.0.long_kv_cache": MLAAttentionSpec(
+                block_size=128,
+                num_kv_heads=1,
+                head_size=8,
+                dtype=torch.bfloat16,
+                tokens_per_state=2,
+            ),
+            "model.layers.1.long_kv_cache": MLAAttentionSpec(
+                block_size=128,
+                num_kv_heads=1,
+                head_size=8,
+                dtype=torch.bfloat16,
+            ),
+        }
+        ring_post = AttentionSpec(block_size=32, num_kv_heads=1, head_size=16, head_size_v=0, dtype=torch.float32)
+        swa_post = MLAAttentionSpec(block_size=128, num_kv_heads=1, head_size=8, dtype=torch.bfloat16)
+        full_mgr = ManagerConfig(FullAttentionManager, FullAttentionManager.Params())
+        ring_mgr = ManagerConfig(CircularBufferManager, CircularBufferManager.Params())
+        swa_mgr = ManagerConfig(SlidingWindowManager, SlidingWindowManager.Params(sliding_window=128))
+        plan = KVCacheConfig(
+            num_blocks=128,
+            kv_cache_tensors=[],
+            kv_cache_groups=[
+                KVCacheGroup(kv_cache_specs=dict(specs_post), manager_config=full_mgr, block_size=128),
+                KVCacheGroup(
+                    kv_cache_specs={"model.layers.0.state_cache": ring_post},
+                    manager_config=ring_mgr,
+                    block_size=32,
+                ),
+                KVCacheGroup(
+                    kv_cache_specs={"model.layers.0.swa_cache": swa_post},
+                    manager_config=swa_mgr,
+                    block_size=128,
+                ),
+            ],
+        )
+        if request.param != "private-state":
+            plan.kv_cache_groups.pop(1)
+        full_spec: Any = None
+        if request.param == "full-attention":
+            plan.kv_cache_groups.pop()
+            full_spec = AttentionSpec(block_size=128, num_kv_heads=1, head_size=8, dtype=torch.bfloat16)
+            plan.kv_cache_groups[0] = KVCacheGroup(
+                kv_cache_specs={name: full_spec for name in specs_post},
+                manager_config=full_mgr,
+                block_size=128,
+            )
+        if speculative_method:
+            draft_names = [f"mtp.{i}.self_attn" for i in range(1)]
+            if request.param == "full-attention":
+                for name in draft_names:
+                    plan.kv_cache_groups[0].kv_cache_specs[name] = full_spec
+            else:
+                plan.kv_cache_groups.append(
+                    KVCacheGroup(
+                        kv_cache_specs={name: swa_post for name in draft_names},
+                        manager_config=swa_mgr,
+                        block_size=128,
+                    )
+                )
 
     def allocate():
         caches = {}
         for group in plan.kv_cache_groups:
-            for name in group.layer_names:
-                spec = group.kv_cache_spec
-                if isinstance(spec, UniformTypeKVCacheSpecs):
-                    spec = spec.kv_cache_specs[name]
-                rows = spec.block_size // spec.tokens_per_state
+            for name, spec in get_group_layer_spec_map(group).items():
+                rows = spec.block_size // int(getattr(spec, "tokens_per_state", 1))
                 shape = (plan.num_blocks, rows, 1, spec.head_size)
-                planes = 2 if type(spec) is FullAttentionSpec else 1
+                is_dense_kv = (FullAttentionSpec is not None and type(spec) is FullAttentionSpec) or (
+                    FullAttentionSpec is None
+                    and AttentionSpec is not None
+                    and type(spec) is AttentionSpec
+                    and getattr(spec, "head_size_v", 0) > 0
+                )
+                planes = 2 if is_dense_kv else 1
                 raw = aligned_buffer(planes * int(np.prod(shape)) * torch.empty((), dtype=spec.dtype).element_size())
                 tensors = raw.view(spec.dtype).view(planes, *shape)
                 caches[name] = tuple(tensors) if planes == 2 else tensors[0]
@@ -171,7 +313,8 @@ def devices_and_store(monkeypatch):
     monkeypatch.setattr(pool_worker, "get_pcp_group", lambda: SimpleNamespace(world_size=1))
     monkeypatch.setattr(pool_worker, "get_decode_context_model_parallel_world_size", lambda: 1)
     monkeypatch.setattr(pool_worker, "get_decode_context_model_parallel_rank", lambda: 0)
-    register_all_kvcache_specs(None)
+    if register_all_kvcache_specs is not None:
+        register_all_kvcache_specs(None)
     init_none_hash(sha256)
     # Unix-domain socket paths have a short platform-dependent size limit.
     with TemporaryDirectory(dir="/tmp") as rpc_dir:
@@ -204,12 +347,7 @@ def test_private_only_layout_rejected(devices_and_store, role, prefix_unit):
         ),
     )
     config.cache_config.prefix_match_unit = prefix_unit
-    spec = CircularBufferSpec(block_size=32, num_kv_heads=1, head_size=16, head_size_v=0, dtype=torch.float32)
-    plan = KVCacheConfig(
-        num_blocks=128,
-        kv_cache_tensors=[],
-        kv_cache_groups=[KVCacheGroupSpec(["model.layers.0.state_cache"], spec)],
-    )
+    plan = _make_single_circular_plan()
     with pytest.raises(AssertionError, match="AscendStore requires at least one prefix-cacheable KV cache group"):
         KVConnectorFactory.create_connector(config, role, plan)
 
@@ -223,7 +361,7 @@ def test_raw_sequence_lifecycle(
     plan, allocate = cache_layout
     if len(plan.kv_cache_groups) == 1 and prefix_unit == 32:
         pytest.skip("The upstream single-group scheduler always hashes whole 128-token blocks")
-    has_private_state = any(not is_prefix_cacheable(group.kv_cache_spec) for group in plan.kv_cache_groups)
+    has_private_state = any(not is_group_prefix_cacheable(group) for group in plan.kv_cache_groups)
     config = create_vllm_config(
         max_num_batched_tokens=256,
         speculative_method=speculative_method,
@@ -258,7 +396,9 @@ def test_raw_sequence_lifecycle(
     assert isinstance(pool.kv_recv_thread, KVCacheStoreRecvingThread) == load_async
     assert pool.hash_block_size == hash_size == (prefix_unit or 128)
     assert pool.cache_transfer_granularity == 128
-    assert pool.use_eagle == (speculative_method is not None)
+    lookahead = getattr(config, "num_hash_lookahead_tokens", 0)
+    assert pool.num_hash_lookahead_tokens == lookahead
+    assert pool.use_eagle == (speculative_method is not None and lookahead == 0)
     scheduler = Scheduler(
         config,
         plan,
@@ -266,19 +406,23 @@ def test_raw_sequence_lifecycle(
         block_size=block_size,
         hash_block_size=hash_size,
     )
-    # #65448 makes core lookahead hashing opt-out. AscendStore's masks still
-    # use the legacy EAGLE drop, so both hashing and local lookup must agree.
-    assert config.num_hash_lookahead_tokens == scheduler.num_hash_lookahead_tokens == 0
-    assert scheduler.use_eagle_block_drop == (speculative_method == "mtp")
+    if speculative_method == "mtp" and lookahead > 0:
+        assert scheduler.num_hash_lookahead_tokens == lookahead > 0
+        assert not getattr(scheduler, "use_eagle_block_drop", False)
+    else:
+        assert lookahead == getattr(scheduler, "num_hash_lookahead_tokens", 0) == 0
+        if hasattr(scheduler, "use_eagle_block_drop"):
+            assert scheduler.use_eagle_block_drop == (speculative_method == "mtp")
     producer_tokens = list(range(512))
 
     def run_request(req_id, tokens, expected_hit, expected_local=0):
+        hasher_kwargs = {"num_hash_lookahead_tokens": lookahead} if lookahead > 0 else {}
         request = Request(
             request_id=req_id,
             prompt_token_ids=tokens,
             sampling_params=SamplingParams(max_tokens=10 if speculative_method else 2),
             pooling_params=None,
-            block_hasher=get_request_block_hasher(hash_size, sha256),
+            block_hasher=get_request_block_hasher(hash_size, sha256, **hasher_kwargs),
         )
         scheduler.add_request(request)
         seen_load = False
@@ -297,7 +441,7 @@ def test_raw_sequence_lifecycle(
             )
             if block_ids:
                 for gid, _, _, tensor in cache_entries(plan, caches):
-                    if not is_prefix_cacheable(plan.kv_cache_groups[gid].kv_cache_spec):
+                    if not is_group_prefix_cacheable(plan.kv_cache_groups[gid]):
                         for bid in block_ids[gid]:
                             tensor[bid].fill_(-7)
             worker.start_load_kv(SimpleNamespace() if output.total_num_scheduled_tokens else None)
@@ -315,9 +459,10 @@ def test_raw_sequence_lifecycle(
                 seen_load = True
                 assert req_meta.load_spec.kvpool_cached_tokens == expected_hit
                 assert req_meta.load_spec.vllm_cached_tokens == expected_local
+                assert block_ids is not None
                 for gid, name, plane, tensor in cache_entries(plan, caches):
                     for index, bid in enumerate(block_ids[gid]):
-                        if not is_prefix_cacheable(plan.kv_cache_groups[gid].kv_cache_spec):
+                        if not is_group_prefix_cacheable(plan.kv_cache_groups[gid]):
                             assert torch.all(tensor[bid] == -7)
                         elif bid and (index + 1) * 128 <= expected_hit:
                             assert torch.all(tensor[bid] == payload_value(tokens, (index + 1) * 128, name, plane))
@@ -329,8 +474,9 @@ def test_raw_sequence_lifecycle(
                 saw_decode |= start >= len(tokens)
                 # Model-compute leaf: write deterministic CPU bytes to allocated pages.
                 input_tokens = list(request.all_token_ids) + output.scheduled_spec_decode_tokens.get(req_id, [])
+                assert block_ids is not None
                 for gid, name, plane, tensor in cache_entries(plan, caches):
-                    if not is_prefix_cacheable(plan.kv_cache_groups[gid].kv_cache_spec):
+                    if not is_group_prefix_cacheable(plan.kv_cache_groups[gid]):
                         continue
                     for index, bid in enumerate(block_ids[gid]):
                         if bid and start < (index + 1) * 128 <= end:
@@ -371,7 +517,18 @@ def test_raw_sequence_lifecycle(
                 # Consume the finished-ID notification and release Store references.
                 output = scheduler.schedule()
                 worker.bind_connector_metadata(output.kv_connector_metadata)
-                worker.get_finished(output.finished_req_ids)
+                worker.wait_for_save()
+                pool.wait_for_previous_save()
+                sending, recving = worker.get_finished(output.finished_req_ids)
+                worker_meta = worker.build_connector_worker_meta()
+                if sending or recving or worker_meta is not None:
+                    scheduler.connector.update_connector_output(
+                        KVConnectorOutput(
+                            finished_sending=sending,
+                            finished_recving=recving,
+                            kv_connector_worker_meta=worker_meta,
+                        )
+                    )
                 worker.clear_connector_metadata()
                 break
         assert seen_load == (expected_hit > 0)
@@ -388,7 +545,7 @@ def test_raw_sequence_lifecycle(
         return list(request.all_token_ids)
 
     try:
-        run_request("producer", producer_tokens, 0)
+        producer_generated = run_request("producer", producer_tokens, 0)
         saved = dict(MemoryBackend.payloads)
         assert saved
         # Clear the real local prefix cache; the next request must use the Store.
@@ -407,6 +564,7 @@ def test_raw_sequence_lifecycle(
                 (512, 128, 128),
                 (512, 255, 128),
                 (512, 256, 256),
+                (512, 257, 256),
                 (512, 511, 384),
             ]
         ):
@@ -416,13 +574,31 @@ def test_raw_sequence_lifecycle(
             for _, _, _, tensor in cache_entries(plan, caches):
                 tensor.fill_(-3)
             tokens = list(range(length))
-            if fork is not None:
+            if lookahead > 0:
+                if length == 513 and fork is None:
+                    full_len = 512 + lookahead
+                    tokens = producer_generated[:full_len]
+                    hit = 512
+                elif fork is not None:
+                    tokens[fork] += 1000
+                    hit = min(384, max(0, fork - lookahead) // 128 * 128)
+                else:
+                    hit = max(0, length - max(1, lookahead)) // 128 * 128
+            elif fork is not None:
                 tokens[fork] += 1000
             if not has_private_state and not speculative_method and fork is None:
                 # Legacy full hits still reserve only the final token.
                 hit = {125: 0, 126: 0, 127: 0, 128: 127, 129: 128, 256: 255, 257: 256, 512: 511, 513: 512}[length]
             generated = run_request(f"consumer-{case}", tokens, hit)
             assert bool(pool.m_store.loads) == bool(hit)
+            if lookahead > 0 and length == 513:
+                assert scheduler.reset_prefix_cache()
+                for _, _, _, tensor in cache_entries(plan, caches):
+                    tensor.fill_(-3)
+                # Mismatched lookahead token at 512 must block trailing block reuse.
+                mismatch_tokens = list(tokens)
+                mismatch_tokens[512] += 1000
+                run_request(f"lookahead-mismatch-{case}", mismatch_tokens, 384)
             if speculative_method and length in (125, 126):
                 assert scheduler.reset_prefix_cache()
                 for _, _, _, tensor in cache_entries(plan, caches):
@@ -436,13 +612,12 @@ def test_raw_sequence_lifecycle(
         seed_length = 256 if speculative_method else 128
         seed_hit = 128 if speculative_method else (0 if has_private_state else 127)
         run_request("local-prefix", producer_tokens[:seed_length], seed_hit)
-        # vLLM main caches speculative blocks in the base Scheduler; only the
-        # pure full-attention dspark layout sees the doubled local prefix hit.
-        only_full_attention = isinstance(plan.kv_cache_groups[0].kv_cache_spec, FullAttentionSpec)
-        mixed_local = 128
-        if speculative_method == "dspark" and only_full_attention:
-            mixed_local = 256
-        run_request("mixed-local-remote", list(range(513)), 512, expected_local=mixed_local)
+        # DSpark has use_eagle_block_drop=False across all layouts; fixing
+        # AscendHybridKVCacheCoordinator to respect drop_eagle_group_ids gives
+        # every DSpark layout the same 256-token local prefix hit as upstream.
+        mixed_local = 256 if speculative_method == "dspark" else 128
+        mixed_tokens = producer_generated[: 512 + lookahead] if lookahead > 0 else list(range(513))
+        run_request("mixed-local-remote", mixed_tokens, 512, expected_local=mixed_local)
         assert scheduler.reset_prefix_cache()
         missing_group = len(plan.kv_cache_groups) - 1
         MemoryBackend.payloads = {key: value for key, value in saved.items() if f"@group:{missing_group}@" not in key}

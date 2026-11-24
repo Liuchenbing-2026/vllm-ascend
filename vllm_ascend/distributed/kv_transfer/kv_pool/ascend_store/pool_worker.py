@@ -24,7 +24,6 @@ from vllm.v1.core.kv_cache_utils import BlockHash, maybe_convert_block_hash
 from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
     MambaSpec,
-    UniformTypeKVCacheSpecs,
 )
 from vllm.v1.worker.mamba_utils import get_mamba_groups
 
@@ -63,12 +62,19 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     block_hash_to_str,
     get_block_hashes,
     get_group_cache_family,
+    get_group_layer_spec_map,
+    get_group_layer_specs,
+    get_group_mamba_cache_mode,
+    get_group_num_speculative_blocks,
     get_sharded_mamba_group_ids,
+    hashed_prefix_length,
     infer_cache_transfer_granularity,
     infer_cacheable_group_ids,
     infer_group_block_sizes,
     infer_group_cache_families,
     infer_tp_mismatch_info,
+    resolve_legacy_eagle_drop,
+    resolve_num_hash_lookahead_tokens,
     uses_hybrid_kv_cache,
 )
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metrics import (
@@ -215,9 +221,8 @@ class BaseKVPoolWorker(ABC):
         self.use_hybrid = self._compute_use_hybrid(vllm_config, kv_cache_groups)
         self._attention_saved_layers: set[int] = set()
         self.use_mamba = self._uses_mamba_kv_cache(self.use_hybrid, kv_cache_config)
-        speculative_config = getattr(vllm_config, "speculative_config", None)
-        use_eagle_fn = getattr(speculative_config, "use_eagle", None)
-        self.use_eagle = use_eagle_fn() is True if callable(use_eagle_fn) else False
+        self.num_hash_lookahead_tokens = resolve_num_hash_lookahead_tokens(vllm_config)
+        self.use_eagle = resolve_legacy_eagle_drop(vllm_config, self.num_hash_lookahead_tokens)
         self.original_block_size = infer_group_block_sizes(vllm_config.cache_config.block_size, kv_cache_groups)
         self.cacheable_group_ids = infer_cacheable_group_ids(kv_cache_groups)
         self.grouped_block_size = [block_size * self.dcp_size for block_size in self.original_block_size]
@@ -416,6 +421,7 @@ class BaseKVPoolWorker(ABC):
     def _build_cache_coordinator(self) -> AscendStoreCoordinator | None:
         if self.kv_cache_config is None or not self.use_hybrid:
             return None
+        num_hash_lookahead = getattr(self, "num_hash_lookahead_tokens", 0)
         retention_interval = self.kv_cache_config.prefix_cache_retention_interval
         return AscendStoreCoordinator(
             self.kv_cache_config.kv_cache_groups,
@@ -425,7 +431,8 @@ class BaseKVPoolWorker(ABC):
             group_cache_families=self.kv_cache_group_families,
             use_eagle=self.use_eagle,
             retention_interval=retention_interval,
-            enable_partial_hash_hits=self.enable_partial_hash_hits,
+            enable_partial_hash_hits=getattr(self, "enable_partial_hash_hits", False),
+            num_hash_lookahead_tokens=num_hash_lookahead,
         )
 
     def _infer_group_uses_align_state(self) -> list[bool]:
@@ -434,14 +441,10 @@ class BaseKVPoolWorker(ABC):
 
         group_uses_align_state: list[bool] = []
         for group in self.kv_cache_config.kv_cache_groups:
-            kv_cache_spec = group.kv_cache_spec
-            if isinstance(kv_cache_spec, UniformTypeKVCacheSpecs):
-                specs = [kv_cache_spec.kv_cache_specs[layer_name] for layer_name in group.layer_names]
-            else:
-                specs = [kv_cache_spec]
+            specs = get_group_layer_specs(group)
             group_uses_align_state.append(
                 any(
-                    isinstance(spec, MambaSpec) and getattr(spec, "mamba_cache_mode", None) == "align" for spec in specs
+                    isinstance(spec, MambaSpec) and get_group_mamba_cache_mode(group, spec) == "align" for spec in specs
                 )
             )
         return group_uses_align_state
@@ -451,11 +454,7 @@ class BaseKVPoolWorker(ABC):
         if not use_hybrid or kv_cache_config is None:
             return False
         for group in kv_cache_config.kv_cache_groups:
-            kv_cache_spec = group.kv_cache_spec
-            if isinstance(kv_cache_spec, UniformTypeKVCacheSpecs):
-                if any(isinstance(spec, MambaSpec) for spec in kv_cache_spec.kv_cache_specs.values()):
-                    return True
-            elif isinstance(kv_cache_spec, MambaSpec):
+            if any(isinstance(spec, MambaSpec) for spec in get_group_layer_specs(group)):
                 return True
         return False
 
@@ -664,12 +663,10 @@ class BaseKVPoolWorker(ABC):
         result = dict(kv_caches)
         copy_funcs = None
         for group in self.kv_cache_config.kv_cache_groups:
-            specs = group.kv_cache_spec
-            for name in group.layer_names:
-                spec = specs.kv_cache_specs[name] if isinstance(specs, UniformTypeKVCacheSpecs) else specs
+            for name, spec in get_group_layer_spec_map(group).items():
                 if not isinstance(spec, MambaSpec):
                     continue
-                if spec.num_speculative_blocks != 0:
+                if get_group_num_speculative_blocks(group, spec) != 0:
                     raise ValueError("RecoverSSM pooling requires zero speculative state blocks")
                 if copy_funcs is None:
                     mamba_groups = get_mamba_groups(self.kv_cache_config)
@@ -893,14 +890,15 @@ class BaseKVPoolWorker(ABC):
                     send_thread.reset_saved_request(req_id)
                     self._retired_store_req_ids.discard(req_id)
             if isinstance(send_thread, KVCacheStoreSendingThread):
+                pending_save_req_ids = {req.req_id for req in meta.requests if req.can_save}
                 for req_id in finished_req_ids:
-                    if send_thread.is_stored_request(req_id):
+                    if req_id in pending_save_req_ids or send_thread.is_stored_request(req_id):
                         self._retired_store_req_ids.add(req_id)
                     else:
                         send_thread.reset_saved_request(req_id)
                         self._retired_store_req_ids.discard(req_id)
                 for req_id in self._retired_store_req_ids.copy():
-                    if not send_thread.is_stored_request(req_id):
+                    if req_id not in pending_save_req_ids and not send_thread.is_stored_request(req_id):
                         send_thread.reset_saved_request(req_id)
                         self._retired_store_req_ids.discard(req_id)
             self.kv_send_thread.discard_finished_requests(meta.preempted_req_ids)
@@ -955,20 +953,36 @@ class BaseKVPoolWorker(ABC):
         try:
             hits = []
             kv_cache_group_ids = kv_cache_group_ids or [0]
+            lookup_token_len = token_len
+            lookup_hashes = block_hashes
+            partial = getattr(self, "enable_partial_hash_hits", False)
+            if getattr(self, "num_hash_lookahead_tokens", 0) > 0:
+                if not block_hashes:
+                    return 0
+                if not partial:
+                    lookup_token_len = min(token_len, hashed_prefix_length(block_hashes, self.hash_block_size))
+                    if lookup_token_len <= 0:
+                        return 0
+                    lookup_hashes = block_hashes[: lookup_token_len // self.hash_block_size]
             coordinator_hit = (
                 None
                 if use_layerwise
                 else self._lookup_with_coordinator(
-                    token_len,
-                    block_hashes,
+                    lookup_token_len,
+                    lookup_hashes,
                     kv_cache_group_ids,
                     include_all_ranks=False,
                 )
             )
             if coordinator_hit is not None:
                 return coordinator_hit.hit_length
+            if getattr(self, "num_hash_lookahead_tokens", 0) > 0 and partial:
+                lookup_token_len = min(token_len, hashed_prefix_length(block_hashes, self.hash_block_size))
+                if lookup_token_len <= 0:
+                    return 0
+                lookup_hashes = block_hashes[: lookup_token_len // self.hash_block_size]
             for group_id in kv_cache_group_ids:
-                keys, starts, ends = self._build_lookup_keys(token_len, block_hashes, group_id)
+                keys, starts, ends = self._build_lookup_keys(lookup_token_len, lookup_hashes, group_id)
 
                 if not keys:
                     hits.append(0)
@@ -1138,7 +1152,8 @@ class BaseKVPoolWorker(ABC):
             # Query hash keys, then let Core's cache managers arbitrate a joint
             # recoverable boundary. IO later restores the containing pages.
             keys, candidates, variant_counts = [], [], []
-            hashes = block_hashes[: token_len // self.hash_block_size]
+            max_hashes = min(token_len // self.hash_block_size, len(block_hashes))
+            hashes = block_hashes[:max_hashes]
             for group in coordinator.cacheable_group_ids:
                 prefix = self.token_database._get_key_prefix(group)
                 for value in hashes:
@@ -1158,6 +1173,11 @@ class BaseKVPoolWorker(ABC):
             if hit <= hbm_hit_tokens:
                 return StoreLookupResult(hit)
             return StoreLookupResult(hit, self._tail_key_boundaries(coordinator, hashes, hit, pool))
+        bounded_hashes = (
+            block_hashes[: max(0, token_len // self.hash_block_size)]
+            if getattr(self, "num_hash_lookahead_tokens", 0) > 0
+            else block_hashes
+        )
 
         def query_group_hits(
             group_id: int,
@@ -1172,7 +1192,7 @@ class BaseKVPoolWorker(ABC):
             variant_counts: list[int] = []
             for _, _, key_string, chunk_hash in self.token_database.process_token_key_strings(
                 token_len,
-                block_hashes,
+                bounded_hashes,
                 mask_num=lookup_start,
                 kv_cache_group_id=group_id,
                 chunk_mask=lookup_mask,
@@ -1195,7 +1215,7 @@ class BaseKVPoolWorker(ABC):
             return present
 
         hit = coordinator.find_reachable_hit_tokens(
-            block_hashes,
+            bounded_hashes,
             token_len,
             query_group_hits,
             log_context="KV pool coordinator lookup",
@@ -1220,12 +1240,23 @@ class BaseKVPoolWorker(ABC):
             hits: list[list[int]] = []
             max_hit_position = self.max_model_len
             kv_cache_group_ids = kv_cache_group_ids or [0]
+            lookup_token_len = token_len
+            lookup_hashes = block_hashes
+            partial = getattr(self, "enable_partial_hash_hits", False)
+            if getattr(self, "num_hash_lookahead_tokens", 0) > 0:
+                if not block_hashes:
+                    return StoreLookupResult(0)
+                if not partial:
+                    lookup_token_len = min(token_len, hashed_prefix_length(block_hashes, self.hash_block_size))
+                    if lookup_token_len <= 0:
+                        return StoreLookupResult(0)
+                    lookup_hashes = block_hashes[: lookup_token_len // self.hash_block_size]
             coordinator_hit = (
                 None
                 if use_layerwise
                 else self._lookup_with_coordinator(
-                    token_len,
-                    block_hashes,
+                    lookup_token_len,
+                    lookup_hashes,
                     kv_cache_group_ids,
                     include_all_ranks=True,
                     hbm_hit_tokens=hbm_hit_tokens,
@@ -1233,8 +1264,13 @@ class BaseKVPoolWorker(ABC):
             )
             if coordinator_hit is not None:
                 return coordinator_hit
+            if getattr(self, "num_hash_lookahead_tokens", 0) > 0 and partial:
+                lookup_token_len = min(token_len, hashed_prefix_length(block_hashes, self.hash_block_size))
+                if lookup_token_len <= 0:
+                    return StoreLookupResult(0)
+                lookup_hashes = block_hashes[: lookup_token_len // self.hash_block_size]
             for group_id in kv_cache_group_ids:
-                keys, starts, ends = self._build_lookup_keys(token_len, block_hashes, group_id)
+                keys, starts, ends = self._build_lookup_keys(lookup_token_len, lookup_hashes, group_id)
 
                 if not keys:
                     return StoreLookupResult(0)
@@ -1881,7 +1917,23 @@ class KVPoolWorker(BaseKVPoolWorker):
                     continue
                 block_hash = maybe_convert_block_hash(group_hashes[block_idx])
                 parent_hash = maybe_convert_block_hash(group_hashes[block_idx - 1]) if block_idx > 0 else None
-                token_ids = send_thread.get_event_token_ids(req_meta, start, end)
+                raw_lookahead = getattr(req_meta, "num_hash_lookahead_tokens", 0)
+                lookahead = (
+                    raw_lookahead
+                    if isinstance(raw_lookahead, int) and not isinstance(raw_lookahead, bool) and raw_lookahead > 0
+                    else 0
+                )
+                get_event_tokens = (
+                    getattr(send_thread, "get_event_token_and_lookahead_ids", None) if lookahead > 0 else None
+                )
+                if callable(get_event_tokens):
+                    token_ids, lookahead_token_ids = get_event_tokens(req_meta, start, end)
+                else:
+                    token_ids = send_thread.get_event_token_ids(req_meta, start, end)
+                    lookahead_token_ids = None
+                event_kwargs: dict[str, object] = {}
+                if lookahead_token_ids is not None:
+                    event_kwargs["lookahead_token_ids"] = lookahead_token_ids
                 stored_events.append(
                     BlockStored(
                         block_hashes=[block_hash],
@@ -1892,6 +1944,7 @@ class KVPoolWorker(BaseKVPoolWorker):
                         medium="cpu",
                         lora_name=None,
                         group_idx=0,
+                        **event_kwargs,
                     )
                 )
             if stored_events:

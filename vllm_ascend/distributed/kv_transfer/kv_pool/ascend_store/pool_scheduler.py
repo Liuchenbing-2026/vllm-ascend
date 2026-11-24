@@ -1,5 +1,7 @@
+import inspect
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from typing import Any
 
 from vllm.config import VllmConfig
@@ -9,13 +11,14 @@ from vllm.utils.math_utils import cdiv
 from vllm.v1.attention.backends.utils import NULL_BLOCK_ID
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_manager import KVCacheBlocks, KVCacheManager
+from vllm.v1.core.kv_cache_utils import BlockHash
 from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
+from vllm.v1.core.single_type_kv_cache_manager import RSWAManager, SlidingWindowManager
 from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
     MambaSpec,
     RSWASpec,
     SlidingWindowSpec,
-    UniformTypeKVCacheSpecs,
     get_mamba_prefill_checkpoint_position,
 )
 from vllm.v1.outputs import KVConnectorOutput
@@ -35,14 +38,38 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     ReqMeta,
     RequestTracker,
     StoreLookupResult,
+    get_group_layer_specs,
+    get_group_mamba_cache_mode,
+    get_group_num_speculative_blocks,
+    get_reusable_prefix_length,
+    hashed_prefix_length,
     infer_cache_transfer_granularity,
     infer_cacheable_group_ids,
     infer_group_block_sizes,
     infer_group_cache_families,
     infer_tp_mismatch_info,
     normalize_block_ids_by_group,
+    resolve_legacy_eagle_drop,
+    resolve_num_hash_lookahead_tokens,
+    trim_stale_lookahead_hashes,
     uses_hybrid_kv_cache,
 )
+
+_SWA_SPEC_TYPES: tuple[type, ...] = (SlidingWindowSpec, RSWASpec)
+_SWA_MANAGER_TYPES: tuple[type, ...] = (SlidingWindowManager, RSWAManager)
+
+
+def _is_swa_group(group: Any) -> bool:
+    mgr_cls = getattr(getattr(group, "manager_config", None), "manager_cls", None)
+    if inspect.isclass(mgr_cls) and issubclass(mgr_cls, _SWA_MANAGER_TYPES):
+        return True
+    return any(isinstance(spec, _SWA_SPEC_TYPES) for spec in get_group_layer_specs(group))
+
+
+def _safe_nonneg_int(value: Any, default: int = 0) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return max(0, value)
+    return default
 
 
 def _new_req_prefill_tokens(request: NewRequestData) -> list[int]:
@@ -98,27 +125,21 @@ class BaseKVPoolScheduler(ABC):
         self.pcp_size = getattr(vllm_config.parallel_config, "prefill_context_parallel_size", 1)
         self.dcp_size = getattr(vllm_config.parallel_config, "decode_context_parallel_size", 1)
 
+        self.num_hash_lookahead_tokens = resolve_num_hash_lookahead_tokens(vllm_config)
+        self.use_eagle = resolve_legacy_eagle_drop(vllm_config, self.num_hash_lookahead_tokens)
         speculative_config = getattr(vllm_config, "speculative_config", None)
-        use_eagle_fn = getattr(speculative_config, "use_eagle", None)
-        self.use_eagle = use_eagle_fn() is True if callable(use_eagle_fn) else False
         use_eagle_block_drop_fn = getattr(speculative_config, "use_eagle_block_drop", None)
-        self.use_eagle_block_drop = use_eagle_block_drop_fn() is True if callable(use_eagle_block_drop_fn) else False
+        self.use_eagle_block_drop = (
+            self.num_hash_lookahead_tokens == 0
+            and callable(use_eagle_block_drop_fn)
+            and use_eagle_block_drop_fn() is True
+        )
         self.original_block_size = infer_group_block_sizes(vllm_config.cache_config.block_size, kv_cache_groups)
         self.cacheable_group_ids = infer_cacheable_group_ids(kv_cache_groups)
         self.swa_group_ids = {
             group_id
             for group_id in self.cacheable_group_ids
-            if kv_cache_groups is not None
-            and (
-                isinstance(kv_cache_groups[group_id].kv_cache_spec, (SlidingWindowSpec, RSWASpec))
-                or (
-                    isinstance(kv_cache_groups[group_id].kv_cache_spec, UniformTypeKVCacheSpecs)
-                    and any(
-                        isinstance(spec, (SlidingWindowSpec, RSWASpec))
-                        for spec in kv_cache_groups[group_id].kv_cache_spec.kv_cache_specs.values()
-                    )
-                )
-            )
+            if kv_cache_groups is not None and _is_swa_group(kv_cache_groups[group_id])
         }
         self.grouped_block_size = [block_size * self.dcp_size for block_size in self.original_block_size]
         assert kv_cache_config is not None, "AscendStore requires Core's resolved KV cache configuration"
@@ -148,6 +169,9 @@ class BaseKVPoolScheduler(ABC):
         )
         self._unfinished_requests: dict[str, tuple[Request, list[list[int]]]] = {}
         self._async_loading_req_ids: set[str] = set()
+        self._finished_lookahead_metas: dict[str, ReqMeta] = {}
+        world_size = _safe_nonneg_int(getattr(getattr(vllm_config, "parallel_config", None), "world_size", 1), 1)
+        self._in_flight_save_blocks = InFlightSaveBlockTracker(max(1, world_size))
 
         self._block_pool: BlockPool | None = None
         self._kv_cache_manager: KVCacheManager | None = None
@@ -224,10 +248,53 @@ class BaseKVPoolScheduler(ABC):
             use_eagle=self.use_eagle,
             retention_interval=self.retention_interval,
             enable_partial_hash_hits=self.enable_partial_hash_hits,
+            num_hash_lookahead_tokens=self.num_hash_lookahead_tokens,
         )
 
     def _floor_to_cache_transfer_granularity(self, token_len: int) -> int:
         return token_len // self.cache_transfer_granularity * self.cache_transfer_granularity
+
+    def _effective_lookup_hashes(self, request: Request) -> list[BlockHash]:
+        hashes = getattr(request, "block_hashes", ()) or ()
+        lookahead = getattr(self, "num_hash_lookahead_tokens", 0)
+        if lookahead <= 0:
+            return list(hashes)
+        num_tokens = getattr(request, "num_tokens", None)
+        if not isinstance(num_tokens, int) or isinstance(num_tokens, bool):
+            token_ids = getattr(request, "all_token_ids", None) or getattr(request, "prompt_token_ids", None) or ()
+            num_tokens = len(token_ids)
+        return trim_stale_lookahead_hashes(hashes, num_tokens, self.hash_block_size, lookahead)
+
+    def _max_reusable_lookup_tokens(
+        self,
+        request: Request,
+        alignment_tokens: int,
+        block_hashes: Sequence[BlockHash] | None = None,
+    ) -> int:
+        hashes = self._effective_lookup_hashes(request) if block_hashes is None else block_hashes
+        lookahead = getattr(self, "num_hash_lookahead_tokens", 0)
+        num_tokens = getattr(request, "num_tokens", None)
+        if not isinstance(num_tokens, int) or isinstance(num_tokens, bool):
+            token_ids = getattr(request, "all_token_ids", None) or getattr(request, "prompt_token_ids", None) or ()
+            num_tokens = len(token_ids)
+        reusable = get_reusable_prefix_length(
+            num_tokens,
+            num_hash_lookahead_tokens=lookahead,
+            alignment_tokens=alignment_tokens,
+        )
+        hashed = hashed_prefix_length(hashes, self.hash_block_size) // alignment_tokens * alignment_tokens
+        return min(reusable, hashed)
+
+    def _has_unsaved_prefill_lookahead(self, req_id: str) -> bool:
+        if getattr(self, "num_hash_lookahead_tokens", 0) <= 0:
+            return False
+        trackers = getattr(self, "_request_trackers", None)
+        tracker = trackers.get(req_id) if trackers is not None else None
+        if tracker is None:
+            return False
+        prefill_end = tracker.prefill_end_tokens or tracker.num_prompt_tokens or 0
+        prefill_aligned = self._floor_to_cache_transfer_granularity(prefill_end)
+        return tracker.num_saved_tokens < prefill_aligned
 
     def _infer_mamba_groups(self) -> dict[int, int]:
         """Validate Mamba cache modes and return hybrid group scratch counts."""
@@ -236,17 +303,18 @@ class BaseKVPoolScheduler(ABC):
 
         num_mamba_speculative_blocks_by_group: dict[int, int] = {}
         for group_id, kv_cache_group in enumerate(self.kv_cache_config.kv_cache_groups):
-            kv_cache_spec = kv_cache_group.kv_cache_spec
-            if isinstance(kv_cache_spec, UniformTypeKVCacheSpecs):
-                kv_cache_spec = next(iter(kv_cache_spec.kv_cache_specs.values()))
-            if not isinstance(kv_cache_spec, MambaSpec):
-                continue
-            if getattr(kv_cache_spec, "mamba_cache_mode", None) != "align":
-                raise NotImplementedError(
-                    "AscendStore hybrid linear-attention support currently requires mamba_cache_mode='align'."
-                )
-            if self.use_hybrid:
-                num_mamba_speculative_blocks_by_group[group_id] = kv_cache_spec.num_speculative_blocks
+            for kv_cache_spec in get_group_layer_specs(kv_cache_group):
+                if not isinstance(kv_cache_spec, MambaSpec):
+                    continue
+                if get_group_mamba_cache_mode(kv_cache_group, kv_cache_spec) != "align":
+                    raise NotImplementedError(
+                        "AscendStore hybrid linear-attention support currently requires mamba_cache_mode='align'."
+                    )
+                if self.use_hybrid:
+                    num_mamba_speculative_blocks_by_group[group_id] = get_group_num_speculative_blocks(
+                        kv_cache_group,
+                        kv_cache_spec,
+                    )
         return num_mamba_speculative_blocks_by_group
 
     def get_num_new_matched_tokens(
@@ -279,10 +347,34 @@ class BaseKVPoolScheduler(ABC):
         lookup_result = self._lookup_external_hit_tokens(request, num_computed_tokens)
         if lookup_result is None or not lookup_result.hit_length:
             return 0, False
-        num_external_hit_tokens = lookup_result.hit_length
 
-        store_skip_tokens = num_external_hit_tokens
-        if self.use_eagle and not self.enable_partial_hash_hits:
+        num_external_hit_tokens: int = lookup_result.hit_length
+        store_skip_tokens: int = lookup_result.hit_length
+        lookahead = getattr(self, "num_hash_lookahead_tokens", 0)
+        partial = getattr(self, "enable_partial_hash_hits", False)
+        if lookahead > 0:
+            alignment = (
+                self.hash_block_size
+                if partial
+                else (
+                    self.cache_transfer_granularity
+                    if self._discard_partial_chunks or len(self.cacheable_group_ids) != len(self.original_block_size)
+                    else self.hash_block_size
+                )
+            )
+            reusable_limit = get_reusable_prefix_length(
+                request.num_tokens,
+                num_hash_lookahead_tokens=lookahead,
+                alignment_tokens=alignment,
+            )
+            hashed_limit = (
+                hashed_prefix_length(self._effective_lookup_hashes(request), self.hash_block_size)
+                // alignment
+                * alignment
+            )
+            num_external_hit_tokens = min(num_external_hit_tokens, reusable_limit, hashed_limit)
+            store_skip_tokens = min(store_skip_tokens, reusable_limit, hashed_limit)
+        elif self.use_eagle and not partial:
             # Keep the draft model's recomputation zone intact: the
             # generation-point hidden states must be freshly computed, and the
             # local prefix-cache path already drops its trailing block
@@ -443,21 +535,38 @@ class BaseKVPoolScheduler(ABC):
         load_spec: LoadSpec | None,
         prompt_token_ids: list[int],
         skip_save: bool | None,
+        *,
+        all_token_ids: Sequence[int] | None = None,
+        block_hash_token_len: int | None = None,
     ):
         last_chunk_tokens_num = self._get_last_chunk_tokens_num(prompt_token_ids)
+        lookahead = getattr(self, "num_hash_lookahead_tokens", 0)
+        effective_hashes = block_hashes
+        if lookahead > 0 and block_hashes:
+            hash_bound_tokens = (
+                len(all_token_ids) if all_token_ids is not None else (block_hash_token_len or request_tracker.token_len)
+            )
+            effective_hashes = trim_stale_lookahead_hashes(
+                block_hashes,
+                hash_bound_tokens,
+                self.hash_block_size,
+                lookahead,
+            )
         return ReqMeta.from_request_tracker(
             request_tracker,
             self.cache_transfer_granularity,
             load_spec=load_spec,
             skip_save=skip_save,
-            block_hashes=block_hashes,
+            block_hashes=effective_hashes,
             is_last_chunk=request_tracker.token_len >= last_chunk_tokens_num,
             discard_partial_chunks=self._discard_partial_chunks,
             original_block_size=self.original_block_size,
             kv_cache_group_families=self.kv_cache_group_families,
             save_partial_block=self.layerwise_offload,
             hash_block_size=self.hash_block_size,
-            enable_partial_hash_hits=self.enable_partial_hash_hits,
+            enable_partial_hash_hits=getattr(self, "enable_partial_hash_hits", False),
+            num_hash_lookahead_tokens=lookahead,
+            all_token_ids=all_token_ids if self.enable_kv_events else None,
         )
 
     def _process_new_request(
@@ -496,12 +605,15 @@ class BaseKVPoolScheduler(ABC):
             block_sizes=self.grouped_block_size,
         )
         self._request_trackers[request.req_id] = request_tracker
+        real_all_tokens = getattr(request_real, "all_token_ids", None)
         return self._build_req_meta(
             request_tracker,
-            request_real.block_hashes,
+            getattr(request_real, "block_hashes", []),
             load_spec,
             prefill_tokens,
             force_skip_save,
+            all_token_ids=real_all_tokens,
+            block_hash_token_len=len(real_all_tokens) if real_all_tokens is not None else None,
         )
 
     def _process_preempted_cached_request(
@@ -538,12 +650,15 @@ class BaseKVPoolScheduler(ABC):
             block_sizes=self.grouped_block_size,
         )
         self._request_trackers[req_id] = request_tracker
+        real_all_tokens = getattr(request_real, "all_token_ids", None)
         return self._build_req_meta(
             request_tracker,
-            request_real.block_hashes,
+            getattr(request_real, "block_hashes", []),
             load_spec,
-            list(request_real.all_token_ids),
+            list(real_all_tokens if real_all_tokens is not None else request_real.prompt_token_ids),
             force_skip_save,
+            all_token_ids=real_all_tokens,
+            block_hash_token_len=len(real_all_tokens) if real_all_tokens is not None else None,
         )
 
     def _process_running_cached_request(
@@ -565,7 +680,35 @@ class BaseKVPoolScheduler(ABC):
         prefill_end_tokens = request_tracker.prefill_end_tokens or request_tracker.num_prompt_tokens or 0
         is_decoding = num_computed_tokens >= prefill_end_tokens
         if is_decoding and not self.save_decode_cache and not self.layerwise_offload:
-            return None
+            if not self._has_unsaved_prefill_lookahead(req_id) or not req_tuple:
+                return None
+            request = req_tuple[0]
+            trimmed_hashes = trim_stale_lookahead_hashes(
+                request.block_hashes,
+                len(request.all_token_ids),
+                self.hash_block_size,
+                self.num_hash_lookahead_tokens,
+            )
+            if hashed_prefix_length(trimmed_hashes, self.hash_block_size) <= request_tracker.num_saved_tokens:
+                return None
+            if new_block_ids is not None:
+                request_tracker.update(new_block_ids, prefill_end_tokens)
+            request_tracker.token_len = prefill_end_tokens
+            if request_tracker.token_ids is not None and len(request_tracker.token_ids) < prefill_end_tokens:
+                request_tracker.token_ids.extend(
+                    request.all_token_ids[len(request_tracker.token_ids) : prefill_end_tokens]
+                )
+            self._sync_swa_block_ids(request_tracker)
+            load_spec = self._running_load_spec(request_tracker, request.num_computed_tokens)
+            return self._build_req_meta(
+                request_tracker,
+                trimmed_hashes,
+                load_spec,
+                request.prompt_token_ids,
+                force_skip_save,
+                all_token_ids=request.all_token_ids,
+                block_hash_token_len=len(request.all_token_ids),
+            )
         num_new_tokens = scheduler_output.num_scheduled_tokens[req_id]
         if req_tuple:
             request = req_tuple[0]
@@ -587,10 +730,14 @@ class BaseKVPoolScheduler(ABC):
         skip_save = force_skip_save and not (is_decoding and self.save_decode_cache)
         return self._build_req_meta(
             request_tracker,
-            request.block_hashes,
+            getattr(request, "block_hashes", []),
             load_spec,
             request.prompt_token_ids,
             skip_save,
+            all_token_ids=getattr(request, "all_token_ids", None),
+            block_hash_token_len=(
+                len(request.all_token_ids) if getattr(request, "all_token_ids", None) is not None else None
+            ),
         )
 
     def _sync_swa_block_ids(self, tracker: RequestTracker) -> None:
@@ -641,6 +788,7 @@ class BaseKVPoolScheduler(ABC):
             original_block_size=self.original_block_size,
             kv_cache_group_families=self.kv_cache_group_families,
             hash_block_size=self.hash_block_size,
+            num_hash_lookahead_tokens=getattr(self, "num_hash_lookahead_tokens", 0),
         )
 
     def build_connector_meta(self, scheduler_output: SchedulerOutput) -> KVConnectorMetadata:
@@ -685,7 +833,8 @@ class BaseKVPoolScheduler(ABC):
                     and not self.tp_mismatch
                     and not self.layerwise_offload
                     and not self.save_decode_cache
-                    and not self.enable_partial_hash_hits
+                    and not getattr(self, "enable_partial_hash_hits", False)
+                    and not self._has_unsaved_prefill_lookahead(req_id)
                 ):
                     continue
                 if req_id in self._preempted_req_ids:
@@ -736,6 +885,11 @@ class BaseKVPoolScheduler(ABC):
         # Layerwise transfer uses the request tracker's block tables. Only
         # bulk transfer can consume and pin Core's standalone checkpoints.
         if self.use_layerwise:
+            finished_lookahead_metas: dict[str, ReqMeta] | None = getattr(self, "_finished_lookahead_metas", None)
+            if finished_lookahead_metas:
+                for finished_req_meta in finished_lookahead_metas.values():
+                    meta.add_request(finished_req_meta)
+                finished_lookahead_metas.clear()
             return meta
 
         state = getattr(scheduler_output, "kv_connector_block_state", None)
@@ -744,9 +898,16 @@ class BaseKVPoolScheduler(ABC):
         self._apply_current_save_block_ids(meta, scheduler_output)
         # Finish-time sources were pinned before request cleanup and do not
         # require a current block table.
-        for req_meta in self._finished_partial_tail_metas.values():
-            meta.add_request(req_meta)
-        self._finished_partial_tail_metas.clear()
+        finished_partial_tail_metas: dict[str, ReqMeta] | None = getattr(self, "_finished_partial_tail_metas", None)
+        if finished_partial_tail_metas:
+            for req_meta in finished_partial_tail_metas.values():
+                meta.add_request(req_meta)
+            finished_partial_tail_metas.clear()
+        finished_lookahead_metas = getattr(self, "_finished_lookahead_metas", None)
+        if finished_lookahead_metas:
+            for finished_req_meta in finished_lookahead_metas.values():
+                meta.add_request(finished_req_meta)
+            finished_lookahead_metas.clear()
         for req_meta in meta.requests:
             self.retain_blocks_for_save(req_meta)
         return meta
@@ -803,19 +964,98 @@ class BaseKVPoolScheduler(ABC):
         return None
 
     def has_pending_push_work(self) -> bool:
-        return False
+        finished_partial = getattr(self, "_finished_partial_tail_metas", None)
+        finished_metas = getattr(self, "_finished_lookahead_metas", None)
+        tracker = getattr(self, "_in_flight_save_blocks", None)
+        return bool(finished_partial) or bool(finished_metas) or (tracker is not None and tracker.has_pending_work())
 
     def update_connector_output(self, connector_output: KVConnectorOutput):
-        """Update requests whose external loads have finished."""
+        """Update requests whose external loads or in-flight saves have finished."""
         if connector_output.finished_recving:
             self._async_loading_req_ids.difference_update(connector_output.finished_recving)
+        meta = getattr(connector_output, "kv_connector_worker_meta", None)
+        tracker = getattr(self, "_in_flight_save_blocks", None)
+        if (
+            tracker is not None
+            and isinstance(meta, AscendStoreKVConnectorWorkerMetadata)
+            and self._block_pool is not None
+        ):
+            tracker.complete(meta.completed_events, self._block_pool)
+
+    def register_finished_lookahead_save(
+        self,
+        request: "Request",
+        block_ids: tuple[list[int], ...],
+    ) -> None:
+        """Pin and queue KV blocks newly eligible for saving once lookahead tokens arrive."""
+        if not self.can_put or not self.num_hash_lookahead_tokens or self._block_pool is None:
+            return
+        if not any(block_ids):
+            return
+        tracker = self._request_trackers.get(request.request_id)
+        if tracker is None or request.request_id in self._finished_lookahead_metas:
+            return
+        force_skip_save = self.kv_role == "kv_consumer"
+        prefill_end_tokens = tracker.prefill_end_tokens or tracker.num_prompt_tokens or len(request.prompt_token_ids)
+        save_limit = request.num_tokens if self.save_decode_cache else prefill_end_tokens
+        in_flight_tokens = max(
+            0,
+            _safe_nonneg_int(getattr(request, "num_in_flight_tokens", 0))
+            - _safe_nonneg_int(getattr(request, "num_stale_output_tokens", 0)),
+        )
+        completed_tokens = max(0, request.num_computed_tokens - in_flight_tokens)
+        if force_skip_save and (not self.save_decode_cache or completed_tokens <= prefill_end_tokens):
+            return
+        orig_saved_tokens = tracker.num_saved_tokens
+        if force_skip_save:
+            # Consumers skip pure-Prefill writes and only publish Decode-completed blocks.
+            floor_unit = self.cache_transfer_granularity if self._discard_partial_chunks else self.hash_block_size
+            prefill_block_floor = (prefill_end_tokens // floor_unit) * floor_unit
+            tracker.num_saved_tokens = max(tracker.num_saved_tokens, prefill_block_floor)
+        tracker.token_len = min(completed_tokens, save_limit)
+        tracker.allocated_block_ids_by_group = [list(group) for group in block_ids]
+        if self.enable_kv_events:
+            tracker.token_ids = list(request.all_token_ids[: tracker.token_len])
+        trimmed_hashes = trim_stale_lookahead_hashes(
+            request.block_hashes,
+            len(request.all_token_ids),
+            self.hash_block_size,
+            self.num_hash_lookahead_tokens,
+        )
+        req_meta = ReqMeta.from_request_tracker(
+            tracker,
+            self.cache_transfer_granularity,
+            skip_save=False,
+            block_hashes=trimmed_hashes,
+            is_last_chunk=True,
+            discard_partial_chunks=self._discard_partial_chunks,
+            original_block_size=self.original_block_size,
+            kv_cache_group_families=self.kv_cache_group_families,
+            save_partial_block=False,
+            hash_block_size=self.hash_block_size,
+            num_hash_lookahead_tokens=self.num_hash_lookahead_tokens,
+            all_token_ids=request.all_token_ids if self.enable_kv_events else None,
+        )
+        if req_meta is None or not req_meta.can_save or req_meta.save_end_token <= req_meta.save_start_token:
+            tracker.num_saved_tokens = orig_saved_tokens
+            return
+        if self._in_flight_save_blocks.retain_finished(
+            req_meta,
+            self.cacheable_group_ids,
+            self.num_mamba_speculative_blocks_by_group,
+            self._block_pool,
+        ):
+            self._finished_lookahead_metas[request.request_id] = req_meta
+        else:
+            tracker.num_saved_tokens = orig_saved_tokens
 
     def request_finished(
         self,
         request: "Request",
         block_ids: list[int],
     ) -> tuple[bool, dict[str, Any] | None]:
-        """Allow the scheduler to free blocks after synchronous saving."""
+        """Allow the scheduler to free blocks after pinning any pending lookahead save."""
+        self.register_finished_lookahead_save(request, (list(block_ids),))
         return False, None
 
     def request_finished_all_groups(
@@ -823,7 +1063,8 @@ class BaseKVPoolScheduler(ABC):
         request: "Request",
         block_ids: tuple[list[int], ...],
     ) -> tuple[bool, dict[str, Any] | None]:
-        """Allow the scheduler to free all groups after synchronous saving."""
+        """Allow the scheduler to free all groups after pinning pending lookahead saves."""
+        self.register_finished_lookahead_save(request, block_ids)
         return False, None
 
     def bind_gpu_block_pool(self, gpu_block_pool: "BlockPool") -> None:
@@ -834,6 +1075,14 @@ class BaseKVPoolScheduler(ABC):
 
     def reset_store(self) -> bool:
         """Drain the send queue and ``remove_all`` when no in-flight blocks are held."""
+        tracker = getattr(self, "_in_flight_save_blocks", None)
+        if tracker is not None and tracker.has_tracked_blocks():
+            logger.error(
+                "AscendStore reset_store refused; in-flight saves still track sending_events=%s sending_blocks=%s",
+                list(tracker.sending_events),
+                list(tracker.sending_blocks),
+            )
+            return False
         stale_ids = bool(self._async_loading_req_ids)
         # True when any block besides the null block is still held.
         if self._block_pool is None:
@@ -874,27 +1123,6 @@ class KVPoolScheduler(BaseKVPoolScheduler):
         kv_cache_config: KVCacheConfig | None = None,
     ) -> None:
         super().__init__(vllm_config, use_layerwise, kv_cache_config)
-        self._in_flight_save_blocks = InFlightSaveBlockTracker(vllm_config.parallel_config.world_size)
-
-    def update_connector_output(self, connector_output: KVConnectorOutput) -> None:
-        super().update_connector_output(connector_output)
-        meta = connector_output.kv_connector_worker_meta
-        if isinstance(meta, AscendStoreKVConnectorWorkerMetadata) and self._block_pool is not None:
-            self._in_flight_save_blocks.complete(meta.completed_events, self._block_pool)
-
-    def has_pending_push_work(self) -> bool:
-        return self._in_flight_save_blocks.has_pending_work()
-
-    def reset_store(self) -> bool:
-        tracker = self._in_flight_save_blocks
-        if tracker.has_tracked_blocks():
-            logger.error(
-                "AscendStore reset_store refused; in-flight saves still track sending_events=%s sending_blocks=%s",
-                list(tracker.sending_events),
-                list(tracker.sending_blocks),
-            )
-            return False
-        return super().reset_store()
 
     def retain_blocks_for_save(self, req_meta: ReqMeta) -> None:
         """Keep Mamba source blocks alive until bulk save completes."""
@@ -942,7 +1170,16 @@ class KVPoolScheduler(BaseKVPoolScheduler):
         hash_block_size = coord.hash_block_size
         # Core drops the Mamba checkpoint whenever EAGLE block drop is on,
         # whichever groups carry the eagle flag.
-        boundary = get_mamba_prefill_checkpoint_position(prompt_tokens, hash_block_size, coord.use_eagle)
+        lookahead = getattr(coord, "num_hash_lookahead_tokens", 0)
+        if lookahead > 0:
+            boundary = get_mamba_prefill_checkpoint_position(
+                prompt_tokens,
+                hash_block_size,
+                coord.use_eagle,
+                num_hash_lookahead_tokens=lookahead,
+            )
+        else:
+            boundary = get_mamba_prefill_checkpoint_position(prompt_tokens, hash_block_size, coord.use_eagle)
         # Any other sub-block Mamba hand-off is a shared-prefix junction. Its
         # attention KV, EAGLE proof included, ends on an attention block end no
         # later than this checkpoint's proof, so normal and prompt-tail saves
@@ -1009,7 +1246,7 @@ class KVPoolScheduler(BaseKVPoolScheduler):
             token_len_chunk=0,
             can_save=True,
             block_ids_by_group=[list(group) for group in block_ids],
-            block_hashes=list(request.block_hashes),
+            block_hashes=self._effective_lookup_hashes(request),
             num_prompt_tokens=request.num_prompt_tokens,
             completed_token_len=request.num_computed_tokens,
             boundary_puts=mamba_puts,
@@ -1023,26 +1260,48 @@ class KVPoolScheduler(BaseKVPoolScheduler):
         return False
 
     def _lookup_external_hit_tokens(self, request: Request, num_computed_tokens: int) -> StoreLookupResult | None:
+        lookahead = getattr(self, "num_hash_lookahead_tokens", 0)
         prompt_token_len = len(request.prompt_token_ids)
-        if self.enable_partial_hash_hits:
+        if getattr(self, "enable_partial_hash_hits", False):
             # Preserve the prompt end so the worker can reserve the final token for recomputation.
             token_len = prompt_token_len
-        elif len(self.cacheable_group_ids) != len(self.original_block_size):
-            # Private compressor state is rebuilt from a whole token page.
-            token_len = self._floor_to_cache_transfer_granularity(max(prompt_token_len - 1, 0))
-        else:
-            token_len = (
-                self._floor_to_cache_transfer_granularity(prompt_token_len)
-                if self._discard_partial_chunks
-                else prompt_token_len
+            if lookahead > 0:
+                block_hashes = self._effective_lookup_hashes(request)
+                max_reusable = self._max_reusable_lookup_tokens(request, self.hash_block_size, block_hashes)
+                if max_reusable < self.hash_block_size or num_computed_tokens >= max_reusable:
+                    return None
+            else:
+                if token_len < self.cache_transfer_granularity or num_computed_tokens >= token_len:
+                    return None
+                block_hashes = request.block_hashes
+        elif lookahead > 0:
+            block_hashes = self._effective_lookup_hashes(request)
+            alignment = (
+                self.cache_transfer_granularity
+                if self._discard_partial_chunks or len(self.cacheable_group_ids) != len(self.original_block_size)
+                else self.hash_block_size
             )
-        if token_len < self.cache_transfer_granularity or num_computed_tokens >= token_len:
-            return None
+            token_len = self._max_reusable_lookup_tokens(request, alignment, block_hashes)
+            if token_len < self.cache_transfer_granularity or num_computed_tokens >= token_len:
+                return None
+        else:
+            if len(self.cacheable_group_ids) != len(self.original_block_size):
+                # Private compressor state is rebuilt from a whole token page.
+                token_len = self._floor_to_cache_transfer_granularity(max(prompt_token_len - 1, 0))
+            else:
+                token_len = (
+                    self._floor_to_cache_transfer_granularity(prompt_token_len)
+                    if self._discard_partial_chunks
+                    else prompt_token_len
+                )
+            if token_len < self.cache_transfer_granularity or num_computed_tokens >= token_len:
+                return None
+            block_hashes = request.block_hashes
         if self.client is None or self.client.closed:
             self.client = LookupKeyClient(self.vllm_config)
         return self.client.lookup(
             token_len,
-            request.block_hashes,
+            block_hashes,
             self.kv_cache_group_ids,
             hbm_hit_tokens=num_computed_tokens,
         )
