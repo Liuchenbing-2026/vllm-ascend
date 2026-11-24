@@ -44,6 +44,7 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector import
     SizedDict,
     _reconstruct_shared_pages,
     _validate_remote_kv_layout,
+    get_prefill_pp_indices,
     group_concurrent_contiguous,
 )
 from vllm_ascend.worker.v2.attn_utils import _allocate_kv_cache, _reshape_kv_cache_v2  # noqa: E402
@@ -1135,6 +1136,7 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         remote_handshake_port: int = 31000,
         offset: int = 0,
         tp_num_need_pulls: int = 1,
+        all_task_done: bool = True,
     ) -> dict[str, Any]:
         return {
             "request_id": request_id,
@@ -1147,7 +1149,7 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
             "offset": offset,
             "tp_num_need_pulls": tp_num_need_pulls,
             "remote_port_send_num": {},
-            "all_task_done": True,
+            "all_task_done": all_task_done,
         }
 
     def _wrap_consumer_connector(
@@ -1471,10 +1473,16 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         thread = self._make_recv_thread(
             local_addrs=[0x1000, 0x2000, 0x3000, 0x4000],
             local_block_lens=[64, 64, 64, 32],
-            local_entry_layer_names=[["target.0"], ["target.1"], ["target.2"], ["dspark.0"]],
+            local_entry_layer_names=[
+                ["model.layers.0.self_attn.attn"],
+                ["model.layers.1.self_attn.attn"],
+                ["model.layers.2.self_attn.attn"],
+                ["dspark.0"],
+            ],
             local_spec_method="dspark",
             prefill_pp_size=2,
             addr_group_idx=[[0], [0], [0], [1]],
+            pp_layer_indices={0: (0, 2), 1: (2, 3)},
             kv_cache_tensors=tensors,
         )
         # Stage 1 matching slice succeeds (indices 2..4).
@@ -1487,7 +1495,7 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
             block_lens=[64, 32],
             ssm_sizes=(0, 0),
             local_ip="192.0.2.2",
-            entry_layer_names=[["target.2"], ["dspark.0"]],
+            entry_layer_names=[["model.layers.2.self_attn.attn"], ["dspark.0"]],
             spec_method="dspark",
         )
         self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(stage1_meta), remote_handshake_port=31001)
@@ -1510,7 +1518,7 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
             block_lens=[64],
             ssm_sizes=(0, 0),
             local_ip="192.0.2.3",
-            entry_layer_names=[["target.2"]],
+            entry_layer_names=[["model.layers.2.self_attn.attn"]],
             spec_method="",
         )
         self._fetch_metadata(
@@ -1994,13 +2002,18 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         thread = self._make_recv_thread(
             local_addrs=[0x1000, 0x2000, 0x3000, 0x4000],
             local_block_lens=[64, 64, 64, 32],
-            local_entry_layer_names=[["l0"], ["l1"], ["l2"], ["dspark.0"]],
+            local_entry_layer_names=[
+                ["model.layers.0.self_attn.attn"],
+                ["model.layers.1.self_attn.attn"],
+                ["model.layers.2.self_attn.attn"],
+                ["dspark.0"],
+            ],
             local_spec_method="dspark",
             use_hybrid=True,
             prefill_pp_size=2,
             hma_group_size=2,
             addr_group_idx=[[0], [0], [0], [1]],
-            pp_layer_indices={0: (0, 2), 1: (2, 4)},
+            pp_layer_indices={0: (0, 2), 1: (2, 3)},
             kv_cache_tensors=kv_tensors,
         )
         thread.kv_caches_base_addr["prefill-engine"] = {
@@ -2010,8 +2023,8 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         thread.remote_te_port["prefill-engine"] = {31000: 7770, 31001: 7771}
         thread.remote_block_lens["prefill-engine"] = {31000: [64, 64], 31001: [64]}
         thread.remote_entry_layer_names["prefill-engine"] = {
-            31000: [["l0"], ["l1"]],
-            31001: [["l2"]],
+            31000: [["model.layers.0.self_attn.attn"], ["model.layers.1.self_attn.attn"]],
+            31001: [["model.layers.2.self_attn.attn"]],
         }
         thread.remote_spec_method["prefill-engine"] = {31000: "dspark", 31001: ""}
         thread.remote_block_strides["prefill-engine"] = {31000: [64, 64], 31001: [64]}
@@ -2793,6 +2806,10 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         kv_role: str = "kv_consumer",
         engine_id: str = "decode-engine",
         port: int = 32000,
+        attn_layers: list[str] | None = None,
+        mamba_layer_groups: list[list[str]] | None = None,
+        num_hidden_layers: int = 6,
+        prefill_pp_size: int = 1,
     ) -> tuple[
         torch.Tensor,
         dict[str, Any],
@@ -2802,16 +2819,24 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         """Materialize real MRV2 hybrid_backing views and register with MooncakeConnectorWorker."""
         k_dtype = torch.bfloat16
         ssm_dtype = torch.float32
-        attn_layers = ["model.layers.0.self_attn.attn", "model.layers.1.self_attn.attn"]
-        if include_mtp:
-            attn_layers.append("mtp.layers.0.self_attn.attn")
-        mamba_layer_groups = [
-            ["model.layers.0.linear_attn", "model.layers.1.linear_attn"],
-            ["model.layers.2.linear_attn", "model.layers.3.linear_attn"],
-            ["model.layers.4.linear_attn", "model.layers.5.linear_attn"],
-        ]
-        # 2 shared slots hold Attention + Mamba G1..G3; slot 2 holds unpaired MTP when enabled.
-        num_slots = 3 if include_mtp else 2
+        resolved_attn_layers = (
+            list(attn_layers)
+            if attn_layers is not None
+            else (
+                ["model.layers.0.self_attn.attn", "model.layers.1.self_attn.attn"]
+                + (["mtp.layers.0.self_attn.attn"] if include_mtp else [])
+            )
+        )
+        resolved_mamba_groups = (
+            [list(group) for group in mamba_layer_groups]
+            if mamba_layer_groups is not None
+            else [
+                ["model.layers.0.linear_attn", "model.layers.1.linear_attn"],
+                ["model.layers.2.linear_attn", "model.layers.3.linear_attn"],
+                ["model.layers.4.linear_attn", "model.layers.5.linear_attn"],
+            ]
+        )
+        num_slots = max(len(resolved_attn_layers), max(len(group) for group in resolved_mamba_groups))
         layer_stride = num_blocks * page_size_padded
         total_bytes = num_slots * layer_stride
 
@@ -2834,7 +2859,7 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         kv_tensors = [
             KVCacheTensor(
                 size=total_bytes,
-                layers=list(attn_layers),
+                layers=list(resolved_attn_layers),
                 layer_stride=layer_stride,
                 block_stride=page_size_padded,
                 offset=0,
@@ -2847,7 +2872,7 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
                     block_stride=page_size_padded,
                     offset=0,
                 )
-                for mamba_names in mamba_layer_groups
+                for mamba_names in resolved_mamba_groups
             ],
         ]
         mamba_group_specs = [
@@ -2855,13 +2880,13 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
                 block_size=attn_block_size,
                 kv_cache_specs={name: mamba_spec for name in mamba_names},
             )
-            for mamba_names in mamba_layer_groups
+            for mamba_names in resolved_mamba_groups
         ]
         kv_groups = [
-            KVCacheGroupSpec(layer_names=list(attn_layers), kv_cache_spec=attn_spec),
+            KVCacheGroupSpec(layer_names=list(resolved_attn_layers), kv_cache_spec=attn_spec),
             *[
                 KVCacheGroupSpec(layer_names=list(mamba_names), kv_cache_spec=wrapped)
-                for mamba_names, wrapped in zip(mamba_layer_groups, mamba_group_specs, strict=True)
+                for mamba_names, wrapped in zip(resolved_mamba_groups, mamba_group_specs, strict=True)
             ],
         ]
         kv_cache_config = KVCacheConfig(
@@ -2894,7 +2919,7 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
                     kernel_block_size=kernel_block_size,
                     kv_cache_group_id=0,
                     kv_cache_spec=attn_spec,
-                    layer_names=list(attn_layers),
+                    layer_names=list(resolved_attn_layers),
                     backend=backend,
                 ),
                 *[
@@ -2904,18 +2929,18 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
                         kv_cache_spec=mamba_spec,
                         layer_names=list(mamba_names),
                     )
-                    for gid, mamba_names in enumerate(mamba_layer_groups, start=1)
+                    for gid, mamba_names in enumerate(resolved_mamba_groups, start=1)
                 ],
             ]
             kv_caches = _reshape_kv_cache_v2(
                 attn_groups=attn_groups,
                 kv_cache_raw_tensors=raw_tensors,
                 cache_dtype="auto",
-                kernel_block_sizes=[kernel_block_size, attn_block_size, attn_block_size, attn_block_size],
+                kernel_block_sizes=[kernel_block_size] + [attn_block_size] * len(resolved_mamba_groups),
                 shared_kv_cache_layers={},
                 kv_cache_config=kv_cache_config,
             )
-        raw0 = raw_tensors["model.layers.0.self_attn.attn"]
+        raw0 = raw_tensors[resolved_attn_layers[0]]
         assert isinstance(raw0, torch.Tensor)
         backing_base = raw0._base if raw0._base is not None else raw0
         assert isinstance(backing_base, torch.Tensor)
@@ -2929,7 +2954,7 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
                 hf_text_config=types.SimpleNamespace(
                     num_key_value_heads=1,
                     head_dim=8,
-                    num_hidden_layers=6,
+                    num_hidden_layers=num_hidden_layers,
                 ),
             ),
             cache_config=types.SimpleNamespace(block_size=attn_block_size, mamba_cache_mode="align"),
@@ -2951,8 +2976,8 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         worker.pcp_rank = 0
         worker._prefill_tp_size = 1
         worker._decode_tp_size = 1
-        worker._prefill_pp_size = 1
-        worker.hma_group_size = 4
+        worker._prefill_pp_size = prefill_pp_size
+        worker.hma_group_size = 1 + len(resolved_mamba_groups)
         worker.side_channel_host = "192.0.2.1" if kv_role == "kv_producer" else "127.0.0.1"
         worker.side_channel_port = port
         worker.handshake_port = port
@@ -2998,22 +3023,20 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
             ctypes.memmove(src_addr, dst_addr, nbytes)
         return 0
 
-    def _run_memmove_transfer(
+    def _make_recv_thread_from_worker(
         self,
         *,
         d_worker: MooncakeConnectorWorker,
         recv_cls_call: Any,
-        p_meta: MooncakeAgentMetadata,
-        local_block_ids: tuple[list[int], ...],
-        remote_block_ids: tuple[list[int], ...],
-        request_id: str = "req-memmove",
-    ) -> tuple[KVCacheRecvingThread, list[int]]:
-        """Build a consumer recv thread from real registration args and run real ctypes.memmove reads."""
-        call = recv_cls_call
+        prefill_pp_size: int = 1,
+        pp_layer_indices: dict[int, tuple[int, int]] | None = None,
+        local_spec_method: str = "mtp",
+    ) -> KVCacheRecvingThread:
+        """Build a consumer KVCacheRecvingThread from real worker registration outputs."""
         thread = object.__new__(KVCacheRecvingThread)
         thread.tp_rank = 0
         thread.tp_size = 1
-        thread._prefill_pp_size = 1
+        thread._prefill_pp_size = prefill_pp_size
         thread.local_engine_id = d_worker.engine_id
         thread.local_handshake_port = d_worker.handshake_port
         thread.side_channel_port = d_worker.side_channel_port
@@ -3023,15 +3046,20 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         thread.kv_cache_config = d_worker.kv_cache_config
         thread.kv_cache_specs = [g.kv_cache_spec for g in d_worker.kv_cache_config.kv_cache_groups]
         thread.vllm_config = d_worker.vllm_config
-        thread.pp_layer_indices = {0: (0, len(d_worker.kv_caches_base_addr))}
+        num_layers = d_worker.vllm_config.model_config.hf_text_config.num_hidden_layers
+        thread.pp_layer_indices = pp_layer_indices or (
+            {rank: get_prefill_pp_indices(num_layers, rank, prefill_pp_size) for rank in range(prefill_pp_size)}
+            if prefill_pp_size > 1
+            else {0: (0, len(d_worker.kv_caches_base_addr))}
+        )
         thread.kv_caches_base_addr = SizedDict()
         thread.kv_caches_base_addr[d_worker.engine_id][d_worker.handshake_port] = list(d_worker.kv_caches_base_addr)
         thread.block_len_per_addr = list(d_worker.block_len_per_addr)
         thread.block_stride_per_addr = list(d_worker.block_stride_per_addr)
-        thread.block_scale_per_addr = list(call.kwargs["block_scale_per_addr"])
+        thread.block_scale_per_addr = list(recv_cls_call.kwargs["block_scale_per_addr"])
         thread.addr_group_idx = [list(g) for g in d_worker.addr_group_idx]
         thread.local_entry_layer_names = [list(n) for n in d_worker.entry_layer_names]
-        thread.local_spec_method = p_meta.spec_method or "mtp"
+        thread.local_spec_method = local_spec_method
         thread.remote_te_port = SizedDict()
         thread.remote_block_lens = SizedDict()
         thread.remote_entry_layer_names = SizedDict()
@@ -3048,9 +3076,26 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         thread.request_task_counts = defaultdict(int)
         thread.finished_request_markers = set()
         thread.request_task_counts_lock = threading.Lock()
-
         thread.engine = MagicMock()
         thread.engine.batch_transfer_sync_read.side_effect = self._memmove_sync_read
+        return thread
+
+    def _run_memmove_transfer(
+        self,
+        *,
+        d_worker: MooncakeConnectorWorker,
+        recv_cls_call: Any,
+        p_meta: MooncakeAgentMetadata,
+        local_block_ids: tuple[list[int], ...],
+        remote_block_ids: tuple[list[int], ...],
+        request_id: str = "req-memmove",
+    ) -> tuple[KVCacheRecvingThread, list[int]]:
+        """Build a consumer recv thread from real registration args and run real ctypes.memmove reads."""
+        thread = self._make_recv_thread_from_worker(
+            d_worker=d_worker,
+            recv_cls_call=recv_cls_call,
+            local_spec_method=p_meta.spec_method or "mtp",
+        )
         self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(p_meta), remote_handshake_port=31000)
 
         thread.task_tracker.add_req_to_process(request_id)
@@ -3400,46 +3445,11 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         sym_backing.copy_(((torch.arange(sym_backing.numel(), dtype=torch.int64) * 29 + 5) % 121 + 1).to(torch.int8))
         d_backing.fill_(-3)
 
-        thread = object.__new__(KVCacheRecvingThread)
-        thread.tp_rank = 0
-        thread.tp_size = 1
-        thread._prefill_pp_size = 1
-        thread.local_engine_id = d_worker.engine_id
-        thread.local_handshake_port = d_worker.handshake_port
-        thread.side_channel_port = d_worker.side_channel_port
-        thread.use_hybrid = True
-        thread.hma_group_size = 4
-        thread.kv_caches = d_worker.kv_caches
-        thread.kv_cache_config = d_worker.kv_cache_config
-        thread.kv_cache_specs = [g.kv_cache_spec for g in d_worker.kv_cache_config.kv_cache_groups]
-        thread.vllm_config = d_worker.vllm_config
-        thread.pp_layer_indices = {0: (0, len(d_worker.kv_caches_base_addr))}
-        thread.kv_caches_base_addr = SizedDict()
-        thread.kv_caches_base_addr[d_worker.engine_id][d_worker.handshake_port] = list(d_worker.kv_caches_base_addr)
-        thread.block_len_per_addr = list(d_worker.block_len_per_addr)
-        thread.block_stride_per_addr = list(d_worker.block_stride_per_addr)
-        thread.block_scale_per_addr = list(recv_cls.call_args.kwargs["block_scale_per_addr"])
-        thread.addr_group_idx = [list(g) for g in d_worker.addr_group_idx]
-        thread.local_entry_layer_names = [list(n) for n in d_worker.entry_layer_names]
-        thread.local_spec_method = "mtp"
-        thread.remote_te_port = SizedDict()
-        thread.remote_block_lens = SizedDict()
-        thread.remote_entry_layer_names = SizedDict()
-        thread.remote_spec_method = SizedDict()
-        thread.remote_block_strides = SizedDict()
-        thread.remote_block_scales = SizedDict()
-        thread.remote_metadata_lock = threading.Lock()
-        thread.encoder = msgspec.msgpack.Encoder()
-        thread.decoder = msgspec.msgpack.Decoder(MooncakeAgentMetadata)
-        thread.task_tracker = KVCacheTaskTracker()
-        thread.request_queue = queue.Queue()
-        thread.proc_not_transfer_request = {}
-        thread.proc_not_transfer_request_lock = threading.Lock()
-        thread.request_task_counts = defaultdict(int)
-        thread.finished_request_markers = set()
-        thread.request_task_counts_lock = threading.Lock()
-        thread.engine = MagicMock()
-        thread.engine.batch_transfer_sync_read.side_effect = self._memmove_sync_read
+        thread = self._make_recv_thread_from_worker(
+            d_worker=d_worker,
+            recv_cls_call=recv_cls.call_args,
+            local_spec_method="mtp",
+        )
 
         encoder = msgspec.msgpack.Encoder()
         sock = MagicMock(spec=zmq.Socket)
@@ -3509,3 +3519,503 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         sym_mamba5 = sym_caches["model.layers.5.linear_attn"]
         torch.testing.assert_close(d_mamba0[0][3], sym_mamba0[0][2])
         torch.testing.assert_close(d_mamba5[1][9], sym_mamba5[1][10])
+
+    def test_worker_init_unwraps_uniform_mamba_specs_two_state_and_one_state(self):
+        """Verify MooncakeConnectorWorker.__init__ + register_kv_caches handles UniformType MambaSpecs."""
+
+        def make_vllm_config(*, prefill_tp: int = 1, decode_tp: int = 1) -> Any:
+            return types.SimpleNamespace(
+                model_config=types.SimpleNamespace(
+                    is_deepseek_mla=False,
+                    hf_config=types.SimpleNamespace(),
+                    hf_text_config=types.SimpleNamespace(
+                        num_key_value_heads=2,
+                        head_dim=8,
+                        num_hidden_layers=2,
+                    ),
+                ),
+                parallel_config=types.SimpleNamespace(
+                    tensor_parallel_size=decode_tp,
+                    data_parallel_rank=0,
+                    data_parallel_rank_local=0,
+                    data_parallel_size_local=1,
+                    pipeline_parallel_size=1,
+                    prefill_context_parallel_size=1,
+                    decode_context_parallel_size=1,
+                ),
+                scheduler_config=types.SimpleNamespace(disable_hybrid_kv_cache_manager=False),
+                cache_config=types.SimpleNamespace(block_size=4, mamba_cache_mode="align"),
+                speculative_config=None,
+                kv_transfer_config=types.SimpleNamespace(
+                    kv_role="kv_producer",
+                    kv_port=31000,
+                    get_from_extra_config=lambda key, default=None: (
+                        {"tp_size": prefill_tp, "dp_size": 1, "pp_size": 1}
+                        if key == "prefill"
+                        else ({"tp_size": decode_tp, "dp_size": 1, "pp_size": 1} if key == "decode" else default)
+                    ),
+                ),
+            )
+
+        def fake_thread_init(*args: Any, **kwargs: Any) -> MagicMock:
+            ready_event = next(arg for arg in args if isinstance(arg, threading.Event))
+            ready_event.set()
+            return MagicMock(is_alive=MagicMock(return_value=True))
+
+        attn_spec = FullAttentionSpec(block_size=4, num_kv_heads=2, head_size=8, dtype=torch.bfloat16)
+        two_state_spec = MambaSpec(
+            block_size=4,
+            shapes=((4, 6), (2, 4, 8)),
+            dtypes=(torch.float32, torch.float32),
+            mamba_cache_mode="align",
+        )
+        one_state_spec = MambaSpec(
+            block_size=4,
+            shapes=((4, 8),),
+            dtypes=(torch.bfloat16,),
+            mamba_cache_mode="align",
+        )
+        for label, mamba_spec, state_shapes, state_dtypes, exp_sizes, exp_entries in (
+            ("two_state", two_state_spec, ((4, 6), (2, 4, 8)), (torch.float32, torch.float32), (96, 256), 4),
+            ("one_state", one_state_spec, ((4, 8),), (torch.bfloat16,), (64, 0), 3),
+        ):
+            with self.subTest(case=label):
+                wrapped_mamba = UniformTypeKVCacheSpecs(
+                    block_size=4,
+                    kv_cache_specs={"model.layers.0.linear_attn": mamba_spec},
+                )
+                kv_cfg = KVCacheConfig(
+                    num_blocks=4,
+                    kv_cache_tensors=[
+                        KVCacheTensor(
+                            size=512,
+                            layers=["model.layers.1.self_attn.attn"],
+                            layer_stride=512,
+                            block_stride=128,
+                        ),
+                        KVCacheTensor(
+                            size=512,
+                            layers=["model.layers.0.linear_attn"],
+                            layer_stride=512,
+                            block_stride=128,
+                        ),
+                    ],
+                    kv_cache_groups=[
+                        KVCacheGroupSpec(layer_names=["model.layers.1.self_attn.attn"], kv_cache_spec=attn_spec),
+                        KVCacheGroupSpec(layer_names=["model.layers.0.linear_attn"], kv_cache_spec=wrapped_mamba),
+                    ],
+                )
+                fake_te = MagicMock(get_rpc_port=MagicMock(return_value=9001))
+                with (
+                    patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ascend_config"),
+                    patch(
+                        "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector."
+                        "get_tensor_model_parallel_rank",
+                        return_value=0,
+                    ),
+                    patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_tp_group"),
+                    patch(
+                        "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_pp_group",
+                        return_value=types.SimpleNamespace(rank_in_group=0),
+                    ),
+                    patch(
+                        "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_pcp_group",
+                        return_value=types.SimpleNamespace(rank_in_group=0),
+                    ),
+                    patch(
+                        "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                        return_value="127.0.0.1",
+                    ),
+                    patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.inject_qos"),
+                    patch(
+                        "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.global_te",
+                        new=MagicMock(get_transfer_engine=MagicMock(return_value=fake_te)),
+                    ),
+                    patch(
+                        "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector."
+                        "validate_register_region_count"
+                    ),
+                    patch(
+                        "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.KVCacheSendingThread",
+                        side_effect=fake_thread_init,
+                    ),
+                ):
+                    worker = MooncakeConnectorWorker(make_vllm_config(), "engine-uniform", kv_cfg)
+                    self.assertTrue(worker.use_mamba)
+                    self.assertEqual(worker._is_mamba_group, [False, True])
+                    self.assertEqual(worker._mamba_ssm_size, exp_sizes)
+                    self.assertIs(worker.layer_specs["model.layers.0.linear_attn"], mamba_spec)
+                    kv_caches: dict[str, Any] = {
+                        "model.layers.1.self_attn.attn": (
+                            torch.zeros((4, 4, 2, 8), dtype=torch.bfloat16),
+                            torch.zeros((4, 4, 2, 8), dtype=torch.bfloat16),
+                        ),
+                        "model.layers.0.linear_attn": tuple(
+                            torch.zeros((4, *shp), dtype=dt) for shp, dt in zip(state_shapes, state_dtypes, strict=True)
+                        ),
+                    }
+                    worker.register_kv_caches(kv_caches)
+                    self.assertEqual(len(worker.kv_caches_base_addr), exp_entries)
+                    assert worker.xfer_handshake_metadata is not None
+                    self.assertEqual(worker.xfer_handshake_metadata.ssm_sizes, exp_sizes)
+
+        # Asymmetric TP with UniformTypeKVCacheSpecs-wrapped Mamba must also trigger the Mamba TP guard.
+        wrapped_asym = UniformTypeKVCacheSpecs(
+            block_size=4, kv_cache_specs={"model.layers.0.linear_attn": two_state_spec}
+        )
+        kv_cfg_asym = KVCacheConfig(
+            num_blocks=4,
+            kv_cache_tensors=[],
+            kv_cache_groups=[
+                KVCacheGroupSpec(layer_names=["model.layers.1.self_attn.attn"], kv_cache_spec=attn_spec),
+                KVCacheGroupSpec(layer_names=["model.layers.0.linear_attn"], kv_cache_spec=wrapped_asym),
+            ],
+        )
+        with (
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ascend_config"),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_tensor_model_parallel_rank",
+                return_value=0,
+            ),
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_tp_group"),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_pp_group",
+                return_value=types.SimpleNamespace(rank_in_group=0),
+            ),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_pcp_group",
+                return_value=types.SimpleNamespace(rank_in_group=0),
+            ),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                return_value="127.0.0.1",
+            ),
+            self.assertRaises(AssertionError) as tp_ctx,
+        ):
+            MooncakeConnectorWorker(make_vllm_config(prefill_tp=2, decode_tp=1), "engine-asym-tp", kv_cfg_asym)
+        self.assertIn("different TP size with Mamba", str(tp_ctx.exception))
+
+    def test_hybrid_pp2_to_pp1_real_mrv2_no_mtp_and_with_last_stage_mtp_byte_fidelity(self):
+        """Verify group-major Decode PP=1 pulls bit-exact MRV2 stages from Prefill PP=2 without and with MTP."""
+        d_mamba_groups = [
+            ["model.layers.0.linear_attn", "model.layers.4.linear_attn"],
+            ["model.layers.1.linear_attn", "model.layers.5.linear_attn"],
+            ["model.layers.2.linear_attn", "model.layers.6.linear_attn"],
+        ]
+        p0_mamba_groups = [
+            ["model.layers.0.linear_attn"],
+            ["model.layers.1.linear_attn"],
+            ["model.layers.2.linear_attn"],
+        ]
+        p1_mamba_groups = [
+            ["model.layers.4.linear_attn"],
+            ["model.layers.5.linear_attn"],
+            ["model.layers.6.linear_attn"],
+        ]
+        for label, include_mtp in (("no_mtp", False), ("with_last_stage_mtp", True)):
+            with self.subTest(case=label):
+                d_attn_layers = ["model.layers.3.self_attn.attn", "model.layers.7.self_attn.attn"] + (
+                    ["mtp.layers.0.self_attn.attn"] if include_mtp else []
+                )
+                p0_attn_layers = ["model.layers.3.self_attn.attn"]
+                p1_attn_layers = ["model.layers.7.self_attn.attn"] + (
+                    ["mtp.layers.0.self_attn.attn"] if include_mtp else []
+                )
+                p0_backing, p0_caches, p0_worker, _ = self._build_mrv2_strided_hybrid_fixture(
+                    include_mtp=False,
+                    conv_width=6 if include_mtp else 3,
+                    kv_role="kv_producer",
+                    engine_id="prefill-pp",
+                    port=31000,
+                    attn_layers=p0_attn_layers,
+                    mamba_layer_groups=p0_mamba_groups,
+                    num_hidden_layers=8,
+                )
+                p1_backing, p1_caches, p1_worker, _ = self._build_mrv2_strided_hybrid_fixture(
+                    include_mtp=include_mtp,
+                    conv_width=6 if include_mtp else 3,
+                    kv_role="kv_producer",
+                    engine_id="prefill-pp",
+                    port=31001,
+                    attn_layers=p1_attn_layers,
+                    mamba_layer_groups=p1_mamba_groups,
+                    num_hidden_layers=8,
+                )
+                d_backing, d_caches, d_worker, recv_cls = self._build_mrv2_strided_hybrid_fixture(
+                    include_mtp=include_mtp,
+                    conv_width=6 if include_mtp else 3,
+                    kv_role="kv_consumer",
+                    engine_id="decode-pp1",
+                    port=32000,
+                    attn_layers=d_attn_layers,
+                    mamba_layer_groups=d_mamba_groups,
+                    num_hidden_layers=8,
+                    prefill_pp_size=2,
+                )
+                assert p0_worker.xfer_handshake_metadata is not None
+                assert p1_worker.xfer_handshake_metadata is not None
+                p0_backing.copy_(
+                    ((torch.arange(p0_backing.numel(), dtype=torch.int64) * 17 + 1) % 121 + 1).to(torch.int8)
+                )
+                p1_backing.copy_(
+                    ((torch.arange(p1_backing.numel(), dtype=torch.int64) * 31 + 7) % 121 + 1).to(torch.int8)
+                )
+                d_backing.fill_(-9)
+
+                thread = self._make_recv_thread_from_worker(
+                    d_worker=d_worker,
+                    recv_cls_call=recv_cls.call_args,
+                    prefill_pp_size=2,
+                    local_spec_method="mtp" if include_mtp else "",
+                )
+                self._fetch_metadata(
+                    thread,
+                    msgspec.msgpack.Encoder().encode(p0_worker.xfer_handshake_metadata),
+                    remote_handshake_port=31000,
+                )
+                self._fetch_metadata(
+                    thread,
+                    msgspec.msgpack.Encoder().encode(p1_worker.xfer_handshake_metadata),
+                    remote_handshake_port=31001,
+                )
+
+                local_ids = (
+                    ([5], [3, 12, 13, 14], [7, 14, 15, 0], [9, 1, 2, 4]) if include_mtp else ([5], [3], [7], [9])
+                )
+                p0_remote_ids = ([1], [2], [6], [10])
+                p1_remote_ids = ([2], [3], [5], [8])
+                req_id = f"req-pp2-{label}"
+                connector, _ = self._wrap_consumer_connector(thread)
+                thread.task_tracker.add_req_to_process(req_id)
+                for offset, port, r_ids, done in (
+                    (0, 31000, p0_remote_ids, False),
+                    (1, 31001, p1_remote_ids, True),
+                ):
+                    thread.request_queue.put(
+                        self._make_req_meta(
+                            request_id=req_id,
+                            local_block_ids=local_ids,
+                            remote_block_ids=r_ids,
+                            remote_engine_id="prefill-pp",
+                            remote_handshake_port=port,
+                            offset=offset,
+                            all_task_done=done,
+                        )
+                    )
+                with (
+                    patch.object(thread, "_send_done_recv_signal"),
+                    patch(
+                        "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                        return_value="127.0.0.1",
+                    ),
+                ):
+                    for _ in range(2):
+                        queued = thread.request_queue.get_nowait()
+                        thread._mark_request_task_submitted(queued)
+                        thread._handle_request(queued)
+
+                self.assertEqual(
+                    connector.get_transfer_results(set()),
+                    KVConnectorTransferResults(finished_recving={req_id}, failed_recving=set()),
+                )
+                torch.testing.assert_close(
+                    d_caches["model.layers.3.self_attn.attn"][0][5],
+                    p0_caches["model.layers.3.self_attn.attn"][0][1],
+                )
+                torch.testing.assert_close(
+                    d_caches["model.layers.3.self_attn.attn"][1][5],
+                    p0_caches["model.layers.3.self_attn.attn"][1][1],
+                )
+                torch.testing.assert_close(
+                    d_caches["model.layers.7.self_attn.attn"][0][5],
+                    p1_caches["model.layers.7.self_attn.attn"][0][2],
+                )
+                torch.testing.assert_close(
+                    d_caches["model.layers.7.self_attn.attn"][1][5],
+                    p1_caches["model.layers.7.self_attn.attn"][1][2],
+                )
+                if include_mtp:
+                    torch.testing.assert_close(
+                        d_caches["mtp.layers.0.self_attn.attn"][0][5],
+                        p1_caches["mtp.layers.0.self_attn.attn"][0][2],
+                    )
+                    torch.testing.assert_close(
+                        d_caches["mtp.layers.0.self_attn.attn"][1][5],
+                        p1_caches["mtp.layers.0.self_attn.attn"][1][2],
+                    )
+                for grp_idx, dst_blk, p0_layer, p1_layer in (
+                    (1, 3, "model.layers.0.linear_attn", "model.layers.4.linear_attn"),
+                    (2, 7, "model.layers.1.linear_attn", "model.layers.5.linear_attn"),
+                    (3, 9, "model.layers.2.linear_attn", "model.layers.6.linear_attn"),
+                ):
+                    p0_blk = p0_remote_ids[grp_idx][0]
+                    p1_blk = p1_remote_ids[grp_idx][0]
+                    torch.testing.assert_close(d_caches[p0_layer][0][dst_blk], p0_caches[p0_layer][0][p0_blk])
+                    torch.testing.assert_close(d_caches[p0_layer][1][dst_blk], p0_caches[p0_layer][1][p0_blk])
+                    torch.testing.assert_close(d_caches[p1_layer][0][dst_blk], p1_caches[p1_layer][0][p1_blk])
+                    torch.testing.assert_close(d_caches[p1_layer][1][dst_blk], p1_caches[p1_layer][1][p1_blk])
+                untouched = d_caches["model.layers.3.self_attn.attn"][0][11].view(torch.int8)
+                torch.testing.assert_close(untouched, torch.full_like(untouched, -9))
+
+        # Asymmetric P=nospec (PP=2) vs D=mtp (PP=1): stage 0 passes while stage 1 fails on missing MTP.
+        _, _, p0_nospec_worker, _ = self._build_mrv2_strided_hybrid_fixture(
+            include_mtp=False,
+            conv_width=6,
+            kv_role="kv_producer",
+            engine_id="prefill-pp-asym",
+            port=31000,
+            attn_layers=["model.layers.3.self_attn.attn"],
+            mamba_layer_groups=p0_mamba_groups,
+            num_hidden_layers=8,
+        )
+        _, _, p1_nospec_worker, _ = self._build_mrv2_strided_hybrid_fixture(
+            include_mtp=False,
+            conv_width=6,
+            kv_role="kv_producer",
+            engine_id="prefill-pp-asym",
+            port=31001,
+            attn_layers=["model.layers.7.self_attn.attn"],
+            mamba_layer_groups=p1_mamba_groups,
+            num_hidden_layers=8,
+        )
+        _, _, d_mtp_worker, d_mtp_recv = self._build_mrv2_strided_hybrid_fixture(
+            include_mtp=True,
+            conv_width=6,
+            kv_role="kv_consumer",
+            engine_id="decode-pp1-asym",
+            port=32000,
+            attn_layers=[
+                "model.layers.3.self_attn.attn",
+                "model.layers.7.self_attn.attn",
+                "mtp.layers.0.self_attn.attn",
+            ],
+            mamba_layer_groups=d_mamba_groups,
+            num_hidden_layers=8,
+            prefill_pp_size=2,
+        )
+        assert p0_nospec_worker.xfer_handshake_metadata is not None
+        assert p1_nospec_worker.xfer_handshake_metadata is not None
+        asym_thread = self._make_recv_thread_from_worker(
+            d_worker=d_mtp_worker,
+            recv_cls_call=d_mtp_recv.call_args,
+            prefill_pp_size=2,
+            local_spec_method="mtp",
+        )
+        self._fetch_metadata(
+            asym_thread,
+            msgspec.msgpack.Encoder().encode(p0_nospec_worker.xfer_handshake_metadata),
+            remote_handshake_port=31000,
+        )
+        self._fetch_metadata(
+            asym_thread,
+            msgspec.msgpack.Encoder().encode(p1_nospec_worker.xfer_handshake_metadata),
+            remote_handshake_port=31001,
+        )
+        asym_connector, _ = self._wrap_consumer_connector(asym_thread)
+        asym_thread.task_tracker.add_req_to_process("req-pp-asym")
+        for offset, port, done in ((0, 31000, False), (1, 31001, True)):
+            asym_thread.request_queue.put(
+                self._make_req_meta(
+                    request_id="req-pp-asym",
+                    local_block_ids=([5], [3, 12, 13, 14], [7, 14, 15, 0], [9, 1, 2, 4]),
+                    remote_block_ids=([1], [2], [6], [10]),
+                    remote_engine_id="prefill-pp-asym",
+                    remote_handshake_port=port,
+                    offset=offset,
+                    all_task_done=done,
+                )
+            )
+        with (
+            patch.object(asym_thread, "_send_done_recv_signal"),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                return_value="127.0.0.1",
+            ),
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.logger.exception") as log_exc,
+        ):
+            for _ in range(2):
+                q_item = asym_thread.request_queue.get_nowait()
+                asym_thread._mark_request_task_submitted(q_item)
+                asym_thread._handle_request(q_item)
+        self.assertEqual(log_exc.call_count, 1)
+        self._assert_all_remote_maps_evicted(asym_thread, "prefill-pp-asym", 31001)
+        self.assertIn(31000, asym_thread.kv_caches_base_addr["prefill-pp-asym"])
+        self.assertEqual(
+            asym_connector.get_transfer_results(set()),
+            KVConnectorTransferResults(finished_recving={"req-pp-asym"}, failed_recving={"req-pp-asym"}),
+        )
+
+    def test_hybrid_pp2_uneven_partition_legacy_group_fallback_and_mixed_stage_guard(self):
+        """Verify uneven PP partition ownership, per-group fallback slicing, and mixed-stage rejection."""
+        from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector import (
+            _select_hybrid_pp_stage_entry_indices,
+        )
+
+        uneven_layers = [
+            ["model.layers.0.self_attn.attn"],
+            ["model.layers.3.self_attn.attn"],
+            ["model.layers.7.self_attn.attn"],
+            ["mtp.layers.0.self_attn.attn"],
+            ["model.layers.1.linear_attn"],
+            ["model.layers.4.linear_attn"],
+        ]
+        uneven_groups = [[0], [0], [0], [0], [1], [1]]
+        pp_indices = {0: (0, 2), 1: (2, 8)}
+        self.assertEqual(
+            _select_hybrid_pp_stage_entry_indices(
+                num_local_entries=6,
+                remote_pp_rank=0,
+                prefill_pp_size=2,
+                addr_group_idx=uneven_groups,
+                local_entry_layer_names=uneven_layers,
+                pp_layer_indices=pp_indices,
+            ),
+            [0, 4],
+        )
+        self.assertEqual(
+            _select_hybrid_pp_stage_entry_indices(
+                num_local_entries=6,
+                remote_pp_rank=1,
+                prefill_pp_size=2,
+                addr_group_idx=uneven_groups,
+                local_entry_layer_names=uneven_layers,
+                pp_layer_indices=pp_indices,
+            ),
+            [1, 2, 3, 5],
+        )
+
+        # Without layer names, Tier 2 slices evenly per group bucket rather than flat contiguous slicing.
+        fallback_groups = [[0], [0], [0], [0], [1], [1], [2], [2]]
+        self.assertEqual(
+            _select_hybrid_pp_stage_entry_indices(
+                num_local_entries=8,
+                remote_pp_rank=0,
+                prefill_pp_size=2,
+                addr_group_idx=fallback_groups,
+                local_entry_layer_names=None,
+                pp_layer_indices=None,
+            ),
+            [0, 1, 4, 6],
+        )
+        self.assertEqual(
+            _select_hybrid_pp_stage_entry_indices(
+                num_local_entries=8,
+                remote_pp_rank=1,
+                prefill_pp_size=2,
+                addr_group_idx=fallback_groups,
+                local_entry_layer_names=None,
+                pp_layer_indices=None,
+            ),
+            [2, 3, 5, 7],
+        )
+
+        with self.assertRaises(ValueError) as mixed_ctx:
+            _select_hybrid_pp_stage_entry_indices(
+                num_local_entries=1,
+                remote_pp_rank=0,
+                prefill_pp_size=2,
+                addr_group_idx=[[0]],
+                local_entry_layer_names=[["model.layers.1.self_attn.attn", "model.layers.5.self_attn.attn"]],
+                pp_layer_indices={0: (0, 4), 1: (4, 8)},
+            )
+        self.assertIn("spans multiple prefill PP stages", str(mixed_ctx.exception))

@@ -501,6 +501,115 @@ def _collect_mamba_hybrid_kv_entries(
     return base_addrs, block_lens, block_strides, block_scales, entry_layer_names, addr_group_idx
 
 
+def _is_draft_layer_name(layer_name: str) -> bool:
+    """Return whether a cache layer name belongs to a speculative draft model."""
+    draft_tokens = ("mtp", "draft", "draft_model", "dspark", "dflash", "eagle", "speculator", "medusa")
+    return any(part in draft_tokens for part in layer_name.lower().split("."))
+
+
+def _extract_target_layer_index(layer_name: str) -> int | None:
+    """Extract the numeric backbone layer index from a dotted module name, if present."""
+    parts = layer_name.split(".")
+    for idx in range(len(parts) - 1):
+        if parts[idx].lower() in ("layers", "h", "blocks") and parts[idx + 1].isdigit():
+            return int(parts[idx + 1])
+    return None
+
+
+def _resolve_hybrid_entry_pp_stages(
+    local_entry_layer_names: Sequence[Sequence[str]],
+    pp_layer_indices: dict[int, tuple[int, int]],
+    prefill_pp_size: int,
+) -> list[int] | None:
+    """Map each local KV entry to its owning prefill PP stage rank by layer index."""
+    if not all(rank in pp_layer_indices for rank in range(prefill_pp_size)):
+        return None
+    max_target_end = max(end for _, end in pp_layer_indices.values())
+    entry_stages: list[int] = []
+    for entry_layers in local_entry_layer_names:
+        if not entry_layers:
+            return None
+        resolved_stages: set[int] = set()
+        for layer_name in entry_layers:
+            if _is_draft_layer_name(layer_name):
+                resolved_stages.add(prefill_pp_size - 1)
+                continue
+            layer_idx = _extract_target_layer_index(layer_name)
+            if layer_idx is None:
+                return None
+            if layer_idx >= max_target_end:
+                resolved_stages.add(prefill_pp_size - 1)
+                continue
+            matched = [
+                rank
+                for rank in range(prefill_pp_size)
+                if pp_layer_indices[rank][0] <= layer_idx < pp_layer_indices[rank][1]
+            ]
+            if len(matched) != 1:
+                return None
+            resolved_stages.add(matched[0])
+        if len(resolved_stages) > 1:
+            raise ValueError(
+                f"Hybrid KV entry spans multiple prefill PP stages ({sorted(resolved_stages)}): "
+                f"layers={list(entry_layers)}."
+            )
+        entry_stages.append(next(iter(resolved_stages)))
+    return entry_stages
+
+
+def _select_hybrid_pp_stage_entry_indices(
+    *,
+    num_local_entries: int,
+    remote_pp_rank: int,
+    prefill_pp_size: int,
+    addr_group_idx: Sequence[Sequence[int]],
+    local_entry_layer_names: Sequence[Sequence[str]] | None,
+    pp_layer_indices: dict[int, tuple[int, int]] | None,
+) -> list[int]:
+    """Select consumer-local KV entry indices owned by one prefill PP stage in group-major order."""
+    if remote_pp_rank < 0 or remote_pp_rank >= prefill_pp_size:
+        raise ValueError(f"Invalid prefill pp_rank={remote_pp_rank} for prefill_pp_size={prefill_pp_size}.")
+    has_layer_names = local_entry_layer_names is not None and len(local_entry_layer_names) == num_local_entries
+    if has_layer_names and pp_layer_indices:
+        assert local_entry_layer_names is not None
+        entry_stages = _resolve_hybrid_entry_pp_stages(local_entry_layer_names, pp_layer_indices, prefill_pp_size)
+        if entry_stages is not None:
+            return [idx for idx, stage in enumerate(entry_stages) if stage == remote_pp_rank]
+
+    # Fallback when layer indices cannot be parsed: slice evenly within each KV group bucket
+    # so group-major hybrid tables never misalign or bleed across groups.
+    buckets: dict[tuple[int, ...], list[int]] = {}
+    use_group_buckets = len(addr_group_idx) == num_local_entries
+    for idx in range(num_local_entries):
+        key = tuple(addr_group_idx[idx]) if use_group_buckets else ()
+        buckets.setdefault(key, []).append(idx)
+
+    selected: list[int] = []
+    for bucket_indices in buckets.values():
+        draft_indices: list[int] = []
+        target_indices: list[int] = []
+        for idx in bucket_indices:
+            if (
+                has_layer_names
+                and local_entry_layer_names is not None
+                and any(_is_draft_layer_name(name) for name in local_entry_layer_names[idx])
+            ):
+                draft_indices.append(idx)
+            else:
+                target_indices.append(idx)
+        per_stage, rem = divmod(len(target_indices), prefill_pp_size)
+        if rem != 0:
+            raise ValueError(
+                f"pp split not group-aligned: {len(target_indices)} target entries across "
+                f"prefill_pp_size={prefill_pp_size}."
+            )
+        start = remote_pp_rank * per_stage
+        selected.extend(target_indices[start : start + per_stage])
+        if remote_pp_rank == prefill_pp_size - 1:
+            selected.extend(draft_indices)
+    return selected
+
+
 def _expand_scaled_block_ids(block_ids: Sequence[int], block_scale: int) -> list[int]:
     """Expand scheduler block IDs into kernel-block IDs for block_scale > 1 views."""
     if block_scale == 1:
@@ -1344,10 +1453,9 @@ class KVCacheRecvingThread(threading.Thread):
             )
         session_id = f"{remote_host}:{remote_transfer_port}"
 
-        # With P-side PP the remote worker only owns its stage's
-        # kv_cache_tensors. Offset the local (D) group-major flat addr list to
-        # the remote stage's global group range before zipping, so stage-1
-        # data lands in D's groups 8-15 instead of overwriting groups 0-7.
+        # With P-side PP the remote worker only owns its stage's layers across
+        # every KV cache group. Select the remote stage's subset from Decode's
+        # group-major flat entry list in group-major order before layout pairing.
         local_addrs = local_kv_caches_base_addrs
         block_len_arr = self.block_len_per_addr
         block_stride_arr = self.block_stride_per_addr
@@ -1358,31 +1466,29 @@ class KVCacheRecvingThread(threading.Thread):
         if self._prefill_pp_size > 1:
             tp_num_need_pulls = req_meta["tp_num_need_pulls"]
             remote_pp_rank = req_meta["offset"] // tp_num_need_pulls
-            num_groups = len(self.kv_cache_config.kv_cache_tensors)
-            groups_per_stage = num_groups // self._prefill_pp_size
-            addrs_per_group, rem = divmod(len(local_addrs), num_groups)
-            if rem != 0:
-                raise ValueError("non-uniform per-group address counts unsupported")
-            if num_groups % self._prefill_pp_size != 0:
-                raise ValueError("pp split not group-aligned")
-            start = remote_pp_rank * groups_per_stage * addrs_per_group
-            end = (remote_pp_rank + 1) * groups_per_stage * addrs_per_group
-            local_addrs = local_addrs[start:end]
-            block_len_arr = self.block_len_per_addr[start:end]
-            block_stride_arr = self.block_stride_per_addr[start:end]
+            selected_indices = _select_hybrid_pp_stage_entry_indices(
+                num_local_entries=len(local_addrs),
+                remote_pp_rank=remote_pp_rank,
+                prefill_pp_size=self._prefill_pp_size,
+                addr_group_idx=addr_group_arr,
+                local_entry_layer_names=local_entry_layers,
+                pp_layer_indices=getattr(self, "pp_layer_indices", None),
+            )
+            local_addrs = [local_addrs[idx] for idx in selected_indices]
+            block_len_arr = [self.block_len_per_addr[idx] for idx in selected_indices]
+            block_stride_arr = [self.block_stride_per_addr[idx] for idx in selected_indices]
             if addr_group_arr:
-                addr_group_arr = self.addr_group_idx[start:end]
+                addr_group_arr = [self.addr_group_idx[idx] for idx in selected_indices]
             if local_entry_layers:
-                local_entry_layers = local_entry_layers[start:end]
+                local_entry_layers = [local_entry_layers[idx] for idx in selected_indices]
             if has_local_scales:
-                block_scale_arr = block_scale_arr[start:end]
+                block_scale_arr = [block_scale_arr[idx] for idx in selected_indices]
             logger.debug(
-                "Cross-PP pull alignment: remote_port=%d -> pp_rank=%d local_addrs[%d:%d]=%d remote=%d",
+                "Cross-PP pull alignment: remote_port=%d -> pp_rank=%d selected=%d/%d remote=%d",
                 remote_handshake_port,
                 remote_pp_rank,
-                start,
-                end,
                 len(local_addrs),
+                len(local_kv_caches_base_addrs),
                 len(remote_kv_caches_base_addrs),
             )
 
@@ -2467,7 +2573,8 @@ class MooncakeConnectorWorker:
         self.hma_group_size = len(kv_cache_config.kv_cache_groups)
 
         # Mamba metadata
-        self._is_mamba_group = [isinstance(group.kv_cache_spec, MambaSpec) for group in kv_cache_config.kv_cache_groups]
+        group_mamba_specs = [_get_mamba_spec(group.kv_cache_spec) for group in kv_cache_config.kv_cache_groups]
+        self._is_mamba_group = [spec is not None for spec in group_mamba_specs]
         mamba_ssm_size = (0, 0)
         self.use_mamba = any(self._is_mamba_group)
         if self.use_mamba:
@@ -2476,21 +2583,24 @@ class MooncakeConnectorWorker:
                 "Mooncake connector does not support different TP size with Mamba."
             )
             self.layer_specs = {
-                layer: group.kv_cache_spec for group in kv_cache_config.kv_cache_groups for layer in group.layer_names
+                layer: (
+                    group.kv_cache_spec.kv_cache_specs.get(layer, group.kv_cache_spec)
+                    if isinstance(group.kv_cache_spec, UniformTypeKVCacheSpecs)
+                    else group.kv_cache_spec
+                )
+                for group in kv_cache_config.kv_cache_groups
+                for layer in group.layer_names
             }
-            mamba_spec = next(spec for spec in self.layer_specs.values() if isinstance(spec, MambaSpec))
-            conv_nbytes, ssm_nbytes = (
-                torch.tensor([], dtype=mamba_spec.dtypes[0]).element_size(),  # type: ignore[misc]
-                torch.tensor([], dtype=mamba_spec.dtypes[1]).element_size(),  # type: ignore[misc]
-            )
-            conv_shape, ssm_shape = (
-                torch.Size(mamba_spec.shapes[0]),
-                torch.Size(mamba_spec.shapes[1]),
-            )
-            mamba_ssm_size = (
-                conv_shape.numel() * conv_nbytes,
-                ssm_shape.numel() * ssm_nbytes,
-            )
+            mamba_spec = next(spec for spec in group_mamba_specs if spec is not None)
+            conv_size = 0
+            if len(mamba_spec.shapes) >= 1 and len(mamba_spec.dtypes) >= 1:
+                conv_elem_size = torch.tensor([], dtype=mamba_spec.dtypes[0]).element_size()  # type: ignore[misc]
+                conv_size = torch.Size(mamba_spec.shapes[0]).numel() * conv_elem_size
+            ssm_size = 0
+            if len(mamba_spec.shapes) >= 2 and len(mamba_spec.dtypes) >= 2:
+                ssm_elem_size = torch.tensor([], dtype=mamba_spec.dtypes[1]).element_size()  # type: ignore[misc]
+                ssm_size = torch.Size(mamba_spec.shapes[1]).numel() * ssm_elem_size
+            mamba_ssm_size = (conv_size, ssm_size)
         self._mamba_ssm_size = mamba_ssm_size
         self.use_compress = hasattr(self.vllm_config.model_config.hf_config, "compress_ratios")
 
