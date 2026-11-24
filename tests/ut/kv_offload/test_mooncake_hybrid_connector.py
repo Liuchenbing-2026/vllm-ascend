@@ -17,6 +17,7 @@ fake_engine = types.ModuleType("mooncake.engine")
 fake_engine.TransferEngine = MagicMock()  # type: ignore[attr-defined]
 sys.modules["mooncake.engine"] = fake_engine
 
+from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorTransferResults  # noqa: E402
 from vllm.v1.kv_cache_interface import MambaSpec  # noqa: E402
 from vllm.v1.request import RequestStatus  # noqa: E402
 
@@ -32,6 +33,7 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector import
     MooncakeConnectorWorker,
     SizedDict,
     _reconstruct_shared_pages,
+    _validate_remote_kv_layout,
 )
 
 
@@ -131,7 +133,13 @@ class TestHybridKVCacheRecvingThreadDispatch(unittest.TestCase):
                     )
                 thread._send_done_recv_signal.assert_called_once_with(remote_request_id, "192.0.2.1", 31002, {})
                 self.assertEqual(thread.get_and_clear_finished_requests(), {request_id})
+                self.assertEqual(
+                    thread.get_and_clear_failed_recv_requests({request_id}),
+                    {request_id} if outcome == "failure" else set(),
+                )
+                self.assertEqual(thread.get_and_clear_invalid_block_ids(), set())
                 self.assertEqual(thread.get_and_clear_finished_requests(), set())
+                self.assertFalse(thread.failed_recv_requests)
                 self.assertFalse(thread.task_tracker.reqs_to_process)
                 self.assertFalse(thread.request_task_counts)
                 self.assertFalse(thread.finished_request_markers)
@@ -1036,6 +1044,7 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         addr_group_idx: list[list[int]] | None = None,
         pp_layer_indices: dict[int, tuple[int, int]] | None = None,
         kv_cache_tensors: list[Any] | None = None,
+        kv_cache_groups: list[Any] | None = None,
         kv_caches: dict[str, Any] | None = None,
     ) -> KVCacheRecvingThread:
         thread = object.__new__(KVCacheRecvingThread)
@@ -1048,7 +1057,10 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         thread.use_hybrid = use_hybrid
         thread.hma_group_size = hma_group_size
         thread.kv_cache_specs = [MagicMock() for _ in range(hma_group_size)]
-        thread.kv_cache_config = types.SimpleNamespace(kv_cache_tensors=kv_cache_tensors or [])
+        thread.kv_cache_config = types.SimpleNamespace(
+            kv_cache_tensors=kv_cache_tensors or [],
+            kv_cache_groups=kv_cache_groups or [],
+        )
         thread.kv_caches = kv_caches or {"model.layers.0.self_attn": (MagicMock(), MagicMock())}
         thread.pp_layer_indices = pp_layer_indices or {0: (0, len(local_addrs))}
         thread.vllm_config = types.SimpleNamespace(
@@ -1121,6 +1133,19 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
             "remote_port_send_num": {},
             "all_task_done": True,
         }
+
+    def _wrap_consumer_connector(
+        self, thread: KVCacheRecvingThread
+    ) -> tuple[MooncakeConnector, MooncakeConnectorWorker]:
+        worker = object.__new__(MooncakeConnectorWorker)
+        worker.kv_role = "kv_consumer"
+        worker.tp_rank = 0
+        worker.kv_recv_thread = thread
+        worker.kv_send_thread = None
+        connector = object.__new__(MooncakeConnector)
+        connector.connector_worker = worker
+        connector.connector_scheduler = None
+        return connector, worker
 
     def test_symmetric_pd_handshake_and_transfer_succeeds(self):
         layer_names = [["target.0"], ["target.1"], ["dspark.draft.0"]]
@@ -1228,6 +1253,17 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
             thread._handle_request(req_meta)
         log_exc.assert_called_once()
         thread.engine.batch_transfer_sync_read.assert_not_called()
+
+        # Verify request execution failure propagates through failed_recving instead of silent success.
+        connector, _ = self._wrap_consumer_connector(thread)
+        results = connector.get_transfer_results(set())
+        self.assertEqual(
+            results,
+            KVConnectorTransferResults(finished_recving={"req-asym"}, failed_recving={"req-asym"}),
+        )
+        self.assertEqual(connector.get_block_ids_with_load_errors(), set())
+        self.assertEqual(connector.get_transfer_results(set()), KVConnectorTransferResults())
+        self.assertFalse(thread.failed_recv_requests)
 
     def test_transfer_rejects_reverse_asymmetry_producer_more_entries_than_consumer(self):
         thread = self._make_recv_thread(
@@ -1819,3 +1855,310 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
             self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(bad_layer_names_meta))
         self.assertIn("len(entry_layer_names)=2 != len(kv_caches_base_addr)=1", str(names_ctx.exception))
         self.assertNotIn("prefill-bad-names", thread.kv_caches_base_addr)
+
+    def test_non_hybrid_single_group_failure_reports_invalid_block_ids(self):
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000],
+            local_block_lens=[64, 32],
+            local_entry_layer_names=[["target.0"], ["mtp.0"]],
+            local_spec_method="mtp",
+            use_hybrid=False,
+            hma_group_size=1,
+            kv_cache_groups=[MagicMock()],
+        )
+        remote_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x4000],
+            num_blocks=4,
+            block_lens=[64],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=[["target.0"]],
+            spec_method="",
+        )
+        sock = MagicMock(spec=zmq.Socket)
+        sock.recv.return_value = msgspec.msgpack.Encoder().encode(remote_meta)
+
+        thread.task_tracker.add_req_to_process("req-1grp")
+        thread.add_request(
+            request_id="req-1grp",
+            remote_request_id="remote-req-1grp",
+            local_block_ids=([11, 12],),
+            remote_block_ids=([21, 22],),
+            remote_engine_id="prefill-engine",
+            remote_host="192.0.2.1",
+            remote_handshake_port=31000,
+            offset=0,
+            tp_num_need_pulls=1,
+            all_task_done=True,
+        )
+        req_meta = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(req_meta)
+        with (
+            patch.object(thread, "_get_remote_socket", return_value=sock),
+            patch.object(thread, "_send_done_recv_signal"),
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.logger.exception"),
+        ):
+            thread._handle_request(req_meta)
+
+        thread.engine.batch_transfer_sync_read.assert_not_called()
+        connector, _ = self._wrap_consumer_connector(thread)
+        results = connector.get_transfer_results(set())
+        self.assertFalse(thread.use_request_level_recv_errors)
+        self.assertEqual(
+            results,
+            KVConnectorTransferResults(finished_recving={"req-1grp"}, failed_recving=set()),
+        )
+        self.assertEqual(connector.get_block_ids_with_load_errors(), {11, 12})
+        self.assertEqual(connector.get_block_ids_with_load_errors(), set())
+        self.assertFalse(thread.failed_recv_requests)
+        self.assertFalse(thread.invalid_block_ids)
+
+    def test_non_hybrid_multi_group_failure_reports_failed_recving(self):
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000],
+            local_block_lens=[64, 32],
+            local_entry_layer_names=[["target.0"], ["dspark.0"]],
+            local_spec_method="dspark",
+            use_hybrid=False,
+            hma_group_size=1,
+            kv_cache_groups=[MagicMock(), MagicMock()],
+        )
+        remote_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x4000],
+            num_blocks=4,
+            block_lens=[64],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=[["target.0"]],
+            spec_method="",
+        )
+        sock = MagicMock(spec=zmq.Socket)
+        sock.recv.return_value = msgspec.msgpack.Encoder().encode(remote_meta)
+
+        thread.task_tracker.add_req_to_process("req-2grp")
+        thread.add_request(
+            request_id="req-2grp",
+            remote_request_id="remote-req-2grp",
+            local_block_ids=([15],),
+            remote_block_ids=([25],),
+            remote_engine_id="prefill-engine",
+            remote_host="192.0.2.1",
+            remote_handshake_port=31000,
+            offset=0,
+            tp_num_need_pulls=1,
+            all_task_done=True,
+        )
+        req_meta = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(req_meta)
+        with (
+            patch.object(thread, "_get_remote_socket", return_value=sock),
+            patch.object(thread, "_send_done_recv_signal"),
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.logger.exception"),
+        ):
+            thread._handle_request(req_meta)
+
+        thread.engine.batch_transfer_sync_read.assert_not_called()
+        connector, _ = self._wrap_consumer_connector(thread)
+        results = connector.get_transfer_results(set())
+        self.assertTrue(thread.use_request_level_recv_errors)
+        self.assertEqual(
+            results,
+            KVConnectorTransferResults(finished_recving={"req-2grp"}, failed_recving={"req-2grp"}),
+        )
+        self.assertEqual(connector.get_block_ids_with_load_errors(), set())
+
+    def test_multi_pull_failure_short_circuits_and_evicts_stale_metadata(self):
+        kv_tensors = [MagicMock(), MagicMock(), MagicMock(), MagicMock()]
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x2000, 0x3000, 0x4000],
+            local_block_lens=[64, 64, 64, 32],
+            local_entry_layer_names=[["l0"], ["l1"], ["l2"], ["dspark.0"]],
+            local_spec_method="dspark",
+            use_hybrid=True,
+            prefill_pp_size=2,
+            hma_group_size=2,
+            addr_group_idx=[[0], [0], [0], [1]],
+            pp_layer_indices={0: (0, 2), 1: (2, 4)},
+            kv_cache_tensors=kv_tensors,
+        )
+        thread.kv_caches_base_addr["prefill-engine"] = {
+            31000: [0x5000, 0x6000],
+            31001: [0x7000],  # stale mismatched layout for PP stage 1 (missing dspark.0)
+        }
+        thread.remote_te_port["prefill-engine"] = {31000: 7770, 31001: 7771}
+        thread.remote_block_lens["prefill-engine"] = {31000: [64, 64], 31001: [64]}
+        thread.remote_entry_layer_names["prefill-engine"] = {
+            31000: [["l0"], ["l1"]],
+            31001: [["l2"]],
+        }
+        thread.remote_spec_method["prefill-engine"] = {31000: "dspark", 31001: ""}
+
+        thread.task_tracker.add_req_to_process("req-multi")
+        thread.add_request(
+            request_id="req-multi",
+            remote_request_id="remote-req-multi",
+            local_block_ids=([1], [2]),
+            remote_block_ids=([3], [4]),
+            remote_engine_id="prefill-engine",
+            remote_host="192.0.2.1",
+            remote_handshake_port=31001,
+            offset=1,
+            tp_num_need_pulls=1,
+            all_task_done=False,
+        )
+        thread.add_request(
+            request_id="req-multi",
+            remote_request_id="remote-req-multi",
+            local_block_ids=([1], [2]),
+            remote_block_ids=([3], [4]),
+            remote_engine_id="prefill-engine",
+            remote_host="192.0.2.1",
+            remote_handshake_port=31000,
+            offset=0,
+            tp_num_need_pulls=1,
+            all_task_done=True,
+        )
+        req_meta_fail = thread.request_queue.get_nowait()
+        req_meta_next = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(req_meta_fail)
+        thread._mark_request_task_submitted(req_meta_next)
+
+        connector, _ = self._wrap_consumer_connector(thread)
+        with (
+            patch.object(thread, "_send_done_recv_signal"),
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.logger.exception"),
+        ):
+            thread._handle_request(req_meta_fail)
+            thread.engine.batch_transfer_sync_read.assert_not_called()
+            # Failing endpoint metadata must be evicted across all metadata maps, preserving unaffected entries.
+            for cache_map in (
+                thread.kv_caches_base_addr,
+                thread.remote_te_port,
+                thread.remote_block_lens,
+                thread.remote_entry_layer_names,
+                thread.remote_spec_method,
+            ):
+                self.assertNotIn(31001, cache_map["prefill-engine"])
+                self.assertIn(31000, cache_map["prefill-engine"])
+            self.assertIn("decode-engine", thread.kv_caches_base_addr)
+            # Intermediate drain before all pulls complete keeps the request failure pending.
+            self.assertEqual(connector.get_transfer_results(set()), KVConnectorTransferResults())
+
+            with patch.object(thread, "_transfer_kv_cache_all_groups") as transfer_all:
+                thread._handle_request(req_meta_next)
+            transfer_all.assert_not_called()
+
+        thread.engine.batch_transfer_sync_read.assert_not_called()
+        self.assertEqual(
+            connector.get_transfer_results(set()),
+            KVConnectorTransferResults(finished_recving={"req-multi"}, failed_recving={"req-multi"}),
+        )
+        self.assertEqual(connector.get_block_ids_with_load_errors(), set())
+        self.assertFalse(thread.failed_recv_requests)
+
+    def test_symmetric_success_reports_no_failures_and_producer_get_finished(self):
+        layer_names = [["target.0"], ["dspark.draft.0"]]
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000, 0x3000],
+            local_block_lens=[64, 32],
+            local_entry_layer_names=layer_names,
+            local_spec_method="dspark",
+            addr_group_idx=[[0], [1]],
+        )
+        remote_meta = MooncakeAgentMetadata(
+            engine_id="prefill-engine",
+            te_rpc_port=7777,
+            block_size=128,
+            kv_caches_base_addr=[0x4000, 0x6000],
+            num_blocks=4,
+            block_lens=[64, 32],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+            entry_layer_names=layer_names,
+            spec_method="dspark",
+        )
+        self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(remote_meta))
+
+        thread.task_tracker.add_req_to_process("req-ok")
+        thread.add_request(
+            request_id="req-ok",
+            remote_request_id="remote-req-ok",
+            local_block_ids=([1], [2]),
+            remote_block_ids=([3], [4]),
+            remote_engine_id="prefill-engine",
+            remote_host="192.0.2.1",
+            remote_handshake_port=31000,
+            offset=0,
+            tp_num_need_pulls=1,
+            all_task_done=True,
+        )
+        req_meta = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(req_meta)
+        with patch.object(thread, "_send_done_recv_signal"):
+            thread._handle_request(req_meta)
+
+        thread.engine.batch_transfer_sync_read.assert_called_once()
+        connector, _ = self._wrap_consumer_connector(thread)
+        self.assertEqual(
+            connector.get_transfer_results(set()),
+            KVConnectorTransferResults(finished_recving={"req-ok"}, failed_recving=set()),
+        )
+        self.assertEqual(connector.get_block_ids_with_load_errors(), set())
+        self.assertEqual(connector.get_finished(set()), (set(), set()))
+
+        send_thread = MagicMock()
+        send_thread.get_and_clear_finished_requests.return_value = {"req-send"}
+        producer_worker = object.__new__(MooncakeConnectorWorker)
+        producer_worker.kv_role = "kv_producer"
+        producer_worker.tp_rank = 0
+        producer_worker.kv_send_thread = send_thread
+        producer_worker.kv_recv_thread = None
+        producer_connector = object.__new__(MooncakeConnector)
+        producer_connector.connector_worker = producer_worker
+        producer_connector.connector_scheduler = None
+        self.assertEqual(
+            producer_connector.get_transfer_results(set()),
+            KVConnectorTransferResults(finished_sending={"req-send"}),
+        )
+        self.assertEqual(producer_connector.get_block_ids_with_load_errors(), set())
+
+    def test_bool_tp_num_need_pulls_rejected_and_empty_block_ids_no_leak(self):
+        with self.assertRaises(ValueError) as ctx:
+            _validate_remote_kv_layout(
+                local_addrs=[0x1000],
+                remote_addrs=[0x2000],
+                local_block_lens=[64],
+                remote_block_lens=[64],
+                tp_num_need_pulls=True,  # type: ignore[arg-type]
+            )
+        self.assertIn("positive int", str(ctx.exception))
+
+        thread = self._make_recv_thread(
+            local_addrs=[0x1000],
+            local_block_lens=[64],
+            local_entry_layer_names=[["target.0"]],
+            hma_group_size=1,
+        )
+        thread.task_tracker.add_req_to_process("req-empty-fail")
+        req_meta = self._make_req_meta(
+            request_id="req-empty-fail",
+            local_block_ids=(),
+            remote_block_ids=(),
+        )
+        thread.request_queue.put(req_meta)
+        req_meta = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(req_meta)
+        with (
+            patch.object(thread, "_transfer_kv_cache_all_groups", side_effect=RuntimeError("boom")),
+            patch.object(thread, "_send_done_recv_signal"),
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.logger.exception"),
+        ):
+            thread._handle_request(req_meta)
+        self.assertFalse(thread.failed_recv_requests)
+        self.assertFalse(thread.invalid_block_ids)
