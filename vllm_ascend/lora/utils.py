@@ -6,6 +6,7 @@ from vllm.config import LoRAConfig
 from vllm.logger import logger
 from vllm.lora.layers import (
     ColumnParallelLinearWithLoRA,
+    ColumnParallelLinearWithShardedLoRA,
     MergedColumnParallelLinearWithLoRA,
     MergedQKVParallelLinearWithLoRA,
     ReplicatedLinearWithLoRA,
@@ -30,6 +31,41 @@ from vllm_ascend.lora.fused_moe import (
     assert_moe_lora_dp1_supported,
 )
 from vllm_ascend.ops.linear import AscendQKVParallelLinear
+from vllm_ascend.utils import oproj_tp_enable
+
+
+def _safe_oproj_tp_enable() -> bool:
+    """Return whether fine-grained o_proj TP is enabled, defaulting False if uninitialized."""
+    try:
+        return bool(oproj_tp_enable())
+    except RuntimeError:
+        return False
+
+
+def _get_unsupported_lora_module_reason(
+    source_layer: nn.Module,
+    lora_config: LoRAConfig | None,
+) -> str | None:
+    """Return an explicit error reason when a linear projection must stay unwrapped."""
+    explicit_reason = getattr(source_layer, "_ascend_lora_unsupported_reason", None)
+    if explicit_reason:
+        return str(explicit_reason)
+
+    n_local_groups = getattr(source_layer, "_ascend_dsa_n_local_groups", None)
+    if n_local_groups is not None:
+        if lora_config is not None and getattr(lora_config, "fully_sharded_loras", False):
+            return (
+                "LoRA on wo_a does not support --fully-sharded-loras. "
+                "Disable --fully-sharded-loras or drop wo_a from the adapter."
+            )
+        otp_enabled = _safe_oproj_tp_enable()
+        if otp_enabled or n_local_groups != 1:
+            return (
+                "LoRA on wo_a requires a single local o_proj group per rank "
+                f"(got n_local_groups={n_local_groups}, fine-grained o_proj TP={otp_enabled}). "
+                "Use TP equal to o_groups, or drop wo_a from the adapter."
+            )
+    return None
 
 
 def _describe_lora_tensor_shapes(tensors: torch.Tensor | list[torch.Tensor | None]) -> str:
@@ -329,7 +365,66 @@ class _SingleLinearLoRAWrapper(_TransposedLoRABMixin):
         packed_modules_list: list,
         model_config: PretrainedConfig | None,
     ) -> bool:
+        if _get_unsupported_lora_module_reason(source_layer, lora_config) is not None:
+            return False
         return lora_config.max_loras >= 1 and type(source_layer) is maybe_get_oot_by_class(cls.base_layer_cls)
+
+
+class _AscendGuardedColumnParallelLinearWithLoRA(ColumnParallelLinearWithLoRA):
+    @classmethod
+    def can_replace_layer(
+        cls,
+        source_layer: nn.Module,
+        lora_config: LoRAConfig,
+        packed_modules_list: list,
+        model_config: PretrainedConfig | None,
+    ) -> bool:
+        if _get_unsupported_lora_module_reason(source_layer, lora_config) is not None:
+            return False
+        return super().can_replace_layer(
+            source_layer=source_layer,
+            lora_config=lora_config,
+            packed_modules_list=packed_modules_list,
+            model_config=model_config,
+        )
+
+
+class _AscendGuardedColumnParallelLinearWithShardedLoRA(ColumnParallelLinearWithShardedLoRA):
+    @classmethod
+    def can_replace_layer(
+        cls,
+        source_layer: nn.Module,
+        lora_config: LoRAConfig,
+        packed_modules_list: list,
+        model_config: PretrainedConfig | None,
+    ) -> bool:
+        if _get_unsupported_lora_module_reason(source_layer, lora_config) is not None:
+            return False
+        return super().can_replace_layer(
+            source_layer=source_layer,
+            lora_config=lora_config,
+            packed_modules_list=packed_modules_list,
+            model_config=model_config,
+        )
+
+
+class _AscendGuardedReplicatedLinearWithLoRA(ReplicatedLinearWithLoRA):
+    @classmethod
+    def can_replace_layer(
+        cls,
+        source_layer: nn.Module,
+        lora_config: LoRAConfig,
+        packed_modules_list: list,
+        model_config: PretrainedConfig | None,
+    ) -> bool:
+        if _get_unsupported_lora_module_reason(source_layer, lora_config) is not None:
+            return False
+        return super().can_replace_layer(
+            source_layer=source_layer,
+            lora_config=lora_config,
+            packed_modules_list=packed_modules_list,
+            model_config=model_config,
+        )
 
 
 class AscendRowParallelLinearWithLoRA(_SingleLinearLoRAWrapper, RowParallelLinearWithLoRA):
@@ -430,6 +525,25 @@ def warn_unmatched_lora_modules(lora_manager, lora_request) -> list[str]:
     return unmatched
 
 
+def _expand_skipped_module_names(model: nn.Module, adapter_manager, name: str) -> set[str]:
+    """Collect module key variants (direct, stripped model., and text-backbone mm aliases)."""
+    candidates = {name, name.removeprefix("model.")}
+    get_text_names = getattr(adapter_manager, "_get_text_lora_names", None)
+    if callable(get_text_names):
+        for text_name in get_text_names(name):
+            candidates.add(text_name)
+            candidates.add(text_name.removeprefix("model."))
+    get_mm_mapping = getattr(model, "get_mm_mapping", None)
+    if callable(get_mm_mapping):
+        mm_mapping = get_mm_mapping()
+        for mm_prefix in getattr(mm_mapping, "language_model", ()) or ():
+            if mm_prefix and name.startswith(mm_prefix):
+                stripped = name[len(mm_prefix) :]
+                candidates.add(stripped)
+                candidates.add(stripped.removeprefix("model."))
+    return candidates
+
+
 def _collect_skipped_dp_moe_prefixes(adapter_manager) -> tuple[int, tuple[str, ...]]:
     model = getattr(adapter_manager, "model", None)
     if model is None or not callable(getattr(model, "named_modules", None)):
@@ -437,7 +551,6 @@ def _collect_skipped_dp_moe_prefixes(adapter_manager) -> tuple[int, tuple[str, .
     wrapped_modules = getattr(adapter_manager, "modules", None) or {}
     moe_cls = maybe_get_oot_by_class(MoERunner)
     moe_types = (MoERunner,) if moe_cls is MoERunner else (MoERunner, moe_cls)
-    get_text_names = getattr(adapter_manager, "_get_text_lora_names", None)
 
     max_dp_size = 1
     prefixes: set[str] = set()
@@ -449,12 +562,7 @@ def _collect_skipped_dp_moe_prefixes(adapter_manager) -> tuple[int, tuple[str, .
         if dp_size <= 1:
             continue
         max_dp_size = max(max_dp_size, dp_size)
-        prefixes.add(name)
-        prefixes.add(name.removeprefix("model."))
-        if callable(get_text_names):
-            for text_name in get_text_names(name):
-                prefixes.add(text_name)
-                prefixes.add(text_name.removeprefix("model."))
+        prefixes.update(_expand_skipped_module_names(model, adapter_manager, name))
     return max_dp_size, tuple(sorted(prefixes))
 
 
@@ -480,13 +588,80 @@ def validate_dp_moe_lora_adapter(
         assert_moe_lora_dp1_supported(dp_size, matched_keys=matched)
 
 
-class _DPMoELoadGuard:
-    """Wrap WorkerLoRAManager._load_adapter to reject DP > 1 expert adapters before cache write."""
+def _collect_skipped_unsupported_lora_modules(adapter_manager) -> dict[str, str]:
+    model = getattr(adapter_manager, "model", None)
+    if model is None or not callable(getattr(model, "named_modules", None)):
+        return {}
+    wrapped_modules = getattr(adapter_manager, "modules", None) or {}
+    lora_config = getattr(adapter_manager, "lora_config", None)
 
-    def __init__(self, orig_load_adapter, adapter_manager, skipped_dp_info: tuple[int, tuple[str, ...]]) -> None:
+    prefix_reasons: dict[str, str] = {}
+    logged_reasons: set[str] = set()
+    for name, module in model.named_modules():
+        if not name or name in wrapped_modules:
+            continue
+        reason = _get_unsupported_lora_module_reason(module, lora_config)
+        if reason is None:
+            continue
+        if reason not in logged_reasons:
+            logged_reasons.add(reason)
+            logger.warning_once(
+                "Ascend LoRA skipping wrapping unsupported projection '%s' and equivalent layers: %s",
+                name,
+                reason,
+            )
+        for candidate in _expand_skipped_module_names(model, adapter_manager, name):
+            prefix_reasons.setdefault(candidate, reason)
+    return prefix_reasons
+
+
+def validate_unsupported_lora_adapter(
+    adapter_manager,
+    lora_model,
+    *,
+    skipped_unsupported_modules: dict[str, str] | None = None,
+) -> None:
+    """Reject adapters targeting unwrapped unsupported projections before cache write."""
+    prefix_reasons = (
+        skipped_unsupported_modules
+        if skipped_unsupported_modules is not None
+        else _collect_skipped_unsupported_lora_modules(adapter_manager)
+    )
+    if not prefix_reasons:
+        return
+    loras = getattr(lora_model, "loras", None)
+    if not isinstance(loras, dict) or not loras:
+        return
+    ordered_prefixes = sorted(prefix_reasons)
+    matched_by_reason: dict[str, list[str]] = {}
+    for key in sorted(loras):
+        reason = prefix_reasons.get(key)
+        if reason is None:
+            for prefix in ordered_prefixes:
+                if key.startswith(f"{prefix}."):
+                    reason = prefix_reasons[prefix]
+                    break
+        if reason is not None:
+            matched_by_reason.setdefault(reason, []).append(key)
+    if matched_by_reason:
+        first_reason, matched_keys = min(matched_by_reason.items(), key=lambda item: (item[1][0], item[0]))
+        raise NotImplementedError(f"{first_reason} Matched adapter key(s): {matched_keys[:3]}.")
+
+
+class _DPMoELoadGuard:
+    """Wrap WorkerLoRAManager._load_adapter to reject unsupported adapters before cache write."""
+
+    def __init__(
+        self,
+        orig_load_adapter,
+        adapter_manager,
+        skipped_dp_info: tuple[int, tuple[str, ...]],
+        skipped_unsupported_modules: dict[str, str] | None = None,
+    ) -> None:
         self._orig_load_adapter = orig_load_adapter
         self._adapter_manager = adapter_manager
         self._skipped_dp_info = skipped_dp_info
+        self._skipped_unsupported_modules = skipped_unsupported_modules
 
     def __call__(self, lora_request):
         lora_model = self._orig_load_adapter(lora_request)
@@ -495,21 +670,33 @@ class _DPMoELoadGuard:
             lora_model,
             skipped_dp_info=self._skipped_dp_info,
         )
+        validate_unsupported_lora_adapter(
+            self._adapter_manager,
+            lora_model,
+            skipped_unsupported_modules=self._skipped_unsupported_modules,
+        )
         return lora_model
 
 
 def install_dp_moe_lora_load_guard(lora_manager) -> None:
-    """Reject expert-weight LoRA loads before cache insertion when DP > 1 skipped MoERunner."""
+    """Reject adapters targeting skipped DP>1 MoE or unsupported projections before cache write."""
     adapter_manager = getattr(lora_manager, "_adapter_manager", None)
     if adapter_manager is None:
         return
     skipped_dp_info = _collect_skipped_dp_moe_prefixes(adapter_manager)
-    if skipped_dp_info[0] <= 1 or not skipped_dp_info[1]:
+    skipped_unsupported_modules = _collect_skipped_unsupported_lora_modules(adapter_manager)
+    has_dp_guard = skipped_dp_info[0] > 1 and bool(skipped_dp_info[1])
+    if not has_dp_guard and not skipped_unsupported_modules:
         return
     orig_load_adapter = getattr(lora_manager, "_load_adapter", None)
     if not callable(orig_load_adapter) or isinstance(orig_load_adapter, _DPMoELoadGuard):
         return
-    lora_manager._load_adapter = _DPMoELoadGuard(orig_load_adapter, adapter_manager, skipped_dp_info)
+    lora_manager._load_adapter = _DPMoELoadGuard(
+        orig_load_adapter,
+        adapter_manager,
+        skipped_dp_info,
+        skipped_unsupported_modules=skipped_unsupported_modules,
+    )
 
 
 def refresh_all_lora_classes():
@@ -522,9 +709,22 @@ def refresh_all_lora_classes():
         AscendFusedMoEWithLoRA,
         AscendFusedMoE3DWithLoRA,
     )
-    # Exclude GPU FusedMoE wrappers so skipping MoE wrapping on DP > 1 never falls back to GPU classes.
+    upstream_replacements = {
+        ColumnParallelLinearWithLoRA: _AscendGuardedColumnParallelLinearWithLoRA,
+        ColumnParallelLinearWithShardedLoRA: _AscendGuardedColumnParallelLinearWithShardedLoRA,
+        ReplicatedLinearWithLoRA: _AscendGuardedReplicatedLinearWithLoRA,
+    }
+    # Exclude GPU FusedMoE wrappers so skipping MoE wrapping on DP > 1 never falls back to GPU classes,
+    # and replace upstream fallback linear wrappers with guarded subclasses for unsupported modules.
     excluded_classes = (*ascend_classes, FusedMoEWithLoRA, FusedMoE3DWithLoRA)
-    existing_classes = tuple(cls for cls in vllm.lora.utils._all_lora_classes if cls not in excluded_classes)
+    existing_classes: list[object] = []
+    seen: set[object] = set(excluded_classes)
+    for cls in vllm.lora.utils._all_lora_classes:
+        mapped = upstream_replacements.get(cls, cls)
+        if mapped in seen:
+            continue
+        seen.add(mapped)
+        existing_classes.append(mapped)
     vllm.lora.utils._all_lora_classes = (
         *ascend_classes,
         *existing_classes,

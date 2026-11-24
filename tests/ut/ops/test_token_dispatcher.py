@@ -1620,6 +1620,77 @@ class TestTokenDispatcherWithAll2AllV(TestBase):
         mock_all2all.assert_called_once()
         mock_post.assert_called_once()
 
+    def test_all2all_partial_expert_lora_rank_disables_quant_and_exchanges_indices(self):
+        hidden_states = torch.randn(8, 16, dtype=torch.bfloat16)
+        topk_weights = torch.rand(8, 2, dtype=torch.float32)
+        topk_ids = torch.randint(0, 4, (8, 2)).long()
+        expert_map = torch.tensor([0, 1, 2, 3])
+
+        self.dispatcher.expert_ids_per_ep_rank = torch.tensor([2, 3], dtype=torch.int32)
+        self.dispatcher.local_expert_indices = [2, 3]
+        self.mock_histc.return_value = torch.tensor([4, 4, 4, 4], dtype=torch.int64)
+        self.mock_gather_from_sequence_parallel_region.return_value = torch.tensor(
+            [[4, 4, 4, 4], [4, 4, 4, 4]], dtype=torch.int64
+        )
+        # EP rank 1 owns no adapted experts locally (layer_lora_slots=set()),
+        # while peer EP rank 0 holds slot 0 (ep_lora_slots={0}). Collectives,
+        # quant suppression, and index preservation must match rank 0.
+        peer_empty_ctx = SimpleNamespace(
+            punica_wrapper=SimpleNamespace(
+                no_lora=False,
+                active_lora_slots={0},
+                token_lora_indices=torch.tensor([0, -1, 0, -1, 0, -1, 0, -1], dtype=torch.long),
+            ),
+            layer_lora_slots=set(),
+            ep_lora_slots={0},
+            replicated_batch=True,
+            use_ep=True,
+            split_lora_indices=torch.tensor([0, -1, 0, -1, 0, -1, 0, -1], dtype=torch.long),
+        )
+        self.dispatcher.set_lora_context(peer_empty_ctx)
+        self.mock_npu_moe_token_permute.side_effect = lambda tokens, *args, **kwargs: (
+            torch.zeros(kwargs.get("num_out_tokens", tokens.shape[0]), 16, dtype=tokens.dtype),
+            torch.arange(kwargs.get("num_out_tokens", tokens.shape[0])),
+        )
+        self.mock_async_all_to_all.side_effect = lambda x, out_splits, *args, **kwargs: (
+            None,
+            x[: int(sum(out_splits))].clone(),
+            MagicMock(),
+        )
+
+        for quant_type in (QuantType.W4A8, QuantType.W8A8):
+            self.mock_npu_dynamic_quant.reset_mock()
+            self.mock_async_all_to_all.reset_mock()
+            token_dispatch_input = build_token_dispatch_input_fixture(
+                hidden_states=hidden_states,
+                topk_weights=topk_weights,
+                topk_ids=topk_ids,
+                expert_map=expert_map,
+                quant_type=quant_type,
+                is_per_channel_weight=True,
+            )
+            with (
+                self._mock_split_copy_state(self.dispatcher),
+                patch(
+                    "vllm_ascend.lora.fused_moe.async_all_to_all",
+                    side_effect=lambda x, out_splits, *args, **kwargs: (
+                        None,
+                        x[: int(sum(out_splits))].clone(),
+                        MagicMock(),
+                    ),
+                ) as mock_lora_a2a,
+            ):
+                result = self.dispatcher.token_dispatch(token_dispatch_input=token_dispatch_input)
+
+            self.mock_npu_dynamic_quant.assert_not_called()
+            self.assertIsNone(result.dynamic_scale)
+            self.assertEqual(result.hidden_states.dtype, torch.bfloat16)
+            # 1 hidden-states AlltoAll + 1 LoRA-index AlltoAll; zero dynamic_scale AlltoAll.
+            self.mock_async_all_to_all.assert_called_once()
+            mock_lora_a2a.assert_called_once()
+            self.assertEqual(mock_lora_a2a.call_args.args[0].tolist()[:4], [0, 0, -1, -1])
+            self.assertEqual(peer_empty_ctx.exchanged_lora_indices.tolist()[:4], [0, 0, -1, -1])
+
     @pytest.mark.skip("Skip as register_kernels has NPU SocName checking in CANN 8.5.0.")
     def test_token_combine(self):
         hidden_states = torch.randn(16, 16)

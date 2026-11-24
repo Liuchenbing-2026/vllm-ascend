@@ -12,7 +12,7 @@ from vllm.lora.model_manager import LRUCacheLoRAModelManager
 from vllm.lora.punica_wrapper.punica_base import PunicaWrapperBase
 from vllm.model_executor.custom_op import maybe_get_oot_by_class
 from vllm.model_executor.layers.fused_moe import MoERunner
-from vllm.model_executor.layers.linear import ReplicatedLinear
+from vllm.model_executor.layers.linear import ColumnParallelLinear, ReplicatedLinear, RowParallelLinear
 from vllm.model_executor.models import SupportsLoRA
 
 from vllm_ascend.lora.fused_moe import (
@@ -23,6 +23,7 @@ from vllm_ascend.lora.fused_moe import (
     _recover_moe_lora_routing_allgather,
     all2all_lora_indices,
     assert_moe_lora_dp1_supported,
+    has_collective_moe_lora,
     has_lora,
     has_moe_lora,
     moe_lora_apply_w2,
@@ -40,7 +41,9 @@ from vllm_ascend.lora.fused_moe import (
 )
 from vllm_ascend.lora.punica_npu import PunicaWrapperNPU
 from vllm_ascend.lora.utils import (
+    AscendColumnParallelLinearWithLoRA,
     AscendReplicatedLinearWithLoRA,
+    AscendRowParallelLinearWithLoRA,
     install_dp_moe_lora_load_guard,
     refresh_all_lora_classes,
 )
@@ -1310,3 +1313,316 @@ def test_graph_allgather_dp1_ep2_mixed_base_and_adapter_tokens() -> None:
                 dn = dn + (act @ w2_lora_a[slot, e].T) @ w2_lora_b[slot, e].T
             expected[t] += prob * dn
     torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
+
+
+def test_ep_partial_expert_lora_syncs_ep_slots_without_reentrant_deadlock() -> None:
+    wrapper_rank0 = AscendFusedMoEWithLoRA.__new__(AscendFusedMoEWithLoRA)
+    wrapper_rank1 = AscendFusedMoEWithLoRA.__new__(AscendFusedMoEWithLoRA)
+    for rank, w in ((0, wrapper_rank0), (1, wrapper_rank1)):
+        base_layer = _make_base_layer(use_ep=True)
+        base_layer.moe_config.moe_parallel_config.ep_rank = rank
+        base_layer.set_lora_context = Mock()
+        with (
+            patch("vllm_ascend.lora.fused_moe._assert_ascend_moe_lora_supported"),
+            patch("vllm_ascend.lora.fused_moe._get_lora_device", return_value=torch.device("cpu")),
+        ):
+            AscendFusedMoEWithLoRA.__init__(w, base_layer)
+
+    ep_group = SimpleNamespace(world_size=2, cpu_group="ep_cpu", device_group=None)
+    inner_calls: list[str] = []
+
+    def fake_super_reset(self, index: int) -> None:
+        inner_calls.append(f"reset:{id(self)}:{index}")
+
+    def fake_super_set(self, index: int, lora_a, lora_b) -> None:
+        inner_calls.append(f"set_enter:{id(self)}:{index}")
+        # Upstream FusedMoEWithLoRA.set_lora internally invokes self.reset_lora(index).
+        self.reset_lora(index)
+        inner_calls.append(f"set_done:{id(self)}:{index}")
+
+    # Simulate rank 0 calling set_lora(0, ...) while rank 1 calls reset_lora(0),
+    # verifying each rank performs exactly ONE all_reduce without deadlock.
+    reduced_inputs: list[int] = []
+
+    def count_all_reduce(tensor, op=None, group=None):
+        assert group == "ep_cpu"
+        reduced_inputs.append(int(tensor.item()))
+        # First collective pair comes from set_lora (1) on rank 0 + reset_lora (0) on rank 1.
+        # Second collective pair comes from deactivation reset_lora (0) on both ranks.
+        tensor.fill_(1 if len(reduced_inputs) <= 2 else 0)
+
+    with (
+        patch.object(FusedMoEWithLoRA, "reset_lora", autospec=True, side_effect=fake_super_reset),
+        patch.object(FusedMoEWithLoRA, "set_lora", autospec=True, side_effect=fake_super_set),
+        patch("vllm_ascend.lora.fused_moe.torch.distributed.is_initialized", return_value=True),
+        patch("vllm_ascend.lora.fused_moe.get_ep_group", return_value=ep_group),
+        patch("vllm_ascend.lora.fused_moe.torch.distributed.all_reduce", side_effect=count_all_reduce) as mock_ar,
+    ):
+        wrapper_rank0.set_lora(0, [], [])
+        assert mock_ar.call_count == 1
+        wrapper_rank1.reset_lora(0)
+        assert mock_ar.call_count == 2
+
+        assert wrapper_rank0._lora_slots == {0}
+        assert wrapper_rank1._lora_slots == set()
+        assert wrapper_rank0._ep_lora_slots == {0}
+        assert wrapper_rank1._ep_lora_slots == {0}
+        assert reduced_inputs == [1, 0]
+
+        ctx0 = SimpleNamespace()
+        ctx1 = SimpleNamespace()
+        with patch.object(FusedMoEWithLoRA, "_build_lora_context", side_effect=[ctx0, ctx1]):
+            built0 = wrapper_rank0._build_lora_context()
+            built1 = wrapper_rank1._build_lora_context()
+        assert built0.layer_lora_slots is wrapper_rank0._lora_slots
+        assert built0.ep_lora_slots is wrapper_rank0._ep_lora_slots
+        assert built1.layer_lora_slots is wrapper_rank1._lora_slots
+        assert built1.ep_lora_slots is wrapper_rank1._ep_lora_slots
+
+        # Deactivate slot 0 on both ranks: both clear both _lora_slots and _ep_lora_slots.
+        wrapper_rank0.reset_lora(0)
+        wrapper_rank1.reset_lora(0)
+        assert mock_ar.call_count == 4
+        assert wrapper_rank0._lora_slots == set()
+        assert wrapper_rank1._lora_slots == set()
+        assert wrapper_rank0._ep_lora_slots == set()
+        assert wrapper_rank1._ep_lora_slots == set()
+        assert reduced_inputs == [1, 0, 0, 0]
+
+
+def test_ep_partial_expert_lora_keeps_collectives_and_quant_uniform_across_ranks() -> None:
+    token_indices = torch.tensor([0, -1], dtype=torch.long)
+    active_punica = SimpleNamespace(no_lora=False, active_lora_slots={0}, token_lora_indices=token_indices)
+    base_punica = SimpleNamespace(no_lora=True, active_lora_slots=set(), token_lora_indices=token_indices)
+
+    for no_lora_batch, punica in ((False, active_punica), (True, base_punica)):
+        rank0 = SimpleNamespace(
+            punica_wrapper=punica,
+            layer_lora_slots={0},
+            ep_lora_slots={0},
+            use_ep=True,
+            replicated_batch=True,
+        )
+        rank1 = SimpleNamespace(
+            punica_wrapper=punica,
+            layer_lora_slots=set(),
+            ep_lora_slots={0},
+            use_ep=True,
+            replicated_batch=True,
+        )
+
+        assert has_moe_lora(rank0) is (not no_lora_batch)
+        assert has_moe_lora(rank1) is False
+        assert has_collective_moe_lora(rank0) is (not no_lora_batch)
+        assert has_collective_moe_lora(rank1) is (not no_lora_batch)
+
+        for qtype in (QuantType.W4A8, QuantType.W8A8):
+            assert should_use_unfused_quant_moe_for_lora(rank0, qtype) is True
+            assert should_use_unfused_quant_moe_for_lora(rank1, qtype) is True
+            assert should_disable_all2all_quant_for_lora(rank0, qtype) is True
+            assert should_disable_all2all_quant_for_lora(rank1, qtype) is True
+            assert should_exchange_all2all_lora_indices(rank0, qtype) is (not no_lora_batch)
+            assert should_exchange_all2all_lora_indices(rank1, qtype) is (not no_lora_batch)
+
+        assert should_use_unfused_quant_moe_for_lora(rank0, QuantType.W4A8MXFP) is False
+        assert should_use_unfused_quant_moe_for_lora(rank1, QuantType.W4A8MXFP) is False
+        assert should_disable_all2all_quant_for_lora(rank0, QuantType.NONE) is (not no_lora_batch)
+        assert should_disable_all2all_quant_for_lora(rank1, QuantType.NONE) is (not no_lora_batch)
+        assert should_gather_allgather_lora_indices(rank0) is True
+        assert should_gather_allgather_lora_indices(rank1) is True
+
+    rank1_active = SimpleNamespace(
+        punica_wrapper=active_punica,
+        layer_lora_slots=set(),
+        ep_lora_slots={0},
+        use_ep=True,
+        replicated_batch=True,
+    )
+    assert slice_local_lora_indices(rank1_active, num_tokens=2).tolist() == [0, -1]
+
+
+def _make_dp_test_column_linear(prefix: str, in_dim: int = 4, out_dim: int = 6) -> torch.nn.Module:
+    col_cls = maybe_get_oot_by_class(ColumnParallelLinear)
+    layer = object.__new__(col_cls)
+    torch.nn.Module.__init__(layer)
+    layer.input_size = in_dim
+    layer.output_size = out_dim
+    layer.output_size_per_partition = out_dim
+    layer.output_partition_sizes = [out_dim]
+    layer.output_sizes = [out_dim]
+    layer.input_size_per_partition = in_dim
+    layer.tp_size = 1
+    layer.tp_rank = 0
+    layer.gather_output = False
+    layer.skip_bias_add = False
+    layer.return_bias = False
+    layer.bias = None
+    layer.prefix = prefix
+    layer.quant_method = None
+    layer.weight = torch.nn.Parameter(torch.zeros(out_dim, in_dim, dtype=torch.bfloat16))
+    return layer
+
+
+def _make_dp_test_row_linear(prefix: str, in_dim: int = 6, out_dim: int = 4) -> torch.nn.Module:
+    row_cls = maybe_get_oot_by_class(RowParallelLinear)
+    layer = object.__new__(row_cls)
+    torch.nn.Module.__init__(layer)
+    layer.input_size = in_dim
+    layer.output_size = out_dim
+    layer.output_size_per_partition = out_dim
+    layer.output_partition_sizes = [out_dim]
+    layer.output_sizes = [out_dim]
+    layer.input_size_per_partition = in_dim
+    layer.tp_size = 1
+    layer.tp_rank = 0
+    layer.input_is_parallel = False
+    layer.reduce_results = True
+    layer.skip_bias_add = False
+    layer.return_bias = False
+    layer.bias = None
+    layer.prefix = prefix
+    layer.quant_method = None
+    layer.weight = torch.nn.Parameter(torch.zeros(out_dim, in_dim, dtype=torch.bfloat16))
+    return layer
+
+
+class _FakeDSAWoaModel(torch.nn.Module):
+    supports_lora = SupportsLoRA.supports_lora
+    config = None
+    is_3d_moe_weight = False
+    is_non_gated_moe = False
+    embedding_modules: dict[str, str] = {}
+    packed_modules_mapping: dict[str, list[str]] = {}
+    lora_skip_prefixes: list[str] = []
+
+    def __init__(self, *, n_local_groups: int, multimodal_prefix: bool = False) -> None:
+        super().__init__()
+        self._multimodal_prefix = multimodal_prefix
+        layer0 = torch.nn.Module()
+        layer0.self_attn = torch.nn.Module()
+        prefix = "language_model.model.layers.0" if multimodal_prefix else "model.layers.0"
+        layer0.self_attn.wq_a = _make_dp_test_replicated_linear(f"{prefix}.self_attn.wq_a")
+        layer0.self_attn.wo_a = _make_dp_test_column_linear(f"{prefix}.self_attn.wo_a")
+        layer0.self_attn.wo_a._ascend_dsa_n_local_groups = n_local_groups
+        layer0.self_attn.k_proj = _make_dp_test_column_linear(f"{prefix}.self_attn.k_proj")
+        layer0.self_attn.wo_b = _make_dp_test_row_linear(f"{prefix}.self_attn.wo_b")
+        inner = torch.nn.Module()
+        inner.layers = torch.nn.ModuleList([layer0])
+        if multimodal_prefix:
+            language_model = torch.nn.Module()
+            language_model.model = inner
+            self.language_model = language_model
+        else:
+            self.model = inner
+
+    def get_mm_mapping(self):
+        return SimpleNamespace(language_model=("language_model.",), tower_model=(), connector=())
+
+
+@pytest.mark.parametrize(
+    ("n_local_groups", "otp_enabled", "fully_sharded", "expect_wo_a_wrapped"),
+    [
+        (2, False, False, False),
+        (1, True, False, False),
+        (1, False, True, False),
+        (1, False, False, True),
+    ],
+)
+def test_unsupported_wo_a_topologies_skip_wrapping_and_reject_wo_a_adapters(
+    n_local_groups: int,
+    otp_enabled: bool,
+    fully_sharded: bool,
+    expect_wo_a_wrapped: bool,
+) -> None:
+    original_classes = upstream_lora_utils._all_lora_classes
+    try:
+        refresh_all_lora_classes()
+        model = _FakeDSAWoaModel(n_local_groups=n_local_groups, multimodal_prefix=not expect_wo_a_wrapped)
+        lora_config = LoRAConfig(
+            max_loras=1,
+            max_lora_rank=8,
+            lora_dtype=torch.bfloat16,
+            max_cpu_loras=2,
+            fully_sharded_loras=fully_sharded,
+        )
+        vllm_config = SimpleNamespace(
+            lora_config=lora_config,
+            parallel_config=SimpleNamespace(enable_expert_parallel=False),
+            model_config=None,
+        )
+        punica_wrapper = object.__new__(PunicaWrapperNPU)
+        PunicaWrapperBase.__init__(punica_wrapper, 16, 2, "cpu")
+
+        with (
+            patch("vllm_ascend.lora.utils._safe_oproj_tp_enable", return_value=otp_enabled),
+            patch("vllm.lora.model_manager.get_punica_wrapper", return_value=punica_wrapper),
+        ):
+            manager = LRUCacheLoRAModelManager(
+                model=model,
+                max_num_seqs=2,
+                max_num_batched_tokens=16,
+                vocab_size=32,
+                lora_config=lora_config,
+                device=torch.device("cpu"),
+                vllm_config=vllm_config,
+            )
+
+        prefix = "model.layers.0.self_attn" if expect_wo_a_wrapped else "language_model.model.layers.0.self_attn"
+        assert f"{prefix}.wq_a" in manager.modules
+        assert f"{prefix}.k_proj" in manager.modules
+        assert f"{prefix}.wo_b" in manager.modules
+        if not fully_sharded:
+            assert isinstance(manager.modules[f"{prefix}.wq_a"], AscendReplicatedLinearWithLoRA)
+            assert isinstance(manager.modules[f"{prefix}.wo_b"], AscendRowParallelLinearWithLoRA)
+            assert isinstance(manager.modules[f"{prefix}.k_proj"], AscendColumnParallelLinearWithLoRA)
+        else:
+            # Other normal linear modules remain LoRA-wrapped while wo_a is skipped.
+            assert isinstance(manager.modules[f"{prefix}.wq_a"], BaseLayerWithLoRA)
+            assert isinstance(manager.modules[f"{prefix}.k_proj"], BaseLayerWithLoRA)
+
+        assert (f"{prefix}.wo_a" in manager.modules) is expect_wo_a_wrapped
+        if expect_wo_a_wrapped:
+            assert isinstance(manager.modules[f"{prefix}.wo_a"], AscendColumnParallelLinearWithLoRA)
+
+        dummy = manager.create_dummy_lora(lora_id=1, rank=4, embedding_modules=model.embedding_modules)
+        assert (f"{prefix}.wo_a" in dummy.loras) is expect_wo_a_wrapped
+        assert manager.add_adapter(dummy) is True
+        assert manager.activate_adapter(dummy.id) is True
+
+        registered: dict[int, object] = {}
+
+        def _fake_load(lora_request):
+            return lora_request.loaded_model
+
+        def _fake_add_adapter(lora_request):
+            lora_model = worker_manager._load_adapter(lora_request)
+            registered[lora_model.id] = lora_model
+            return True
+
+        worker_manager = SimpleNamespace(_adapter_manager=manager, _load_adapter=_fake_load)
+        with patch("vllm_ascend.lora.utils._safe_oproj_tp_enable", return_value=otp_enabled):
+            install_dp_moe_lora_load_guard(worker_manager)
+
+        valid_adapter = SimpleNamespace(
+            id=1,
+            loras={f"{prefix}.wq_a": object(), f"{prefix}.wo_b": object()},
+        )
+        assert _fake_add_adapter(SimpleNamespace(loaded_model=valid_adapter)) is True
+        assert set(registered.keys()) == {1}
+
+        for bad_id, bad_key in (
+            (2, f"{prefix}.wo_a"),
+            (3, "model.layers.0.self_attn.wo_a"),
+        ):
+            wo_a_adapter = SimpleNamespace(
+                id=bad_id,
+                loras={f"{prefix}.wq_a": object(), bad_key: object()},
+            )
+            if expect_wo_a_wrapped:
+                assert _fake_add_adapter(SimpleNamespace(loaded_model=wo_a_adapter)) is True
+            else:
+                with pytest.raises(NotImplementedError, match="wo_a"):
+                    _fake_add_adapter(SimpleNamespace(loaded_model=wo_a_adapter))
+                assert set(registered.keys()) == {1}
+    finally:
+        upstream_lora_utils._all_lora_classes = original_classes

@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import Mock, patch
 
 import pytest
@@ -586,7 +587,8 @@ def test_w4a8_method_apply_forwards_moe_lora_context() -> None:
         patch("vllm_ascend.quantization.methods.w4a8.w4a8._EXTRA_CTX", SimpleNamespace(moe_comm_method=comm_method)),
         patch("vllm_ascend.quantization.methods.w4a8.w4a8.build_fused_experts_input", return_value="built") as build,
     ):
-        assert method.apply(layer, torch.randn(2, 4), torch.ones(2, 1), torch.zeros(2, 1), None, None) == "done"
+        out = method.apply(cast(Any, layer), torch.randn(2, 4), torch.ones(2, 1), torch.zeros(2, 1), None, None)
+        assert out == "done"
 
     assert build.call_args.kwargs["lora_context"] is sentinel_ctx
     comm_method.fused_experts.assert_called_once_with(fused_experts_input="built", quant_method=method)

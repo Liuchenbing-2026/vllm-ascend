@@ -35,7 +35,7 @@ from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_
 from vllm_ascend.distributed.parallel_state import get_mc2_group
 from vllm_ascend.lora.fused_moe import (
     all2all_lora_indices,
-    has_moe_lora,
+    has_collective_moe_lora,
     postprocess_lora_indices,
     preprocess_lora_indices,
     should_disable_all2all_quant_for_lora,
@@ -378,7 +378,8 @@ class TokenDispatcherWithAllGather(MoETokenDispatcher[MoEAllGatherCombineMetadat
         with_quant = token_dispatch_input.quant.dispatch_with_quant and quant_type != QuantType.W8A8FP
         with_quant = with_quant and not unquantized_mxfp4_dispatch
         if token_dispatch_input.quant.is_quant and (
-            has_moe_lora(self.lora_context) or should_use_unfused_quant_moe_for_lora(self.lora_context, quant_type)
+            has_collective_moe_lora(self.lora_context)
+            or should_use_unfused_quant_moe_for_lora(self.lora_context, quant_type)
         ):
             validate_quant_moe_lora_activation_input(
                 quant_type=quant_type,
@@ -548,12 +549,12 @@ class TokenDispatcherWithAll2AllV(MoETokenDispatcher[MoEAllToAllCombineMetadata]
         # This decision selects how many AlltoAll exchanges the dispatch issues
         # (the quantized path sends the token scale in a second exchange), so
         # every EP rank in the group must take the same branch. Relying on
-        # ``layer_lora_slots`` and ``active_lora_slots`` (under DP=1) keeps
-        # quantized dispatch active when this layer has no MoE adapter loaded;
-        # when ``should_use_unfused_quant_moe_for_lora`` applies (for example,
-        # an expert adapter is loaded on W4A8/W8A8), dispatch also stays
-        # floating-point so base and adapter batches agree on the BF16 boundary
-        # across dispatch, empty EP ranks, MLP, and combine.
+        # EP-uniform ``ep_lora_slots`` and ``active_lora_slots`` (under DP=1)
+        # keeps quantized dispatch active when no EP rank has an MoE adapter
+        # loaded; when ``should_use_unfused_quant_moe_for_lora`` applies (for
+        # example, a full or partial-expert adapter is loaded on W4A8/W8A8),
+        # dispatch also stays floating-point so base and adapter batches agree
+        # on the BF16 boundary across dispatch, empty EP ranks, MLP, and combine.
         if token_dispatch_input.quant.is_quant and should_disable_all2all_quant_for_lora(
             self.lora_context, quant_type=quant_type
         ):

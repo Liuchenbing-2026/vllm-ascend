@@ -24,6 +24,7 @@ import torch_npu
 from vllm import envs as vllm_envs
 from vllm.distributed.parallel_state import (
     get_dp_group,
+    get_ep_group,
     get_pcp_group,
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
@@ -469,6 +470,26 @@ class PrepareAndFinalizeWithAllGather(PrepareAndFinalize):
 
         return self._prepare_with_dp_group(hidden_states, router_logits, replace_allreduce)
 
+    @staticmethod
+    def _resolve_ep_sp_lora_slice(local_sp_tokens: int, tp_size: int, tp_rank: int) -> tuple[int, int]:
+        """Return ``(sp_group_tokens, local_offset)`` respecting uneven EP SP layouts."""
+        if tp_size <= 1:
+            return local_sp_tokens, 0
+        if is_forward_context_available():
+            dp_metadata = get_forward_context().dp_metadata
+            if dp_metadata is not None:
+                from vllm_ascend.ops.register_custom_ops import _get_ep_local_sizes
+
+                ep_group = get_ep_group()
+                local_sizes = _get_ep_local_sizes(dp_metadata, ep_group)
+                if local_sizes is not None:
+                    ep_rank = ep_group.rank_in_group
+                    group_start = (ep_rank // tp_size) * tp_size
+                    sp_sizes = local_sizes[group_start : group_start + tp_size]
+                    if len(sp_sizes) == tp_size and 0 <= tp_rank < tp_size and sp_sizes[tp_rank] == local_sp_tokens:
+                        return sum(sp_sizes), sum(sp_sizes[:tp_rank])
+        return local_sp_tokens * tp_size, tp_rank * local_sp_tokens
+
     def _prepare_with_ep_group(
         self, hidden_states: torch.Tensor, router_logits: torch.Tensor, quant_type=QuantType.NONE
     ) -> MoEPrepareOutput:
@@ -505,13 +526,14 @@ class PrepareAndFinalizeWithAllGather(PrepareAndFinalize):
         if lora_context is not None and should_gather_allgather_lora_indices(lora_context):
             tp_size = get_tensor_model_parallel_world_size()
             tp_rank = get_tensor_model_parallel_rank()
+            total_sp_tokens, sp_offset = self._resolve_ep_sp_lora_slice(local_sp_tokens, tp_size, tp_rank)
             lora_indices = slice_local_lora_indices(
                 lora_context,
-                num_tokens=local_sp_tokens * tp_size,
+                num_tokens=total_sp_tokens,
                 device=device,
             )
             if tp_size > 1:
-                lora_indices = lora_indices[tp_rank * local_sp_tokens : (tp_rank + 1) * local_sp_tokens]
+                lora_indices = lora_indices[sp_offset : sp_offset + local_sp_tokens]
             lora_context.gathered_lora_indices = torch.ops.vllm.maybe_all_gather_and_maybe_unpad(
                 lora_indices.contiguous()
             )

@@ -666,6 +666,69 @@ class TestApplyMoeMlp(unittest.TestCase):
             quant_method.apply_gmm1.assert_not_called()
             quant_method.apply_gmm2.assert_not_called()
 
+    def test_quant_moe_partial_expert_peer_rank_skips_lora_delta_and_keeps_unfused_boundary(self):
+        for quant_type, expected_dtype in (
+            (QuantType.W4A8, torch.bfloat16),
+            (QuantType.W8A8, torch.float16),
+        ):
+            # Rank owns no adapted experts locally (layer_lora_slots=set()),
+            # while a peer EP rank holds slot 0 (ep_lora_slots={0}).
+            peer_empty_ctx = SimpleNamespace(
+                punica_wrapper=SimpleNamespace(no_lora=False, active_lora_slots={0}),
+                layer_lora_slots=set(),
+                ep_lora_slots={0},
+                use_ep=True,
+                replicated_batch=True,
+            )
+
+            quant_method = self._quant_method(fused=True)
+            quant_method.apply_gmm1.return_value = torch.randn(4, 16, dtype=torch.bfloat16)
+            quant_method.apply_act_quant.return_value = (torch.ones(4, 8, dtype=torch.int8), torch.ones(4))
+            quant_method.apply_gmm2.return_value = "unfused_out"
+            non_empty_input = _mlp_compute_input(
+                hidden_states=torch.randn(4, 8, dtype=torch.bfloat16),
+                quant=MoEQuantParams(quant_type=quant_type, is_per_channel_weight=True),
+                lora_context=peer_empty_ctx,
+            )
+            with (
+                patch("vllm_ascend.lora.quant_moe.quant_apply_mlp_with_moe_lora") as mock_lora,
+                patch(
+                    f"{MOE_MLP}.torch_npu.npu_swiglu",
+                    return_value=torch.randn(4, 8, dtype=torch.bfloat16),
+                    create=True,
+                ),
+                patch(f"{MOE_MLP}.maybe_record_event", return_value="evt"),
+            ):
+                out, evt = apply_moe_mlp(non_empty_input, quant_method)
+
+            self.assertEqual(out, "unfused_out")
+            self.assertEqual(evt, "evt")
+            mock_lora.assert_not_called()
+            quant_method.apply_gmm1_act_quant.assert_not_called()
+            quant_method.apply_gmm1.assert_called_once_with(non_empty_input)
+            quant_method.apply_act_quant.assert_called_once()
+            quant_method.apply_gmm2.assert_called_once()
+
+            empty_quant_method = self._quant_method(fused=True)
+            empty_quant_method.get_mlp_weights.return_value = MoEWeights(
+                w1=None,
+                w2=None,
+                w2_scale=[torch.ones(1, dtype=expected_dtype)],
+            )
+            empty_input = _mlp_compute_input(
+                hidden_states=torch.empty(0, 8, dtype=torch.int8),
+                quant=MoEQuantParams(quant_type=quant_type, is_per_channel_weight=True),
+                lora_context=peer_empty_ctx,
+            )
+            with patch(f"{MOE_MLP}.maybe_record_event", return_value="evt"):
+                empty_out, empty_evt = apply_moe_mlp(empty_input, empty_quant_method)
+
+            self.assertEqual(empty_evt, "evt")
+            self.assertEqual(empty_out.shape, (0, 8))
+            self.assertEqual(empty_out.dtype, expected_dtype)
+            empty_quant_method.apply_gmm1.assert_not_called()
+            empty_quant_method.apply_gmm2.assert_not_called()
+
 
 class TestUnifiedApplyActivation(unittest.TestCase):
     def _quant_method(self):

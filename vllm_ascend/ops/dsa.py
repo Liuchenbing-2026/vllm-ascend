@@ -98,6 +98,9 @@ class AscendDeepseekSparseAttention(MultiHeadLatentAttentionWrapper):
         self.wkv = dsa_modules.wkv
         self.kv_norm = dsa_modules.kv_norm
         self.wo_a = dsa_modules.wo_a
+        # Annotate wo_a with its local group count so LoRA wrapping can skip
+        # multi-group / fine-grained-TP topologies before dummy warmup runs.
+        self.wo_a._ascend_dsa_n_local_groups = self.n_local_groups
         self.wo_b = dsa_modules.wo_b
         self.attn_sink = dsa_modules.attn_sink
         self.indexer = dsa_modules.indexer

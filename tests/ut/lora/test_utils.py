@@ -20,6 +20,11 @@ import pytest
 import torch
 import vllm.lora.utils as lora_utils
 from vllm.config import LoRAConfig
+from vllm.lora.layers import (
+    ColumnParallelLinearWithLoRA,
+    ColumnParallelLinearWithShardedLoRA,
+    ReplicatedLinearWithLoRA,
+)
 from vllm.lora.layers.base_linear import BaseLinearLayerWithLoRA
 from vllm.lora.layers.fused_moe import FusedMoE3DWithLoRA, FusedMoEWithLoRA
 from vllm.model_executor.custom_op import maybe_get_oot_by_class
@@ -346,3 +351,77 @@ def test_warn_unmatched_lora_modules_surfaces_unmatched_and_zero_match_adapters(
     with caplog.at_level("WARNING"):
         assert warn_unmatched_lora_modules(SimpleNamespace(_adapter_manager=manager_empty), request) == []
     assert "matched 0 target modules" in caplog.text
+
+
+def test_refresh_all_lora_classes_replaces_upstream_linear_fallbacks_with_guards() -> None:
+    original = lora_utils._all_lora_classes
+    try:
+        lora_utils._all_lora_classes = (
+            ColumnParallelLinearWithLoRA,
+            ColumnParallelLinearWithShardedLoRA,
+            ReplicatedLinearWithLoRA,
+            FusedMoEWithLoRA,
+            FusedMoE3DWithLoRA,
+        )
+        refresh_all_lora_classes()
+        # Running refresh twice must remain idempotent and never re-introduce upstream fallbacks.
+        refresh_all_lora_classes()
+        classes = list(lora_utils._all_lora_classes)
+
+        assert ColumnParallelLinearWithLoRA not in classes
+        assert ColumnParallelLinearWithShardedLoRA not in classes
+        assert ReplicatedLinearWithLoRA not in classes
+        assert FusedMoEWithLoRA not in classes
+        assert FusedMoE3DWithLoRA not in classes
+
+        guarded_col = next(
+            cls
+            for cls in classes
+            if issubclass(cls, ColumnParallelLinearWithLoRA) and cls is not AscendColumnParallelLinearWithLoRA
+        )
+        guarded_sharded = next(cls for cls in classes if issubclass(cls, ColumnParallelLinearWithShardedLoRA))
+        guarded_rep = next(
+            cls
+            for cls in classes
+            if issubclass(cls, ReplicatedLinearWithLoRA) and cls is not AscendReplicatedLinearWithLoRA
+        )
+
+        normal_col = object.__new__(maybe_get_oot_by_class(ColumnParallelLinear))
+        unsupported_wo_a = object.__new__(maybe_get_oot_by_class(ColumnParallelLinear))
+        unsupported_wo_a._ascend_dsa_n_local_groups = 2
+        unsupported_rep = object.__new__(maybe_get_oot_by_class(ReplicatedLinear))
+        unsupported_rep._ascend_lora_unsupported_reason = "compressor projections unsupported"
+
+        default_cfg = LoRAConfig(max_loras=1, max_lora_rank=8, lora_dtype=torch.bfloat16)
+        sharded_cfg = LoRAConfig(
+            max_loras=1,
+            max_lora_rank=8,
+            lora_dtype=torch.bfloat16,
+            fully_sharded_loras=True,
+        )
+        single_group_wo_a = object.__new__(maybe_get_oot_by_class(ColumnParallelLinear))
+        single_group_wo_a._ascend_dsa_n_local_groups = 1
+
+        assert AscendColumnParallelLinearWithLoRA.can_replace_layer(
+            source_layer=normal_col, lora_config=default_cfg, packed_modules_list=["wo_a"], model_config=None
+        )
+        assert not AscendColumnParallelLinearWithLoRA.can_replace_layer(
+            source_layer=unsupported_wo_a, lora_config=default_cfg, packed_modules_list=["wo_a"], model_config=None
+        )
+        assert not guarded_col.can_replace_layer(
+            source_layer=unsupported_wo_a, lora_config=default_cfg, packed_modules_list=["wo_a"], model_config=None
+        )
+        assert guarded_sharded.can_replace_layer(
+            source_layer=normal_col, lora_config=sharded_cfg, packed_modules_list=["k_proj"], model_config=None
+        )
+        assert not guarded_sharded.can_replace_layer(
+            source_layer=single_group_wo_a, lora_config=sharded_cfg, packed_modules_list=["wo_a"], model_config=None
+        )
+        assert not AscendReplicatedLinearWithLoRA.can_replace_layer(
+            source_layer=unsupported_rep, lora_config=default_cfg, packed_modules_list=["wkv"], model_config=None
+        )
+        assert not guarded_rep.can_replace_layer(
+            source_layer=unsupported_rep, lora_config=default_cfg, packed_modules_list=["wkv"], model_config=None
+        )
+    finally:
+        lora_utils._all_lora_classes = original
