@@ -312,6 +312,50 @@
 #    Future Plan:
 #       Remove once upstream exposes the PD role to the coordinator or
 #       removes the EAGLE last-block drop for verified prompt blocks.
+#   3. `HybridKVCacheCoordinator.__init__`,
+#      `HybridKVCacheCoordinator.verify_and_split_kv_cache_groups`,
+#      `HybridKVCacheCoordinator.find_longest_cache_hit`, and
+#      `HybridKVCacheCoordinator.find_longest_cache_hit_per_group`
+#    Why:
+#       DFlash and DSpark tail-only sliding-window draft groups inspect KV
+#       blocks backwards from the live request end (``num_request_tokens``) and
+#       do not align their final boundary by dropping an extra EAGLE block.
+#       Legacy single-type managers in mixed models may also omit the optional
+#       ``num_request_tokens`` keyword argument.
+#    How:
+#       Exclude tail-only DFlash/DSpark specs from ``eagle_group_ids`` and
+#       ``drop_eagle_group_ids`` during initialization and group verification,
+#       cache signature support for ``num_request_tokens`` per attention group,
+#       and forward ``num_request_tokens`` only to managers that accept it while
+#       clamping target-group attention size against unpadded draft windows.
+#    Related PR (if no, explain why):
+#       No upstream PR; Ascend DFlash/DSpark tail-only SWA coordinator lookup.
+#    Future Plan:
+#       Remove once upstream HybridKVCacheCoordinator natively supports
+#       tail-only draft sliding-window specs and ``num_request_tokens`` forwarding.
+#
+# ** 10. File: platform/patch_kv_cache_admission.py**
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.v1.core.single_type_kv_cache_manager.SlidingWindowManager.get_num_blocks_to_allocate`,
+#      `vllm.v1.core.single_type_kv_cache_manager.ChunkedLocalAttentionManager.get_num_blocks_to_allocate`
+#    Why:
+#       Upstream SWA and chunked-local admission caps charge leading skipped
+#       blocks and shared prefix-cache blocks against per-request reservation
+#       headroom even though releasing shared blocks returns zero physical
+#       blocks to the pool, while tail-only draft managers can also keep
+#       live blocks separated by intermediate null gaps.
+#    How:
+#       Bound held-request reservations by ``max(0, cap - num_recyclable_blocks)``
+#       counting only exclusive (``ref_cnt == 1``) live blocks (delegating to
+#       ``_count_recyclable_held_blocks`` when exposed by a manager subclass),
+#       shift first-time admission caps past skipped prefixes, and take the
+#       minimum with uncapped demand so speculative rejections and 1-block
+#       decode extensions never over-reserve capacity.
+#    Related PR (if no, explain why):
+#       No upstream PR; Ascend recycling-aware admission accounting patch.
+#    Future Plan:
+#       Remove once upstream SWA/chunked-local admission excludes skipped null
+#       and shared blocks across both supported vLLM versions.
 #
 # ** 11. File: platform/patch_mamba_block_aligned_split.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

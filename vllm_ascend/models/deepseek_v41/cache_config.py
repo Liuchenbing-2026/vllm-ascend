@@ -4,6 +4,7 @@
 
 from dataclasses import replace
 from itertools import chain, zip_longest
+from typing import Any
 
 import torch
 from vllm.config import VllmConfig
@@ -22,6 +23,7 @@ from vllm_ascend.core.kv_cache_interface import (
     AscendMLAAttentionSpec,
     AscendSlidingWindowMLASpec,
     declared_kwarg,
+    is_dflash_sliding_window_spec,
 )
 from vllm_ascend.device.hardware_profile import (
     HardwareCapability,
@@ -148,8 +150,17 @@ def _layer_number(name):
     return int(name.rsplit(".layers.", 1)[1].split(".", 1)[0])
 
 
-def _draft_layer_number(name):
-    return int(("." + name).rsplit(".mtp.", 1)[1].split(".", 1)[0])
+def _draft_layer_number(name: str) -> tuple[int, int, str]:
+    dotted = f".{name}"
+    if ".mtp." in dotted:
+        tail = dotted.rsplit(".mtp.", 1)[1].split(".", 1)[0]
+        if tail.isdigit():
+            return (0, int(tail), name)
+    if ".layers." in dotted:
+        tail = dotted.rsplit(".layers.", 1)[1].split(".", 1)[0]
+        if tail.isdigit():
+            return (1, int(tail), name)
+    return (2, 0, name)
 
 
 def get_layer_tuples(specs):
@@ -158,9 +169,13 @@ def get_layer_tuples(specs):
     state = sorted((name for name, spec in specs.items() if isinstance(spec, CircularBufferSpec)), key=_layer_number)
     swa = {name for name, spec in specs.items() if isinstance(spec, AscendSlidingWindowMLASpec)}
 
+    def _is_draft_swa(name: str) -> bool:
+        spec = specs[name]
+        return is_dflash_sliding_window_spec(spec) or bool(getattr(spec, "is_draft", False)) or ".mtp." in f".{name}"
+
     full = sorted((name for name in mla if name.endswith(".long_kv_cache")), key=_layer_number)
-    target_swa = sorted((name for name in swa if ".mtp." not in f".{name}"), key=_layer_number)
-    draft_swa = sorted((name for name in swa if ".mtp." in f".{name}"), key=_draft_layer_number)
+    target_swa = sorted((name for name in swa if not _is_draft_swa(name)), key=_layer_number)
+    draft_swa = sorted((name for name in swa if _is_draft_swa(name)), key=_draft_layer_number)
 
     # A reduced backbone may contain only the initial SWA layers. Without
     # full-context source slots, each SWA layer needs its own physical slot.
@@ -177,12 +192,14 @@ def get_layer_tuples(specs):
         folded_spec = specs.get(folded_name)
         index_spec = specs[index_name]
         kv_spec = specs[kv_name]
-        aliases = ([state[slot_idx]] if slot_idx < len(state) else []) + target_swa[slot_idx :: len(full)]
+        aliases = (
+            ([state[slot_idx]] if slot_idx < len(state) else [])
+            + target_swa[slot_idx :: len(full)]
+            + draft_swa[slot_idx :: len(full)]
+        )
         kv_bytes = kv_spec.unpadded_page_size_bytes
         index_bytes = index_spec.unpadded_page_size_bytes
         folded_bytes = folded_spec.unpadded_page_size_bytes if folded_spec is not None else 0
-        if slot_idx < len(draft_swa):
-            aliases.append(draft_swa[slot_idx])
         capacity = max(
             kv_bytes + index_bytes + folded_bytes,
             *(specs[name].unpadded_page_size_bytes for name in aliases),
@@ -192,10 +209,19 @@ def get_layer_tuples(specs):
     return page_sizes, layer_tuples
 
 
+def _uniform_group_or_raise(group_specs: dict[str, Any], *, label: str) -> UniformTypeKVCacheSpecs:
+    """Return a uniform KV cache group or fail fast with mismatched layer context."""
+    group = UniformTypeKVCacheSpecs.from_specs(group_specs)
+    if group is None:
+        details = ", ".join(f"{n}={type(s).__name__}(block_size={s.block_size})" for n, s in group_specs.items())
+        raise ValueError(f"Non-uniform DeepSeek V4.1 KV cache {label} group cannot be unified: {details}")
+    return group
+
+
 def group_cache_specs(specs):
     """Merge full-context resources and pad layer tuples without mutating inputs."""
     if specs and all(isinstance(spec, AscendSlidingWindowMLASpec) for spec in specs.values()):
-        return [UniformTypeKVCacheSpecs.from_specs({name: spec}) for name, spec in specs.items()]
+        return [_uniform_group_or_raise({name: spec}, label="swa_only") for name, spec in specs.items()]
     page_sizes, layer_tuples = get_layer_tuples(specs)
     padded = {}
     for page_size, layer_tuple in zip(page_sizes, layer_tuples):
@@ -213,12 +239,18 @@ def group_cache_specs(specs):
             padded[folded_name] = replace(specs[folded_name], page_size_padded=page_size - kv_bytes - index_bytes)
         padded.update((name, replace(specs[name], page_size_padded=page_size)) for name in aliases)
 
+    def _is_padded_draft_swa(name: str) -> bool:
+        spec = padded[name]
+        return isinstance(spec, AscendSlidingWindowMLASpec) and (
+            is_dflash_sliding_window_spec(spec) or bool(getattr(spec, "is_draft", False)) or ".mtp." in f".{name}"
+        )
+
     mla_names = [name for name, spec in padded.items() if isinstance(spec, AscendMLAAttentionSpec)]
     state_names = [name for name, spec in padded.items() if isinstance(spec, CircularBufferSpec)]
     # A decoder-only PP stage has no compression state buffers.
     groups = [
-        UniformTypeKVCacheSpecs.from_specs({name: padded[name] for name in names})
-        for names in (mla_names, state_names)
+        _uniform_group_or_raise({name: padded[name] for name in names}, label=label)
+        for label, names in (("mla", mla_names), ("state", state_names))
         if names
     ]
 
@@ -228,27 +260,33 @@ def group_cache_specs(specs):
         [
             name
             for name in layer_tuple
-            if isinstance(padded[name], AscendSlidingWindowMLASpec) and ".mtp." not in f".{name}"
+            if isinstance(padded[name], AscendSlidingWindowMLASpec) and not _is_padded_draft_swa(name)
         ]
         for layer_tuple in layer_tuples
     ]
     # Stage-local SWA counts need not be divisible by the number of KV sources.
     for names in zip_longest(*swa_columns):
-        groups.append(UniformTypeKVCacheSpecs.from_specs({name: padded[name] for name in names if name is not None}))
+        swa_group_specs = {name: padded[name] for name in names if name is not None}
+        if swa_group_specs:
+            groups.append(_uniform_group_or_raise(swa_group_specs, label="target_swa"))
 
-    draft_names = [
-        name
-        for layer_tuple in layer_tuples
-        for name in layer_tuple
-        if isinstance(padded[name], AscendSlidingWindowMLASpec) and ".mtp." in f".{name}"
-    ]
-    if draft_names:
-        groups.append(UniformTypeKVCacheSpecs.from_specs({name: padded[name] for name in draft_names}))
+    # Group draft SWA layers independently across slots so extra draft layers
+    # never shrink or pad target full/SWA groups (#68533).
+    draft_columns = [[name for name in layer_tuple if _is_padded_draft_swa(name)] for layer_tuple in layer_tuples]
+    for names in zip_longest(*draft_columns):
+        draft_group_specs = {name: padded[name] for name in names if name is not None}
+        if draft_group_specs:
+            groups.append(_uniform_group_or_raise(draft_group_specs, label="draft_swa"))
     return groups
 
 
 def make_cache_groups(grouped_specs):
-    return [KVCacheGroupSpec(layer_names=list(s.kv_cache_specs), kv_cache_spec=s) for s in grouped_specs]
+    groups: list[KVCacheGroupSpec] = []
+    for idx, spec in enumerate(grouped_specs):
+        if spec is None:
+            raise ValueError(f"group_cache_specs produced an invalid None entry at index {idx}")
+        groups.append(KVCacheGroupSpec(layer_names=list(spec.kv_cache_specs), kv_cache_spec=spec))
+    return groups
 
 
 def _specs_from_groups(groups):
