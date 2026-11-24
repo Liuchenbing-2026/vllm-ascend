@@ -33,13 +33,17 @@ def get_num_blocks_to_allocate(
             # Requests can hold blocks without a num_cached_block entry when
             # prefix caching is disabled. Use the actual allocation state.
             # Releasing a shared block only drops this request's reference;
-            # it does not return capacity to the pool. Scan the live suffix,
-            # stopping before the potentially long NULL prefix.
-            num_recyclable_blocks = 0
-            for block in reversed(blocks):
-                if block.is_null:
-                    break
-                num_recyclable_blocks += block.ref_cnt == 1
+            # it does not return capacity to the pool.
+            count_recyclable = getattr(self, "_count_recyclable_held_blocks", None)
+            if callable(count_recyclable):
+                num_recyclable_blocks = int(count_recyclable(request_id))
+            else:
+                # Scan the live suffix, stopping before the potentially long NULL prefix.
+                num_recyclable_blocks = 0
+                for block in reversed(blocks):
+                    if block.is_null:
+                        break
+                    num_recyclable_blocks += block.ref_cnt == 1
             remaining_admission_blocks = max(0, cap - num_recyclable_blocks)
         else:
             # First-time admission has no held table. Shift the cap past the

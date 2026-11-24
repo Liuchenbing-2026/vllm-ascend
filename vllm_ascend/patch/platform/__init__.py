@@ -110,7 +110,9 @@ import vllm_ascend.patch.platform.patch_example_connector  # noqa
 # Targets SWA and chunked-local admission in SingleTypeKVCacheManager.
 # First-time admission shifts the cap past skipped prefix entries. Existing
 # requests offset the cap only with non-NULL blocks held exclusively by that
-# request; releasing shared blocks does not return capacity to the pool.
+# request (delegating to `_count_recyclable_held_blocks` when present for
+# tail-only managers) and bound reservations by uncapped demand; releasing
+# shared blocks does not return capacity to the pool.
 # Uncapped allocation and full-attention managers retain upstream behavior.
 # Upstream plan: contribute physical-block accounting to vLLM and remove this
 # patch once both supported vLLM versions cover first-time and shared-block
