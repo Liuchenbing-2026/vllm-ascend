@@ -11,13 +11,24 @@ This requires the matching vLLM model-state hook and D3 prefix implementation:
 - vLLM base `c410543d9ffff03f5f6c4a8c0ae1d3ad082c4a15` with
   `Liuchenbing-2026/vllm` branch `startlux_decision_eager_pr-g`
   (`5ead79dded61ee73f8c5419c1bb3dcc71e682f09`).
-- vLLM-Ascend base `a38556f69529595e70598d0d6203009f5ac3293e` with this
-  branch (`026_new_laya_model-g`).
+- vLLM-Ascend base `7844c213dc4ee84f24b21471466ce2f25196626a` with this
+  PrefixLM branch (`026_new_laya_model`).
 
-**Validation status on this refreshed baseline:** only static syntax checks have
-been run locally; CPU unit tests, CI/lint, and NPU model/E2E evaluation on this
-paired baseline are pending. Historical `v0.30.0rc2` smoke results below do not
-establish compatibility or acceptance for this refreshed main pair.
+**Current validation scope:** CPU attention metadata regressions have been run
+against the pinned vLLM main source and `v0.33.0`, including empty-prefix cached
+and chunked requests. These tests use CPU hardware mocks; they do not establish
+NPU model or HTTP acceptance for the current paired sources. Historical
+`v0.30.0rc2` smoke results below remain separate from current-main validation.
+
+Run the metadata regressions in a CPU test environment with the matching sources:
+
+```bash
+TORCH_DEVICE_BACKEND_AUTOLOAD=0 pytest -q tests/ut/attention/test_attention_v1.py
+```
+
+Requests with no bidirectional ranges (including a mapping such as `{0: []}`)
+retain the ordinary causal path. The PrefixLM restrictions below apply when at
+least one request supplies a nonempty span list.
 
 ## Launch
 
