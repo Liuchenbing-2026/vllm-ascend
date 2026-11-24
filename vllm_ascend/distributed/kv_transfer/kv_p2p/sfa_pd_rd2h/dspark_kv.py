@@ -170,13 +170,20 @@ def build_draft_kv_read_batches(
         needed = (prompt_tokens + dst.block_size - 1) // dst.block_size
         if len(src_ids) != needed or len(dst_ids) < needed:
             raise ValueError(f"DSpark KV block tables do not cover the prompt for {name}")
-        if len(set(src_ids)) != len(src_ids) or len(set(dst_ids[:needed])) != needed:
+        # Unbacked leading tail-only blocks may repeat placeholder block 0; only check live blocks for aliasing.
+        non_null_src = [block_id for block_id in src_ids if block_id != 0]
+        non_null_dst = [block_id for block_id in dst_ids[:needed] if block_id != 0]
+        if len(set(non_null_src)) != len(non_null_src) or len(set(non_null_dst)) != len(non_null_dst):
             raise ValueError("DSpark KV prompt block tables must not alias")
         for logical_index, (src_id, dst_id) in enumerate(zip(src_ids, dst_ids)):
             if type(src_id) is not int or type(dst_id) is not int:
                 raise ValueError("DSpark KV block IDs must be integers")
             if not 0 <= src_id < src.num_blocks or not 0 <= dst_id < dst.num_blocks:
                 raise ValueError("DSpark KV block ID exceeds its owned cache")
+            if dst_id == 0:
+                continue
+            if src_id == 0:
+                raise ValueError("Required DSpark source KV block is not resident")
             remaining = min(dst.block_size, prompt_tokens - logical_index * dst.block_size)
             for component, scale in enumerate(dst.block_scales):
                 kernel_rows = dst.shapes[component][0]

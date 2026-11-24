@@ -1823,7 +1823,13 @@ class MooncakeConnectorScheduler:
         compress_ratio = 1
         for spec in specs:
             if isinstance(spec, SlidingWindowSpec):
-                sliding_window = spec.sliding_window
+                tail_tokens = getattr(spec, "tail_tokens", None)
+                window_tokens = (
+                    max(int(spec.sliding_window), int(tail_tokens))
+                    if tail_tokens is not None
+                    else int(spec.sliding_window)
+                )
+                sliding_window = max(sliding_window, window_tokens)
             elif hasattr(spec, "compress_ratio"):
                 compress_ratio = spec.compress_ratio
 
@@ -2962,19 +2968,87 @@ class MooncakeConnectorWorker:
         if remote_page_tokens % kernel_size:
             raise ValueError("KV cache P/D pages must use the same kernel block granularity.")
         remote_scale = remote_page_tokens // kernel_size
+        is_swa = "SlidingWindow" in str(group_spec.get("kv_cache_spec_type", ""))
+        if not is_swa:
+            pending = [group_spec.get("kv_cache_spec")]
+            while pending:
+                value = pending.pop()
+                if isinstance(value, dict):
+                    if value.get("sliding_window"):
+                        is_swa = True
+                        break
+                    pending.extend(value.values())
+                elif isinstance(value, (list, tuple)):
+                    pending.extend(value)
+        remote_ids = meta.remote_block_ids[group_id]
         if not getattr(meta, "local_full_block_ids", ()):
+            if is_swa and any(block_id == 0 for block_id in local_ids):
+                if local_page_tokens != remote_page_tokens:
+                    raise ValueError("Mooncake SWA requires the same P/D logical block size.")
+                backed_local_ids = [block_id for block_id in local_ids if block_id != 0]
+                if not backed_local_ids:
+                    return [], []
+                if len(remote_ids) < len(backed_local_ids):
+                    raise ValueError("Insufficient remote KV blocks for PD transfer.")
+                aligned_remote_ids = list(remote_ids[-len(backed_local_ids) :])
+                if any(block_id == 0 for block_id in aligned_remote_ids):
+                    raise ValueError(
+                        f"Mooncake SWA required remote block is not resident: request={meta.remote_request_id!r}"
+                    )
+                return (
+                    self._expand_block_ids(backed_local_ids, local_scale),
+                    self._expand_block_ids(aligned_remote_ids, remote_scale),
+                )
             # Older scheduler metadata provides only the receive suffix. Keep
             # its physical ordering and skip the already cached remote kernels.
             local = self._expand_block_ids(list(local_ids), local_scale)
-            remote = self._expand_block_ids(list(meta.remote_block_ids[group_id]), remote_scale)
-            remote = remote[meta.num_computed_tokens // kernel_size :]
+            remote = self._expand_block_ids(list(remote_ids), remote_scale)
+            start_k = meta.num_computed_tokens // kernel_size
+            remote = remote[start_k:]
             count = min(len(local), len(remote))
+            if is_swa and count > 0:
+                first_remote_page = start_k // remote_scale
+                last_remote_page = (start_k + count - 1) // remote_scale + 1
+                if any(remote_ids[p] == 0 for p in range(first_remote_page, last_remote_page)):
+                    raise ValueError(
+                        f"Mooncake SWA required remote block is not resident: request={meta.remote_request_id!r}"
+                    )
             return local[:count], remote[:count]
         first_block = len(meta.local_full_block_ids[group_id]) - len(local_ids)
         if first_block < 0:
             raise ValueError("KV cache local block suffix exceeds the full block table.")
         end_token = meta.num_computed_tokens + meta.num_external_tokens
-        remote_ids = meta.remote_block_ids[group_id]
+        num_needed_blocks = (end_token + local_page_tokens - 1) // local_page_tokens
+        prompt_local_full = meta.local_full_block_ids[group_id][:num_needed_blocks]
+        if is_swa and any(block_id == 0 for block_id in prompt_local_full):
+            if local_page_tokens != remote_page_tokens:
+                raise ValueError("Mooncake SWA requires the same P/D logical block size.")
+            backed_local_entries = [
+                (first_block + offset, block_id)
+                for offset, block_id in enumerate(local_ids)
+                if block_id != 0 and (first_block + offset) < num_needed_blocks
+            ]
+            if not backed_local_entries:
+                return [], []
+            if len(remote_ids) < len(backed_local_entries):
+                raise ValueError("Insufficient remote KV blocks for PD transfer.")
+            aligned_remote_ids = list(remote_ids[-len(backed_local_entries) :])
+            if any(block_id == 0 for block_id in aligned_remote_ids):
+                raise ValueError(
+                    f"Mooncake SWA required remote block is not resident: request={meta.remote_request_id!r}"
+                )
+            local_kernel_ids, remote_kernel_ids = [], []
+            for (local_block_idx, block_id), remote_block_id in zip(backed_local_entries, aligned_remote_ids):
+                page_start = local_block_idx * local_page_tokens
+                for kernel_offset in range(local_scale):
+                    token_start = page_start + kernel_offset * kernel_size
+                    if token_start + kernel_size <= meta.num_computed_tokens:
+                        continue
+                    if token_start >= end_token:
+                        break
+                    local_kernel_ids.append(block_id * local_scale + kernel_offset)
+                    remote_kernel_ids.append(remote_block_id * remote_scale + kernel_offset)
+            return local_kernel_ids, remote_kernel_ids
         local_kernel_ids, remote_kernel_ids = [], []
         for offset, block_id in enumerate(local_ids):
             page_start = (first_block + offset) * local_page_tokens
@@ -2987,6 +3061,10 @@ class MooncakeConnectorWorker:
                 remote_page, remote_offset = divmod(token_start, remote_page_tokens)
                 if remote_page >= len(remote_ids):
                     raise ValueError("Insufficient remote KV blocks for PD transfer.")
+                if is_swa and remote_ids[remote_page] == 0:
+                    raise ValueError(
+                        f"Mooncake SWA required remote block is not resident: request={meta.remote_request_id!r}"
+                    )
                 local_kernel_ids.append(block_id * local_scale + kernel_offset)
                 remote_kernel_ids.append(remote_ids[remote_page] * remote_scale + remote_offset // kernel_size)
         return local_kernel_ids, remote_kernel_ids

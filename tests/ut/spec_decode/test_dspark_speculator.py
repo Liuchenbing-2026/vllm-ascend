@@ -13,6 +13,10 @@ from vllm.model_executor.models import ModelRegistry
 from vllm.v1.worker.gpu.spec_decode.dspark.speculator import DSparkSpeculator
 
 import vllm_ascend.worker.v2.spec_decode.dspark.speculator as dspark_module
+from vllm_ascend.distributed.kv_transfer.kv_p2p.sfa_pd_rd2h.dspark_context import (
+    DSparkContextChunk,
+    DSparkContextDescriptor,
+)
 from vllm_ascend.models import register_model
 from vllm_ascend.models.quarot_utils import process_weight
 from vllm_ascend.models.qwen3_dspark import AscendQwen3DSparkForCausalLM
@@ -311,6 +315,7 @@ def test_dspark_local_context_validates_before_writing_kv(monkeypatch, invalid):
         assert kwargs["draft_block_ids_by_group"] == {0: (4,), 1: (7,)}
         assert kwargs["layer_group_ids"] == (1, 0)
         assert kwargs["block_sizes_by_group"] == {0: 64, 1: 128}
+        assert kwargs["skip_null_blocks"] is True
 
 
 @pytest.mark.parametrize("architecture,use_flashmla", [("MLA", True), ("GQA", False), (None, False)])
@@ -355,3 +360,35 @@ def test_mla_dcp_draft_uses_exact_device_lengths(monkeypatch, use_flashmla):
         torch.testing.assert_close(lengths, torch.tensor([11, 23, 0], dtype=torch.int32))
     assert not prefilling.any()
     spec.dcp_manager.prepare_draft_dcp_metadata_inputs.assert_not_called()
+
+
+def test_dspark_local_context_skips_null_blocks_without_clobbering_block_zero(monkeypatch):
+    """P-side DSpark context projection passes skip_null_blocks=True so leading null block 0 maps to -1."""
+    spec = _context_speculator(monkeypatch, group_ids=(0, 1), layer_map=(1, 0))
+    spec.kv_cache_config = SimpleNamespace(
+        kv_cache_groups=[SimpleNamespace(kv_cache_spec=SimpleNamespace(block_size=size)) for size in (4, 8)]
+    )
+    recorded_slots: list[list[int]] = []
+    spec.model = SimpleNamespace(
+        get_draft_kv_cache_layer_names=lambda: ("draft.0", "draft.1"),
+        combine_hidden_states=lambda feats: feats,
+        precompute_and_store_context_kv=lambda states, positions, slots: recorded_slots.extend(
+            slot.tolist() for slot in slots
+        ),
+    )
+    descriptor = DSparkContextDescriptor("req-null", "gen-null", 10, (1, 3), 4)
+    chunk = DSparkContextChunk(descriptor, token_offset=0, num_tokens=10)
+    features = torch.ones(10, 8, dtype=torch.bfloat16)
+
+    monkeypatch.setattr(dspark_module, "get_eagle3_aux_layers_from_config", lambda _: [1, 3])
+    monkeypatch.setattr(dspark_module, "set_current_vllm_config", lambda _: nullcontext())
+    monkeypatch.setattr(
+        torch,
+        "npu",
+        SimpleNamespace(current_stream=lambda dev: SimpleNamespace(synchronize=lambda: None)),
+        raising=False,
+    )
+
+    spec.initialize_local_context(chunk, features, {0: [0, 0, 5], 1: [0, 7]})
+    # layer 0 maps to group 1 (block_size=8, blocks=[0, 7]); layer 1 maps to group 0 (block_size=4, blocks=[0, 0, 5]).
+    assert recorded_slots == [[-1] * 8 + [56, 57], [-1] * 8 + [20, 21]]

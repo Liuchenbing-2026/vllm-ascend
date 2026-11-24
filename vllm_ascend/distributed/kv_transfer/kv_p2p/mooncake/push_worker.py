@@ -598,7 +598,11 @@ class MooncakePushConnectorWorker(MooncakeBaseConnectorWorker):
                 return None
             if final_only:
                 # Window tables retain logical positions, including null slots.
-                start = max(start, end - getattr(spec, "num_retained_tokens", spec.sliding_window - 1) - 1)
+                retained_tokens = getattr(spec, "num_retained_tokens", spec.sliding_window - 1) + 1
+                tail_tokens = getattr(spec, "tail_tokens", None)
+                if tail_tokens is not None:
+                    retained_tokens = max(retained_tokens, int(tail_tokens))
+                start = max(start, end - retained_tokens)
             first, last = start // block_size, (end + block_size - 1) // block_size
             local_ids, remote_ids = [], []
             for index in range(first, last):

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 import vllm.envs as envs
 import zmq
@@ -58,6 +59,19 @@ def get_zmq_rpc_path_lookup(vllm_config: VllmConfig) -> str:
     return f"ipc://{base_url}/lookup_rpc_port_{rpc_port}_dp_rank{dp_index}"
 
 
+_REQ_TOKENS_FRAME_PREFIX = b"\xc1req_tokens:"
+_REQ_TOKENS_FRAME_LEN = len(_REQ_TOKENS_FRAME_PREFIX) + 4
+
+
+def _decode_optional_request_tokens(all_frames: Sequence[Any]) -> tuple[int | None, int]:
+    """Parse optional tagged num_request_tokens frame before hash frames."""
+    if len(all_frames) > 5:
+        opt_frame = bytes(all_frames[4])
+        if opt_frame.startswith(_REQ_TOKENS_FRAME_PREFIX) and len(opt_frame) == _REQ_TOKENS_FRAME_LEN:
+            return int.from_bytes(opt_frame[len(_REQ_TOKENS_FRAME_PREFIX) :], byteorder="big"), 5
+    return None, 4
+
+
 class LookupKeyClient:
     def __init__(self, vllm_config: VllmConfig):
         self.encoder = MsgpackEncoder()
@@ -79,8 +93,15 @@ class LookupKeyClient:
         block_hashes: list[BlockHash],
         kv_cache_group_ids: list[int] | None = None,
         hbm_hit_tokens: int = 0,
+        num_request_tokens: int | None = None,
     ) -> StoreLookupResult:
         """Return the recoverable prefix length and per-group tail-key boundaries."""
+        if num_request_tokens is not None and (
+            not isinstance(num_request_tokens, int)
+            or isinstance(num_request_tokens, bool)
+            or not 0 <= num_request_tokens < (1 << 32)
+        ):
+            raise ValueError(f"num_request_tokens must be a uint32 int, got {num_request_tokens!r}")
         if self._closed:
             return StoreLookupResult(0)
 
@@ -88,11 +109,17 @@ class LookupKeyClient:
         hash_strs = [h.hex() for h in block_hashes]
         hash_frames = self.encoder.encode(hash_strs)
         kv_group_frames = self.encoder.encode(kv_cache_group_ids)
+        optional_frames: list[bytes] = (
+            [_REQ_TOKENS_FRAME_PREFIX + num_request_tokens.to_bytes(_LOOKUP_INT_BYTES_LEN, byteorder="big")]
+            if num_request_tokens is not None
+            else []
+        )
         all_frames = [
             LOOKUP_MSG,
             token_len.to_bytes(_LOOKUP_INT_BYTES_LEN, byteorder="big"),
             *kv_group_frames,
             hbm_hit_tokens.to_bytes(_LOOKUP_INT_BYTES_LEN, byteorder="big"),
+            *optional_frames,
             *hash_frames,
         ]
         try:
@@ -172,13 +199,19 @@ class LookupKeyServer:
                             token_len = int.from_bytes(all_frames[1], byteorder="big")
                             kv_group_ids = self.decoder.decode([all_frames[2]])
                             hbm_hit_tokens = int.from_bytes(all_frames[3], byteorder="big")
-                            hashes_str = self.decoder.decode(all_frames[4:])
+                            num_request_tokens, hash_start = _decode_optional_request_tokens(all_frames)
+                            hashes_str = self.decoder.decode(all_frames[hash_start:])
+                            lookup_kwargs: dict[str, Any] = {
+                                "use_layerwise": False,
+                                "hbm_hit_tokens": hbm_hit_tokens,
+                            }
+                            if num_request_tokens is not None:
+                                lookup_kwargs["num_request_tokens"] = num_request_tokens
                             result = self.pool_worker.lookup_scheduler(
                                 token_len,
                                 hashes_str,
                                 kv_group_ids,
-                                use_layerwise=False,
-                                hbm_hit_tokens=hbm_hit_tokens,
+                                **lookup_kwargs,
                             )
                             logger.debug(
                                 "KV pool lookup response token_len=%d groups=%s hit_tokens=%d",

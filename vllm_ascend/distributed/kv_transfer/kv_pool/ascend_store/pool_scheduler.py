@@ -1040,9 +1040,17 @@ class KVPoolScheduler(BaseKVPoolScheduler):
             return None
         if self.client is None or self.client.closed:
             self.client = LookupKeyClient(self.vllm_config)
+        raw_num_tokens = getattr(request, "num_tokens", None)
+        num_request_tokens = (
+            raw_num_tokens
+            if isinstance(raw_num_tokens, int) and not isinstance(raw_num_tokens, bool) and raw_num_tokens > 0
+            else prompt_token_len
+        )
+        extra_kwargs = {"num_request_tokens": num_request_tokens} if num_request_tokens != token_len else {}
         return self.client.lookup(
             token_len,
             request.block_hashes,
             self.kv_cache_group_ids,
             hbm_hit_tokens=num_computed_tokens,
+            **extra_kwargs,
         )

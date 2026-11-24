@@ -499,6 +499,7 @@ def build_draft_context_slot_mappings(
     block_sizes_by_group: dict[int, int],
     layer_group_ids: tuple[int, ...],
     device: torch.device,
+    skip_null_blocks: bool = False,
 ) -> list[torch.Tensor]:
     """Map absolute prompt rows into the loader-discovered DSpark KV groups.
 
@@ -524,7 +525,15 @@ def build_draft_context_slot_mappings(
             raise ValueError("DSpark draft block table does not cover the prefill chunk")
         if any(type(block_id) is not int or block_id < 0 for block_id in block_ids):
             raise ValueError("DSpark draft block table contains an invalid block ID")
-        slots = [block_ids[position // block_size] * block_size + position % block_size for position in positions]
+        if skip_null_blocks:
+            slots = [
+                -1
+                if block_ids[position // block_size] == 0
+                else block_ids[position // block_size] * block_size + position % block_size
+                for position in positions
+            ]
+        else:
+            slots = [block_ids[position // block_size] * block_size + position % block_size for position in positions]
         per_group[group_id] = torch.tensor(slots, dtype=torch.int32, device=device)
     return [per_group[group_id] for group_id in layer_group_ids]
 
@@ -539,6 +548,7 @@ def initialize_draft_context_chunk(
     block_sizes_by_group: dict[int, int],
     layer_group_ids: tuple[int, ...],
     device: torch.device,
+    skip_null_blocks: bool = False,
 ) -> None:
     """Project one received chunk and wait for its own MLA KV writes to finish."""
     if aux_features.device != device:
@@ -559,6 +569,7 @@ def initialize_draft_context_chunk(
         block_sizes_by_group=block_sizes_by_group,
         layer_group_ids=layer_group_ids,
         device=device,
+        skip_null_blocks=skip_null_blocks,
     )
     model.precompute_and_store_context_kv(context_states, context_positions, slots)
     torch.npu.current_stream(device).synchronize()

@@ -80,6 +80,43 @@ GET_META_MSG = b"get_meta_msg"
 DONE_RECVING_MSG = b"done_recving_msg"
 
 
+def _is_sliding_window_group_spec(spec: Any) -> bool:
+    """Return whether a KV cache group spec contains sliding-window layers."""
+    if isinstance(spec, UniformTypeKVCacheSpecs):
+        return any(isinstance(sub_spec, SlidingWindowSpec) for sub_spec in spec.kv_cache_specs.values())
+    return isinstance(spec, SlidingWindowSpec)
+
+
+def _get_swa_window_tokens(spec: SlidingWindowSpec) -> int:
+    """Return the retained token span for SWA clipping (respecting DFlash tail_tokens)."""
+    window = int(spec.sliding_window)
+    tail_tokens = getattr(spec, "tail_tokens", None)
+    if tail_tokens is not None:
+        return max(window, int(tail_tokens))
+    return window
+
+
+def _align_swa_block_ids(
+    local_blocks: list[int],
+    remote_blocks: list[int],
+    *,
+    request_id: Any,
+) -> tuple[list[int], list[int]]:
+    """Drop leading unbacked local null blocks and suffix-align resident remote blocks."""
+    backed_local = [block_id for block_id in local_blocks if block_id != 0]
+    if not backed_local:
+        return [], []
+    if len(remote_blocks) < len(backed_local):
+        raise ValueError(
+            "Insufficient remote SWA KV blocks for request "
+            f"{request_id!r}: local={len(backed_local)}, remote={len(remote_blocks)}."
+        )
+    aligned_remote = remote_blocks[-len(backed_local) :]
+    if any(block_id == 0 for block_id in aligned_remote):
+        raise ValueError(f"Mooncake SWA required remote block is not resident: request={request_id!r}")
+    return backed_local, aligned_remote
+
+
 # A busy peer can otherwise keep a global executor worker forever when the
 # number of peers is larger than max_workers. Yield after a small FIFO batch so
 # other peers already waiting in the global executor queue can make progress.
@@ -805,14 +842,26 @@ class KVCacheRecvingThread(threading.Thread):
         req_start_time = time.perf_counter()
         src_list, dst_list, length_list = [], [], []
         for i in range(self.hma_group_size):
-            if not remote_block_ids[i] or not local_block_ids[i]:
+            if not local_block_ids[i]:
                 continue
-            cur_remote_block_ids = remote_block_ids[i]
-            cur_local_block_ids = local_block_ids[i]
-            if not isinstance(self.kv_cache_specs[i], MambaSpec) and len(cur_local_block_ids) < len(
-                cur_remote_block_ids
-            ):
-                cur_remote_block_ids = cur_remote_block_ids[-len(cur_local_block_ids) :]
+            is_swa_group = i < len(self.kv_cache_specs) and _is_sliding_window_group_spec(self.kv_cache_specs[i])
+            if is_swa_group:
+                cur_local_block_ids, cur_remote_block_ids = _align_swa_block_ids(
+                    local_block_ids[i],
+                    remote_block_ids[i],
+                    request_id=remote_request_id,
+                )
+                if not cur_local_block_ids:
+                    continue
+            else:
+                if not remote_block_ids[i]:
+                    continue
+                cur_remote_block_ids = remote_block_ids[i]
+                cur_local_block_ids = local_block_ids[i]
+                if not isinstance(self.kv_cache_specs[i], MambaSpec) and len(cur_local_block_ids) < len(
+                    cur_remote_block_ids
+                ):
+                    cur_remote_block_ids = cur_remote_block_ids[-len(cur_local_block_ids) :]
             grouped_remote_block_ids, grouped_local_block_ids = group_concurrent_contiguous(
                 cur_remote_block_ids, cur_local_block_ids
             )
@@ -830,6 +879,9 @@ class KVCacheRecvingThread(threading.Thread):
                     src_list.append(src)
                     dst_list.append(dst)
                     length_list.append(length)
+
+        if not src_list:
+            return
 
         ret = self.engine.batch_transfer_sync_read(session_id, src_list, dst_list, length_list)
         if ret < 0:
@@ -864,14 +916,27 @@ class KVCacheRecvingThread(threading.Thread):
 
         # Full prefix cache hit: do not need to read remote blocks, just notify
         # P worker that we have the blocks we need.
-        num_local_blocks = len(local_block_ids)
-        if num_local_blocks == 0:
-            return
+        is_swa_group = bool(getattr(self, "kv_cache_specs", ())) and _is_sliding_window_group_spec(
+            self.kv_cache_specs[0]
+        )
+        if is_swa_group:
+            local_block_ids, remote_block_ids = _align_swa_block_ids(
+                local_block_ids,
+                remote_block_ids,
+                request_id=remote_request_id,
+            )
+            num_local_blocks = len(local_block_ids)
+            if num_local_blocks == 0:
+                return
+        else:
+            num_local_blocks = len(local_block_ids)
+            if num_local_blocks == 0:
+                return
 
-        num_remote_blocks = len(remote_block_ids)
-        assert num_local_blocks <= num_remote_blocks
-        if num_local_blocks < num_remote_blocks:
-            remote_block_ids = remote_block_ids[-num_local_blocks:]
+            num_remote_blocks = len(remote_block_ids)
+            assert num_local_blocks <= num_remote_blocks
+            if num_local_blocks < num_remote_blocks:
+                remote_block_ids = remote_block_ids[-num_local_blocks:]
 
         # Check if we have the remote metadata cached.
         with self.remote_metadata_lock:
@@ -930,6 +995,9 @@ class KVCacheRecvingThread(threading.Thread):
                 src_list.append(src)
                 dst_list.append(dst)
                 length_list.append(length)
+
+        if not src_list:
+            return
 
         ret = self.engine.batch_transfer_sync_read(session_id, src_list, dst_list, length_list)
         if ret < 0:
@@ -1390,8 +1458,11 @@ class MooncakeConnectorScheduler:
                         group_spec_set.append(layer_spec)
                 self.kv_cache_specs.append(group_spec_set)
                 self.group_block_size.append(g.kv_cache_spec.block_size)
-                if isinstance(group_spec_set[0], SlidingWindowSpec):
-                    sw_sizes_tokens.append((group_spec_set[0].sliding_window, group_spec_set[0].block_size))
+                sw_specs = [spec for spec in group_spec_set if isinstance(spec, SlidingWindowSpec)]
+                if sw_specs:
+                    sw_sizes_tokens.append(
+                        (max(_get_swa_window_tokens(spec) for spec in sw_specs), sw_specs[0].block_size)
+                    )
                 else:
                     sw_sizes_tokens.append((0, layer_spec.block_size))
                 if isinstance(layer_spec, MambaSpec):
@@ -1399,7 +1470,7 @@ class MooncakeConnectorScheduler:
             else:
                 self.group_block_size.append(g.kv_cache_spec.block_size)
                 if isinstance(g.kv_cache_spec, SlidingWindowSpec):
-                    sw_sizes_tokens.append((g.kv_cache_spec.sliding_window, g.kv_cache_spec.block_size))
+                    sw_sizes_tokens.append((_get_swa_window_tokens(g.kv_cache_spec), g.kv_cache_spec.block_size))
                 else:
                     sw_sizes_tokens.append((0, g.kv_cache_spec.block_size))
                 if isinstance(g.kv_cache_spec, MambaSpec):
@@ -1418,14 +1489,16 @@ class MooncakeConnectorScheduler:
         the entire sequence length, and successively cleans up blocks that are outside
         the window prior to the `request_finished_all_groups` hook.
         """
-        if len(block_ids) == 0 or not self.use_hybrid:
-            # No blocks to clip eg Full prefix cache hit or not a hybrid model.
+        if len(block_ids) == 0 or not any(self.num_swa_blocks):
+            # No blocks to clip eg Full prefix cache hit or no SWA groups.
             return block_ids
         assert len(block_ids) == len(self.num_swa_blocks), "Number of KV cache groups must match"
         # For non-SWA groups, num_swa_blocks is 0 so we return all block_ids unchanged
         return tuple(
             [
-                blocks[-self.num_swa_blocks[i] :] if self.num_swa_blocks[i] > 0 else blocks
+                [block_id for block_id in blocks[-self.num_swa_blocks[i] :] if block_id != 0]
+                if self.num_swa_blocks[i] > 0
+                else blocks
                 for i, blocks in enumerate(block_ids)
             ]
         )

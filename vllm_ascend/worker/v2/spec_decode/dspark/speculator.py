@@ -222,6 +222,7 @@ class AscendDSparkSpeculator(LmheadTPDraftSamplingMixin, DSparkSpeculator):
                 block_sizes_by_group=block_sizes_by_group,
                 layer_group_ids=layer_group_ids,
                 device=self.device,
+                skip_null_blocks=True,
             )
 
     def set_attn(

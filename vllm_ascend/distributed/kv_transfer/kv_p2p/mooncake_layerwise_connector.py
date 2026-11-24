@@ -92,6 +92,13 @@ FAILED_SENDING_MSG = b"failed_sending_msg"
 LAYERWISE_REUSE_WAIT_LOG_INTERVAL_SECONDS = 10.0
 
 
+def _is_sliding_window_group_spec(spec: Any) -> bool:
+    """Return whether a KV cache group spec contains sliding-window layers."""
+    if isinstance(spec, UniformTypeKVCacheSpecs):
+        return any(isinstance(sub_spec, SlidingWindowSpec) for sub_spec in spec.kv_cache_specs.values())
+    return isinstance(spec, SlidingWindowSpec)
+
+
 @dataclass
 class LayerMetadata:
     tensor_group_idx: list[int]
@@ -1756,8 +1763,9 @@ class MooncakeLayerwiseConnectorWorker:
                     "Context parallel does not support different P/D block size now."
                 )
                 pd_block_size_ratio = remote_block_size[i] // self.block_size[i]
+                is_swa_group = _is_sliding_window_group_spec(self.kv_cache_specs[i])
                 remtote_block_ids_with_scale = [
-                    block_id * pd_block_size_ratio + j
+                    0 if (is_swa_group and block_id == 0) else block_id * pd_block_size_ratio + j
                     for block_id in remote_block_ids[i]
                     for j in range(pd_block_size_ratio)
                 ]
@@ -1823,10 +1831,29 @@ class MooncakeLayerwiseConnectorWorker:
                 assert len(transfer_mappings) <= 1, f"Not support add mutil transfer task for req_id:{req_id}"
                 update_req_meta = copy.deepcopy(req_meta)
                 for (host, port), block_dict in transfer_mappings.items():
+                    local_groups = block_dict["local_block_ids"]
+                    remote_groups = block_dict["remote_block_ids"]
+                    for group_idx, kv_cache_spec in enumerate(self.kv_cache_specs):
+                        if not _is_sliding_window_group_spec(kv_cache_spec):
+                            continue
+                        filtered_local: list[int] = []
+                        filtered_remote: list[int] = []
+                        for local_id, remote_id in zip(local_groups[group_idx], remote_groups[group_idx]):
+                            if remote_id == 0:
+                                continue
+                            if local_id == 0:
+                                raise ValueError(
+                                    "Mooncake layerwise SWA required local block is not resident: "
+                                    f"request={req_id!r}, group={group_idx}"
+                                )
+                            filtered_local.append(local_id)
+                            filtered_remote.append(remote_id)
+                        local_groups[group_idx] = filtered_local
+                        remote_groups[group_idx] = filtered_remote
                     update_req_meta.remote_host = host
                     update_req_meta.remote_port = port
-                    update_req_meta.local_block_ids = self._get_kernel_block_ids(block_dict["local_block_ids"])
-                    update_req_meta.remote_block_ids = self._get_kernel_block_ids(block_dict["remote_block_ids"])
+                    update_req_meta.local_block_ids = self._get_kernel_block_ids(local_groups)
+                    update_req_meta.remote_block_ids = self._get_kernel_block_ids(remote_groups)
                     update_req_meta.trans_count = block_dict["trans_count"]
                     update_metadata[req_id] = update_req_meta
             metadata.requests = {}
@@ -1918,14 +1945,22 @@ class MooncakeLayerwiseConnectorWorker:
             values = None
             quant_keys = None
             quant_values = None
-            if layer_name not in self.sparse_sfa_c8_layers and (
-                (
-                    self.pd_head_ratio != 1
-                    and (isinstance(self.kv_cache_specs[layer_group_idx], (FullAttentionSpec, SlidingWindowSpec)))
-                    and send_task.group_num_blocks[layer_group_idx] > 0
+            if (
+                layer_name not in self.sparse_sfa_c8_layers
+                and send_task.group_num_blocks is not None
+                and len(send_task.group_num_blocks) > layer_group_idx
+                and send_task.group_num_blocks[layer_group_idx] > 0
+                and (
+                    (
+                        self.pd_head_ratio != 1
+                        and (isinstance(self.kv_cache_specs[layer_group_idx], (FullAttentionSpec, SlidingWindowSpec)))
+                    )
+                    or (self.enable_c8_quant and self.current_layer in self.vllm_config.quant_config.c8_quant_layers)
+                    or (
+                        self.enable_kv_quant
+                        and self.current_layer in self.vllm_config.quant_config.kvcache_quant_layers
+                    )
                 )
-                or (self.enable_c8_quant and self.current_layer in self.vllm_config.quant_config.c8_quant_layers)
-                or (self.enable_kv_quant and self.current_layer in self.vllm_config.quant_config.kvcache_quant_layers)
             ):
                 assert self.resharding_stream is not None
                 with npu_stream_switch(self.resharding_stream):

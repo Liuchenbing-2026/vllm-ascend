@@ -23,7 +23,9 @@ from vllm.model_executor.model_loader.utils import get_model_cls
 from vllm.v1.core.kv_cache_utils import BlockHash, maybe_convert_block_hash
 from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
+    KVCacheSpec,
     MambaSpec,
+    SlidingWindowSpec,
     UniformTypeKVCacheSpecs,
 )
 from vllm.v1.worker.mamba_utils import get_mamba_groups
@@ -36,6 +38,7 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import (
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.coordinator import (
     AscendStoreCoordinator,
     ExternalCachedBlockPool,
+    _is_dflash_sliding_window_spec,
 )
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.kv_transfer import (
     KVCacheStoreBatch,
@@ -234,6 +237,7 @@ class BaseKVPoolWorker(ABC):
         self.num_kv_cache_groups = len(self.grouped_block_size)
         self.kv_cache_group_families = infer_group_cache_families(kv_cache_groups, self.compress_ratios, self.hf_config)
         self.group_uses_align_state = self._infer_group_uses_align_state()
+        self.group_skips_null_blocks = self._infer_group_skips_null_blocks()
         self.sharded_mamba_group_ids = get_sharded_mamba_group_ids(kv_cache_config)
         self.cache_transfer_granularity = infer_cache_transfer_granularity(
             self.grouped_block_size, self.lcm_block_size, self.cacheable_group_ids
@@ -428,23 +432,51 @@ class BaseKVPoolWorker(ABC):
             enable_partial_hash_hits=self.enable_partial_hash_hits,
         )
 
-    def _infer_group_uses_align_state(self) -> list[bool]:
+    def _iter_group_specs(self) -> list[list[KVCacheSpec]]:
         if self.kv_cache_config is None:
-            return [False]
-
-        group_uses_align_state: list[bool] = []
+            return []
+        per_group: list[list[KVCacheSpec]] = []
         for group in self.kv_cache_config.kv_cache_groups:
             kv_cache_spec = group.kv_cache_spec
             if isinstance(kv_cache_spec, UniformTypeKVCacheSpecs):
                 specs = [kv_cache_spec.kv_cache_specs[layer_name] for layer_name in group.layer_names]
             else:
                 specs = [kv_cache_spec]
-            group_uses_align_state.append(
-                any(
-                    isinstance(spec, MambaSpec) and getattr(spec, "mamba_cache_mode", None) == "align" for spec in specs
-                )
+            per_group.append(specs)
+        return per_group
+
+    def _infer_group_uses_align_state(self) -> list[bool]:
+        per_group = self._iter_group_specs()
+        if not per_group:
+            return [False]
+        return [
+            any(isinstance(spec, MambaSpec) and getattr(spec, "mamba_cache_mode", None) == "align" for spec in specs)
+            for specs in per_group
+        ]
+
+    def _infer_group_skips_null_blocks(self) -> list[bool]:
+        """Skip placeholder block 0 on aligned-state and sliding-window/DFlash groups."""
+        per_group = self._iter_group_specs()
+        if not per_group:
+            return [False]
+        return [
+            any(
+                isinstance(spec, SlidingWindowSpec)
+                or (isinstance(spec, MambaSpec) and getattr(spec, "mamba_cache_mode", None) == "align")
+                for spec in specs
             )
-        return group_uses_align_state
+            for specs in per_group
+        ]
+
+    def _effective_skip_null_blocks_by_group(self) -> list[bool]:
+        """Combine align-state and tail-only SWA groups that may hold null block 0."""
+        align_groups = getattr(self, "group_uses_align_state", ())
+        skip_groups = getattr(self, "group_skips_null_blocks", ())
+        num_groups = max(len(align_groups), len(skip_groups))
+        return [
+            (i < len(align_groups) and bool(align_groups[i])) or (i < len(skip_groups) and bool(skip_groups[i]))
+            for i in range(num_groups)
+        ]
 
     @staticmethod
     def _uses_mamba_kv_cache(use_hybrid: bool, kv_cache_config: KVCacheConfig | None):
@@ -946,6 +978,7 @@ class BaseKVPoolWorker(ABC):
         block_hashes: list[BlockHash],
         kv_cache_group_ids: list[int] | None = None,
         use_layerwise: bool = False,
+        num_request_tokens: int | None = None,
     ) -> int:
         """
         Checks the existence of KV cache of the tokens from the cache engine.
@@ -963,6 +996,7 @@ class BaseKVPoolWorker(ABC):
                     block_hashes,
                     kv_cache_group_ids,
                     include_all_ranks=False,
+                    num_request_tokens=num_request_tokens,
                 )
             )
             if coordinator_hit is not None:
@@ -1104,10 +1138,13 @@ class BaseKVPoolWorker(ABC):
         hashes: Sequence[BlockHash],
         hit: int,
         pool: ExternalCachedBlockPool,
+        num_request_tokens: int | None = None,
     ) -> tuple[TailKeyBoundary, ...]:
         """Find the stored key for each group's last recoverable physical page."""
         boundaries = []
         hit_index = hit // self.hash_block_size - 1
+        eff_req = len(hashes) * self.hash_block_size if num_request_tokens is None else num_request_tokens
+        specs = getattr(coordinator, "group_effective_specs", ())
         for group in coordinator.cacheable_group_ids:
             page = coordinator.group_effective_block_sizes[group]
             # A later key in this page can contain all Attention bytes
@@ -1118,6 +1155,14 @@ class BaseKVPoolWorker(ABC):
                     boundaries.append(TailKeyBoundary(group, (index + 1) * self.hash_block_size))
                     break
             else:
+                if (
+                    group < len(specs)
+                    and _is_dflash_sliding_window_spec(spec := specs[group])
+                    and isinstance(spec, SlidingWindowSpec)
+                ):
+                    first_block = max(eff_req - (spec.sliding_window - 1), 0) // page
+                    if hit <= first_block * page:
+                        continue
                 raise ValueError(f"No recoverable tail value for group {group} at {hit}")
         return tuple(boundaries)
 
@@ -1128,12 +1173,14 @@ class BaseKVPoolWorker(ABC):
         kv_cache_group_ids: list[int],
         include_all_ranks: bool,
         hbm_hit_tokens: int = 0,
+        num_request_tokens: int | None = None,
     ) -> StoreLookupResult | None:
         if self.cache_coordinator is None:
             return None
         if sorted(kv_cache_group_ids) != list(range(self.num_kv_cache_groups)):
             return None
         coordinator = self.cache_coordinator
+        extra_kwargs = {"num_request_tokens": num_request_tokens} if num_request_tokens is not None else {}
         if coordinator.enable_partial_hash_hits:
             # Query hash keys, then let Core's cache managers arbitrate a joint
             # recoverable boundary. IO later restores the containing pages.
@@ -1154,10 +1201,25 @@ class BaseKVPoolWorker(ABC):
                 return StoreLookupResult(0)
             present = {candidates[index] for index in self._iter_present_lookup_candidates(keys, variant_counts)}
             pool = ExternalCachedBlockPool(self.hash_block_size, present)
-            hit = coordinator.find_partial_hit_tokens(hashes, token_len, pool, hbm_hit_tokens=hbm_hit_tokens)
+            hit = coordinator.find_partial_hit_tokens(
+                hashes,
+                token_len,
+                pool,
+                hbm_hit_tokens=hbm_hit_tokens,
+                **extra_kwargs,
+            )
             if hit <= hbm_hit_tokens:
                 return StoreLookupResult(hit)
-            return StoreLookupResult(hit, self._tail_key_boundaries(coordinator, hashes, hit, pool))
+            return StoreLookupResult(
+                hit,
+                self._tail_key_boundaries(
+                    coordinator,
+                    hashes,
+                    hit,
+                    pool,
+                    num_request_tokens=token_len if num_request_tokens is None else num_request_tokens,
+                ),
+            )
 
         def query_group_hits(
             group_id: int,
@@ -1200,6 +1262,7 @@ class BaseKVPoolWorker(ABC):
             query_group_hits,
             log_context="KV pool coordinator lookup",
             hbm_hit_tokens=hbm_hit_tokens,
+            **extra_kwargs,
         )
         return StoreLookupResult(hit)
 
@@ -1210,6 +1273,7 @@ class BaseKVPoolWorker(ABC):
         kv_cache_group_ids: list[int] | None = None,
         use_layerwise: bool = False,
         hbm_hit_tokens: int = 0,
+        num_request_tokens: int | None = None,
     ) -> StoreLookupResult:
         """
         Checks the existence of KV cache of the tokens from the cache engine.
@@ -1229,6 +1293,7 @@ class BaseKVPoolWorker(ABC):
                     kv_cache_group_ids,
                     include_all_ranks=True,
                     hbm_hit_tokens=hbm_hit_tokens,
+                    num_request_tokens=num_request_tokens,
                 )
             )
             if coordinator_hit is not None:
@@ -1469,7 +1534,8 @@ class KVPoolWorker(BaseKVPoolWorker):
                     "no_load_spec" if load_spec is None else f"can_load={load_spec.can_load}",
                 )
                 continue
-            request.skip_null_blocks_by_group = self.group_uses_align_state
+            skip_null_groups = self._effective_skip_null_blocks_by_group()
+            request.skip_null_blocks_by_group = skip_null_groups
             load_group_ids = request.kv_cache_group_ids or [0]
             token_len = request.token_len_chunk
             if (load_spec.kvpool_cached_tokens % self.cache_transfer_granularity != 0) and (
@@ -1522,7 +1588,7 @@ class KVPoolWorker(BaseKVPoolWorker):
                 block_ids = request.block_ids_by_group[group_id]
                 group_block_size = self.grouped_block_size[group_id]
                 mask_num = load_spec.vllm_cached_tokens // group_block_size * group_block_size
-                skip_null = group_id < len(self.group_uses_align_state) and self.group_uses_align_state[group_id]
+                skip_null = group_id < len(skip_null_groups) and skip_null_groups[group_id]
 
                 def chunk_filter(start: int, group_id=group_id, load_masks=load_masks) -> bool:
                     return self.token_database.mask_allows_chunk(load_masks, group_id, start)
@@ -1635,7 +1701,8 @@ class KVPoolWorker(BaseKVPoolWorker):
             if current_event is None:
                 current_event = torch.npu.Event()
                 current_event.record()
-            request.skip_null_blocks_by_group = self.group_uses_align_state
+            skip_null_groups = self._effective_skip_null_blocks_by_group()
+            request.skip_null_blocks_by_group = skip_null_groups
             request.current_event = current_event
             requests.append(request)
 
