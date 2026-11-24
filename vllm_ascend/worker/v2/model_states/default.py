@@ -45,7 +45,7 @@ from vllm_ascend.distributed.kv_transfer.sparse_kv_offload.sparse_kv_offload_man
     reset_sparse_kv_offload_request_owners,
     update_sparse_kv_offload_metadata,
 )
-from vllm_ascend.utils import embedding_tp_enable, should_skip_allreduce_across_dp_group
+from vllm_ascend.utils import embedding_tp_enable, should_skip_allreduce_across_dp_group, vllm_version_is
 from vllm_ascend.worker.v2.attn_utils import build_attn_metadata, ring_state_update_skipped
 from vllm_ascend.worker.v2.input_batch import AscendInputBatch
 
@@ -96,6 +96,9 @@ class AscendModelState(DefaultModelState):
 
     def __init__(self, vllm_config, model, encoder_cache, device):
         super().__init__(vllm_config, model, encoder_cache, device)
+        if vllm_version_is("0.33.0") and not hasattr(self, "mm_prefix_ranges"):
+            # Stock v0.33.0 has no V2 prefix cache; preserve paired-core state.
+            self.mm_prefix_ranges = None
         self._offload_req_ids: CpuGpuBuffer | None = None
         self._offload_token_to_req: CpuGpuBuffer | None = None
         self._offload_pool_slots: CpuGpuBuffer | None = None

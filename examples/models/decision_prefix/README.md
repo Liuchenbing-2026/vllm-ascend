@@ -20,6 +20,11 @@ and chunked requests. These tests use CPU hardware mocks; they do not establish
 NPU model or HTTP acceptance for the current paired sources. Historical
 `v0.30.0rc2` smoke results below remain separate from current-main validation.
 
+Stock `v0.33.0` has no Model Runner V2 prefix cache. Ordinary causal requests
+remain supported, but PrefixLM still requires the paired core implementation
+above. Worker CPU regressions also exercise real model-state construction for
+the default, Mamba hybrid, and hybrid encoder inheritance paths.
+
 Run the metadata regressions in a CPU test environment with the matching sources:
 
 ```bash

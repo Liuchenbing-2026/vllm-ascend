@@ -16,12 +16,21 @@ from vllm_ascend.worker.v2.aclgraph_utils import ModelAclGraphManager
 from vllm_ascend.worker.v2.input_batch import AscendInputBatch, AscendInputBuffers
 from vllm_ascend.worker.v2.model_runner import NPUModelRunner
 from vllm_ascend.worker.v2.model_states.default import AscendModelState
+from vllm_ascend.worker.v2.model_states.hybrid_encoder import AscendHybridEncoderModelState
 from vllm_ascend.worker.v2.model_states.mamba_hybrid import AscendMambaHybridModelState
 
 
 @pytest.fixture
 def buffers():
     return AscendInputBuffers(16, 64, torch.device("cpu"))
+
+
+@pytest.mark.parametrize("state_type", [AscendModelState, AscendMambaHybridModelState, AscendHybridEncoderModelState])
+def test_causal_model_state_has_no_prefix_ranges(make_model_state, state_type, buffers):
+    state = make_model_state(state_type)
+    with patch("vllm_ascend.worker.v2.input_batch.update_cos_sin"):
+        batch = AscendInputBatch.make_dummy(1, 2, buffers)
+    assert state._get_mm_prefix_ranges(batch) is None
 
 
 @pytest.fixture
@@ -325,12 +334,12 @@ def test_dummy_slot_mapping_uses_padded_persistent_buffer(buffers, runner):
     [(CUDAGraphMode.PIECEWISE, True, 16), (CUDAGraphMode.PIECEWISE, False, 2), (CUDAGraphMode.NONE, True, 2)],
 )
 def test_attention_keeps_actual_queries_and_padded_dummy_inputs(
-    buffers, mode, is_dummy, expected_input_tokens, state_type
+    buffers, mode, is_dummy, expected_input_tokens, state_type, make_model_state
 ):
     with patch.object(buffers, "dummy_num_tokens", 2), patch("vllm_ascend.worker.v2.input_batch.update_cos_sin"):
         batch = AscendInputBatch.make_dummy(1, 16, buffers)
     batch.is_dummy = is_dummy
-    state = state_type.__new__(state_type)
+    state = make_model_state(state_type)
     state.decoder_replay = None
     state.recoverssm = None
     state.vllm_config = SimpleNamespace(
@@ -346,6 +355,7 @@ def test_attention_keeps_actual_queries_and_padded_dummy_inputs(
     with patch(f"{state_type.__module__}.build_attn_metadata", return_value={}) as build:
         assert state.prepare_attn(batch, mode, (), torch.full((1, 16), -1), [], None) == {}
     kwargs = build.call_args.kwargs
+    assert kwargs["mm_prefix_ranges"] is None
     assert kwargs["num_input_tokens"] == expected_input_tokens
     assert kwargs.get("num_actual_tokens", kwargs["num_tokens"]) == 2
     assert kwargs["max_query_len"] == 2

@@ -1027,10 +1027,12 @@ def test_prepare_dummy_attn_without_pcp_uses_upstream(valid_state_slots):
 
 
 @pytest.mark.parametrize("promised,padded,expected", [(6, 16, 6), (6, 1, 6), (None, 16, 1)])
-def test_default_model_state_preserves_varlen_capture_query_bound(monkeypatch, promised, padded, expected):
+def test_default_model_state_preserves_varlen_capture_query_bound(
+    monkeypatch, promised, padded, expected, make_model_state
+):
     from vllm_ascend.worker.v2.model_states import default
 
-    state = default.AscendModelState.__new__(default.AscendModelState)
+    state = make_model_state(default.AscendModelState)
     state.vllm_config = SimpleNamespace(parallel_config=SimpleNamespace(prefill_context_parallel_size=1))
     state.model_config = SimpleNamespace(max_model_len=2048)
     state.kvpp_runtime = None
@@ -1068,7 +1070,9 @@ def test_default_model_state_preserves_varlen_capture_query_bound(monkeypatch, p
         ([0, 4, 0, 0], False, True, False),
     ],
 )
-def test_kvpp_history_ignores_padding_and_dummy_work(monkeypatch, computed, dummy_run, is_profile, expected, enabled):
+def test_kvpp_history_ignores_padding_and_dummy_work(
+    monkeypatch, computed, dummy_run, is_profile, expected, enabled, make_model_state
+):
     from vllm_ascend.worker.v2.model_states import default
 
     runner = _make_runner(need_timing=False)
@@ -1078,7 +1082,7 @@ def test_kvpp_history_ignores_padding_and_dummy_work(monkeypatch, computed, dumm
         prepare_forward=lambda history: events.append(("prepare", history)),
         complete_forward=lambda: events.append("complete"),
     )
-    state = default.AscendModelState.__new__(default.AscendModelState)
+    state = make_model_state(default.AscendModelState)
     state.vllm_config = SimpleNamespace(parallel_config=SimpleNamespace(prefill_context_parallel_size=1))
     # Since vLLM 0.31 (#58149), max_model_len is exposed as a read-only property backed by
     # model_config.
