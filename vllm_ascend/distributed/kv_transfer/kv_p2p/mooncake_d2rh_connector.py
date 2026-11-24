@@ -743,6 +743,84 @@ class D2RHCPUCacheManager:
             )
 
 
+def _read_d2rh_remote_metadata_snapshot(
+    worker: Any,
+    remote_engine_id: str,
+    remote_handshake_port: int,
+) -> (
+    tuple[
+        list[list[int]],
+        dict[int, tuple[dict[str, Any], list[int]]],
+        list[list[int]],
+        list[list[int]],
+        int,
+    ]
+    | None
+):
+    """Read D2RH remote metadata for an endpoint without mutating SizedDict on misses."""
+    base_addrs_map = worker.kv_caches_base_addr.get(remote_engine_id)
+    groups_map = worker.remote_kv_group2layeridx.get(remote_engine_id)
+    scale_map = worker.remote_block_size_scale.get(remote_engine_id)
+    stride_map = worker.remote_block_stride_per_addr.get(remote_engine_id)
+    te_port_map = worker.remote_te_port.get(remote_engine_id)
+    if not (
+        isinstance(base_addrs_map, dict)
+        and isinstance(groups_map, dict)
+        and isinstance(scale_map, dict)
+        and isinstance(stride_map, dict)
+        and isinstance(te_port_map, dict)
+        and remote_handshake_port in base_addrs_map
+        and remote_handshake_port in groups_map
+        and remote_handshake_port in scale_map
+        and remote_handshake_port in stride_map
+        and remote_handshake_port in te_port_map
+    ):
+        return None
+    return (
+        base_addrs_map[remote_handshake_port],
+        groups_map[remote_handshake_port],
+        scale_map[remote_handshake_port],
+        stride_map[remote_handshake_port],
+        te_port_map[remote_handshake_port],
+    )
+
+
+def _get_d2rh_remote_metadata_snapshot(
+    worker: Any,
+    remote_host: str,
+    remote_handshake_port: int,
+    remote_engine_id: str,
+) -> tuple[
+    list[list[int]],
+    dict[int, tuple[dict[str, Any], list[int]]],
+    list[list[int]],
+    list[list[int]],
+    int,
+]:
+    """Fetch and snapshot D2RH remote metadata under lock, retrying once on concurrent eviction."""
+    lock = (
+        worker._get_remote_metadata_lock()
+        if hasattr(worker, "_get_remote_metadata_lock")
+        else getattr(worker, "remote_metadata_lock", None)
+    )
+    if lock is None:
+        lock = contextlib.nullcontext()
+    with lock:
+        snapshot = _read_d2rh_remote_metadata_snapshot(worker, remote_engine_id, remote_handshake_port)
+    if snapshot is not None:
+        return snapshot
+    for _ in range(2):
+        worker._get_remote_metadata(remote_host, remote_handshake_port)
+        with lock:
+            snapshot = _read_d2rh_remote_metadata_snapshot(worker, remote_engine_id, remote_handshake_port)
+        if snapshot is not None:
+            return snapshot
+    raise RuntimeError(
+        f"Remote metadata missing for engine_id={remote_engine_id} at {remote_host}:{remote_handshake_port} "
+        "after refresh."
+    )
+
+
 class D2RHThread(threading.Thread, MooncakeRemotePeerMixin):
     def __init__(
         self,
@@ -1060,13 +1138,9 @@ class D2RHThread(threading.Thread, MooncakeRemotePeerMixin):
                 remote_engine_id,
                 remote_multi_nodes_meta_mapping,
             )
-            with self.remote_metadata_lock:
-                has_remote_metadata = (
-                    engine_id in self.kv_caches_base_addr and handshake_port in self.kv_caches_base_addr[engine_id]
-                )
-            if not has_remote_metadata:
-                self._get_remote_metadata(host, handshake_port)
-            remote_groups = self.remote_kv_group2layeridx[engine_id][handshake_port]
+            remote_base_addrs, remote_groups, _, _, _ = _get_d2rh_remote_metadata_snapshot(
+                self, host, handshake_port, engine_id
+            )
             remote_names = build_layer_name_to_metadata_idx(remote_groups)
             remote_slots = build_layer_name_to_cache_slots(remote_groups)
             port_pairs = layer_pairs_by_port.setdefault(handshake_port, {})
@@ -1082,7 +1156,7 @@ class D2RHThread(threading.Thread, MooncakeRemotePeerMixin):
                         local_idx,
                         remote_slots,
                         len(self.cpu_kv_caches_base_addr[local_idx]),
-                        len(self.kv_caches_base_addr[engine_id][handshake_port][remote_idx]),
+                        len(remote_base_addrs[remote_idx]),
                     )
                 port_pairs[group_id] = pairs
                 covered_layers[group_id, offset].update(idx for idx, _ in pairs)
@@ -1102,21 +1176,15 @@ class D2RHThread(threading.Thread, MooncakeRemotePeerMixin):
                 remote_engine_id,
                 remote_multi_nodes_meta_mapping,
             )
-            with self.remote_metadata_lock:
-                has_port_metadata = (
-                    port_engine_id in self.kv_caches_base_addr
-                    and remote_handshake_port in self.kv_caches_base_addr[port_engine_id]
-                )
-            if not has_port_metadata:
-                self._get_remote_metadata(port_host, remote_handshake_port)
-
-            remote_base_addrs = self.kv_caches_base_addr[port_engine_id][remote_handshake_port]
-            remote_cache_slots = build_layer_name_to_cache_slots(
-                self.remote_kv_group2layeridx[port_engine_id][remote_handshake_port]
-            )
-            remote_block_size_scale = self.remote_block_size_scale[port_engine_id][remote_handshake_port]
-            remote_block_stride_per_addr = self.remote_block_stride_per_addr[port_engine_id][remote_handshake_port]
-            session_id = f"{port_host}:{self.remote_te_port[port_engine_id][remote_handshake_port]}"
+            (
+                remote_base_addrs,
+                remote_groups,
+                remote_block_size_scale,
+                remote_block_stride_per_addr,
+                remote_te_port,
+            ) = _get_d2rh_remote_metadata_snapshot(self, port_host, remote_handshake_port, port_engine_id)
+            remote_cache_slots = build_layer_name_to_cache_slots(remote_groups)
+            session_id = f"{port_host}:{remote_te_port}"
             src_list: list[int] = []
             dst_list: list[int] = []
             length_list: list[int] = []

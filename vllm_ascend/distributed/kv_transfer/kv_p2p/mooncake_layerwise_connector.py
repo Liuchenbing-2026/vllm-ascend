@@ -2090,7 +2090,7 @@ class MooncakeLayerwiseConnectorWorker(MooncakeRemotePeerMixin):
         return self._borrow_remote_socket(
             remote_host,
             remote_handshake_port,
-            timeout_ms=int(self.timeout * 1000),
+            timeout_ms=int(getattr(self, "timeout", 1.0) * 1000),
             context_factory=zmq.Context,  # type: ignore[attr-defined]
             client_socket_fn=make_mooncake_client_socket,
             make_socket_fn=make_zmq_socket,
@@ -2111,9 +2111,9 @@ class MooncakeLayerwiseConnectorWorker(MooncakeRemotePeerMixin):
                     ensure_zmq_send(sock, encoded_data, path)
                     metadata_bytes = ensure_zmq_recv(
                         sock,
-                        self.remote_poller,
+                        getattr(self, "remote_poller", None),
                         path,
-                        timeout=self.timeout,
+                        timeout=getattr(self, "timeout", 1.0),
                         monitor=monitor,
                         detect_peer_lost=True,
                     )
@@ -2214,7 +2214,7 @@ class MooncakeLayerwiseConnectorWorker(MooncakeRemotePeerMixin):
             for attempt in range(1, max_retries + 1):
                 try:
                     with zmq_ctx(zmq.REQ, path) as sock, lost_peer_monitor(sock) as monitor:  # type: ignore
-                        timeout_ms = int(self.timeout * 1000)
+                        timeout_ms = int(getattr(self, "timeout", 1.0) * 1000)
                         sock.setsockopt(zmq.SNDTIMEO, timeout_ms)
                         sock.setsockopt(zmq.RCVTIMEO, timeout_ms)
                         ensure_zmq_send(sock, encoded_data, peer_addr)

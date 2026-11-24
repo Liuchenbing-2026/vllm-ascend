@@ -937,3 +937,177 @@ def test_v2_pull_modes_evict_metadata_and_scheduler_lease_without_race(
     sched._recving_thread.add_request.assert_called_once_with("192.0.2.1", 6000, "remote-req-1")
     assert ("192.0.2.1", 6000) not in sched._validated_producer_leases
     assert ("192.0.2.2", 6000) in sched._validated_producer_leases
+
+
+def test_d2rh_transfer_concurrent_metadata_invalidation_race(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D2RHThread._transfer_kv_cache_all_groups safely tolerates concurrent metadata eviction."""
+    thread: Any = d2rh_connector.D2RHThread.__new__(d2rh_connector.D2RHThread)
+    thread.kv_caches_base_addr = d2rh_connector.SizedDict()
+    thread.remote_te_port = d2rh_connector.SizedDict()
+    thread.remote_block_size_scale = d2rh_connector.SizedDict()
+    thread.remote_block_stride_per_addr = d2rh_connector.SizedDict()
+    thread.remote_kv_group2layeridx = d2rh_connector.SizedDict()
+    thread.remote_metadata_lock = threading.Lock()
+    thread.log_full_block_map = False
+    thread.block_size = 32
+    thread.group_compress_ratios = {0: 1}
+    thread.kv_group2layeridx = {0: ({"layer_names": ["layer.0"], "kv_cache_spec_type": "AttentionSpec"}, [0])}
+    thread.cpu_kv_caches_base_addr = [[1000]]
+    thread.cpu_block_len_per_addr = [[8]]
+    thread.cpu_block_stride_per_addr = [[16]]
+    thread.cpu_block_size_scale = [[1]]
+    thread.vllm_config = SimpleNamespace(
+        kv_transfer_config=SimpleNamespace(get_from_extra_config=lambda *_a, **_kw: {"pp_size": 1})
+    )
+    thread.remote_local_block_map = {"req-1": {(0, 1, 0): 3}}
+    thread.engine = SimpleNamespace(batch_transfer_sync_read=MagicMock(return_value=0))
+    thread._send_done_recv_signal = MagicMock()
+
+    def populate_remote_meta() -> None:
+        with thread.remote_metadata_lock:
+            thread._record_remote_endpoint_engine_id("127.0.0.1", 6000, "engine-p")
+            thread.kv_caches_base_addr["engine-p"][6000] = [[3000]]
+            thread.remote_te_port["engine-p"][6000] = 9001
+            thread.remote_block_size_scale["engine-p"][6000] = [[1]]
+            thread.remote_block_stride_per_addr["engine-p"][6000] = [[16]]
+            thread.remote_kv_group2layeridx["engine-p"][6000] = {0: ({"layer_names": ["layer.0"]}, [0])}
+
+    req_meta = {
+        "request_id": "req-1",
+        "remote_request_id": "req-1",
+        "remote_engine_id": "engine-p",
+        "remote_host": "127.0.0.1",
+        "remote_port": 6000,
+        "remote_block_ids": ([1],),
+        "remote_handshake_ports": [6000],
+        "group_pulls_by_port": [
+            [SimpleNamespace(group_id=0, remote_tp_offset=0, num_group_pulls=1, prefill_pp_rank=0)]
+        ],
+    }
+
+    fetch_calls = 0
+
+    def fetch_evicted_once(_host: str, _port: int) -> None:
+        nonlocal fetch_calls
+        fetch_calls += 1
+        populate_remote_meta()
+        if fetch_calls == 1:
+            thread._invalidate_remote_metadata("engine-p")
+
+    monkeypatch.setattr(thread, "_get_remote_metadata", fetch_evicted_once)
+    thread._transfer_kv_cache_all_groups(req_meta)
+    assert fetch_calls == 2
+    assert thread.engine.batch_transfer_sync_read.call_count == 1
+    assert thread._send_done_recv_signal.call_count == 1
+
+    thread._invalidate_remote_metadata("engine-p")
+
+    def always_evict(_host: str, _port: int) -> None:
+        populate_remote_meta()
+        thread._invalidate_remote_metadata("engine-p")
+
+    monkeypatch.setattr(thread, "_get_remote_metadata", always_evict)
+    with pytest.raises(RuntimeError, match="Remote metadata missing"):
+        thread._transfer_kv_cache_all_groups(req_meta)
+    assert "engine-p" not in thread.kv_caches_base_addr
+    assert "engine-p" not in thread.remote_kv_group2layeridx
+
+    monkeypatch.setattr(thread, "_get_remote_metadata", lambda _host, _port: populate_remote_meta())
+    errors: list[Exception] = []
+    stop_invalidator = threading.Event()
+
+    def worker_loop() -> None:
+        for _ in range(30):
+            try:
+                thread._transfer_kv_cache_all_groups(req_meta)
+            except RuntimeError as exc:
+                if "Remote metadata missing" not in str(exc):
+                    errors.append(exc)
+            except Exception as exc:
+                errors.append(exc)
+
+    def invalidator_loop() -> None:
+        while not stop_invalidator.is_set():
+            thread._invalidate_remote_metadata("engine-p")
+            time.sleep(0.0005)
+
+    invalidator = threading.Thread(target=invalidator_loop)
+    workers = [threading.Thread(target=worker_loop) for _ in range(2)]
+    invalidator.start()
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join(timeout=10)
+    stop_invalidator.set()
+    invalidator.join(timeout=5)
+    assert errors == []
+
+
+def test_layerwise_update_decoder_info_and_send_done_without_timeout_attr(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Layerwise worker handles __new__ doubles lacking .timeout in socket/recv/done paths."""
+    layerwise_connector = _get_layerwise_connector()
+    worker: Any = layerwise_connector.MooncakeLayerwiseConnectorWorker.__new__(
+        layerwise_connector.MooncakeLayerwiseConnectorWorker
+    )
+    worker.engine_id = "p_engine"
+    worker.local_engine_id = "p_engine"
+    worker.pd_head_ratio = 1
+    worker.remote_layer_metadata = defaultdict(dict)
+    worker.remote_te_port = defaultdict(dict)
+    worker.encoder = MagicMock(encode=MagicMock(return_value=b"encoded"))
+    worker.decoder = MagicMock(
+        decode=MagicMock(return_value=layerwise_connector.MooncakeAgentMetadata(te_rpc_port=6060, layer_metadata={}))
+    )
+    worker.remote_poller = MagicMock()
+    worker.side_channel_host = "127.0.0.1"
+    worker.handshake_port = 5555
+    worker.engine = MagicMock()
+    assert not hasattr(worker, "timeout")
+
+    req_meta = layerwise_connector.ReqMeta(
+        local_block_ids=[[0]],
+        token_ids=None,
+        remote_block_ids=[[0]],
+        remote_block_size=[[16]],
+        remote_engine_id="d_engine",
+        remote_host="127.0.0.1",
+        remote_port=7070,
+        remote_te_rpc_port=None,
+        remote_layer_metadata=None,
+        metaserver=None,
+        remote_tp_size=1,
+        remote_pcp_size=1,
+        remote_dcp_size=1,
+        trans_count=[1],
+    )
+
+    mock_recv = MagicMock(return_value=b"meta")
+    with monkeypatch.context() as mp:
+        mp.setattr(worker, "_get_remote_socket", MagicMock(return_value=MagicMock()))
+        mp.setattr(layerwise_connector, "ensure_zmq_send", MagicMock())
+        mp.setattr(layerwise_connector, "ensure_zmq_recv", mock_recv)
+        worker.update_decoder_info("req-no-timeout", req_meta)
+    assert mock_recv.call_args.kwargs["timeout"] == 1.0
+    assert req_meta.remote_te_rpc_port == 6060
+
+    fake_sock = MagicMock()
+    monkeypatch.setattr(layerwise_connector.zmq, "Context", MagicMock(return_value=MagicMock()))
+    monkeypatch.setattr(layerwise_connector, "make_mooncake_client_socket", MagicMock(return_value=fake_sock))
+    borrowed = worker._get_remote_socket("127.0.0.1", 7071)
+    assert borrowed is fake_sock
+    fake_sock.setsockopt.assert_any_call(zmq.SNDTIMEO, 1000)
+    fake_sock.setsockopt.assert_any_call(zmq.RCVTIMEO, 1000)
+
+    done_sock = MagicMock()
+    done_sock.poll.return_value = {done_sock: zmq.POLLIN}
+    done_sock.recv.return_value = b"ACK"
+    monkeypatch.setattr(
+        layerwise_connector,
+        "zmq_ctx",
+        MagicMock(return_value=contextlib.nullcontext(done_sock)),
+    )
+    monkeypatch.setattr(layerwise_connector, "ensure_zmq_send", MagicMock())
+    worker.send_done_send_signal("req-no-timeout-suffix01", req_meta, 0, trans_flag=True)
+    done_sock.setsockopt.assert_any_call(zmq.SNDTIMEO, 1000)
+    done_sock.setsockopt.assert_any_call(zmq.RCVTIMEO, 1000)
+    done_sock.poll.assert_called_once_with(1000, zmq.POLLIN)
