@@ -233,7 +233,7 @@ class TestAscendAttentionMetadataBuilder(TestBase):
             block_table_tensor=torch.zeros((2, 1), dtype=torch.int32),
             slot_mapping=torch.arange(7),
             attn_state=AscendAttentionState.PrefillNoCache,
-            mm_req_doc_ranges={0: [(0, 1), (2, 3)]},
+            mm_req_doc_ranges={0: [(0, 1), (2, 3)], 1: []},
         )
         metadata = self.builder.build(0, common)
         torch.testing.assert_close(
@@ -254,6 +254,43 @@ class TestAscendAttentionMetadataBuilder(TestBase):
         common.mm_req_doc_ranges = {0: [(0, 4)]}
         with self.assertRaisesRegex(ValueError, "outside its request"):
             self.builder.build(0, common)
+
+    def test_empty_prefix_spans_preserve_cached_and_chunked_causal_paths(self):
+        self.mock_vllm_config.use_v2_model_runner = False
+        common = AscendCommonAttentionMetadata(
+            query_start_loc=torch.tensor([0, 2]),
+            query_start_loc_cpu=torch.tensor([0, 2]),
+            seq_lens=torch.tensor([4]),
+            seq_lens_cpu=torch.tensor([4]),
+            num_reqs=1,
+            num_actual_tokens=2,
+            max_query_len=2,
+            max_seq_len=4,
+            block_table_tensor=torch.zeros((1, 1), dtype=torch.int32),
+            slot_mapping=torch.tensor([2, 3]),
+            causal=True,
+            is_prefilling=torch.tensor([True]),
+        )
+        empty_ranges: tuple[dict[int, list[tuple[int, int]]] | None, ...] = (None, {}, {0: []})
+        mask_builder = self.builder.attn_mask_builder
+        with patch.object(mask_builder, "attn_mask_cache", None), patch.object(mask_builder, "_seq_len_cached", 0):
+            for runner in ("pooling", "generate"):
+                self.mock_vllm_config.model_config.runner_type = runner
+                for state in (AscendAttentionState.PrefillCacheHit, AscendAttentionState.ChunkedPrefill):
+                    common.attn_state = state
+                    for ranges in empty_ranges:
+                        with self.subTest(runner=runner, state=state, ranges=ranges):
+                            common.mm_req_doc_ranges = ranges
+                            metadata = self.builder.build(0, common)
+                            self.assertIsNone(metadata.prefix_masks)
+                            self.assertTrue(metadata.causal)
+                            self.assertEqual(metadata.attn_state, state)
+                            self.assertEqual(metadata.actual_seq_lengths_q, [2])
+                            self.assertEqual(metadata.seq_lens_list, [4])
+                    # Real bidirectional spans must retain the existing guards.
+                    common.mm_req_doc_ranges = {0: [(0, 1)]}
+                    with self.assertRaises(NotImplementedError):
+                        self.builder.build(0, common)
 
     def test_build_allows_lightweight_metadata_without_mm_req_doc_ranges(self):
         self.mock_vllm_config.use_v2_model_runner = False

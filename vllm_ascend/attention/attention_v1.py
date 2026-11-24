@@ -430,7 +430,7 @@ class AscendAttentionMetadataBuilder(AttentionMetadataBuilder[AscendMetadata]):
         )
         # Lightweight UT metadata fixtures omit mm_req_doc_ranges; treat absent as empty.
         mm_ranges = getattr(common_attn_metadata, "mm_req_doc_ranges", None)
-        if mm_ranges:
+        if mm_ranges and any(mm_ranges.values()):
             if self.model_config.runner_type != "pooling" or self.use_pcp:
                 raise NotImplementedError("PrefixLM attention currently requires full-request pooling without PCP")
             query_lengths = (query_start_loc_cpu[1:] - query_start_loc_cpu[:-1]).tolist()
