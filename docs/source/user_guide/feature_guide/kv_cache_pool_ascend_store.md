@@ -1601,6 +1601,10 @@ Refer to the verification operations in Steps 1-5 of Configuration Examples.
 | `prefill_pp_size` | int | 1 | Required when Prefill PP + consumer writes | Positive integer | Prefill PP size. |
 | `prefill_pp_layer_partition` | str | No default | No | Comma-separated layer numbers, e.g., "30,31" | Prefill PP layer partition. If not configured, layers are evenly divided by `prefill_pp_size`. |
 | `qos_priority` | int | 0 | No | [0, 4] (integer, larger = higher priority) | KV Pool transfer QoS priority. |
+| `lookup_batch_size` | int | 512 | No | Non-negative integer (`0` disables batch splitting) | Maximum keys per backend existence RPC batch during prefix lookup. Continuous attention groups stop immediately on the first miss batch instead of querying trailing keys. |
+| `lookup_timeout_ms` | int | 1000 | No | Positive integer (`[1, 2147483647]`) | Total wall-clock timeout budget (in milliseconds) per lookup RPC and worker probing cycle. Exceeding the budget fails open without blocking remaining requests. |
+| `lookup_async` | bool | false | No | true / false | Run scheduler-side KV pool lookups asynchronously in a background thread (`get_num_new_matched_tokens` returns `(None, False)` while pending so other requests continue scheduling). |
+| `lookup_max_inflight` | int | 64 | No | Positive integer | Maximum queued and active background lookup futures allowed when `lookup_async=true`. Requests arriving above the cap fail open immediately (`0` external hit tokens). |
 
 Existing configurations must replace `consumer_is_to_load` with `enable_lookup` and `consumer_is_to_put` with `save_decode_cache`. The latter saves complete Decode KV blocks and fills missing Prefill ancestors when Decode saving starts; it does not save transferred Prefill KV during Prefill. The old options raise an error at startup.
 

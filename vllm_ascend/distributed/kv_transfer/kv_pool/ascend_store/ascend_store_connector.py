@@ -1,5 +1,6 @@
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any, cast
 
 import torch
@@ -266,12 +267,26 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
         """Stop store users before closing the backend's native resources."""
         try:
             if self.connector_scheduler is not None:
-                client = self.connector_scheduler.client
-                try:
-                    if client is not None:
-                        client.close()
-                finally:
-                    self.connector_scheduler.store_scheduler.close()
+                drained = True
+                if hasattr(self.connector_scheduler, "shutdown_async_lookup"):
+                    drained = self.connector_scheduler.shutdown_async_lookup() is not False
+                if not drained:
+                    logger.warning(
+                        "Skipping synchronous AscendStore client/backend close because async lookup is still running."
+                    )
+                else:
+                    client_guard = (
+                        self.connector_scheduler._client_guard()
+                        if hasattr(self.connector_scheduler, "_client_guard")
+                        else nullcontext()
+                    )
+                    with client_guard:
+                        client = self.connector_scheduler.client
+                        try:
+                            if client is not None:
+                                client.close()
+                        finally:
+                            self.connector_scheduler.store_scheduler.close()
         finally:
             if hasattr(self, "lookup_server"):
                 self.lookup_server.close()
@@ -290,7 +305,7 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
         """Ignore P/D handshake metadata because AscendStore handles PP via pool keys."""
         pass
 
-    def get_num_new_matched_tokens(self, request: "Request", num_computed_tokens: int) -> tuple[int, bool]:
+    def get_num_new_matched_tokens(self, request: "Request", num_computed_tokens: int) -> tuple[int | None, bool]:
         assert self.connector_scheduler is not None
         return self.connector_scheduler.get_num_new_matched_tokens(request, num_computed_tokens)
 
