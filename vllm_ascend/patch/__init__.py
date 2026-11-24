@@ -312,6 +312,45 @@
 #    Future Plan:
 #       Remove once upstream exposes the PD role to the coordinator or
 #       removes the EAGLE last-block drop for verified prompt blocks.
+#   3. `AscendHybridKVCacheCoordinator.__init__` &
+#      `AscendHybridKVCacheCoordinator.verify_and_split_kv_cache_groups`
+#    Why:
+#       When lookahead block hashes are enabled (`num_hash_lookahead_tokens > 0`)
+#       or when `KVCacheGroupSpec` omits `is_eagle_group`, group-level `use_eagle`
+#       flags must key off `self.drop_eagle_group_ids` rather than
+#       `self.eagle_group_ids`, and `is_eagle_group` must be accessed safely via
+#       `getattr(..., False)`.
+#    How:
+#       Read `getattr(g, "is_eagle_group", False)` during initialization and check
+#       `i in self.drop_eagle_group_ids` in `verify_and_split_kv_cache_groups`.
+#    Related PR (if no, explain why):
+#       https://github.com/vllm-project/vllm/pull/61589
+#       https://github.com/vllm-project/vllm/pull/64096
+#       https://github.com/vllm-project/vllm-ascend/issues/22693
+#    Future Plan:
+#       Simplify once vLLM v0.34.0 compatibility is retired and all supported
+#       vLLM versions share native `drop_eagle_group_ids` / lookahead handling.
+#
+# ** 10. File: platform/patch_lookahead_block_hashes.py**
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.v1.core.kv_cache_coordinator.replay_boundaries`
+#   2. `vllm.v1.core.kv_cache_coordinator.KVCacheCoordinator.cache_blocks`
+#    Why:
+#       On vLLM v0.34.0, `vllm.v1.core.kv_cache_coordinator.replay_boundaries`
+#       retains the 3-parameter signature without `num_hash_lookahead_tokens`,
+#       and `KVCacheCoordinator.cache_blocks` does not forward multi-token
+#       lookahead bounds, causing `L > 1` replay boundaries to misalign.
+#    How:
+#       Gate explicitly with `vllm_version_is("0.34.0")` and wrap
+#       `replay_boundaries` and `KVCacheCoordinator.cache_blocks` to honor
+#       `num_hash_lookahead_tokens > 1` with `max(0, num_prompt_tokens - L)`
+#       clamping. Strictly a no-op on `vLLM main`.
+#    Related PR (if no, explain why):
+#       https://github.com/vllm-project/vllm/pull/65448
+#       https://github.com/vllm-project/vllm-ascend/issues/22693
+#    Future Plan:
+#       Remove this patch once vLLM v0.34.0 release support is retired and all
+#       supported vLLM versions include 4-parameter `replay_boundaries`.
 #
 # ** 11. File: platform/patch_mamba_block_aligned_split.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
