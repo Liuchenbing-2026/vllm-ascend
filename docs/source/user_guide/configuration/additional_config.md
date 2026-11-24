@@ -75,6 +75,7 @@ The following table lists additional configuration options available in vLLM Asc
 | `multistream_dsv4_dsa_overlap`      | bool | `True`  | Whether to enable dsa multi-stream overlap for DeepSeek V4.  |
 | `rl_config`                        | dict | `{}`    | One-click RL mode configuration. See <a href="#rl_config">rl_config</a> for all fields, the two deployment modes, usage examples, and the migration guide. |
 | `combine_quant_mode`                | int  | `0`     | Controls communication quantization for the MC2 combine operation. The default (`0`) lets the runtime select the mode. Set `2`, `3`, or `4` to override the `comm_quant_mode` argument to `torch_npu.npu_moe_distribute_combine_v2`. |
+| `kda_internal_prefill_checkpoints`  | bool | `False` | Experimental opt-in for KDA internal prefill checkpoints during `mamba_cache_mode="align"`. Switches checkpoint-bearing KDA prefills from AscendC to the Triton recurrence (`STORE_CHECKPOINT=True`). |
 
 The details of each configuration option are as follows:
 
@@ -376,6 +377,30 @@ Omitting `quant_dtype` selects MXFP8 on 950DT Products:
     }
 }
 ```
+
+## KDA internal prefill checkpoints
+
+Enable with `--additional-config '{"kda_internal_prefill_checkpoints": true}'`.
+The option remains disabled by default (`False`) so default deployments stay on
+the fused AscendC prefill path without extra Triton compilation or checkpoint
+buffer overhead. Requires prefix caching with `--mamba-cache-mode align`,
+`prefill_context_parallel_size=1`, `use_ubatching=False`, `head_dim <= 256`,
+`conv_size >= 2`, `local_num_heads > 0`, and vLLM with internal prefill
+checkpoint support in `MambaSpec`. KV transfer
+configurations (`kv_transfer_config != None`) and legacy EAGLE/MTP block
+dropping without lookahead hashes keep `num_prefill_checkpoint_blocks=0` and
+stay on existing prefill scheduling.
+
+When opted in on an eligible KDA layer (`Glm5NextLinearAttention`,
+`AscendKimiK3DeltaAttention`, or legacy upstream `KimiGatedDeltaNetAttention`),
+checkpoint-bearing prefills run the Ascend Triton recurrence
+(`chunk_kda_with_fused_gate` with `STORE_CHECKPOINT=True`), round the exported
+recurrent snapshot to the configured SSM state dtype before continuing, and
+write convolution history plus SSM checkpoints via `MambaPrefillCheckpointExporter`.
+Each opted-in KDA layer reserves a persistent workspace specification of shape
+`[max_num_seqs, local_num_heads, head_dim, head_dim]` in `state_dtypes[1]`
+through the worker workspace manager and incurs first-time Triton compilation/warmup
+unless warmed up.
 
 ## GDN internal prefill checkpoints
 

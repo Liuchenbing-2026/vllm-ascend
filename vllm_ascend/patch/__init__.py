@@ -1726,3 +1726,33 @@
 #       Remove the verifier override once native Kimi defaults dispatch through
 #       the platform's attention/cache configuration interface.
 #
+
+# ** File: worker/patch_kda_checkpoint.py **
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.models.kimi_k3.nvidia.ops.third_party.kda.chunk_kda_with_fused_gate`
+#      `vllm.model_executor.layers.mamba.gdn.kimi_gdn_linear_attn.KimiGatedDeltaNetAttention`
+#    Why:
+#       Legacy upstream vLLM revisions lack Triton KDA checkpoint export support
+#       on KimiGatedDeltaNetAttention (`chunk_kda_with_fused_gate` has no
+#       `checkpoint_state` / `checkpoint_offsets` parameters and `_forward`
+#       neither allocates checkpoints nor calls `MambaPrefillCheckpointExporter`).
+#       Without layer-scoped opt-in spec clearing, default configurations whose
+#       checkpoint capability is disabled can hit `ValueError` in
+#       `AscendGDNAttentionMetadataBuilder` if upstream returns non-zero blocks.
+#    How:
+#       Under `HAS_TRITON` in `vllm_ascend/patch/worker/__init__.py`:
+#       (1) Install a `contextvars.ContextVar`-scoped dispatch wrapper on
+#       `chunk_kda_with_fused_gate` (no-op when `checkpoint_state` is already
+#       supported or callable is uninspectable);
+#       (2) Wrap `KimiGatedDeltaNetAttention.__init__`, `get_kv_cache_spec`
+#       (clearing checkpoint spec fields whenever opted out or unsupported),
+#       checkpoint alignment getters, and `_forward` (preserving outer
+#       `@eager_break_during_capture` and aligning decode + zero-length pad rows
+#       into compact checkpoint rows) via shared `ops/kda_checkpoint.py` helpers.
+#       Do NOT mutate `vllm.model_executor.layers.mamba.kda_checkpoint` globals.
+#    Related PR:
+#       https://github.com/vllm-project/vllm/pull/68157
+#    Future Plan:
+#       Remove `worker/patch_kda_checkpoint.py` once all supported vLLM pins
+#       natively include Triton KDA prefill checkpoint export (where the patch strictly self-disables).
+#

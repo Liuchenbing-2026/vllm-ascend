@@ -165,3 +165,127 @@ def test_chunk_kda(
     assert not torch.isnan(tri_ht).any(), "Triton output ht contains NaN"
     assert_close("o", ref_o, tri_o, NPU_RMSE_RATIO_O)
     assert_close("ht", ref_ht, tri_ht.transpose(-1, -2).contiguous(), NPU_RMSE_RATIO_HT)
+
+
+@pytest.mark.skipif(
+    get_ascend_device_type() not in (AscendDeviceType.A2, AscendDeviceType.A3), reason="Requires Ascend A2/A3"
+)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("ckpt_offset", [256, 512])
+@pytest.mark.skip_global_cleanup
+@torch.inference_mode()
+def test_chunk_kda_checkpoint_single_seq_resume_equivalence(
+    dtype: torch.dtype,
+    ckpt_offset: int,
+):
+    torch.manual_seed(42)
+    B, T, H, D = 1, 1024, 32, 128
+    cu_seqlens_t = torch.tensor([0, T], dtype=torch.int32, device=DEVICE)
+
+    q = torch.randn(B, T, H, D, dtype=dtype, device=DEVICE)
+    k = torch.randn(B, T, H, D, dtype=dtype, device=DEVICE)
+    v = torch.randn(B, T, H, D, dtype=dtype, device=DEVICE)
+    g = F.logsigmoid(torch.randn(B, T, H, D, dtype=torch.float32, device=DEVICE)).to(dtype)
+    beta = torch.rand(B, T, H, dtype=dtype, device=DEVICE).sigmoid()
+    h0 = torch.randn(1, H, D, D, dtype=torch.float32, device=DEVICE)
+
+    ref_o, _ = naive_recurrent_kda(
+        reference_l2norm(q.contiguous()),
+        reference_l2norm(k.contiguous()),
+        v,
+        g,
+        beta,
+        initial_state=h0[0],
+        output_final_state=True,
+    )
+
+    ckpt_state = torch.zeros((1, H, D, D), dtype=dtype, device=DEVICE)
+    ckpt_offsets = torch.tensor([ckpt_offset], dtype=torch.int32, device=DEVICE)
+    cold_o, _ = chunk_kda(
+        q=q.clone(),
+        k=k.clone(),
+        v=v.clone(),
+        g=g.clone(),
+        beta=beta.clone(),
+        initial_state=h0.transpose(-1, -2).contiguous().clone(),
+        output_final_state=True,
+        cu_seqlens=cu_seqlens_t,
+        use_qk_l2norm_in_kernel=True,
+        checkpoint_state=ckpt_state,
+        checkpoint_offsets=ckpt_offsets,
+    )
+    assert not torch.isnan(ckpt_state).any(), "Checkpoint state contains NaN"
+    assert float(ckpt_state.abs().max().item()) > 0.0
+    assert_close("o_cold_ckpt", ref_o, cold_o, NPU_RMSE_RATIO_O)
+
+    suffix_cu = torch.tensor([0, T - ckpt_offset], dtype=torch.int32, device=DEVICE)
+    resume_o, _ = chunk_kda(
+        q=q[:, ckpt_offset:].contiguous().clone(),
+        k=k[:, ckpt_offset:].contiguous().clone(),
+        v=v[:, ckpt_offset:].contiguous().clone(),
+        g=g[:, ckpt_offset:].contiguous().clone(),
+        beta=beta[:, ckpt_offset:].contiguous().clone(),
+        initial_state=ckpt_state.float().contiguous(),
+        output_final_state=True,
+        cu_seqlens=suffix_cu,
+        use_qk_l2norm_in_kernel=True,
+    )
+    assert torch.equal(resume_o, cold_o[:, ckpt_offset:]), "Resumed suffix must match cold checkpoint run bit-exact"
+
+
+@pytest.mark.skipif(
+    get_ascend_device_type() not in (AscendDeviceType.A2, AscendDeviceType.A3), reason="Requires Ascend A2/A3"
+)
+@pytest.mark.skip_global_cleanup
+@torch.inference_mode()
+def test_chunk_kda_checkpoint_varlen_resume_equivalence():
+    torch.manual_seed(77)
+    cu_seqlens = [0, 300, 700, 1024]
+    ckpt_offsets_host = [128, 256, 192]
+    B, T, H, D = 1, cu_seqlens[-1], 32, 128
+    N = len(cu_seqlens) - 1
+    dtype = torch.bfloat16
+    cu_seqlens_t = torch.tensor(cu_seqlens, dtype=torch.int32, device=DEVICE)
+
+    q = torch.randn(B, T, H, D, dtype=dtype, device=DEVICE)
+    k = torch.randn(B, T, H, D, dtype=dtype, device=DEVICE)
+    v = torch.randn(B, T, H, D, dtype=dtype, device=DEVICE)
+    g = F.logsigmoid(torch.randn(B, T, H, D, dtype=torch.float32, device=DEVICE)).to(dtype)
+    beta = torch.rand(B, T, H, dtype=dtype, device=DEVICE).sigmoid()
+    h0 = torch.randn(N, H, D, D, dtype=torch.float32, device=DEVICE)
+
+    ckpt_state = torch.zeros((N, H, D, D), dtype=dtype, device=DEVICE)
+    ckpt_offsets = torch.tensor(ckpt_offsets_host, dtype=torch.int32, device=DEVICE)
+    cold_o, _ = chunk_kda(
+        q=q.clone(),
+        k=k.clone(),
+        v=v.clone(),
+        g=g.clone(),
+        beta=beta.clone(),
+        initial_state=h0.transpose(-1, -2).contiguous().clone(),
+        output_final_state=True,
+        cu_seqlens=cu_seqlens_t,
+        use_qk_l2norm_in_kernel=True,
+        checkpoint_state=ckpt_state,
+        checkpoint_offsets=ckpt_offsets,
+    )
+    assert not torch.isnan(ckpt_state).any()
+
+    for idx in range(N):
+        seg_start = cu_seqlens[idx] + ckpt_offsets_host[idx]
+        seg_end = cu_seqlens[idx + 1]
+        seg_cu = torch.tensor([0, seg_end - seg_start], dtype=torch.int32, device=DEVICE)
+        resume_o, _ = chunk_kda(
+            q=q[:, seg_start:seg_end].contiguous().clone(),
+            k=k[:, seg_start:seg_end].contiguous().clone(),
+            v=v[:, seg_start:seg_end].contiguous().clone(),
+            g=g[:, seg_start:seg_end].contiguous().clone(),
+            beta=beta[:, seg_start:seg_end].contiguous().clone(),
+            initial_state=ckpt_state[idx : idx + 1].float().contiguous(),
+            output_final_state=True,
+            cu_seqlens=seg_cu,
+            use_qk_l2norm_in_kernel=True,
+        )
+        assert torch.equal(resume_o, cold_o[:, seg_start:seg_end]), (
+            f"Segment {idx} resumed suffix mismatch against varlen checkpoint run"
+        )

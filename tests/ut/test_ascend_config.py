@@ -617,6 +617,18 @@ class TestAscendConfig(TestBase):
 
     @_clean_up_ascend_config
     @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
+    def test_init_ascend_config_kda_internal_prefill_checkpoints_opt_in(self, mock_fix_incompatible_config):
+        default_vllm_config = VllmConfig()
+        default_ascend_config = init_ascend_config(default_vllm_config)
+        self.assertFalse(default_ascend_config.kda_internal_prefill_checkpoints)
+
+        opt_in_vllm_config = VllmConfig()
+        opt_in_vllm_config.additional_config = {"kda_internal_prefill_checkpoints": True}
+        opt_in_ascend_config = init_ascend_config(opt_in_vllm_config)
+        self.assertTrue(opt_in_ascend_config.kda_internal_prefill_checkpoints)
+
+    @_clean_up_ascend_config
+    @patch("vllm_ascend.platform.NPUPlatform.check_and_update_config")
     def test_rl_config_enabled_applies_runtime_defaults(self, mock_fix_incompatible_config):
         test_vllm_config = VllmConfig()
         test_vllm_config.additional_config = {"rl_config": {"enabled": True}}
