@@ -43,7 +43,6 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.metadata import (
 )
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
     DEFAULT_PULL_ZMQ_TIMEOUT_MS,
-    MooncakePeerLostError,
     SizedDict,
     ensure_zmq_recv,
     ensure_zmq_send,
@@ -1486,9 +1485,6 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
                     metadata_bytes = (
                         ensure_zmq_recv(sock, path) if monitor is None else ensure_zmq_recv(sock, path, monitor=monitor)
                     )
-        except MooncakePeerLostError:
-            self._invalidate_remote_metadata(remote_engine_id, endpoint=(remote_host, remote_port))
-            raise
         except Exception:
             self._invalidate_remote_metadata(remote_engine_id, endpoint=(remote_host, remote_port))
             raise

@@ -583,6 +583,7 @@ class KVCacheRecvingThread(threading.Thread):
             )
         self.use_request_level_recv_errors = use_request_level_recv_errors
         self.failed_recv_requests: set[str] = set()
+        self.peer_lost_requests: set[tuple[str, str]] = set()
         self.invalid_block_ids: set[int] = set()
         self.failed_recv_requests_lock = threading.Lock()
 
@@ -633,6 +634,8 @@ class KVCacheRecvingThread(threading.Thread):
             self.failed_recv_requests_lock = threading.Lock()
         if not hasattr(self, "failed_recv_requests"):
             self.failed_recv_requests = set()
+        if not hasattr(self, "peer_lost_requests"):
+            self.peer_lost_requests = set()
         if not hasattr(self, "invalid_block_ids"):
             self.invalid_block_ids = set()
         if not hasattr(self, "use_request_level_recv_errors"):
@@ -658,6 +661,8 @@ class KVCacheRecvingThread(threading.Thread):
         with self.failed_recv_requests_lock:
             failed_req_ids = self.failed_recv_requests & finished_req_ids
             self.failed_recv_requests.difference_update(failed_req_ids)
+            for key in [item for item in self.peer_lost_requests if item[0] in finished_req_ids]:
+                self.peer_lost_requests.discard(key)
         return failed_req_ids if self.use_request_level_recv_errors else set()
 
     def _mark_failed_recv_request(self, request_id: str, local_block_ids: BlockIds) -> None:
@@ -666,6 +671,22 @@ class KVCacheRecvingThread(threading.Thread):
             self.failed_recv_requests.add(request_id)
             if not self.use_request_level_recv_errors and local_block_ids:
                 self.invalid_block_ids.update(local_block_ids[0])
+
+    def _mark_peer_lost_request(self, request_id: str, remote_host: str) -> None:
+        self._ensure_failure_tracking()
+        with self.failed_recv_requests_lock:
+            self.peer_lost_requests.add((request_id, remote_host))
+
+    def _is_peer_lost_request(self, request_id: str, remote_host: str) -> bool:
+        self._ensure_failure_tracking()
+        with self.failed_recv_requests_lock:
+            return (request_id, remote_host) in self.peer_lost_requests
+
+    def _clear_peer_lost_request(self, request_id: str) -> None:
+        self._ensure_failure_tracking()
+        with self.failed_recv_requests_lock:
+            for key in [item for item in self.peer_lost_requests if item[0] == request_id]:
+                self.peer_lost_requests.discard(key)
 
     def run(self):
         """Run the thread to handle KV cache transfer requests."""
@@ -774,6 +795,7 @@ class KVCacheRecvingThread(threading.Thread):
         except MooncakePeerLostError:
             peer_lost = True
             self._mark_failed_recv_request(request_id, req_meta["local_block_ids"])
+            self._mark_peer_lost_request(request_id, remote_host)
             self._invalidate_remote_metadata(
                 req_meta.get("remote_engine_id"),
                 remote_host=remote_host,
@@ -790,12 +812,16 @@ class KVCacheRecvingThread(threading.Thread):
             )
             logger.exception("Failed to transfer KV cache for request %s.", remote_request_id)
         finally:
-            if self._mark_request_task_done(request_id, all_task_done):
+            all_tasks_done = self._mark_request_task_done(request_id, all_task_done)
+            if all_tasks_done:
                 if len(req_meta["local_block_ids"]) > 0:
                     self.task_tracker.update_done_task_count(request_id)
                 with self.proc_not_transfer_request_lock:
                     self.proc_not_transfer_request.pop(remote_request_id, None)
             self.request_queue.task_done()
+            peer_lost = peer_lost or self._is_peer_lost_request(request_id, remote_host)
+            if all_tasks_done:
+                self._clear_peer_lost_request(request_id)
             if not peer_lost:
                 self._send_done_signal_to_free_remote_port(remote_request_id, remote_host, remote_port_send_num)
                 # Always send the done signal to the remote host to ensure proper
@@ -2503,6 +2529,7 @@ def ensure_zmq_recv(
     *,
     monitor: Any | None = None,
     timeout_ms: int | None = None,
+    detect_peer_lost: bool = False,
 ) -> bytes:
     """Receive ZMQ data with retries on transient errors and fast-fail on peer loss."""
     return _shared_ensure_zmq_recv(
@@ -2511,6 +2538,7 @@ def ensure_zmq_recv(
         max_retries=max_retries,
         monitor=monitor,
         timeout_ms=timeout_ms,
+        detect_peer_lost=detect_peer_lost,
     )
 
 

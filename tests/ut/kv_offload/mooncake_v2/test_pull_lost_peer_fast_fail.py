@@ -127,7 +127,7 @@ def _make_fake_poller_factory(outcomes: list[list[tuple[Any, int]]]) -> type[Any
 def _make_req_meta(
     *,
     engine_id: str = "engine-p",
-    host: str = "10.0.0.1",
+    host: str = "192.0.2.1",
     port: int = 6000,
     request_id: str = "remote-req-1",
     local_blocks: tuple[list[int], ...] = ([10, 11],),
@@ -211,6 +211,7 @@ def _make_v1_recving_thread(*, use_request_level_recv_errors: bool = False) -> v
     thread.task_tracker = v1_connector.KVCacheTaskTracker()
     thread.use_request_level_recv_errors = use_request_level_recv_errors
     thread.failed_recv_requests = set()
+    thread.peer_lost_requests = set()
     thread.invalid_block_ids = set()
     thread.failed_recv_requests_lock = threading.Lock()
     return thread
@@ -247,6 +248,7 @@ def _make_hybrid_recving_thread(
     thread.task_tracker = hybrid_connector.KVCacheTaskTracker()
     thread.use_request_level_recv_errors = use_request_level_recv_errors
     thread.failed_recv_requests = set()
+    thread.peer_lost_requests = set()
     thread.invalid_block_ids = set()
     thread.failed_recv_requests_lock = threading.Lock()
     return thread
@@ -282,7 +284,7 @@ def test_make_mooncake_client_socket_legacy_signature_sets_pre_connect_options()
 
     sock = make_mooncake_client_socket(
         ctx,
-        "tcp://10.0.0.1:6000",
+        "tcp://192.0.2.1:6000",
         zmq.REQ,  # type: ignore[attr-defined]
         linger=0,
         heartbeat_ivl_ms=PULL_HEARTBEAT_IVL_MS,
@@ -291,7 +293,7 @@ def test_make_mooncake_client_socket_legacy_signature_sets_pre_connect_options()
     )
 
     assert sock is raw_socket
-    assert seen_calls == [{"bind": False, "linger": 0, "path": "tcp://10.0.0.1:6000"}]
+    assert seen_calls == [{"bind": False, "linger": 0, "path": "tcp://192.0.2.1:6000"}]
     connect_idx = next(i for i, item in enumerate(events) if item[0] == "connect")
     pre_connect_opts = {item[1]: item[2] for item in events[:connect_idx] if item[0] == "setsockopt"}
     assert pre_connect_opts[zmq.LINGER] == 0  # type: ignore[attr-defined]
@@ -309,7 +311,7 @@ def test_make_mooncake_client_socket_legacy_signature_sets_pre_connect_options()
 
     make_mooncake_client_socket(
         ctx,
-        "tcp://10.0.0.1:6001",
+        "tcp://192.0.2.1:6001",
         zmq.REQ,  # type: ignore[attr-defined]
         make_socket_fn=minimal_make_zmq_socket,
     )
@@ -347,7 +349,7 @@ def test_make_mooncake_client_socket_new_signature_passes_heartbeat_kwargs() -> 
 
     sock = make_mooncake_client_socket(
         ctx,
-        "tcp://10.0.0.2:6000",
+        "tcp://192.0.2.2:6000",
         zmq.DEALER,  # type: ignore[attr-defined]
         linger=0,
         heartbeat_ivl_ms=150,
@@ -358,7 +360,7 @@ def test_make_mooncake_client_socket_new_signature_passes_heartbeat_kwargs() -> 
     assert sock is expected_socket
     assert captured == {
         "ctx": ctx,
-        "path": "tcp://10.0.0.2:6000",
+        "path": "tcp://192.0.2.2:6000",
         "socket_type": zmq.DEALER,  # type: ignore[attr-defined]
         "bind": False,
         "linger": 0,
@@ -389,19 +391,19 @@ def test_close_zmq_socket_and_zmq_ctx_cleanup(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(utils, "make_mooncake_client_socket", client_helper)
     monkeypatch.setattr(utils, "make_zmq_socket", router_helper)
 
-    with zmq_ctx(zmq.REQ, "tcp://10.0.0.1:6000") as sock:  # type: ignore[attr-defined]
+    with zmq_ctx(zmq.REQ, "tcp://192.0.2.1:6000") as sock:  # type: ignore[attr-defined]
         assert sock is client_sock
     context.destroy.assert_called_once_with(linger=0)
     client_helper.assert_called_once()
 
     context.reset_mock()
-    with pytest.raises(RuntimeError, match="boom"), zmq_ctx(zmq.ROUTER, "tcp://10.0.0.1:6001") as sock:  # type: ignore[attr-defined]
+    with pytest.raises(RuntimeError, match="boom"), zmq_ctx(zmq.ROUTER, "tcp://192.0.2.1:6001") as sock:  # type: ignore[attr-defined]
         assert sock is router_sock
         raise RuntimeError("boom")
     context.destroy.assert_called_once_with(linger=0)
     router_helper.assert_called_once_with(
         ctx=context,
-        path="tcp://10.0.0.1:6001",
+        path="tcp://192.0.2.1:6001",
         socket_type=zmq.ROUTER,  # type: ignore[attr-defined]
         bind=True,
         linger=0,
@@ -429,7 +431,7 @@ def test_recv_unless_lost_prefers_ready_reply_and_ignores_monitor_stopped(
     sock.recv.return_value = b"reply-payload"
     monitor.recv_multipart.return_value = _monitor_event_frame(int(getattr(zmq, "EVENT_DISCONNECTED", 512)))
 
-    assert recv_unless_lost(sock, monitor, "tcp://10.0.0.1:6000") == b"reply-payload"
+    assert recv_unless_lost(sock, monitor, "tcp://192.0.2.1:6000") == b"reply-payload"
     sock.recv.assert_called_once_with(flags=zmq.NOBLOCK)  # type: ignore[attr-defined]
 
     # EVENT_MONITOR_STOPPED does not abort polling; next reply is returned normally.
@@ -444,7 +446,7 @@ def test_recv_unless_lost_prefers_ready_reply_and_ignores_monitor_stopped(
         ]
     )
     monkeypatch.setattr(utils.zmq, "Poller", poller_stop_then_reply)
-    assert recv_unless_lost(sock, monitor, "tcp://10.0.0.1:6000") == b"after-stop"
+    assert recv_unless_lost(sock, monitor, "tcp://192.0.2.1:6000") == b"after-stop"
 
 
 def test_lost_peer_monitor_lifecycle_and_mock_bypass() -> None:
@@ -526,8 +528,13 @@ def test_ensure_zmq_recv_fails_fast_on_peer_lost_event(
         _make_fake_poller_factory([[(monitor, zmq.POLLIN)]]),  # type: ignore[attr-defined]
     )
 
-    with pytest.raises(MooncakePeerLostError, match="Lost connection to prefill worker"):
-        ensure_zmq_recv(FakeSocket(), "tcp://10.0.0.1:6000", max_retries=3)  # type: ignore[arg-type]
+    with pytest.raises(MooncakePeerLostError, match="Lost connection to Mooncake peer"):
+        ensure_zmq_recv(
+            FakeSocket(),  # type: ignore[arg-type]
+            "tcp://192.0.2.1:6000",
+            max_retries=3,
+            detect_peer_lost=True,
+        )
 
     sleep_spy.assert_not_called()
     monitor.close.assert_called_once_with(linger=0)
@@ -540,13 +547,13 @@ def test_recv_unless_lost_times_out_when_peer_frozen(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(utils.zmq, "Poller", _make_fake_poller_factory([[]]))
 
     with pytest.raises(zmq.Again):  # type: ignore[attr-defined]
-        recv_unless_lost(sock, monitor, "tcp://10.0.0.1:6000", timeout_ms=20)
+        recv_unless_lost(sock, monitor, "tcp://192.0.2.1:6000", timeout_ms=20)
 
     monkeypatch.setattr(utils.zmq, "Poller", _make_fake_poller_factory([[]]))
     with pytest.raises(RuntimeError, match="Failed to receive data after 1 retries"):
         ensure_zmq_recv(
             sock,
-            "tcp://10.0.0.1:6000",
+            "tcp://192.0.2.1:6000",
             max_retries=1,
             monitor=monitor,
             timeout_ms=20,
@@ -641,11 +648,11 @@ def test_v2_pull_scheduler_evicts_socket_pool_and_lease_on_failure(
 ) -> None:
     """Scheduler drops dead socket pool on PeerLost and invalidates lease on failed_recving."""
     thread = pull_scheduler.MooncakeSchedulerRecvingThread(threading.Event())
-    host, port = "10.0.0.1", 7000
+    host, port = "192.0.2.1", 7000
     path = make_zmq_path("tcp", host, port)
     active_sock = MagicMock()
     extra_pooled_sock = MagicMock()
-    other_path = make_zmq_path("tcp", "10.0.0.2", port)
+    other_path = make_zmq_path("tcp", "192.0.2.2", port)
     healthy_other_sock = MagicMock()
     thread.remote_sockets[path].extend([active_sock, extra_pooled_sock])
     thread.remote_sockets[other_path].append(healthy_other_sock)
@@ -670,7 +677,7 @@ def test_v2_pull_scheduler_evicts_socket_pool_and_lease_on_failure(
     sched._recving_thread = recving_spy
     sched._reqs_recv_info["req-1"] = (host, port, "remote-req-1")
     sched._validated_producer_leases[(host, port)] = ("engine-p", 30)
-    sched._validated_producer_leases[("10.0.0.2", port)] = ("engine-p-2", 30)
+    sched._validated_producer_leases[("192.0.2.2", port)] = ("engine-p-2", 30)
     connector_output = SimpleNamespace(
         finished_sending=set(),
         finished_recving={"req-1"},
@@ -680,7 +687,7 @@ def test_v2_pull_scheduler_evicts_socket_pool_and_lease_on_failure(
 
     recving_spy.add_request.assert_called_once_with(host, port, "remote-req-1")
     assert (host, port) not in sched._validated_producer_leases
-    assert ("10.0.0.2", port) in sched._validated_producer_leases
+    assert ("192.0.2.2", port) in sched._validated_producer_leases
 
 
 def test_v1_connector_peer_lost_isolation_and_context_sharing(
@@ -702,8 +709,8 @@ def test_v1_connector_peer_lost_isolation_and_context_sharing(
         "make_mooncake_client_socket",
         MagicMock(side_effect=[MagicMock(), MagicMock()]),
     )
-    thread._get_remote_socket("10.0.0.1", 6000)
-    thread._get_remote_socket("10.0.0.2", 6000)
+    thread._get_remote_socket("192.0.2.1", 6000)
+    thread._get_remote_socket("192.0.2.2", 6000)
     assert len(created_contexts) == 1
 
     # Populate metadata via _get_remote_metadata for two hosts sharing port 6000.
@@ -728,17 +735,17 @@ def test_v1_connector_peer_lost_isolation_and_context_sharing(
     thread.decoder = decoder_mock
     sock_a = MagicMock()
     sock_b = MagicMock()
-    thread.remote_sockets[make_zmq_path("tcp", "10.0.0.1", 6000)].append(sock_a)
-    thread.remote_sockets[make_zmq_path("tcp", "10.0.0.2", 6000)].append(sock_b)
+    thread.remote_sockets[make_zmq_path("tcp", "192.0.2.1", 6000)].append(sock_a)
+    thread.remote_sockets[make_zmq_path("tcp", "192.0.2.2", 6000)].append(sock_b)
     monkeypatch.setattr(v1_connector, "ensure_zmq_send", MagicMock())
     monkeypatch.setattr(v1_connector, "ensure_zmq_recv", MagicMock(return_value=b"meta"))
 
-    thread._get_remote_metadata("10.0.0.1", 6000)
-    thread._get_remote_metadata("10.0.0.2", 6000)
+    thread._get_remote_metadata("192.0.2.1", 6000)
+    thread._get_remote_metadata("192.0.2.2", 6000)
 
-    # Now lose 10.0.0.1:6000 during _handle_request; 10.0.0.2:6000 stays untouched.
+    # Now lose 192.0.2.1:6000 during _handle_request; 192.0.2.2:6000 stays untouched.
     extra_sock_a = MagicMock()
-    thread.remote_sockets[make_zmq_path("tcp", "10.0.0.1", 6000)].append(extra_sock_a)
+    thread.remote_sockets[make_zmq_path("tcp", "192.0.2.1", 6000)].append(extra_sock_a)
     done_port_spy = MagicMock()
     done_recv_spy = MagicMock()
     monkeypatch.setattr(thread, "_send_done_signal_to_free_remote_port", done_port_spy)
@@ -755,7 +762,7 @@ def test_v1_connector_peer_lost_isolation_and_context_sharing(
             "request_id": "req-1",
             "remote_request_id": "p-req-1",
             "remote_engine_id": "engine-a",
-            "remote_host": "10.0.0.1",
+            "remote_host": "192.0.2.1",
             "remote_handshake_port": 6000,
             "remote_port_send_num": {},
             "all_task_done": True,
@@ -765,8 +772,8 @@ def test_v1_connector_peer_lost_isolation_and_context_sharing(
 
     assert "engine-a" not in thread.kv_caches_base_addr
     assert "engine-b" in thread.kv_caches_base_addr
-    assert make_zmq_path("tcp", "10.0.0.1", 6000) not in thread.remote_sockets
-    assert list(thread.remote_sockets[make_zmq_path("tcp", "10.0.0.2", 6000)]) == [sock_b]
+    assert make_zmq_path("tcp", "192.0.2.1", 6000) not in thread.remote_sockets
+    assert list(thread.remote_sockets[make_zmq_path("tcp", "192.0.2.2", 6000)]) == [sock_b]
     sock_a.close.assert_called_once_with()
     extra_sock_a.close.assert_called_once_with()
     done_port_spy.assert_not_called()
@@ -775,7 +782,7 @@ def test_v1_connector_peer_lost_isolation_and_context_sharing(
 
     # Verify fallback port scan respects other_host_eids when remote_engine_id is omitted.
     thread.kv_caches_base_addr["engine-c"][6000] = [[0x3000]]
-    thread._invalidate_remote_metadata(remote_host="10.0.0.3", remote_handshake_port=6000)
+    thread._invalidate_remote_metadata(remote_host="192.0.2.3", remote_handshake_port=6000)
     assert "engine-c" not in thread.kv_caches_base_addr
     assert "engine-b" in thread.kv_caches_base_addr
 
@@ -797,12 +804,12 @@ def test_hybrid_connector_propagates_errors_and_isolates_lost_peer(
         SimpleNamespace(engine_id="engine-b", te_rpc_port=9002, kv_caches_base_addr=[0x2000]),
     ]
     thread.decoder = decoder_mock
-    thread.remote_sockets[make_zmq_path("tcp", "10.0.0.1", 6000)].append(MagicMock())
-    thread.remote_sockets[make_zmq_path("tcp", "10.0.0.2", 6000)].append(sock_b)
+    thread.remote_sockets[make_zmq_path("tcp", "192.0.2.1", 6000)].append(MagicMock())
+    thread.remote_sockets[make_zmq_path("tcp", "192.0.2.2", 6000)].append(sock_b)
     monkeypatch.setattr(hybrid_connector, "ensure_zmq_send", MagicMock())
     monkeypatch.setattr(hybrid_connector, "ensure_zmq_recv", MagicMock(return_value=b"meta"))
-    thread._get_remote_metadata("10.0.0.1", 6000)
-    thread._get_remote_metadata("10.0.0.2", 6000)
+    thread._get_remote_metadata("192.0.2.1", 6000)
+    thread._get_remote_metadata("192.0.2.2", 6000)
 
     done_recv_spy = MagicMock()
     monkeypatch.setattr(thread, "_send_done_recv_signal", done_recv_spy)
@@ -816,7 +823,7 @@ def test_hybrid_connector_propagates_errors_and_isolates_lost_peer(
             "request_id": "req-1",
             "remote_request_id": "p-req-1",
             "remote_engine_id": "engine-a",
-            "remote_host": "10.0.0.1",
+            "remote_host": "192.0.2.1",
             "remote_handshake_port": 6000,
             "remote_port_send_num": {},
             "all_task_done": True,
@@ -899,10 +906,10 @@ def test_kv_load_failure_policy_surfaces_failed_recving_and_invalid_blocks(polic
     assert v2_worker.get_block_ids_with_load_errors() == {31, 32}
 
     v2_sched = _make_v2_scheduler(policy=policy)
-    v2_sched._reqs_recv_info["req-lost"] = ("10.0.0.1", 6000, "remote-req-lost")
-    v2_sched._validated_producer_leases[("10.0.0.1", 6000)] = ("engine-p", 30)
+    v2_sched._reqs_recv_info["req-lost"] = ("192.0.2.1", 6000, "remote-req-lost")
+    v2_sched._validated_producer_leases[("192.0.2.1", 6000)] = ("engine-p", 30)
     v2_sched.update_connector_output(v2_results)  # type: ignore[arg-type]
-    assert ("10.0.0.1", 6000) not in v2_sched._validated_producer_leases
+    assert ("192.0.2.1", 6000) not in v2_sched._validated_producer_leases
 
     # V1 & Hybrid connector worker surfaces
     _assert_legacy_connector_failure_surface(
@@ -1029,7 +1036,7 @@ def test_default_pull_timeout_exceeds_heartbeat_budget(monkeypatch: pytest.Monke
     monkeypatch.setattr(utils.zmq, "Context", MagicMock(return_value=fake_ctx))
     monkeypatch.setattr(utils, "make_zmq_socket", fake_make_zmq_socket)
 
-    with zmq_ctx(zmq.REQ, "tcp://10.0.0.1:6000"):  # type: ignore[attr-defined]
+    with zmq_ctx(zmq.REQ, "tcp://192.0.2.1:6000"):  # type: ignore[attr-defined]
         pass
 
     assert captured == {"heartbeat_ivl_ms": 123, "heartbeat_timeout_ms": 456}
@@ -1082,11 +1089,11 @@ def test_v2_pull_scheduler_done_recving_timeout_discards_pooled_sockets(
 ) -> None:
     """Scheduler drops all pooled sockets for an endpoint on non-PeerLost timeout."""
     thread = pull_scheduler.MooncakeSchedulerRecvingThread(threading.Event())
-    host, port = "10.0.0.1", 7000
+    host, port = "192.0.2.1", 7000
     path = make_zmq_path("tcp", host, port)
     active_sock = MagicMock()
     extra_pooled_sock = MagicMock()
-    other_path = make_zmq_path("tcp", "10.0.0.2", port)
+    other_path = make_zmq_path("tcp", "192.0.2.2", port)
     healthy_other_sock = MagicMock()
     thread.remote_sockets[path].extend([active_sock, extra_pooled_sock])
     thread.remote_sockets[other_path].append(healthy_other_sock)
@@ -1113,7 +1120,7 @@ def _setup_two_connector_peers(
     *,
     use_spec: bool = True,
 ) -> tuple[Any, Any, MagicMock, MagicMock]:
-    """Populate cached metadata and pooled sockets for 10.0.0.1 and 10.0.0.2."""
+    """Populate cached metadata and pooled sockets for 192.0.2.1 and 192.0.2.2."""
     is_v1 = connector_kind == "v1"
     module: Any = v1_connector if is_v1 else hybrid_connector
     thread: Any = (
@@ -1145,12 +1152,12 @@ def _setup_two_connector_peers(
     thread.decoder = decoder
     sock_a = MagicMock(spec=zmq.Socket) if use_spec else MagicMock()  # type: ignore[attr-defined]
     sock_b = MagicMock(spec=zmq.Socket) if use_spec else MagicMock()  # type: ignore[attr-defined]
-    thread.remote_sockets[make_zmq_path("tcp", "10.0.0.1", 6000)].append(sock_a)
-    thread.remote_sockets[make_zmq_path("tcp", "10.0.0.2", 6000)].append(sock_b)
+    thread.remote_sockets[make_zmq_path("tcp", "192.0.2.1", 6000)].append(sock_a)
+    thread.remote_sockets[make_zmq_path("tcp", "192.0.2.2", 6000)].append(sock_b)
     monkeypatch.setattr(module, "ensure_zmq_send", MagicMock())
     monkeypatch.setattr(module, "ensure_zmq_recv", MagicMock(return_value=b"meta"))
-    thread._get_remote_metadata("10.0.0.1", 6000)
-    thread._get_remote_metadata("10.0.0.2", 6000)
+    thread._get_remote_metadata("192.0.2.1", 6000)
+    thread._get_remote_metadata("192.0.2.2", 6000)
     return module, thread, sock_a, sock_b
 
 
@@ -1174,7 +1181,7 @@ def test_connector_handle_request_general_failure_evicts_metadata(
             "request_id": "req-1",
             "remote_request_id": "p-req-1",
             "remote_engine_id": "engine-a",
-            "remote_host": "10.0.0.1",
+            "remote_host": "192.0.2.1",
             "remote_handshake_port": 6000,
             "remote_port_send_num": {},
             "all_task_done": True,
@@ -1201,8 +1208,8 @@ def test_connector_zmq_failure_evicts_metadata_and_pooled_sockets(
     """ZMQ timeout or ZMQError evicts both cached metadata and pooled dead sockets."""
     module, thread, sock_a, sock_b = _setup_two_connector_peers(connector_kind, monkeypatch, use_spec=True)
     extra_sock_a = MagicMock(spec=zmq.Socket)  # type: ignore[attr-defined]
-    path_a = make_zmq_path("tcp", "10.0.0.1", 6000)
-    path_b = make_zmq_path("tcp", "10.0.0.2", 6000)
+    path_a = make_zmq_path("tcp", "192.0.2.1", 6000)
+    path_b = make_zmq_path("tcp", "192.0.2.2", 6000)
     thread.remote_sockets[path_a].append(extra_sock_a)
 
     exc: Exception = (
@@ -1214,9 +1221,9 @@ def test_connector_zmq_failure_evicts_metadata_and_pooled_sockets(
 
     if failure_mode == "get_meta":
         with pytest.raises(RuntimeError, match="Failed to receive data"):
-            thread._get_remote_metadata("10.0.0.1", 6000)
+            thread._get_remote_metadata("192.0.2.1", 6000)
     else:
-        thread._send_done_recv_signal("req-1", "10.0.0.1", 6000, {})
+        thread._send_done_recv_signal("req-1", "192.0.2.1", 6000, {})
 
     sock_a.close.assert_called_once_with()
     extra_sock_a.close.assert_called_once_with()
@@ -1224,3 +1231,113 @@ def test_connector_zmq_failure_evicts_metadata_and_pooled_sockets(
     assert list(thread.remote_sockets[path_b]) == [sock_b]
     assert "engine-a" not in thread.kv_caches_base_addr
     assert "engine-b" in thread.kv_caches_base_addr
+
+
+def test_ensure_zmq_recv_skips_monitor_without_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Shared callers without detect_peer_lost opt-in keep standard transient retry semantics."""
+
+    class SharedSocket:
+        def __init__(self) -> None:
+            self.recv_calls = 0
+
+        def get_monitor_socket(self, _events: int) -> Any:
+            raise AssertionError("monitor should not attach unless opted in")
+
+        def recv(self, *_args: Any, **_kwargs: Any) -> bytes:
+            self.recv_calls += 1
+            if self.recv_calls == 1:
+                raise zmq.ZMQError("transient connect retry")  # type: ignore[attr-defined]
+            return b"push-ack"
+
+    sleep_spy = MagicMock()
+    monkeypatch.setattr(utils.time, "sleep", sleep_spy)
+    sock = SharedSocket()
+
+    assert ensure_zmq_recv(sock, "tcp://192.0.2.1:6000", max_retries=3) == b"push-ack"  # type: ignore[arg-type]
+    assert sock.recv_calls == 2
+    sleep_spy.assert_called_once_with(0.1)
+
+
+@pytest.mark.parametrize("bad_timeout", [True, False])
+def test_ensure_zmq_recv_rejects_bool_timeout_ms(bad_timeout: bool) -> None:
+    """Boolean timeout_ms arguments must be rejected explicitly rather than coerced to int."""
+    sock = MagicMock()
+    with pytest.raises(ValueError, match="timeout_ms must be an int or None"):
+        ensure_zmq_recv(sock, "tcp://192.0.2.1:6000", timeout_ms=bad_timeout)
+    with pytest.raises(ValueError, match="timeout_ms must be an int or None"):
+        recv_unless_lost(sock, MagicMock(), "tcp://192.0.2.1:6000", timeout_ms=bad_timeout)
+
+
+@pytest.mark.parametrize("connector_kind", ["v1", "hybrid_sync", "hybrid_all_groups"])
+def test_connector_multi_subtask_peer_lost_skips_done_for_dead_host_and_clears_state(
+    monkeypatch: pytest.MonkeyPatch,
+    connector_kind: str,
+) -> None:
+    """Multi-subtask pulls skip DONE on every subtask for a lost host and clean up on drain."""
+    is_v1 = connector_kind == "v1"
+    thread: Any = (
+        _make_v1_recving_thread(use_request_level_recv_errors=False)
+        if is_v1
+        else _make_hybrid_recving_thread(
+            use_hybrid=(connector_kind == "hybrid_all_groups"),
+            use_request_level_recv_errors=(connector_kind == "hybrid_all_groups"),
+        )
+    )
+    monkeypatch.setattr(thread, "_invalidate_remote_metadata", MagicMock())
+    monkeypatch.setattr(thread, "_discard_remote_sockets", MagicMock())
+    done_port_spy = MagicMock()
+    done_recv_spy = MagicMock()
+    monkeypatch.setattr(thread, "_send_done_signal_to_free_remote_port", done_port_spy)
+    monkeypatch.setattr(thread, "_send_done_recv_signal", done_recv_spy)
+    transfer_method = "_transfer_kv_cache" if connector_kind == "hybrid_sync" else "_transfer_kv_cache_all_groups"
+    monkeypatch.setattr(thread, transfer_method, MagicMock(side_effect=MooncakePeerLostError("dead 192.0.2.10")))
+
+    tasks = [
+        {
+            "request_id": "req-multi",
+            "remote_request_id": "p-req-multi",
+            "remote_engine_id": "engine-a",
+            "remote_host": "192.0.2.10",
+            "remote_handshake_port": 6000,
+            "remote_port_send_num": {},
+            "all_task_done": False,
+            "local_block_ids": ([10, 11],),
+        },
+        {
+            "request_id": "req-multi",
+            "remote_request_id": "p-req-multi",
+            "remote_engine_id": "engine-a",
+            "remote_host": "192.0.2.10",
+            "remote_handshake_port": 6001,
+            "remote_port_send_num": {},
+            "all_task_done": False,
+            "local_block_ids": ([10, 11],),
+        },
+        {
+            "request_id": "req-multi",
+            "remote_request_id": "p-req-multi",
+            "remote_engine_id": "engine-b",
+            "remote_host": "192.0.2.11",
+            "remote_handshake_port": 6000,
+            "remote_port_send_num": {},
+            "all_task_done": True,
+            "local_block_ids": ([10, 11],),
+        },
+    ]
+    thread.task_tracker.add_req_to_process("req-multi")
+    for task in tasks:
+        thread._mark_request_task_submitted(task)
+
+    # Task 0 loses 192.0.2.10:6000; Task 1 on 192.0.2.10:6001 skips transfer AND skips DONE.
+    # Task 2 targets a different host 192.0.2.11:6000, so DONE still runs for the live host.
+    for task in tasks:
+        thread._handle_request(task)
+
+    assert done_port_spy.call_args_list == [(("p-req-multi", "192.0.2.11", {}),)]
+    assert done_recv_spy.call_args_list == [(("p-req-multi", "192.0.2.11", 6000, {}),)]
+    assert thread.peer_lost_requests == set()
+
+    # Also verify get_and_clear_failed_recv_requests drains any retained peer_lost_requests.
+    thread._mark_peer_lost_request("req-orphan", "192.0.2.12")
+    assert thread.get_and_clear_failed_recv_requests({"req-orphan"}) == set()
+    assert thread.peer_lost_requests == set()

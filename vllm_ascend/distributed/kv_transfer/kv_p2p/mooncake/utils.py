@@ -606,10 +606,19 @@ def _format_monitor_event(frames: Any) -> str:
     return f"event={event_id}"
 
 
+def _validate_timeout_ms(timeout_ms: int | None) -> int | None:
+    """Validate an explicit timeout_ms argument while rejecting booleans."""
+    if timeout_ms is None:
+        return None
+    if isinstance(timeout_ms, bool) or not isinstance(timeout_ms, int):
+        raise ValueError(f"timeout_ms must be an int or None, got {timeout_ms!r} ({type(timeout_ms).__name__})")
+    return timeout_ms if timeout_ms >= 0 else None
+
+
 def _resolve_recv_timeout_ms(sock: Any, timeout_ms: int | None) -> int | None:
     """Resolve an effective non-negative receive timeout in milliseconds."""
     if timeout_ms is not None:
-        return timeout_ms if timeout_ms >= 0 else None
+        return _validate_timeout_ms(timeout_ms)
     getsockopt = getattr(sock, "getsockopt", None)
     if not callable(getsockopt) or not hasattr(zmq, "RCVTIMEO"):
         return None
@@ -669,7 +678,7 @@ def recv_unless_lost(
                     continue
                 if not _is_monitor_stopped_event(frames):
                     raise MooncakePeerLostError(
-                        f"Lost connection to prefill worker {path} ({_format_monitor_event(frames)})"
+                        f"Lost connection to Mooncake peer {path} ({_format_monitor_event(frames)})"
                     )
     finally:
         with contextlib.suppress(KeyError, zmq.ZMQError):  # type: ignore[attr-defined]
@@ -713,11 +722,13 @@ def ensure_zmq_recv(
     *,
     monitor: Any | None = None,
     timeout_ms: int | None = None,
+    detect_peer_lost: bool = False,
 ) -> bytes:
-    """Receive a ZMQ reply with monitor-based fast failure when supported."""
+    """Receive a ZMQ reply, optionally failing fast via socket monitor when opted in."""
+    _validate_timeout_ms(timeout_ms)
     if monitor is not None:
         return _recv_with_retries(socket, path, max_retries, monitor=monitor, timeout_ms=timeout_ms)
-    if _supports_socket_monitor(socket):
+    if detect_peer_lost and _supports_socket_monitor(socket):
         with lost_peer_monitor(socket) as local_monitor:
             return _recv_with_retries(socket, path, max_retries, monitor=local_monitor, timeout_ms=timeout_ms)
     return _recv_with_retries(socket, path, max_retries, monitor=None, timeout_ms=timeout_ms)
