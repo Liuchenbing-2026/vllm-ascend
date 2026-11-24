@@ -82,10 +82,17 @@ class KVTransferThread(threading.Thread):
                 if block_id > 0
             )
 
-    def get_and_clear_failed_requests(self) -> set[str]:
+    def get_and_clear_failed_requests(
+        self,
+        req_ids: set[str] | None = None,
+    ) -> set[str]:
         with self.done_task_lock:
-            failed = self.failed_requests.copy()
-            self.failed_requests.clear()
+            if req_ids is None:
+                failed = self.failed_requests.copy()
+                self.failed_requests.clear()
+            else:
+                failed = self.failed_requests & req_ids
+                self.failed_requests -= failed
         return failed
 
     def _get_block_size(self, kv_cache_group_id: int = 0) -> int:

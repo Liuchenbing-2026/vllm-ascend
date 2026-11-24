@@ -844,13 +844,19 @@ class BaseKVPoolWorker(ABC):
             self._record_invalid_blocks_ids([block_id for block_id in request.block_ids if block_id > 0])
         self._save_disabled.set()
 
-    def get_failed_requests(self) -> set[str]:
+    def get_failed_requests(self, recv_req_ids: set[str] | None = None) -> set[str]:
         with self._invalid_block_ids_lock:
             failed = self._failed_requests.copy()
             self._failed_requests.clear()
-        for thread in (self.kv_send_thread, self.kv_recv_thread):
-            if thread is not None:
-                failed.update(thread.get_and_clear_failed_requests())
+        if self.kv_send_thread is not None:
+            failed.update(self.kv_send_thread.get_and_clear_failed_requests())
+        if self.kv_recv_thread is not None:
+            recv_failed = (
+                self.kv_recv_thread.get_and_clear_failed_requests()
+                if recv_req_ids is None
+                else self.kv_recv_thread.get_and_clear_failed_requests(recv_req_ids)
+            )
+            failed.update(recv_failed)
         return failed
 
     def get_block_ids_with_load_errors(self) -> set[int]:

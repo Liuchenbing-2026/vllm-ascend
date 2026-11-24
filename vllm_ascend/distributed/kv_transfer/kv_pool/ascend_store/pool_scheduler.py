@@ -660,11 +660,13 @@ class BaseKVPoolScheduler(ABC):
                     # Request was preempted and re-admitted for a new async load
                     # in the same scheduling step (e.g. reset_prefix_cache with
                     # reset_running_requests=True). Preserve the new load state.
+                    self._preempted_req_ids.discard(req_id)
                     continue
                 self._async_loading_req_ids.discard(req_id)
                 if req_id in scheduled_new_req_ids and req_id in self._unfinished_requests:
                     # Re-admitted synchronously in the same step: keep
                     # _unfinished_requests and load_specs for _process_new_request.
+                    self._preempted_req_ids.discard(req_id)
                     continue
                 self._unfinished_requests.pop(req_id, None)
                 if load_specs is not None:

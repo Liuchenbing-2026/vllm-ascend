@@ -31,7 +31,10 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ascend_store_conne
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import backend_map, get_backend_class
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend.base import Backend
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend.memcache_backend import MemcacheBackend
-from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.kv_transfer import KVCacheStoreRecvingThread
+from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.kv_transfer import (
+    KVCacheStoreRecvingThread,
+    KVTransferThread,
+)
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.pool_scheduler import LayerwiseKVPoolScheduler
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.pool_worker import LayerwiseKVPoolWorker
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
@@ -87,13 +90,20 @@ def _make_scheduler_output(
     preempted_req_ids=None,
     scheduled_new_reqs=None,
     cached_req_ids=None,
+    cached_new_block_ids=None,
+    cached_num_computed_tokens=None,
+    num_scheduled_tokens=None,
 ):
     return SimpleNamespace(
         finished_req_ids=set(finished_req_ids or ()),
         preempted_req_ids=set(preempted_req_ids or ()),
         scheduled_new_reqs=list(scheduled_new_reqs or ()),
-        scheduled_cached_reqs=SimpleNamespace(req_ids=list(cached_req_ids or ())),
-        num_scheduled_tokens={},
+        scheduled_cached_reqs=SimpleNamespace(
+            req_ids=list(cached_req_ids or ()),
+            new_block_ids=list(cached_new_block_ids or ()),
+            num_computed_tokens=list(cached_num_computed_tokens or ()),
+        ),
+        num_scheduled_tokens=dict(num_scheduled_tokens or {}),
     )
 
 
@@ -417,6 +427,7 @@ class TestAscendStoreAsyncLoadLifecycle(unittest.TestCase):
 
     def test_same_step_preemption_and_async_readmit_preserves_load_state(self):
         scheduler = KVPoolScheduler(_make_vllm_config(), use_layerwise=False)
+        self.assertFalse(scheduler.vllm_config.use_v2_model_runner)
         worker = _make_worker(self)
         recv_thread = MagicMock()
         recv_thread.get_and_clear_finished_requests.return_value = {"r-same-step"}
@@ -428,6 +439,7 @@ class TestAscendStoreAsyncLoadLifecycle(unittest.TestCase):
         scheduler.update_state_after_alloc(req, SimpleNamespace(get_block_ids=lambda: [[1, 2, 3]]), 32)
 
         meta = scheduler.build_connector_meta(_make_scheduler_output(preempted_req_ids={"r-same-step"}))
+        self.assertNotIn("r-same-step", scheduler._preempted_req_ids)
         self.assertEqual(meta.loading_req_ids, {"r-same-step"})
         self.assertEqual([m.req_id for m in meta.requests], ["r-same-step"])
         self.assertIsNotNone(meta.requests[0].load_spec)
@@ -438,27 +450,61 @@ class TestAscendStoreAsyncLoadLifecycle(unittest.TestCase):
         recv_thread.get_and_clear_finished_requests.assert_called_once_with({"r-same-step"})
         self.assertEqual(done_r, {"r-same-step"})
 
+        scheduler.update_connector_output(KVConnectorOutput(finished_recving=done_r))
+        req.num_computed_tokens = 32
+        cached_out = _make_scheduler_output(
+            cached_req_ids=["r-same-step"],
+            cached_new_block_ids=[([4],)],
+            cached_num_computed_tokens=[32],
+            num_scheduled_tokens={"r-same-step": 16},
+        )
+        next_meta = scheduler.build_connector_meta(cached_out)
+        self.assertEqual([m.req_id for m in next_meta.requests], ["r-same-step"])
+        tracker = scheduler._request_trackers["r-same-step"]
+        self.assertEqual(tracker.allocated_block_ids_by_group, [[1, 2, 3, 4]])
+        self.assertEqual(tracker.token_len, 48)
+
     def test_same_step_preemption_and_sync_readmit_preserves_unfinished_request(self):
         scheduler = KVPoolScheduler(_make_vllm_config(), use_layerwise=False)
-        req = _make_request("r-sync-readmit", num_tokens=32)
+        self.assertFalse(scheduler.vllm_config.use_v2_model_runner)
+        req = _make_request("r-sync-readmit", num_tokens=48)
         scheduler.update_state_after_alloc(req, SimpleNamespace(get_block_ids=lambda: [[1, 2]]), 0)
 
         new_req = SimpleNamespace(
             req_id="r-sync-readmit",
-            prefill_token_ids=list(range(32)),
-            prompt_token_ids=list(range(32)),
+            prefill_token_ids=list(range(48)),
+            prompt_token_ids=list(range(48)),
             num_computed_tokens=0,
             block_ids=[[1, 2]],
         )
         sched_out = _make_scheduler_output(
             preempted_req_ids={"r-sync-readmit"},
             scheduled_new_reqs=[new_req],
+            num_scheduled_tokens={"r-sync-readmit": 32},
         )
-        sched_out.num_scheduled_tokens = {"r-sync-readmit": 32}
 
         meta = scheduler.build_connector_meta(sched_out)
         self.assertEqual([m.req_id for m in meta.requests], ["r-sync-readmit"])
         self.assertEqual(meta.loading_req_ids, set())
+        self.assertNotIn("r-sync-readmit", scheduler._preempted_req_ids)
+
+        tracker = scheduler._request_trackers["r-sync-readmit"]
+        tracker.num_saved_tokens = 32
+        req.num_computed_tokens = 32
+        cached_out = _make_scheduler_output(
+            cached_req_ids=["r-sync-readmit"],
+            cached_new_block_ids=[([3],)],
+            cached_num_computed_tokens=[32],
+            num_scheduled_tokens={"r-sync-readmit": 16},
+        )
+        next_meta = scheduler.build_connector_meta(cached_out)
+        self.assertEqual([m.req_id for m in next_meta.requests], ["r-sync-readmit"])
+        self.assertIs(scheduler._request_trackers["r-sync-readmit"], tracker)
+        self.assertEqual(next_meta.requests[0].save_start_token, 32)
+        self.assertEqual(next_meta.requests[0].block_ids_by_group, [[1, 2, 3]])
+        self.assertEqual(tracker.allocated_block_ids_by_group, [[1, 2, 3]])
+        self.assertEqual(tracker.num_saved_tokens, 48)
+        self.assertEqual(tracker.token_len, 48)
 
     def test_ordinary_preemption_clears_load_state_and_discards_worker_completion(self):
         scheduler = KVPoolScheduler(_make_vllm_config(), use_layerwise=False)
@@ -1141,16 +1187,22 @@ class TestAscendStoreAsyncLoadLifecycle(unittest.TestCase):
         def failing_get(keys, addrs, sizes):
             raise RuntimeError("hybrid failure")
 
+        worker = _make_worker(self)
+        worker.num_kv_cache_groups = 2
+        worker.m_store = _DummyBackend(get_fn=failing_get)
         thread = KVCacheStoreRecvingThread(
-            m_store=_DummyBackend(get_fn=failing_get),
+            m_store=worker.m_store,
             token_database=_DummyTokenDatabase(),
             block_size=[16, 16],
             tp_rank=0,
             dcp_size=1,
             ready_event=threading.Event(),
-            invalid_block_ids=set(),
-            invalid_block_ids_lock=threading.Lock(),
+            invalid_block_ids=worker._invalid_block_ids,
+            invalid_block_ids_lock=worker._invalid_block_ids_lock,
         )
+        worker.kv_recv_thread = thread
+        worker.kv_send_thread = None
+
         req = ReqMeta(
             req_id="r-preempt",
             token_len_chunk=16,
@@ -1164,20 +1216,16 @@ class TestAscendStoreAsyncLoadLifecycle(unittest.TestCase):
         self.assertEqual(thread.finished_requests, {"r-preempt"})
         self.assertEqual(thread.failed_requests, {"r-preempt"})
 
-        thread.discard_finished_requests({"r-preempt"})
-        self.assertEqual(thread.finished_requests, set())
-        self.assertEqual(thread.failed_requests, set())
-        self.assertEqual(thread.get_and_clear_failed_requests(), set())
-
         connector = AscendStoreConnector.__new__(AscendStoreConnector)
         connector.use_layerwise = False
-        connector.connector_worker = MagicMock(load_async=True)
-        connector.connector_worker.get_failed_requests.return_value = {"r-stale", "r-live"}
-        cast(Any, connector)._connector_metadata = AscendConnectorMetadata(
-            preempted_req_ids=set(),
-            loading_req_ids={"r-live", "r-ok"},
+        connector.connector_worker = worker
+        connector._current_step_has_real_forward = False
+        connector.bind_connector_metadata(
+            AscendConnectorMetadata(
+                preempted_req_ids={"r-preempt"},
+                loading_req_ids=set(),
+            )
         )
-        cast(Any, connector).get_finished = MagicMock(return_value=(set(), {"r-ok"}))
 
         def _make_results(**kwargs: Any) -> SimpleNamespace:
             return SimpleNamespace(**kwargs)
@@ -1188,8 +1236,96 @@ class TestAscendStoreAsyncLoadLifecycle(unittest.TestCase):
         ):
             results = cast(Any, connector.get_transfer_results(set()))
 
-        self.assertEqual(results.finished_recving, {"r-ok", "r-live"})
-        self.assertEqual(results.failed_recving, {"r-live"})
+        self.assertEqual(results.finished_recving, set())
+        self.assertEqual(results.failed_recving, set())
+        self.assertEqual(thread.finished_requests, set())
+        self.assertEqual(thread.failed_requests, set())
+        self.assertEqual(thread.get_and_clear_failed_requests(), set())
+
+    def test_cross_step_async_load_failure_retained_until_in_loading_req_ids(self):
+        def failing_get(keys, addrs, sizes):
+            raise RuntimeError("hybrid failure")
+
+        worker = _make_worker(self)
+        worker.num_kv_cache_groups = 2
+        worker.m_store = _DummyBackend(get_fn=failing_get)
+        recv_thread = KVCacheStoreRecvingThread(
+            m_store=worker.m_store,
+            token_database=_DummyTokenDatabase(),
+            block_size=[16, 16],
+            tp_rank=0,
+            dcp_size=1,
+            ready_event=threading.Event(),
+            invalid_block_ids=worker._invalid_block_ids,
+            invalid_block_ids_lock=worker._invalid_block_ids_lock,
+        )
+        send_thread = KVTransferThread(
+            m_store=worker.m_store,
+            token_database=_DummyTokenDatabase(),
+            block_size=[16, 16],
+            tp_rank=0,
+        )
+        worker.kv_recv_thread = recv_thread
+        worker.kv_send_thread = send_thread
+
+        req_late = ReqMeta(
+            req_id="r-late",
+            token_len_chunk=16,
+            block_ids_by_group=[[5], [6]],
+            block_hashes=[b"h0"],
+            kv_cache_group_ids=[0],
+            load_spec=LoadSpec(vllm_cached_tokens=0, kvpool_cached_tokens=16, can_load=True, token_len=16),
+        )
+        recv_thread.add_request(req_late)
+        recv_thread._handle_request(recv_thread.request_queue.get())
+        with worker._invalid_block_ids_lock:
+            worker._failed_requests.add("r-worker")
+        with send_thread.done_task_lock:
+            send_thread.failed_requests.add("r-send")
+
+        connector = AscendStoreConnector.__new__(AscendStoreConnector)
+        connector.use_layerwise = False
+        connector.connector_worker = worker
+        connector._current_step_has_real_forward = False
+
+        def _make_results(**kwargs: Any) -> SimpleNamespace:
+            return SimpleNamespace(**kwargs)
+
+        with patch(
+            "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ascend_store_connector.KVConnectorTransferResults",
+            side_effect=_make_results,
+        ):
+            # Step 1: r-late is not yet in loading_req_ids -> keep recv failure for next step
+            # while reporting worker/send failures immediately.
+            connector.bind_connector_metadata(
+                AscendConnectorMetadata(
+                    preempted_req_ids=set(),
+                    loading_req_ids={"r-other"},
+                )
+            )
+            step1 = cast(Any, connector.get_transfer_results(set()))
+            self.assertEqual(step1.failed_recving, {"r-worker", "r-send"})
+            self.assertEqual(step1.finished_recving, {"r-worker", "r-send"})
+            self.assertEqual(recv_thread.finished_requests, {"r-late"})
+            self.assertEqual(recv_thread.failed_requests, {"r-late"})
+
+            # Step 2: once loading_req_ids includes r-late, report and clear both sets together.
+            connector.bind_connector_metadata(
+                AscendConnectorMetadata(
+                    preempted_req_ids=set(),
+                    loading_req_ids={"r-late"},
+                )
+            )
+            step2 = cast(Any, connector.get_transfer_results(set()))
+            self.assertEqual(step2.finished_recving, {"r-late"})
+            self.assertEqual(step2.failed_recving, {"r-late"})
+            self.assertEqual(recv_thread.finished_requests, set())
+            self.assertEqual(recv_thread.failed_requests, set())
+
+            # Step 3: no duplicate notifications after consumption.
+            step3 = cast(Any, connector.get_transfer_results(set()))
+            self.assertEqual(step3.finished_recving, set())
+            self.assertEqual(step3.failed_recving, set())
 
 
 if __name__ == "__main__":

@@ -507,12 +507,18 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
     def get_transfer_results(self, finished_req_ids: set[str]) -> KVConnectorTransferResults:
         done_sending, done_recving = self.get_finished(finished_req_ids)
         assert self.connector_worker is not None
-        failed = self.connector_worker.get_failed_requests()
+        loading_req_ids: set[str] | None = None
         if self.connector_worker.load_async and not self.use_layerwise:
             metadata = getattr(self, "_connector_metadata", None)
-            loading_req_ids = getattr(metadata, "loading_req_ids", None)
-            if loading_req_ids is not None:
-                failed &= set(loading_req_ids)
+            raw_loading_req_ids = getattr(metadata, "loading_req_ids", None)
+            if raw_loading_req_ids is not None:
+                loading_req_ids = set(raw_loading_req_ids)
+        failed = (
+            self.connector_worker.get_failed_requests(loading_req_ids)
+            if loading_req_ids is not None
+            else self.connector_worker.get_failed_requests()
+        )
+        if self.connector_worker.load_async and not self.use_layerwise:
             done_recving |= failed
         return KVConnectorTransferResults(
             finished_sending=done_sending, finished_recving=done_recving, failed_recving=failed
