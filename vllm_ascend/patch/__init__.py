@@ -310,6 +310,20 @@
 #    Future Plan:
 #       Remove once upstream exposes the PD role to the coordinator or
 #       removes the EAGLE last-block drop for verified prompt blocks.
+#   3. `AscendHybridKVCacheCoordinator.__init__`
+#    Why:
+#       On vLLM pins predating #67053 (v0.34.0 and pinned vLLM main), HybridKVCacheCoordinator
+#       neither forwards `prefix_cache_retention_interval` to `SingleTypeKVCacheManager`
+#       nor sets `keep_decode_resume_state` on align-mode Mamba managers.
+#    How:
+#       Pass `retention_interval` into manager kwargs when `SingleTypeKVCacheManager.__init__`
+#       accepts it, and sync `retention_interval` / `keep_decode_resume_state` /
+#       `_ascend_has_decode_retention_mamba` across align-mode `MambaManager` instances.
+#    Related PR (if no, explain why):
+#       https://github.com/vllm-project/vllm/pull/67053
+#    Future Plan:
+#       Remove these align-mode retention wiring lines once all supported
+#       vLLM pins include #67053 and propagate `retention_interval` natively.
 #
 # ** 11. File: platform/patch_mamba_block_aligned_split.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -397,6 +411,45 @@
 #       1. Remove this patch once the supported upstream revision includes
 #          hybrid prefix cache lookup for DCP.
 #       2. Remove this patch once upstream accept 46892 pr or fixed the bug by other pr.
+#
+# ** 14. File: platform/patch_mamba_midblock_resume.py**
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.v1.kv_cache_interface.is_mamba_prefill_checkpoint_valid` (and
+#      already-imported consumer bindings in scheduler/manager/checkpoint modules)
+#   2. `vllm.v1.core.single_type_kv_cache_manager.MambaManager`
+#      (`__init__`, `_needs_internal_checkpoint`, `get_num_blocks_to_allocate`,
+#       `pop_blocks_for_free`, `cache_blocks`, `remove_skipped_blocks`,
+#       `_record_mid_block_states`, `_refine_block_mask`, `_decode_resume_block_idx`,
+#       `cache_blocks_on_free`) and `SingleTypeKVCacheManager.cache_blocks_on_free`
+#   3. `vllm.v1.core.kv_cache_coordinator.KVCacheCoordinator` (`__init__`, `free`,
+#      `pop_blocks_for_free`) and `vllm.v1.core.kv_cache_manager.KVCacheManager`
+#      (`free`, `pop_blocks_for_free`)
+#    Why:
+#       1. Supported vLLM pins predating #66938 and #67717 force extra prefill
+#          forwards on mid-block prefix hits in align mode and can hash private
+#          blocks holding non-boundary states.
+#       2. Supported vLLM pins predating #67053 drop or fail to retain the
+#          latest decode-crossed Mamba boundary state until request free under
+#          sparse prefix-cache retention.
+#    How:
+#       1. Allow mid-block queries to export an internal checkpoint into their
+#          first private block while recording non-boundary block indices in
+#          `_mid_block_states` so reachable_block_mask excludes them from the
+#          global block pool hash map.
+#       2. Under align-mode sparse retention, hold the latest decode-crossed
+#          boundary state in `remove_skipped_blocks` and persist non-null,
+#          non-mid-block boundary blocks in `cache_blocks_on_free` across free/pop
+#          paths with fast no-op bypass on non-align/non-Mamba groups.
+#       3. Skip patching automatically via signature/bytecode/behavioral probes
+#          once upstream includes #66938, #67717, or #67053.
+#    Related PR (if no, explain why):
+#       https://github.com/vllm-project/vllm/pull/66938
+#       https://github.com/vllm-project/vllm/pull/67717
+#       https://github.com/vllm-project/vllm/pull/67053
+#    Future Plan:
+#       Remove this patch (and `_sync_align_mamba_cache_geometry` / retention
+#       wiring in `patch_kv_cache_coordinator.py`) once all supported vLLM pins
+#       include #66938, #67717, and #67053 natively.
 #
 # ** 15. File: platform/patch_mla_prefill_backend.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

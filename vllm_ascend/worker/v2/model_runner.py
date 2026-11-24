@@ -19,7 +19,7 @@
 
 import inspect
 import logging
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from copy import deepcopy
 from typing import Any
@@ -37,7 +37,12 @@ from vllm.model_executor.offloader.base import set_offloader
 from vllm.sequence import IntermediateTensors
 from vllm.utils.torch_utils import async_tensor_h2d as async_copy_to_gpu
 from vllm.v1.core.sched.output import SchedulerOutput
-from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
+from vllm.v1.kv_cache_interface import (
+    KVCacheConfig,
+    KVCacheSpec,
+    MambaSpec,
+    UniformTypeKVCacheSpecs,
+)
 from vllm.v1.worker.dp_utils import skip_dp_coordination
 from vllm.v1.worker.gpu import model_runner as vllm_model_runner
 from vllm.v1.worker.gpu.cudagraph_utils import BatchExecutionDescriptor
@@ -477,6 +482,51 @@ class NPUModelRunner(GPUModelRunner):
             for group in groups
         )
 
+    @staticmethod
+    def _iter_leaf_kv_cache_specs(obj: Any) -> Iterator[Any]:
+        if obj is None:
+            return
+        if isinstance(obj, MambaSpec):
+            yield obj
+            return
+        if isinstance(obj, UniformTypeKVCacheSpecs):
+            yield from NPUModelRunner._iter_leaf_kv_cache_specs(obj.kv_cache_specs)
+            return
+        if isinstance(obj, Mapping):
+            for value in obj.values():
+                yield from NPUModelRunner._iter_leaf_kv_cache_specs(value)
+            return
+        if isinstance(obj, (list, tuple, set)):
+            for item in obj:
+                yield from NPUModelRunner._iter_leaf_kv_cache_specs(item)
+            return
+        has_nested = False
+        nested_specs = getattr(obj, "kv_cache_specs", None)
+        if nested_specs is not None and nested_specs is not obj:
+            has_nested = True
+            yield from NPUModelRunner._iter_leaf_kv_cache_specs(nested_specs)
+        nested_spec = getattr(obj, "kv_cache_spec", None)
+        if nested_spec is not None and nested_spec is not obj:
+            has_nested = True
+            yield from NPUModelRunner._iter_leaf_kv_cache_specs(nested_spec)
+        if not has_nested:
+            yield obj
+
+    def _sync_align_mamba_cache_geometry(self, kv_cache_config: KVCacheConfig) -> None:
+        """Sync resolved hash/alignment geometry only for align-mode Mamba/KDA groups."""
+        has_align_mamba = any(
+            isinstance(spec, MambaSpec) and getattr(spec, "mamba_cache_mode", "align") == "align"
+            for group in getattr(kv_cache_config, "kv_cache_groups", ())
+            for spec in self._iter_leaf_kv_cache_specs(group)
+        )
+        if not has_align_mamba:
+            return
+        cache_config = self.vllm_config.cache_config
+        for field in ("hash_block_size", "cache_hit_alignment_tokens"):
+            value = getattr(kv_cache_config, field, None)
+            if value is not None and getattr(cache_config, field, None) != value:
+                setattr(cache_config, field, value)
+
     def initialize_kv_cache(
         self,
         kv_cache_config: KVCacheConfig,
@@ -485,6 +535,7 @@ class NPUModelRunner(GPUModelRunner):
         # Match V1's physical buffer plan without mutating the scheduler's
         # logical cache configuration. Allocation must honor zero-stride aliases.
         kv_cache_config = deepcopy(kv_cache_config)
+        self._sync_align_mamba_cache_geometry(kv_cache_config)
         sparse_cfg = self.ascend_config.sparse_kv_offload_config
         configure_dspark_kv_transfer(
             self.vllm_config, self.speculator, kv_cache_config, is_last_pp_rank=self.is_last_pp_rank

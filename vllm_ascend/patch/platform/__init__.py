@@ -32,6 +32,7 @@ else:
 import vllm_ascend.patch.platform.patch_structured_output  # noqa
 import vllm_ascend.patch.platform.patch_torch_accelerator  # noqa
 import vllm_ascend.patch.platform.patch_mamba_manager  # noqa
+import vllm_ascend.patch.platform.patch_mamba_midblock_resume  # noqa
 
 if os.getenv("DYNAMIC_EPLB", "false").lower() in ("true", "1") or os.getenv("EXPERT_MAP_RECORD", "false") == "true":
     import vllm_ascend.patch.platform.patch_multiproc_executor  # noqa
@@ -115,3 +116,9 @@ import vllm_ascend.patch.platform.patch_example_connector  # noqa
 # Upstream plan: contribute physical-block accounting to vLLM and remove this
 # patch once both supported vLLM versions cover first-time and shared-block
 # admission accounting.
+
+# ** File: platform/patch_mamba_midblock_resume.py **
+# Align-mode Mamba mid-block prefix-hit resume (allowing checkpoint export into
+# the private resumed block), mid-block state hash exclusion, and sparse decode
+# boundary state retention across manager/coordinator free paths.
+# Upstream plan: retire once all supported vLLM pins include these changes.
