@@ -1,3 +1,4 @@
+import ctypes
 import queue
 import sys
 import threading
@@ -20,7 +21,14 @@ sys.modules["mooncake.engine"] = fake_engine
 from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorTransferResults  # noqa: E402
 from vllm.v1.core.kv_cache_manager import KVCacheBlocks  # noqa: E402
 from vllm.v1.core.kv_cache_utils import KVCacheBlock  # noqa: E402
-from vllm.v1.kv_cache_interface import FullAttentionSpec, MambaSpec, UniformTypeKVCacheSpecs  # noqa: E402
+from vllm.v1.kv_cache_interface import (  # noqa: E402
+    FullAttentionSpec,
+    KVCacheConfig,
+    KVCacheGroupSpec,
+    KVCacheTensor,
+    MambaSpec,
+    UniformTypeKVCacheSpecs,
+)
 from vllm.v1.request import RequestStatus  # noqa: E402
 
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector import (  # noqa: E402
@@ -38,6 +46,7 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector import
     _validate_remote_kv_layout,
     group_concurrent_contiguous,
 )
+from vllm_ascend.worker.v2.attn_utils import _allocate_kv_cache, _reshape_kv_cache_v2  # noqa: E402
 
 
 class MockRequest:
@@ -128,11 +137,12 @@ class TestHybridKVCacheRecvingThreadDispatch(unittest.TestCase):
                 if outcome == "empty":
                     thread.engine.batch_transfer_sync_read.assert_not_called()
                 else:
+                    # Strided entries (block_stride > block_len) must emit per-block spans instead of coalescing.
                     thread.engine.batch_transfer_sync_read.assert_called_once_with(
                         "192.0.2.1:7777",
-                        [0x1040, 0x2020, 0x3100],
-                        [0x4020, 0x5010, 0x60C0],
-                        [32, 16, 32],
+                        [0x1040, 0x1060, 0x2020, 0x2030, 0x3100],
+                        [0x4020, 0x4040, 0x5010, 0x5020, 0x60C0],
+                        [16, 16, 8, 8, 32],
                     )
                 thread._send_done_recv_signal.assert_called_once_with(remote_request_id, "192.0.2.1", 31002, {})
                 self.assertEqual(thread.get_and_clear_finished_requests(), {request_id})
@@ -1073,6 +1083,7 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         thread.kv_caches_base_addr["decode-engine"][32000] = list(local_addrs)
         thread.block_len_per_addr = list(local_block_lens)
         thread.block_stride_per_addr = list(local_block_lens)
+        thread.block_scale_per_addr = [1] * len(local_addrs)
         thread.addr_group_idx = list(addr_group_idx) if addr_group_idx is not None else []
         thread.local_entry_layer_names = [list(names) for names in local_entry_layer_names]
         thread.local_spec_method = local_spec_method
@@ -1080,6 +1091,8 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
         thread.remote_block_lens = SizedDict()
         thread.remote_entry_layer_names = SizedDict()
         thread.remote_spec_method = SizedDict()
+        thread.remote_block_strides = SizedDict()
+        thread.remote_block_scales = SizedDict()
         thread.remote_metadata_lock = threading.Lock()
         thread.encoder = msgspec.msgpack.Encoder()
         thread.decoder = msgspec.msgpack.Decoder(MooncakeAgentMetadata)
@@ -2001,6 +2014,8 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
             31001: [["l2"]],
         }
         thread.remote_spec_method["prefill-engine"] = {31000: "dspark", 31001: ""}
+        thread.remote_block_strides["prefill-engine"] = {31000: [64, 64], 31001: [64]}
+        thread.remote_block_scales["prefill-engine"] = {31000: [1, 1], 31001: [1]}
 
         thread.task_tracker.add_req_to_process("req-multi")
         thread.add_request(
@@ -2046,6 +2061,8 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
                 thread.remote_block_lens,
                 thread.remote_entry_layer_names,
                 thread.remote_spec_method,
+                thread.remote_block_strides,
+                thread.remote_block_scales,
             ):
                 self.assertNotIn(31001, cache_map["prefill-engine"])
                 self.assertIn(31000, cache_map["prefill-engine"])
@@ -2251,6 +2268,8 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
             thread.remote_block_lens,
             thread.remote_entry_layer_names,
             thread.remote_spec_method,
+            thread.remote_block_strides,
+            thread.remote_block_scales,
         ):
             self.assertNotIn(handshake_port, cache_map.get(engine_id, {}))
 
@@ -2761,3 +2780,732 @@ class TestMooncakeHybridConnectorKVLayoutValidation(unittest.TestCase):
             KVConnectorTransferResults(finished_recving={"req-ac04"}, failed_recving=set()),
         )
         self.assertEqual(connector.get_block_ids_with_load_errors(), set())
+
+    def _build_mrv2_strided_hybrid_fixture(
+        self,
+        *,
+        num_blocks: int = 16,
+        attn_block_size: int = 4,
+        kernel_block_size: int = 4,
+        include_mtp: bool = True,
+        conv_width: int = 6,
+        page_size_padded: int = 352,
+        kv_role: str = "kv_consumer",
+        engine_id: str = "decode-engine",
+        port: int = 32000,
+    ) -> tuple[
+        torch.Tensor,
+        dict[str, Any],
+        MooncakeConnectorWorker,
+        Any,
+    ]:
+        """Materialize real MRV2 hybrid_backing views and register with MooncakeConnectorWorker."""
+        k_dtype = torch.bfloat16
+        ssm_dtype = torch.float32
+        attn_layers = ["model.layers.0.self_attn.attn", "model.layers.1.self_attn.attn"]
+        if include_mtp:
+            attn_layers.append("mtp.layers.0.self_attn.attn")
+        mamba_layer_groups = [
+            ["model.layers.0.linear_attn", "model.layers.1.linear_attn"],
+            ["model.layers.2.linear_attn", "model.layers.3.linear_attn"],
+            ["model.layers.4.linear_attn", "model.layers.5.linear_attn"],
+        ]
+        # 2 shared slots hold Attention + Mamba G1..G3; slot 2 holds unpaired MTP when enabled.
+        num_slots = 3 if include_mtp else 2
+        layer_stride = num_blocks * page_size_padded
+        total_bytes = num_slots * layer_stride
+
+        attn_spec = FullAttentionSpec(
+            block_size=attn_block_size,
+            num_kv_heads=1,
+            head_size=8,
+            dtype=k_dtype,
+            page_size_padded=page_size_padded,
+        )
+        # Keep conv_bytes != K_bytes (64B) while conv + ssm <= page_size_padded.
+        mamba_spec = MambaSpec(
+            block_size=attn_block_size,
+            shapes=((conv_width, 8), (2, 4, 8)),
+            dtypes=(k_dtype, ssm_dtype),
+            mamba_cache_mode="align",
+            num_speculative_blocks=3 if include_mtp else 0,
+            page_size_padded=page_size_padded,
+        )
+        kv_tensors = [
+            KVCacheTensor(
+                size=total_bytes,
+                layers=list(attn_layers),
+                layer_stride=layer_stride,
+                block_stride=page_size_padded,
+                offset=0,
+            ),
+            *[
+                KVCacheTensor(
+                    size=total_bytes,
+                    layers=list(mamba_names),
+                    layer_stride=layer_stride,
+                    block_stride=page_size_padded,
+                    offset=0,
+                )
+                for mamba_names in mamba_layer_groups
+            ],
+        ]
+        mamba_group_specs = [
+            UniformTypeKVCacheSpecs(
+                block_size=attn_block_size,
+                kv_cache_specs={name: mamba_spec for name in mamba_names},
+            )
+            for mamba_names in mamba_layer_groups
+        ]
+        kv_groups = [
+            KVCacheGroupSpec(layer_names=list(attn_layers), kv_cache_spec=attn_spec),
+            *[
+                KVCacheGroupSpec(layer_names=list(mamba_names), kv_cache_spec=wrapped)
+                for mamba_names, wrapped in zip(mamba_layer_groups, mamba_group_specs, strict=True)
+            ],
+        ]
+        kv_cache_config = KVCacheConfig(
+            num_blocks=num_blocks,
+            kv_cache_tensors=kv_tensors,
+            kv_cache_groups=kv_groups,
+        )
+        fake_alloc_cfg = types.SimpleNamespace(
+            kv_transfer_config=None,
+            additional_config={},
+            model_config=types.SimpleNamespace(hf_config=types.SimpleNamespace()),
+            cache_config=types.SimpleNamespace(cache_dtype="auto"),
+        )
+        with patch(
+            "vllm_ascend.worker.v2.attn_utils.get_current_vllm_config",
+            return_value=fake_alloc_cfg,
+        ):
+            raw_tensors = _allocate_kv_cache(kv_cache_config, shared_layers={}, device=torch.device("cpu"))
+            backend = MagicMock()
+            num_blocks_per_kv = attn_block_size // kernel_block_size
+            backend.get_kv_cache_shape.return_value = (
+                2,
+                num_blocks * num_blocks_per_kv,
+                kernel_block_size,
+                attn_spec.num_kv_heads,
+                attn_spec.head_size,
+            )
+            attn_groups = [
+                types.SimpleNamespace(
+                    kernel_block_size=kernel_block_size,
+                    kv_cache_group_id=0,
+                    kv_cache_spec=attn_spec,
+                    layer_names=list(attn_layers),
+                    backend=backend,
+                ),
+                *[
+                    types.SimpleNamespace(
+                        kernel_block_size=None,
+                        kv_cache_group_id=gid,
+                        kv_cache_spec=mamba_spec,
+                        layer_names=list(mamba_names),
+                    )
+                    for gid, mamba_names in enumerate(mamba_layer_groups, start=1)
+                ],
+            ]
+            kv_caches = _reshape_kv_cache_v2(
+                attn_groups=attn_groups,
+                kv_cache_raw_tensors=raw_tensors,
+                cache_dtype="auto",
+                kernel_block_sizes=[kernel_block_size, attn_block_size, attn_block_size, attn_block_size],
+                shared_kv_cache_layers={},
+                kv_cache_config=kv_cache_config,
+            )
+        raw0 = raw_tensors["model.layers.0.self_attn.attn"]
+        assert isinstance(raw0, torch.Tensor)
+        backing_base = raw0._base if raw0._base is not None else raw0
+        assert isinstance(backing_base, torch.Tensor)
+        backing = backing_base[:total_bytes]
+
+        spec_cfg = types.SimpleNamespace(method="mtp", num_speculative_tokens=3) if include_mtp else None
+        worker = MooncakeConnectorWorker.__new__(MooncakeConnectorWorker)
+        worker.vllm_config = types.SimpleNamespace(
+            model_config=types.SimpleNamespace(
+                is_deepseek_mla=False,
+                hf_text_config=types.SimpleNamespace(
+                    num_key_value_heads=1,
+                    head_dim=8,
+                    num_hidden_layers=6,
+                ),
+            ),
+            cache_config=types.SimpleNamespace(block_size=attn_block_size, mamba_cache_mode="align"),
+            speculative_config=spec_cfg,
+            parallel_config=types.SimpleNamespace(data_parallel_size_local=1),
+        )
+        worker.kv_cache_config = kv_cache_config
+        worker.use_hybrid = True
+        worker.use_mamba = True
+        worker.use_compress = False
+        worker.engine_id = engine_id
+        worker.te_rpc_port = port + 1000
+        worker.block_size = attn_block_size
+        worker._mamba_ssm_size = (0, 0)
+        worker.kv_role = kv_role
+        worker.tp_rank = 0
+        worker.tp_size = 1
+        worker.pp_rank = 0
+        worker.pcp_rank = 0
+        worker._prefill_tp_size = 1
+        worker._decode_tp_size = 1
+        worker._prefill_pp_size = 1
+        worker.hma_group_size = 4
+        worker.side_channel_host = "192.0.2.1" if kv_role == "kv_producer" else "127.0.0.1"
+        worker.side_channel_port = port
+        worker.handshake_port = port
+        worker._prefill_pp_layer_partition = None
+        worker.engine = MagicMock()
+
+        def fake_thread_init(*args: Any, **kwargs: Any) -> MagicMock:
+            ready_event = next(arg for arg in args if isinstance(arg, threading.Event))
+            ready_event.set()
+            return MagicMock(is_alive=MagicMock(return_value=True))
+
+        with (
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.global_te"),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                return_value=worker.side_channel_host,
+            ),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.validate_register_region_count"
+            ),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.KVCacheSendingThread",
+                side_effect=fake_thread_init,
+            ) as send_cls,
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.KVCacheRecvingThread",
+                side_effect=fake_thread_init,
+            ) as recv_cls,
+        ):
+            worker.register_kv_caches(kv_caches)
+
+        assert send_cls is not None
+        return backing, kv_caches, worker, recv_cls
+
+    @staticmethod
+    def _memmove_sync_read(
+        _session_id: str,
+        src_list: list[int],
+        dst_list: list[int],
+        length_list: list[int],
+    ) -> int:
+        for src_addr, dst_addr, nbytes in zip(src_list, dst_list, length_list, strict=True):
+            ctypes.memmove(src_addr, dst_addr, nbytes)
+        return 0
+
+    def _run_memmove_transfer(
+        self,
+        *,
+        d_worker: MooncakeConnectorWorker,
+        recv_cls_call: Any,
+        p_meta: MooncakeAgentMetadata,
+        local_block_ids: tuple[list[int], ...],
+        remote_block_ids: tuple[list[int], ...],
+        request_id: str = "req-memmove",
+    ) -> tuple[KVCacheRecvingThread, list[int]]:
+        """Build a consumer recv thread from real registration args and run real ctypes.memmove reads."""
+        call = recv_cls_call
+        thread = object.__new__(KVCacheRecvingThread)
+        thread.tp_rank = 0
+        thread.tp_size = 1
+        thread._prefill_pp_size = 1
+        thread.local_engine_id = d_worker.engine_id
+        thread.local_handshake_port = d_worker.handshake_port
+        thread.side_channel_port = d_worker.side_channel_port
+        thread.use_hybrid = True
+        thread.hma_group_size = d_worker.hma_group_size
+        thread.kv_caches = d_worker.kv_caches
+        thread.kv_cache_config = d_worker.kv_cache_config
+        thread.kv_cache_specs = [g.kv_cache_spec for g in d_worker.kv_cache_config.kv_cache_groups]
+        thread.vllm_config = d_worker.vllm_config
+        thread.pp_layer_indices = {0: (0, len(d_worker.kv_caches_base_addr))}
+        thread.kv_caches_base_addr = SizedDict()
+        thread.kv_caches_base_addr[d_worker.engine_id][d_worker.handshake_port] = list(d_worker.kv_caches_base_addr)
+        thread.block_len_per_addr = list(d_worker.block_len_per_addr)
+        thread.block_stride_per_addr = list(d_worker.block_stride_per_addr)
+        thread.block_scale_per_addr = list(call.kwargs["block_scale_per_addr"])
+        thread.addr_group_idx = [list(g) for g in d_worker.addr_group_idx]
+        thread.local_entry_layer_names = [list(n) for n in d_worker.entry_layer_names]
+        thread.local_spec_method = p_meta.spec_method or "mtp"
+        thread.remote_te_port = SizedDict()
+        thread.remote_block_lens = SizedDict()
+        thread.remote_entry_layer_names = SizedDict()
+        thread.remote_spec_method = SizedDict()
+        thread.remote_block_strides = SizedDict()
+        thread.remote_block_scales = SizedDict()
+        thread.remote_metadata_lock = threading.Lock()
+        thread.encoder = msgspec.msgpack.Encoder()
+        thread.decoder = msgspec.msgpack.Decoder(MooncakeAgentMetadata)
+        thread.task_tracker = KVCacheTaskTracker()
+        thread.request_queue = queue.Queue()
+        thread.proc_not_transfer_request = {}
+        thread.proc_not_transfer_request_lock = threading.Lock()
+        thread.request_task_counts = defaultdict(int)
+        thread.finished_request_markers = set()
+        thread.request_task_counts_lock = threading.Lock()
+
+        thread.engine = MagicMock()
+        thread.engine.batch_transfer_sync_read.side_effect = self._memmove_sync_read
+        self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(p_meta), remote_handshake_port=31000)
+
+        thread.task_tracker.add_req_to_process(request_id)
+        req_meta = self._make_req_meta(
+            request_id=request_id,
+            local_block_ids=local_block_ids,
+            remote_block_ids=remote_block_ids,
+            remote_engine_id=p_meta.engine_id,
+            remote_handshake_port=31000,
+        )
+        thread.request_queue.put(req_meta)
+        queued = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(queued)
+        with (
+            patch.object(thread, "_send_done_recv_signal"),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                return_value="127.0.0.1",
+            ),
+        ):
+            thread._handle_request(queued)
+
+        _, _, _, length_list = thread.engine.batch_transfer_sync_read.call_args.args
+        return thread, length_list
+
+    def test_real_mrv2_hybrid_backing_sym_mtp_rdma_byte_fidelity(self):
+        """Verify end-to-end byte fidelity over real MRV2 shared strided hybrid_backing for AC-04."""
+        p_backing, p_caches, p_worker, _ = self._build_mrv2_strided_hybrid_fixture(
+            kv_role="kv_producer", engine_id="prefill-engine", port=31000
+        )
+        d_backing, d_caches, d_worker, recv_cls = self._build_mrv2_strided_hybrid_fixture(
+            kv_role="kv_consumer", engine_id="decode-engine", port=32000
+        )
+        assert p_worker.xfer_handshake_metadata is not None
+
+        # Verify slot-0 Attention K and Mamba conv share base ptr yet stay registered distinctly.
+        self.assertEqual(
+            p_caches["model.layers.0.self_attn.attn"][0].data_ptr(),
+            p_caches["model.layers.0.linear_attn"][0].data_ptr(),
+        )
+        self.assertEqual(len(p_worker.kv_caches_base_addr), 10)
+        self.assertEqual(p_worker.block_stride_per_addr, [352] * 10)
+        self.assertEqual(p_worker.block_scale_per_addr, [1] * 10)
+        self.assertEqual(
+            p_worker.addr_group_idx,
+            [[0], [0], [0], [0], [0], [0], [1, 2, 3], [1, 2, 3], [1, 2, 3], [1, 2, 3]],
+        )
+
+        # Seed distinct deterministic bytes on P and non-matching canary bytes on D.
+        pattern = torch.arange(p_backing.numel(), dtype=torch.int64)
+        p_backing.copy_(((pattern * 37 + 13) % 127 + 1).to(torch.int8))
+        d_backing.fill_(-5)
+
+        cases = [
+            (
+                "short_non_consecutive_local_ne_remote",
+                ([5], [3, 12, 13, 14], [7, 14, 15, 0], [9, 1, 2, 4]),
+                ([1], [2], [6], [10]),
+                [5],
+                {1: 3, 2: 7, 3: 9},
+            ),
+            (
+                "long_multi_block_attention",
+                ([4, 5], [8, 12, 13, 14], [12, 1, 2, 3], [13, 4, 5, 6]),
+                ([1, 2], [3], [7], [11]),
+                [4, 5],
+                {1: 8, 2: 12, 3: 13},
+            ),
+        ]
+        mamba_by_group = {
+            1: ("model.layers.0.linear_attn", "model.layers.1.linear_attn"),
+            2: ("model.layers.2.linear_attn", "model.layers.3.linear_attn"),
+            3: ("model.layers.4.linear_attn", "model.layers.5.linear_attn"),
+        }
+        for name, local_ids, remote_ids, exp_attn_blocks, mamba_dst_blocks in cases:
+            with self.subTest(case=name):
+                d_backing.fill_(-5)
+                thread, _ = self._run_memmove_transfer(
+                    d_worker=d_worker,
+                    recv_cls_call=recv_cls.call_args,
+                    p_meta=p_worker.xfer_handshake_metadata,
+                    local_block_ids=local_ids,
+                    remote_block_ids=remote_ids,
+                    request_id=f"req-{name}",
+                )
+                connector, _ = self._wrap_consumer_connector(thread)
+                self.assertEqual(
+                    connector.get_transfer_results(set()),
+                    KVConnectorTransferResults(finished_recving={f"req-{name}"}, failed_recving=set()),
+                )
+                # Attention and MTP K/V blocks must match producer bit-for-bit.
+                attn_targets = (
+                    "model.layers.0.self_attn.attn",
+                    "model.layers.1.self_attn.attn",
+                    "mtp.layers.0.self_attn.attn",
+                )
+                for layer_name in attn_targets:
+                    for d_blk, p_blk in zip(exp_attn_blocks, remote_ids[0], strict=True):
+                        torch.testing.assert_close(d_caches[layer_name][0][d_blk], p_caches[layer_name][0][p_blk])
+                        torch.testing.assert_close(d_caches[layer_name][1][d_blk], p_caches[layer_name][1][p_blk])
+                # Every Mamba group's conv_state and ssm_state must match producer bit-for-bit.
+                for grp_idx, layer_pair in mamba_by_group.items():
+                    d_blk = mamba_dst_blocks[grp_idx]
+                    p_blk = remote_ids[grp_idx][0]
+                    for layer_name in layer_pair:
+                        torch.testing.assert_close(d_caches[layer_name][0][d_blk], p_caches[layer_name][0][p_blk])
+                        torch.testing.assert_close(d_caches[layer_name][1][d_blk], p_caches[layer_name][1][p_blk])
+                # Unused Attention/MTP blocks (e.g. block 11) must remain completely untouched.
+                untouched = d_caches["mtp.layers.0.self_attn.attn"][0][11].view(torch.int8)
+                torch.testing.assert_close(untouched, torch.full_like(untouched, -5))
+
+    def test_block_scale_greater_than_one_strided_and_contiguous(self):
+        """Verify block_scale > 1 transfers all kernel sub-blocks cleanly on strided views and coalesces dense views."""
+        p_backing, p_caches, p_worker, _ = self._build_mrv2_strided_hybrid_fixture(
+            num_blocks=8,
+            attn_block_size=8,
+            kernel_block_size=4,
+            include_mtp=False,
+            conv_width=4,
+            page_size_padded=384,
+            kv_role="kv_producer",
+            engine_id="prefill-scale",
+            port=31000,
+        )
+        d_backing, d_caches, d_worker, recv_cls = self._build_mrv2_strided_hybrid_fixture(
+            num_blocks=8,
+            attn_block_size=8,
+            kernel_block_size=4,
+            include_mtp=False,
+            conv_width=4,
+            page_size_padded=384,
+            kv_role="kv_consumer",
+            engine_id="decode-scale",
+            port=32000,
+        )
+        assert p_worker.xfer_handshake_metadata is not None
+        self.assertEqual(p_worker.block_scale_per_addr[:4], [2, 2, 2, 2])
+        self.assertEqual(p_worker.block_stride_per_addr[:4], [192, 192, 192, 192])
+
+        p_backing.copy_(((torch.arange(p_backing.numel(), dtype=torch.int64) * 19 + 7) % 125 + 1).to(torch.int8))
+        d_backing.fill_(-9)
+        thread, _ = self._run_memmove_transfer(
+            d_worker=d_worker,
+            recv_cls_call=recv_cls.call_args,
+            p_meta=p_worker.xfer_handshake_metadata,
+            local_block_ids=([3, 4], [2], [5], [6]),
+            remote_block_ids=([1, 2], [3], [4], [5]),
+            request_id="req-scale2",
+        )
+        # All 4 kernel sub-blocks (2 scheduler blocks * scale 2) of Attention K and V must match bit-for-bit.
+        for layer_name in ("model.layers.0.self_attn.attn", "model.layers.1.self_attn.attn"):
+            for k_off in range(4):
+                d_k, d_v = d_caches[layer_name]
+                p_k, p_v = p_caches[layer_name]
+                torch.testing.assert_close(d_k[3 * 2 + k_off], p_k[1 * 2 + k_off])
+                torch.testing.assert_close(d_v[3 * 2 + k_off], p_v[1 * 2 + k_off])
+        # Untouched slot padding (bytes 128..192 inside kernel page 6) must retain -9 canary.
+        slot0_k0_end = d_caches["model.layers.0.self_attn.attn"][1][6].numel() * 2 + (
+            d_caches["model.layers.0.self_attn.attn"][1][6].data_ptr() - d_backing.data_ptr()
+        )
+        self.assertTrue(torch.all(d_backing[slot0_k0_end : slot0_k0_end + 64] == -9).item())
+
+        # Dense contiguous view with block_scale=2 must coalesce contiguous manager blocks into one RDMA read.
+        src_dense = torch.zeros((16, 4), dtype=torch.uint8)
+        dst_dense = torch.arange(64, dtype=torch.uint8).reshape(16, 4) + 10
+        src_list: list[int] = []
+        dst_list: list[int] = []
+        length_list: list[int] = []
+        from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector import (
+            _append_entry_block_transfers,
+        )
+
+        _append_entry_block_transfers(
+            src_list,
+            dst_list,
+            length_list,
+            local_base_addr=src_dense.data_ptr(),
+            remote_base_addr=dst_dense.data_ptr(),
+            local_block_ids=[2, 3],
+            remote_block_ids=[1, 2],
+            block_len=4,
+            local_block_stride=4,
+            remote_block_stride=4,
+            block_scale=2,
+        )
+        self.assertEqual(len(src_list), 1)
+        self.assertEqual(length_list, [16])
+        ctypes.memmove(src_list[0], dst_list[0], length_list[0])
+        torch.testing.assert_close(src_dense[4:8], dst_dense[2:6])
+
+    def test_different_peer_block_strides_and_conv_len_scale_validation(self):
+        """Verify asymmetric P/D strides transfer cleanly while conv_bytes/scale/stride mismatches fail fast."""
+        p_backing, p_caches, p_worker, _ = self._build_mrv2_strided_hybrid_fixture(
+            num_blocks=8,
+            include_mtp=True,
+            conv_width=6,
+            page_size_padded=512,
+            kv_role="kv_producer",
+            engine_id="prefill-512",
+            port=31000,
+        )
+        d_backing, d_caches, d_worker, recv_cls = self._build_mrv2_strided_hybrid_fixture(
+            num_blocks=8,
+            include_mtp=True,
+            conv_width=6,
+            page_size_padded=384,
+            kv_role="kv_consumer",
+            engine_id="decode-384",
+            port=32000,
+        )
+        assert p_worker.xfer_handshake_metadata is not None
+        p_backing.copy_(((torch.arange(p_backing.numel(), dtype=torch.int64) * 11 + 3) % 123 + 1).to(torch.int8))
+        d_backing.fill_(-7)
+        self._run_memmove_transfer(
+            d_worker=d_worker,
+            recv_cls_call=recv_cls.call_args,
+            p_meta=p_worker.xfer_handshake_metadata,
+            local_block_ids=([4, 5], [2, 0, 0, 0], [3, 0, 0, 0], [6, 0, 0, 0]),
+            remote_block_ids=([1, 2], [4], [5], [6]),
+            request_id="req-diff-stride",
+        )
+        d_mtp = d_caches["mtp.layers.0.self_attn.attn"]
+        p_mtp = p_caches["mtp.layers.0.self_attn.attn"]
+        d_mamba = d_caches["model.layers.0.linear_attn"]
+        p_mamba = p_caches["model.layers.0.linear_attn"]
+        torch.testing.assert_close(d_mtp[0][4], p_mtp[0][1])
+        torch.testing.assert_close(d_mtp[1][5], p_mtp[1][2])
+        torch.testing.assert_close(d_mamba[0][2], p_mamba[0][4])
+        torch.testing.assert_close(d_mamba[1][2], p_mamba[1][4])
+
+        # K=1 vs K=3 (same layer names, different conv_state block_len) must fail fast and evict 7 maps.
+        _, _, k1_worker, _ = self._build_mrv2_strided_hybrid_fixture(
+            num_blocks=8,
+            include_mtp=True,
+            conv_width=4,
+            page_size_padded=384,
+            kv_role="kv_producer",
+            engine_id="prefill-k1",
+            port=31000,
+        )
+        assert k1_worker.xfer_handshake_metadata is not None
+        thread = self._make_recv_thread(
+            local_addrs=d_worker.kv_caches_base_addr,
+            local_block_lens=d_worker.block_len_per_addr,
+            local_entry_layer_names=d_worker.entry_layer_names,
+            local_spec_method="mtp",
+            hma_group_size=4,
+            addr_group_idx=d_worker.addr_group_idx,
+        )
+        thread.block_stride_per_addr = list(d_worker.block_stride_per_addr)
+        thread.block_scale_per_addr = list(d_worker.block_scale_per_addr)
+        sock = MagicMock(spec=zmq.Socket)
+        sock.recv.return_value = msgspec.msgpack.Encoder().encode(k1_worker.xfer_handshake_metadata)
+        thread.task_tracker.add_req_to_process("req-k1-vs-k3")
+        req_meta = self._make_req_meta(
+            request_id="req-k1-vs-k3",
+            local_block_ids=([1], [2], [3], [4]),
+            remote_block_ids=([1], [2], [3], [4]),
+            remote_engine_id="prefill-k1",
+        )
+        thread.request_queue.put(req_meta)
+        queued = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(queued)
+        with (
+            patch.object(thread, "_get_remote_socket", return_value=sock),
+            patch.object(thread, "_send_done_recv_signal"),
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.logger.exception"),
+        ):
+            thread._handle_request(queued)
+        thread.engine.batch_transfer_sync_read.assert_not_called()
+        self._assert_all_remote_maps_evicted(thread, "prefill-k1", 31000)
+
+        # Reject block_scales mismatch and invalid block_strides (< block_len or bool).
+        with self.assertRaises(ValueError) as scale_ctx:
+            _validate_remote_kv_layout(
+                local_addrs=[0x1000],
+                remote_addrs=[0x2000],
+                local_block_lens=[64],
+                remote_block_lens=[64],
+                local_block_scales=[2],
+                remote_block_scales=[1],
+            )
+        self.assertIn("block scale differs", str(scale_ctx.exception))
+
+        with self.assertRaises(ValueError) as stride_ctx:
+            _validate_remote_kv_layout(
+                local_addrs=[0x1000],
+                remote_addrs=[0x2000],
+                local_block_lens=[64],
+                remote_block_lens=[64],
+                remote_block_strides=[32],
+            )
+        self.assertIn("invalid block_stride", str(stride_ctx.exception))
+
+    def test_legacy_metadata_without_strides_or_scales_remains_compatible(self):
+        """Verify legacy peer metadata omitting block_strides and block_scales uses local fallback safely."""
+        src_buf = torch.zeros((4, 8), dtype=torch.uint8)
+        dst_buf = torch.arange(32, dtype=torch.uint8).reshape(4, 8) + 20
+        thread = self._make_recv_thread(
+            local_addrs=[src_buf.data_ptr()],
+            local_block_lens=[8],
+            local_entry_layer_names=[["target.0"]],
+            hma_group_size=1,
+            addr_group_idx=[[0]],
+        )
+        thread.engine.batch_transfer_sync_read.side_effect = self._memmove_sync_read
+        legacy_meta = MooncakeAgentMetadata(
+            engine_id="legacy-prefill",
+            te_rpc_port=7777,
+            block_size=16,
+            kv_caches_base_addr=[dst_buf.data_ptr()],
+            num_blocks=4,
+            block_lens=[8],
+            ssm_sizes=(0, 0),
+            local_ip="192.0.2.1",
+        )
+        self._fetch_metadata(thread, msgspec.msgpack.Encoder().encode(legacy_meta), remote_handshake_port=31000)
+        with patch(
+            "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+            return_value="127.0.0.1",
+        ):
+            thread._transfer_kv_cache_all_groups(
+                self._make_req_meta(
+                    local_block_ids=([1, 2],),
+                    remote_block_ids=([0, 1],),
+                    remote_engine_id="legacy-prefill",
+                )
+            )
+        torch.testing.assert_close(src_buf[1:3], dst_buf[0:2])
+
+    def test_ac03_asymmetric_failure_then_ac04_hot_recovery_on_real_strided_hybrid_backing(self):
+        """Verify AC-03 mismatch evicts all 7 maps and same-port P restart recovers bit-exact KV/Mamba state."""
+        nospec_backing, _, nospec_worker, _ = self._build_mrv2_strided_hybrid_fixture(
+            include_mtp=False, conv_width=3, kv_role="kv_producer", engine_id="prefill-ac03", port=31000
+        )
+        sym_backing, sym_caches, sym_worker, _ = self._build_mrv2_strided_hybrid_fixture(
+            include_mtp=True, conv_width=6, kv_role="kv_producer", engine_id="prefill-ac03", port=31000
+        )
+        d_backing, d_caches, d_worker, recv_cls = self._build_mrv2_strided_hybrid_fixture(
+            include_mtp=True, conv_width=6, kv_role="kv_consumer", engine_id="decode-ac04", port=32000
+        )
+        assert nospec_worker.xfer_handshake_metadata is not None
+        assert sym_worker.xfer_handshake_metadata is not None
+        self.assertEqual(len(nospec_worker.kv_caches_base_addr), 8)
+        self.assertEqual(len(sym_worker.kv_caches_base_addr), 10)
+        nospec_backing.fill_(1)
+        sym_backing.copy_(((torch.arange(sym_backing.numel(), dtype=torch.int64) * 29 + 5) % 121 + 1).to(torch.int8))
+        d_backing.fill_(-3)
+
+        thread = object.__new__(KVCacheRecvingThread)
+        thread.tp_rank = 0
+        thread.tp_size = 1
+        thread._prefill_pp_size = 1
+        thread.local_engine_id = d_worker.engine_id
+        thread.local_handshake_port = d_worker.handshake_port
+        thread.side_channel_port = d_worker.side_channel_port
+        thread.use_hybrid = True
+        thread.hma_group_size = 4
+        thread.kv_caches = d_worker.kv_caches
+        thread.kv_cache_config = d_worker.kv_cache_config
+        thread.kv_cache_specs = [g.kv_cache_spec for g in d_worker.kv_cache_config.kv_cache_groups]
+        thread.vllm_config = d_worker.vllm_config
+        thread.pp_layer_indices = {0: (0, len(d_worker.kv_caches_base_addr))}
+        thread.kv_caches_base_addr = SizedDict()
+        thread.kv_caches_base_addr[d_worker.engine_id][d_worker.handshake_port] = list(d_worker.kv_caches_base_addr)
+        thread.block_len_per_addr = list(d_worker.block_len_per_addr)
+        thread.block_stride_per_addr = list(d_worker.block_stride_per_addr)
+        thread.block_scale_per_addr = list(recv_cls.call_args.kwargs["block_scale_per_addr"])
+        thread.addr_group_idx = [list(g) for g in d_worker.addr_group_idx]
+        thread.local_entry_layer_names = [list(n) for n in d_worker.entry_layer_names]
+        thread.local_spec_method = "mtp"
+        thread.remote_te_port = SizedDict()
+        thread.remote_block_lens = SizedDict()
+        thread.remote_entry_layer_names = SizedDict()
+        thread.remote_spec_method = SizedDict()
+        thread.remote_block_strides = SizedDict()
+        thread.remote_block_scales = SizedDict()
+        thread.remote_metadata_lock = threading.Lock()
+        thread.encoder = msgspec.msgpack.Encoder()
+        thread.decoder = msgspec.msgpack.Decoder(MooncakeAgentMetadata)
+        thread.task_tracker = KVCacheTaskTracker()
+        thread.request_queue = queue.Queue()
+        thread.proc_not_transfer_request = {}
+        thread.proc_not_transfer_request_lock = threading.Lock()
+        thread.request_task_counts = defaultdict(int)
+        thread.finished_request_markers = set()
+        thread.request_task_counts_lock = threading.Lock()
+        thread.engine = MagicMock()
+        thread.engine.batch_transfer_sync_read.side_effect = self._memmove_sync_read
+
+        encoder = msgspec.msgpack.Encoder()
+        sock = MagicMock(spec=zmq.Socket)
+        sock.recv.side_effect = [
+            encoder.encode(nospec_worker.xfer_handshake_metadata),
+            encoder.encode(sym_worker.xfer_handshake_metadata),
+        ]
+        connector, _ = self._wrap_consumer_connector(thread)
+
+        # Phase 1 (AC-03): P=nospec (8 entries) vs D=mtp (10 entries) fails and evicts all 7 maps.
+        req_fail = self._make_req_meta(
+            request_id="req-ac03-real",
+            local_block_ids=([5], [3, 12, 13, 14], [7, 12, 13, 14], [9, 12, 13, 14]),
+            remote_block_ids=([1], [2], [6], [10]),
+            remote_engine_id="prefill-ac03",
+        )
+        thread.task_tracker.add_req_to_process("req-ac03-real")
+        thread.request_queue.put(req_fail)
+        queued_fail = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(queued_fail)
+        with (
+            patch.object(thread, "_get_remote_socket", return_value=sock),
+            patch.object(thread, "_return_remote_socket"),
+            patch.object(thread, "_send_done_recv_signal"),
+            patch("vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.logger.exception"),
+        ):
+            thread._handle_request(queued_fail)
+        thread.engine.batch_transfer_sync_read.assert_not_called()
+        self._assert_all_remote_maps_evicted(thread, "prefill-ac03", 31000)
+        self.assertEqual(
+            connector.get_transfer_results(set()),
+            KVConnectorTransferResults(finished_recving={"req-ac03-real"}, failed_recving={"req-ac03-real"}),
+        )
+
+        # Phase 2 (AC-04): P restarts on same port with mtp K=3 (10 entries); D recovers bit-exact KV/Mamba state.
+        req_ok = self._make_req_meta(
+            request_id="req-ac04-real",
+            local_block_ids=([5], [3, 12, 13, 14], [7, 12, 13, 14], [9, 12, 13, 14]),
+            remote_block_ids=([1], [2], [6], [10]),
+            remote_engine_id="prefill-ac03",
+        )
+        thread.task_tracker.add_req_to_process("req-ac04-real")
+        thread.request_queue.put(req_ok)
+        queued_ok = thread.request_queue.get_nowait()
+        thread._mark_request_task_submitted(queued_ok)
+        with (
+            patch.object(thread, "_get_remote_socket", return_value=sock),
+            patch.object(thread, "_return_remote_socket"),
+            patch.object(thread, "_send_done_recv_signal"),
+            patch(
+                "vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_hybrid_connector.get_ip",
+                return_value="127.0.0.1",
+            ),
+        ):
+            thread._handle_request(queued_ok)
+        self.assertEqual(
+            connector.get_transfer_results(set()),
+            KVConnectorTransferResults(finished_recving={"req-ac04-real"}, failed_recving=set()),
+        )
+        d_mtp = d_caches["mtp.layers.0.self_attn.attn"]
+        sym_mtp = sym_caches["mtp.layers.0.self_attn.attn"]
+        torch.testing.assert_close(d_mtp[0][5], sym_mtp[0][1])
+        torch.testing.assert_close(d_mtp[1][5], sym_mtp[1][1])
+        d_mamba0 = d_caches["model.layers.0.linear_attn"]
+        sym_mamba0 = sym_caches["model.layers.0.linear_attn"]
+        d_mamba5 = d_caches["model.layers.5.linear_attn"]
+        sym_mamba5 = sym_caches["model.layers.5.linear_attn"]
+        torch.testing.assert_close(d_mamba0[0][3], sym_mamba0[0][2])
+        torch.testing.assert_close(d_mamba5[1][9], sym_mamba5[1][10])

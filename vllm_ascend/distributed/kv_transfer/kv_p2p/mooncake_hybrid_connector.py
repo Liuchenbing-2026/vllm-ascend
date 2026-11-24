@@ -104,6 +104,8 @@ class MooncakeAgentMetadata(msgspec.Struct, omit_defaults=True, dict=True):
     local_ip: str = ""
     entry_layer_names: list[list[str]] = msgspec.field(default_factory=list)
     spec_method: str = ""
+    block_strides: list[int] = msgspec.field(default_factory=list)
+    block_scales: list[int] = msgspec.field(default_factory=list)
 
 
 def _get_spec_method(vllm_config: Any) -> str:
@@ -243,6 +245,34 @@ def _validate_remote_metadata_consistency(
             f"len(entry_layer_names)={len(agent_meta.entry_layer_names)} != "
             f"len(kv_caches_base_addr)={num_remote_addrs}."
         )
+    if agent_meta.block_strides:
+        if len(agent_meta.block_strides) != num_remote_addrs:
+            raise ValueError(
+                f"Mooncake producer ({peer_desc}) sent inconsistent metadata: "
+                f"len(block_strides)={len(agent_meta.block_strides)} != "
+                f"len(kv_caches_base_addr)={num_remote_addrs}."
+            )
+        for idx, (stride, block_len) in enumerate(zip(agent_meta.block_strides, agent_meta.block_lens, strict=True)):
+            if (
+                isinstance(stride, bool)
+                or not isinstance(stride, int)
+                or stride < block_len
+                or (block_len > 0 and stride <= 0)
+            ):
+                raise ValueError(
+                    f"Mooncake producer ({peer_desc}) sent invalid block_stride={stride!r} at index {idx} "
+                    f"for block_len={block_len}."
+                )
+    if agent_meta.block_scales:
+        if len(agent_meta.block_scales) != num_remote_addrs:
+            raise ValueError(
+                f"Mooncake producer ({peer_desc}) sent inconsistent metadata: "
+                f"len(block_scales)={len(agent_meta.block_scales)} != "
+                f"len(kv_caches_base_addr)={num_remote_addrs}."
+            )
+        for idx, scale in enumerate(agent_meta.block_scales):
+            if isinstance(scale, bool) or not isinstance(scale, int) or scale <= 0:
+                raise ValueError(f"Mooncake producer ({peer_desc}) sent invalid block_scale={scale!r} at index {idx}.")
 
 
 def _format_peer_and_spec_context(
@@ -279,6 +309,9 @@ def _validate_remote_kv_layout(
     remote_engine_id: str = "",
     remote_handshake_port: int | None = None,
     tp_num_need_pulls: int = 1,
+    local_block_scales: list[int] | None = None,
+    remote_block_scales: list[int] | None = None,
+    remote_block_strides: list[int] | None = None,
 ) -> None:
     """Verify remote KV entries match local layout before positional pairing."""
     peer_desc, spec_detail = _format_peer_and_spec_context(
@@ -297,6 +330,26 @@ def _validate_remote_kv_layout(
         raise ValueError(
             f"Mooncake producer ({peer_desc}) metadata mismatch: "
             f"len(entry_layer_names)={len(remote_entry_layer_names)} != "
+            f"len(kv_caches_base_addr)={len(remote_addrs)}."
+        )
+    if remote_block_strides is not None:
+        if len(remote_block_strides) != len(remote_addrs):
+            raise ValueError(
+                f"Mooncake producer ({peer_desc}) metadata mismatch: "
+                f"len(block_strides)={len(remote_block_strides)} != "
+                f"len(kv_caches_base_addr)={len(remote_addrs)}."
+            )
+        if remote_block_lens is not None:
+            for idx, (stride, block_len) in enumerate(zip(remote_block_strides, remote_block_lens, strict=True)):
+                if isinstance(stride, bool) or not isinstance(stride, int) or stride < block_len:
+                    raise ValueError(
+                        f"Mooncake producer ({peer_desc}) invalid block_stride={stride!r} at index {idx} "
+                        f"for block_len={block_len}."
+                    )
+    if remote_block_scales is not None and len(remote_block_scales) != len(remote_addrs):
+        raise ValueError(
+            f"Mooncake producer ({peer_desc}) metadata mismatch: "
+            f"len(block_scales)={len(remote_block_scales)} != "
             f"len(kv_caches_base_addr)={len(remote_addrs)}."
         )
 
@@ -365,6 +418,137 @@ def _validate_remote_kv_layout(
                         "Check that prefill and decode use the same --kv-cache-dtype, "
                         "attention head dimension, and page layout."
                     )
+
+    if remote_block_scales is not None and local_block_scales:
+        if len(local_block_scales) != len(local_addrs):
+            raise ValueError(
+                f"Local block_scale_per_addr length {len(local_block_scales)} does not match "
+                f"local address entries {len(local_addrs)}."
+            )
+        if remote_block_scales != local_block_scales:
+            for idx, (remote_scale, local_scale) in enumerate(
+                zip(remote_block_scales, local_block_scales, strict=True)
+            ):
+                if remote_scale != local_scale:
+                    raise ValueError(
+                        f"Mooncake producer ({peer_desc}) KV entry block scale differs at index {idx}: "
+                        f"producer={remote_scale}, consumer={local_scale}.{spec_detail} "
+                        "Ensure prefill and decode use matching kernel block sizes."
+                    )
+
+
+def _collect_mamba_hybrid_kv_entries(
+    kv_cache_config: KVCacheConfig,
+    kv_caches: dict[str, Any],
+    num_blocks: int,
+) -> tuple[list[int], list[int], list[int], list[int], list[list[str]], list[list[int]]]:
+    """Collect deduplicated per-entry base addrs, block lengths, strides, scales, and groups."""
+    if num_blocks <= 0:
+        raise ValueError(f"Mamba hybrid registration requires num_blocks > 0, got {num_blocks}.")
+    kv_groups = getattr(kv_cache_config, "kv_cache_groups", None) or ()
+    layer_group_idx = {
+        layer_name: group_idx for group_idx, group in enumerate(kv_groups) for layer_name in group.layer_names
+    }
+    base_addrs: list[int] = []
+    block_lens: list[int] = []
+    block_strides: list[int] = []
+    block_scales: list[int] = []
+    entry_layer_names: list[list[str]] = []
+    entry_group_sets: list[set[int]] = []
+    entry_to_idx: dict[tuple[int, int, int, int], int] = {}
+
+    for kv_cache_tensor in kv_cache_config.kv_cache_tensors:
+        for layer_name in get_kv_cache_tensor_layers(kv_cache_tensor):
+            if layer_group_idx and layer_name not in layer_group_idx:
+                raise ValueError(f"Configured KV cache layer {layer_name!r} does not belong to a KV cache group.")
+            group_idx = layer_group_idx.get(layer_name)
+            for single_kv_cache in as_kv_cache_tensors(kv_caches[layer_name]):
+                tensor_num_blocks = single_kv_cache.shape[0]
+                if tensor_num_blocks < num_blocks or tensor_num_blocks % num_blocks != 0:
+                    raise ValueError(
+                        f"KV cache tensor for layer {layer_name!r} has block count {tensor_num_blocks}, "
+                        f"which is not a positive multiple of num_blocks={num_blocks}."
+                    )
+                block_size_scale = tensor_num_blocks // num_blocks
+                elem_size = single_kv_cache.element_size()
+                block_len = elem_size * math.prod(single_kv_cache.shape[1:])
+                block_stride = single_kv_cache.stride(0) * elem_size
+                if block_stride < block_len:
+                    raise ValueError(
+                        f"KV cache tensor for layer {layer_name!r} has block_stride={block_stride} "
+                        f"< block_len={block_len}."
+                    )
+                data_ptr = single_kv_cache.data_ptr()
+                # Shared slots alias byte 0 across groups (e.g. Attention K and Mamba conv);
+                # key by geometry too so distinct state components stay separate.
+                entry_key = (data_ptr, block_len, block_stride, block_size_scale)
+                existing_idx = entry_to_idx.get(entry_key)
+                if existing_idx is not None:
+                    if layer_name not in entry_layer_names[existing_idx]:
+                        entry_layer_names[existing_idx].append(layer_name)
+                    if group_idx is not None:
+                        entry_group_sets[existing_idx].add(group_idx)
+                    continue
+                entry_to_idx[entry_key] = len(base_addrs)
+                base_addrs.append(data_ptr)
+                block_lens.append(block_len)
+                block_strides.append(block_stride)
+                block_scales.append(block_size_scale)
+                entry_layer_names.append([layer_name])
+                entry_group_sets.append({group_idx} if group_idx is not None else set())
+
+    addr_group_idx = [sorted(groups) for groups in entry_group_sets] if layer_group_idx else []
+    return base_addrs, block_lens, block_strides, block_scales, entry_layer_names, addr_group_idx
+
+
+def _expand_scaled_block_ids(block_ids: Sequence[int], block_scale: int) -> list[int]:
+    """Expand scheduler block IDs into kernel-block IDs for block_scale > 1 views."""
+    if block_scale == 1:
+        return list(block_ids)
+    return [block_id * block_scale + sub_idx for block_id in block_ids for sub_idx in range(block_scale)]
+
+
+def _append_entry_block_transfers(
+    src_list: list[int],
+    dst_list: list[int],
+    length_list: list[int],
+    *,
+    local_base_addr: int,
+    remote_base_addr: int,
+    local_block_ids: Sequence[int],
+    remote_block_ids: Sequence[int],
+    block_len: int,
+    local_block_stride: int,
+    remote_block_stride: int,
+    block_scale: int = 1,
+) -> None:
+    """Emit RDMA byte spans using exact per-side block strides and coalescing only contiguous pages."""
+    if isinstance(block_scale, bool) or not isinstance(block_scale, int) or block_scale <= 0:
+        raise ValueError(f"block_scale must be a positive int, got {block_scale!r}.")
+    if block_len <= 0:
+        return
+    if local_block_stride < block_len or remote_block_stride < block_len:
+        raise ValueError(
+            f"Block stride must be >= block_len={block_len}, got "
+            f"local_block_stride={local_block_stride}, remote_block_stride={remote_block_stride}."
+        )
+    scaled_remote = _expand_scaled_block_ids(remote_block_ids, block_scale)
+    scaled_local = _expand_scaled_block_ids(local_block_ids, block_scale)
+    if local_block_stride == block_len and remote_block_stride == block_len:
+        grouped_remote, grouped_local = group_concurrent_contiguous(scaled_remote, scaled_local)
+        for remote_grp, local_grp in zip(grouped_remote, grouped_local, strict=True):
+            src_list.append(local_base_addr + local_grp[0] * local_block_stride)
+            dst_list.append(remote_base_addr + remote_grp[0] * remote_block_stride)
+            length_list.append(block_len * len(local_grp))
+        return
+    # Strided views (e.g. interleaved K/V or padded Mamba/Attention pages) have non-zero gaps
+    # between consecutive blocks, so contiguous block IDs are not byte-contiguous.
+    if len(scaled_remote) != len(scaled_local):
+        raise ValueError(f"Scaled block ID counts differ: remote={len(scaled_remote)}, local={len(scaled_local)}.")
+    for remote_block_id, local_block_id in zip(scaled_remote, scaled_local, strict=True):
+        src_list.append(local_base_addr + local_block_id * local_block_stride)
+        dst_list.append(remote_base_addr + remote_block_id * remote_block_stride)
+        length_list.append(block_len)
 
 
 @dataclass(frozen=True)
@@ -752,6 +936,7 @@ class KVCacheRecvingThread(threading.Thread):
         prefill_pp_layer_partition: str | None = None,
         entry_layer_names: list[list[str]] | None = None,
         use_request_level_recv_errors: bool | None = None,
+        block_scale_per_addr: list[int] | None = None,
     ):
         """Initialize the hybrid Mooncake KV cache receiving worker thread."""
         super().__init__(daemon=True, name="KVCacheRecvingThread")
@@ -769,6 +954,7 @@ class KVCacheRecvingThread(threading.Thread):
         self.kv_caches_base_addr[local_engine_id][local_handshake_port] = local_kv_caches_base_addr
         self.block_len_per_addr = block_len_per_addr
         self.block_stride_per_addr = block_stride_per_addr
+        self.block_scale_per_addr: list[int] = list(block_scale_per_addr) if block_scale_per_addr else []
         self.addr_group_idx = addr_group_idx
         self.hma_group_size = hma_group_size
         self.mamba_ssm_size = mamba_ssm_size
@@ -778,6 +964,8 @@ class KVCacheRecvingThread(threading.Thread):
         self.remote_block_lens: dict[str, dict[int, list[int]]] = SizedDict()
         self.remote_entry_layer_names: dict[str, dict[int, list[list[str]]]] = SizedDict()
         self.remote_spec_method: dict[str, dict[int, str]] = SizedDict()
+        self.remote_block_strides: dict[str, dict[int, list[int]]] = SizedDict()
+        self.remote_block_scales: dict[str, dict[int, list[int]]] = SizedDict()
         self.remote_metadata_lock = threading.Lock()
 
         self.request_queue: queue.Queue[Any] = queue.Queue()
@@ -944,6 +1132,8 @@ class KVCacheRecvingThread(threading.Thread):
             getattr(self, "remote_block_lens", None),
             getattr(self, "remote_entry_layer_names", None),
             getattr(self, "remote_spec_method", None),
+            getattr(self, "remote_block_strides", None),
+            getattr(self, "remote_block_scales", None),
         )
         lock = getattr(self, "remote_metadata_lock", None)
         lock_ctx = lock if lock is not None else contextlib.nullcontext()
@@ -1142,6 +1332,16 @@ class KVCacheRecvingThread(threading.Thread):
                 remote_handshake_port,
                 "",
             )
+            remote_block_strides = _lookup_remote_cache(
+                getattr(self, "remote_block_strides", None),
+                remote_engine_id,
+                remote_handshake_port,
+            )
+            remote_block_scales = _lookup_remote_cache(
+                getattr(self, "remote_block_scales", None),
+                remote_engine_id,
+                remote_handshake_port,
+            )
         session_id = f"{remote_host}:{remote_transfer_port}"
 
         # With P-side PP the remote worker only owns its stage's
@@ -1153,6 +1353,8 @@ class KVCacheRecvingThread(threading.Thread):
         block_stride_arr = self.block_stride_per_addr
         addr_group_arr = self.addr_group_idx
         local_entry_layers = getattr(self, "local_entry_layer_names", None)
+        has_local_scales = bool(getattr(self, "block_scale_per_addr", None))
+        block_scale_arr = list(self.block_scale_per_addr) if has_local_scales else []
         if self._prefill_pp_size > 1:
             tp_num_need_pulls = req_meta["tp_num_need_pulls"]
             remote_pp_rank = req_meta["offset"] // tp_num_need_pulls
@@ -1172,6 +1374,8 @@ class KVCacheRecvingThread(threading.Thread):
                 addr_group_arr = self.addr_group_idx[start:end]
             if local_entry_layers:
                 local_entry_layers = local_entry_layers[start:end]
+            if has_local_scales:
+                block_scale_arr = block_scale_arr[start:end]
             logger.debug(
                 "Cross-PP pull alignment: remote_port=%d -> pp_rank=%d local_addrs[%d:%d]=%d remote=%d",
                 remote_handshake_port,
@@ -1193,7 +1397,13 @@ class KVCacheRecvingThread(threading.Thread):
             remote_spec_method=remote_spec_method,
             remote_engine_id=remote_engine_id,
             remote_handshake_port=remote_handshake_port,
+            local_block_scales=block_scale_arr if has_local_scales else None,
+            remote_block_scales=remote_block_scales or None,
+            remote_block_strides=remote_block_strides or None,
         )
+        if not block_scale_arr:
+            block_scale_arr = [1] * len(local_addrs)
+        remote_block_stride_arr = remote_block_strides if remote_block_strides else block_stride_arr
         if len(local_block_ids) != self.hma_group_size or len(remote_block_ids) != self.hma_group_size:
             raise ValueError(
                 f"Mooncake KV cache group count mismatch for request {remote_request_id}: "
@@ -1204,7 +1414,9 @@ class KVCacheRecvingThread(threading.Thread):
 
         kv_groups = getattr(getattr(self, "kv_cache_config", None), "kv_cache_groups", None) or ()
         req_start_time = time.perf_counter()
-        src_list, dst_list, length_list = [], [], []
+        src_list: list[int] = []
+        dst_list: list[int] = []
+        length_list: list[int] = []
         for i in range(self.hma_group_size):
             if not remote_block_ids[i] or not local_block_ids[i]:
                 continue
@@ -1220,23 +1432,24 @@ class KVCacheRecvingThread(threading.Thread):
                 group_idx=i,
                 group_layers=group_layers,
             )
-            grouped_remote_block_ids, grouped_local_block_ids = group_concurrent_contiguous(
-                cur_remote_block_ids, cur_local_block_ids
-            )
             for k, (src_layer_base_addr, dst_layer_base_addr) in enumerate(
                 zip(local_addrs, remote_kv_caches_base_addrs, strict=True)
             ):
                 if addr_group_arr and i not in addr_group_arr[k]:
                     continue
-                block_len = block_len_arr[k]
-                block_stride = block_stride_arr[k]
-                for remote_block_id, local_block_id in zip(grouped_remote_block_ids, grouped_local_block_ids):
-                    src = src_layer_base_addr + local_block_id[0] * block_stride
-                    dst = dst_layer_base_addr + remote_block_id[0] * block_stride
-                    length = block_len * len(local_block_id)
-                    src_list.append(src)
-                    dst_list.append(dst)
-                    length_list.append(length)
+                _append_entry_block_transfers(
+                    src_list,
+                    dst_list,
+                    length_list,
+                    local_base_addr=src_layer_base_addr,
+                    remote_base_addr=dst_layer_base_addr,
+                    local_block_ids=cur_local_block_ids,
+                    remote_block_ids=cur_remote_block_ids,
+                    block_len=block_len_arr[k],
+                    local_block_stride=block_stride_arr[k],
+                    remote_block_stride=remote_block_stride_arr[k],
+                    block_scale=block_scale_arr[k],
+                )
 
         ret = self.engine.batch_transfer_sync_read(session_id, src_list, dst_list, length_list)
         if ret < 0:
@@ -1565,6 +1778,9 @@ class KVCacheRecvingThread(threading.Thread):
             remote_spec_method=agent_meta.spec_method,
             remote_engine_id=agent_meta.engine_id,
             remote_handshake_port=remote_handshake_port,
+            local_block_scales=(getattr(self, "block_scale_per_addr", None) or None) if self.use_hybrid else None,
+            remote_block_scales=(agent_meta.block_scales or None) if self.use_hybrid else None,
+            remote_block_strides=(agent_meta.block_strides or None) if self.use_hybrid else None,
         )
 
     def _get_remote_metadata(self, remote_host: str, remote_handshake_port: int) -> None:
@@ -1589,6 +1805,10 @@ class KVCacheRecvingThread(threading.Thread):
                     self.remote_entry_layer_names[engine_id][remote_handshake_port] = agent_meta.entry_layer_names
                 if hasattr(self, "remote_spec_method"):
                     self.remote_spec_method[engine_id][remote_handshake_port] = agent_meta.spec_method
+                if hasattr(self, "remote_block_strides"):
+                    self.remote_block_strides[engine_id][remote_handshake_port] = agent_meta.block_strides
+                if hasattr(self, "remote_block_scales"):
+                    self.remote_block_scales[engine_id][remote_handshake_port] = agent_meta.block_scales
         except Exception:
             if isinstance(sock, zmq.Socket):  # type: ignore
                 sock.close()
@@ -2341,6 +2561,7 @@ class MooncakeConnectorWorker:
         self.kv_caches_base_addr = []
         self.block_len_per_addr: list[int] = []
         self.block_stride_per_addr: list[int] = []
+        self.block_scale_per_addr: list[int] = []
         self.addr_group_idx: list[list[int]] = []
         self.entry_layer_names: list[list[str]] = []
         ptrs = []
@@ -2361,29 +2582,14 @@ class MooncakeConnectorWorker:
                     ptrs.append(single_kv_cache.data_ptr())
                     lengths.append(single_kv_cache.element_size() * math.prod(single_kv_cache.shape))
         elif self.use_mamba:
-            addr_to_entry_idx: dict[int, int] = {}
-            for kv_cache_tensor in self.kv_cache_config.kv_cache_tensors:
-                for layer_name in get_kv_cache_tensor_layers(kv_cache_tensor):
-                    kv_cache_tuple = kv_caches[layer_name]
-                    if isinstance(kv_cache_tuple, (list, tuple)) is False:
-                        kv_cache_tuple = [kv_cache_tuple]
-                    for single_kv_cache in kv_cache_tuple:
-                        data_ptr = single_kv_cache.data_ptr()
-                        existing_idx = addr_to_entry_idx.get(data_ptr)
-                        if existing_idx is not None:
-                            if layer_name not in self.entry_layer_names[existing_idx]:
-                                self.entry_layer_names[existing_idx].append(layer_name)
-                            continue
-                        tensor_num_blocks = single_kv_cache.shape[0]
-                        block_size_scale = tensor_num_blocks // self.num_blocks
-                        block_shape = single_kv_cache.shape[1:]
-                        self.block_len_per_addr.append(
-                            single_kv_cache.element_size() * math.prod(block_shape) * block_size_scale
-                        )
-                        addr_to_entry_idx[data_ptr] = len(self.kv_caches_base_addr)
-                        self.kv_caches_base_addr.append(data_ptr)
-                        self.entry_layer_names.append([layer_name])
-            self.block_stride_per_addr.extend(self.block_len_per_addr)
+            (
+                self.kv_caches_base_addr,
+                self.block_len_per_addr,
+                self.block_stride_per_addr,
+                self.block_scale_per_addr,
+                self.entry_layer_names,
+                self.addr_group_idx,
+            ) = _collect_mamba_hybrid_kv_entries(self.kv_cache_config, kv_caches, self.num_blocks)
         elif self.use_compress:
             layer_group_idx = dict[str, int]()
             for i, group in enumerate(self.kv_cache_config.kv_cache_groups):
@@ -2418,6 +2624,7 @@ class MooncakeConnectorWorker:
                 self.addr_group_idx.append(sorted(page_groups))
                 self.block_stride_per_addr.append(shared_page.block_stride)
                 self.block_len_per_addr.append(shared_page.block_stride)
+                self.block_scale_per_addr.append(1)
         else:
             raise TypeError("Mooncake connector does not support this type kv_cache now.")
 
@@ -2440,6 +2647,8 @@ class MooncakeConnectorWorker:
             local_ip=get_ip(),
             entry_layer_names=self.entry_layer_names,
             spec_method=_get_spec_method(self.vllm_config),
+            block_strides=self.block_stride_per_addr,
+            block_scales=self.block_scale_per_addr,
         )
         self.xfer_handshake_metadata = metadata
 
@@ -2481,6 +2690,7 @@ class MooncakeConnectorWorker:
                 self.kv_caches,
                 self._prefill_pp_layer_partition,
                 self.entry_layer_names,
+                block_scale_per_addr=self.block_scale_per_addr,
             )
             self.kv_recv_thread.start()
 
