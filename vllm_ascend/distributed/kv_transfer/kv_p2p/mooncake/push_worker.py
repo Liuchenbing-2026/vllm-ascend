@@ -36,9 +36,13 @@ from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.metadata import (
     PushSendReqMeta,
 )
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
+    MooncakePeerLostError,
     SizedDict,
+    close_zmq_socket,
     ensure_zmq_recv,
     ensure_zmq_send,
+    lost_peer_monitor,
+    make_mooncake_client_socket,
     worker_rank_to_dcp_rank,
     zmq_ctx,
 )
@@ -223,6 +227,7 @@ class MooncakePushConnectorWorker(MooncakeBaseConnectorWorker):
             self._shared_layer_indices = {
                 name: stage_indices[layout.cache_layer_indices[name]] for name in layout.reused_cache_names
             }
+        self._remote_metadata_lock = threading.Lock()
         self._remote_metadata: SizedDict = SizedDict(max_size=128)
         self._sender_executor: ThreadPoolExecutor | None = None
         self._zmq_context: Context | None = None
@@ -352,29 +357,70 @@ class MooncakePushConnectorWorker(MooncakeBaseConnectorWorker):
                 # Otherwise wait for all P ranks or the receive timeout.
                 # Mark failure before consuming queued DONEs.
 
+    def _get_remote_metadata_lock(self) -> threading.Lock:
+        lock = getattr(self, "_remote_metadata_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._remote_metadata_lock = lock
+        return lock
+
+    def _invalidate_remote_metadata(self, consumer_engine_id: str | None, scheduler_address: str | None) -> None:
+        """Evict cached remote metadata futures for a lost or failed D peer."""
+        remote_metadata = getattr(self, "_remote_metadata", None)
+        if remote_metadata is None:
+            return
+        with self._get_remote_metadata_lock():
+            if consumer_engine_id is not None and scheduler_address is not None:
+                remote_metadata.pop((consumer_engine_id, scheduler_address), None)
+            elif consumer_engine_id is not None or scheduler_address is not None:
+                for key in list(remote_metadata):
+                    if (consumer_engine_id is not None and key[0] == consumer_engine_id) or (
+                        scheduler_address is not None and key[1] == scheduler_address
+                    ):
+                        remote_metadata.pop(key, None)
+
     def _get_remote_metadata(self, params: dict[str, Any]) -> MooncakeTransferMetadataGroups:
         path = params["scheduler_address"]
-        sock = make_zmq_socket(self._zmq_context, path, SocketType.REQ, bind=False)
+        sock = make_mooncake_client_socket(
+            self._zmq_context,
+            path,
+            SocketType.REQ,
+            linger=0,
+            make_socket_fn=make_zmq_socket,
+        )
         try:
             timeout = max(1, int(envs.VLLM_MOONCAKE_CONNECTOR_TIMEOUT * 1000))
             sock.setsockopt(SocketOption.SNDTIMEO, timeout)
             sock.setsockopt(SocketOption.RCVTIMEO, timeout)
-            ensure_zmq_send(sock, msgspec.msgpack.encode((b"get_meta_msg", params["consumer_engine_id"])), path)
-            metadata = msgspec.msgpack.decode(ensure_zmq_recv(sock, path), type=MooncakeTransferMetadataGroups)
+            with lost_peer_monitor(sock) as monitor:
+                ensure_zmq_send(sock, msgspec.msgpack.encode((b"get_meta_msg", params["consumer_engine_id"])), path)
+                metadata = msgspec.msgpack.decode(
+                    ensure_zmq_recv(sock, path, monitor=monitor, detect_peer_lost=True),
+                    type=MooncakeTransferMetadataGroups,
+                )
+            if metadata.engine_id != params["consumer_engine_id"]:
+                raise ValueError("Push requires matching D engine metadata")
+            if metadata.use_kv_pp:
+                raise ValueError("Push requires KVPP to be disabled on the decode node")
+            return metadata
+        except Exception:
+            self._invalidate_remote_metadata(params.get("consumer_engine_id"), path)
+            raise
         finally:
-            sock.close(linger=0)
-        if metadata.engine_id != params["consumer_engine_id"]:
-            raise ValueError("Push requires matching D engine metadata")
-        if metadata.use_kv_pp:
-            raise ValueError("Push requires KVPP to be disabled on the decode node")
-        return metadata
+            close_zmq_socket(sock)
 
     def _send_done(self, params: dict[str, Any], error: str | None) -> bool:
         """A failed callback never retries the request or retains P source blocks."""
         path = params["completion_address"]
         sock = None
         try:
-            sock = make_zmq_socket(self._zmq_context, path, SocketType.REQ, bind=False)
+            sock = make_mooncake_client_socket(
+                self._zmq_context,
+                path,
+                SocketType.REQ,
+                linger=0,
+                make_socket_fn=make_zmq_socket,
+            )
             timeout = max(1, int(envs.VLLM_MOONCAKE_CONNECTOR_TIMEOUT * 1000))
             sock.setsockopt(SocketOption.SNDTIMEO, timeout)
             sock.setsockopt(SocketOption.RCVTIMEO, timeout)
@@ -395,18 +441,23 @@ class MooncakePushConnectorWorker(MooncakeBaseConnectorWorker):
             )
             if error:
                 message["error"] = error
-            ensure_zmq_send(sock, msgspec.msgpack.encode(message), path)
-            reply = msgspec.msgpack.decode(ensure_zmq_recv(sock, path))
+            with lost_peer_monitor(sock) as monitor:
+                ensure_zmq_send(sock, msgspec.msgpack.encode(message), path)
+                reply = msgspec.msgpack.decode(ensure_zmq_recv(sock, path, monitor=monitor, detect_peer_lost=True))
             if reply != {"kind": "done_ack", "request_id": params["request_id"]}:
                 raise ValueError("Invalid DONE ACK")
             return True
+        except MooncakePeerLostError as exc:
+            self._invalidate_remote_metadata(params.get("consumer_engine_id"), params.get("scheduler_address"))
+            logger.warning("Push completion aborted on lost D peer for %s at %s: %s", params["request_id"], path, exc)
+            return False
         except Exception:
             # D may have died. Its receive timeout handles a missing DONE.
+            self._invalidate_remote_metadata(params.get("consumer_engine_id"), params.get("scheduler_address"))
             logger.exception("Failed to notify Push completion for %s at %s", params["request_id"], path)
             return False
         finally:
-            if sock is not None:
-                sock.close(linger=0)
+            close_zmq_socket(sock)
 
     def _prepare_destinations(self, state: SendReqInfo, request: PushSendReqMeta) -> None:
         path = make_zmq_path("tcp", request.remote_host, request.remote_port)
@@ -421,14 +472,15 @@ class MooncakePushConnectorWorker(MooncakeBaseConnectorWorker):
             num_external_tokens=request.remote_num_external_tokens,
         )
         key = (request.remote_engine_id, path)
-        future = self._remote_metadata.get(key)
-        if future is not None and future.done() and (future.cancelled() or future.exception() is not None):
-            # Retry discovery for new requests after a transient D failure.
-            future = None
-        if future is None:
-            assert self._sender_executor is not None
-            future = self._sender_executor.submit(self._get_remote_metadata, params)
-            self._remote_metadata[key] = future
+        with self._get_remote_metadata_lock():
+            future = self._remote_metadata.get(key)
+            if future is not None and future.done() and (future.cancelled() or future.exception() is not None):
+                # Retry discovery for new requests after a transient D failure.
+                future = None
+            if future is None:
+                assert self._sender_executor is not None
+                future = self._sender_executor.submit(self._get_remote_metadata, params)
+                self._remote_metadata[key] = future
         state.consumer_engine_id = request.remote_engine_id
         for pp, pcp, tp, address in request.remote_worker_addresses:
             rank = (pp, pcp, tp)

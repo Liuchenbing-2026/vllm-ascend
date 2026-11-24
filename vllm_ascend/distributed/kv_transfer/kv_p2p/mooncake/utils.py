@@ -11,7 +11,7 @@ import struct
 import threading
 import time
 import unittest.mock
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict, deque
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -25,7 +25,7 @@ import torch
 import zmq
 from vllm import envs
 from vllm.logger import logger
-from vllm.utils.network_utils import make_zmq_socket
+from vllm.utils.network_utils import make_zmq_path, make_zmq_socket
 
 from vllm_ascend.distributed.kv_transfer.utils.utils import (
     RegisterRegions,
@@ -734,9 +734,311 @@ def ensure_zmq_recv(
     return _recv_with_retries(socket, path, max_retries, monitor=None, timeout_ms=timeout_ms)
 
 
+class MooncakeRemotePeerMixin:
+    """Shared ZMQ client socket pool and remote metadata invalidation helpers."""
+
+    remote_sockets: dict[str, deque[Any]]
+    remote_sockets_lock: threading.Lock
+    remote_metadata_lock: threading.Lock
+    _remote_metadata_map_attrs: tuple[str, ...] = ()
+
+    @staticmethod
+    def _close_socket(sock: Any, *, poller: Any | None = None) -> None:
+        if sock is None:
+            return
+        if poller is not None and not isinstance(sock, unittest.mock.NonCallableMock):
+            with contextlib.suppress(KeyError, zmq.ZMQError):  # type: ignore[attr-defined]
+                poller.unregister(sock)
+        if isinstance(sock, unittest.mock.NonCallableMock):
+            sock.close()
+        else:
+            close_zmq_socket(sock)
+
+    def _get_remote_sockets_lock(self) -> threading.Lock:
+        lock = getattr(self, "remote_sockets_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self.remote_sockets_lock = lock
+        return lock
+
+    def _get_remote_sockets_map(self) -> dict[str, deque[Any]]:
+        sockets: dict[str, deque[Any]] | None = getattr(self, "remote_sockets", None)
+        if sockets is None:
+            sockets = defaultdict(deque)
+            self.remote_sockets = sockets
+        return sockets
+
+    def _get_zmq_context(self, context_factory: Any = None) -> Any:
+        ctx = getattr(self, "_zmq_context", None)
+        if ctx is None:
+            factory = zmq.Context if context_factory is None else context_factory  # type: ignore[attr-defined]
+            ctx = factory()
+            self._zmq_context = ctx
+        return ctx
+
+    def _borrow_remote_socket(
+        self,
+        remote_host: str,
+        remote_handshake_port: int,
+        *,
+        timeout_ms: int,
+        context_factory: Any = None,
+        client_socket_fn: Any = None,
+        make_socket_fn: Any = make_zmq_socket,
+        heartbeat_ivl_ms: int | None | _DefaultOption = _DefaultOption.UNSET,
+        heartbeat_timeout_ms: int | None | _DefaultOption = _DefaultOption.UNSET,
+        register_poller: Any | None = None,
+    ) -> Any:
+        """Borrow a pooled REQ socket or open one with pre-connect options."""
+        remote_path = make_zmq_path("tcp", remote_host, remote_handshake_port)
+        with self._get_remote_sockets_lock():
+            sockets = self._get_remote_sockets_map()
+            if sockets[remote_path]:
+                return sockets[remote_path].popleft()
+
+            ctx = self._get_zmq_context(context_factory=context_factory)
+            socket_builder = make_mooncake_client_socket if client_socket_fn is None else client_socket_fn
+            sock = socket_builder(
+                ctx,
+                remote_path,
+                zmq.REQ,  # type: ignore[attr-defined]
+                linger=0,
+                heartbeat_ivl_ms=heartbeat_ivl_ms,
+                heartbeat_timeout_ms=heartbeat_timeout_ms,
+                make_socket_fn=make_socket_fn,
+            )
+            sock.setsockopt(zmq.SNDTIMEO, timeout_ms)  # type: ignore[attr-defined]
+            sock.setsockopt(zmq.RCVTIMEO, timeout_ms)  # type: ignore[attr-defined]
+            if register_poller is not None:
+                register_poller.register(sock, zmq.POLLIN)  # type: ignore[attr-defined]
+            return sock
+
+    def _return_remote_socket(
+        self,
+        sock: Any,
+        remote_host: str,
+        remote_handshake_port: int,
+    ) -> None:
+        """Return a healthy client socket to the endpoint pool."""
+        remote_path = make_zmq_path("tcp", remote_host, remote_handshake_port)
+        with self._get_remote_sockets_lock():
+            self._get_remote_sockets_map()[remote_path].append(sock)
+
+    def _discard_remote_sockets(
+        self,
+        remote_host: str,
+        remote_handshake_port: int,
+        *,
+        poller: Any | None = None,
+    ) -> None:
+        """Close and drop pooled REQ sockets for a lost remote peer."""
+        remote_path = make_zmq_path("tcp", remote_host, remote_handshake_port)
+        with self._get_remote_sockets_lock():
+            sockets = self._get_remote_sockets_map().pop(remote_path, None)
+        if not sockets:
+            return
+        target_poller = getattr(self, "remote_poller", None) if poller is None else poller
+        for sock in sockets:
+            self._close_socket(sock, poller=target_poller)
+
+    def _get_remote_metadata_lock(self) -> threading.Lock:
+        lock = getattr(self, "remote_metadata_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self.remote_metadata_lock = lock
+        return lock
+
+    def _get_remote_endpoint_engine_ids(self) -> defaultdict[tuple[str, int], set[str]]:
+        endpoint_map = getattr(self, "_remote_endpoint_engine_ids", None)
+        if endpoint_map is None:
+            endpoint_map = defaultdict(set)
+            self._remote_endpoint_engine_ids = endpoint_map
+        return endpoint_map
+
+    def _record_remote_endpoint_engine_id(
+        self,
+        remote_host: str,
+        remote_handshake_port: int,
+        engine_id: str,
+    ) -> None:
+        self._get_remote_endpoint_engine_ids()[(remote_host, remote_handshake_port)].add(engine_id)
+
+    def _get_remote_metadata_maps(self) -> tuple[dict[str, dict[int, Any]], ...]:
+        return tuple(
+            cache_map
+            for attr in self._remote_metadata_map_attrs
+            if isinstance((cache_map := getattr(self, attr, None)), dict)
+        )
+
+    def _get_local_engine_id_for_invalidation(self) -> str | None:
+        local_id = getattr(self, "local_engine_id", None)
+        if isinstance(local_id, str) and local_id.strip():
+            return local_id
+        engine_id = getattr(self, "engine_id", None)
+        return engine_id if isinstance(engine_id, str) else None
+
+    def _collect_invalidation_engine_ids(
+        self,
+        metadata_maps: tuple[dict[str, dict[int, Any]], ...],
+        remote_engine_id: str | None,
+        remote_host: str | None,
+        remote_handshake_port: int | None,
+    ) -> set[str]:
+        local_engine_id = self._get_local_engine_id_for_invalidation()
+        endpoint_map = self._get_remote_endpoint_engine_ids()
+        engine_ids: set[str] = set()
+        if remote_engine_id is not None and remote_engine_id != local_engine_id:
+            engine_ids.add(remote_engine_id)
+        if remote_host is not None and remote_handshake_port is not None:
+            for eid in endpoint_map.pop((remote_host, remote_handshake_port), ()):
+                if eid != local_engine_id:
+                    engine_ids.add(eid)
+        if not engine_ids and remote_engine_id is None and remote_handshake_port is not None:
+            other_host_eids: set[str] = (
+                {
+                    eid
+                    for (host, port), eids in endpoint_map.items()
+                    if port == remote_handshake_port and host != remote_host
+                    for eid in eids
+                }
+                if remote_host is not None
+                else set()
+            )
+            for cache_map in metadata_maps:
+                for engine_id, ports in list(cache_map.items()):
+                    if (
+                        engine_id != local_engine_id
+                        and engine_id not in other_host_eids
+                        and remote_handshake_port in ports
+                    ):
+                        engine_ids.add(engine_id)
+        return engine_ids
+
+    def _invalidate_remote_metadata(
+        self,
+        remote_engine_id: str | None = None,
+        *,
+        remote_host: str | None = None,
+        remote_handshake_port: int | None = None,
+    ) -> None:
+        """Evict cached remote metadata for a lost or restarted producer."""
+        metadata_maps = self._get_remote_metadata_maps()
+        with self._get_remote_metadata_lock():
+            endpoint_map = self._get_remote_endpoint_engine_ids()
+            engine_ids = self._collect_invalidation_engine_ids(
+                metadata_maps, remote_engine_id, remote_host, remote_handshake_port
+            )
+            for engine_id in engine_ids:
+                for cache_map in metadata_maps:
+                    cache_map.pop(engine_id, None)
+                for endpoint, eids in list(endpoint_map.items()):
+                    eids.discard(engine_id)
+                    if not eids:
+                        endpoint_map.pop(endpoint, None)
+
+    def _handle_remote_zmq_error(
+        self,
+        sock: Any,
+        remote_host: str,
+        remote_handshake_port: int,
+        *,
+        peer_lost: bool,
+        poller: Any | None = None,
+    ) -> Any:
+        """Close the failed socket, flush its endpoint pool, and evict metadata."""
+        target_poller = getattr(self, "remote_poller", None) if poller is None else poller
+        if peer_lost:
+            if sock is not None:
+                self._close_socket(sock, poller=target_poller)
+                sock = None
+            self._discard_remote_sockets(remote_host, remote_handshake_port, poller=target_poller)
+        elif isinstance(sock, zmq.Socket):  # type: ignore[attr-defined]
+            self._close_socket(sock, poller=target_poller)
+            sock = None
+            self._discard_remote_sockets(remote_host, remote_handshake_port, poller=target_poller)
+        elif sock is None:
+            self._discard_remote_sockets(remote_host, remote_handshake_port, poller=target_poller)
+        self._invalidate_remote_metadata(
+            remote_host=remote_host,
+            remote_handshake_port=remote_handshake_port,
+        )
+        return sock
+
+
+class MooncakeRecvFailureTrackingMixin(MooncakeRemotePeerMixin):
+    """Shared request failure, lost-peer isolation, and block eviction tracking."""
+
+    failed_recv_requests_lock: threading.Lock
+    failed_recv_requests: set[str]
+    peer_lost_requests: set[tuple[str, str]]
+    invalid_block_ids: set[int]
+    use_request_level_recv_errors: bool
+
+    def _ensure_failure_tracking(self) -> None:
+        if not hasattr(self, "failed_recv_requests_lock"):
+            self.failed_recv_requests_lock = threading.Lock()
+        if not hasattr(self, "failed_recv_requests"):
+            self.failed_recv_requests = set()
+        if not hasattr(self, "peer_lost_requests"):
+            self.peer_lost_requests = set()
+        if not hasattr(self, "invalid_block_ids"):
+            self.invalid_block_ids = set()
+        if not hasattr(self, "use_request_level_recv_errors"):
+            kv_groups = getattr(getattr(self, "kv_cache_config", None), "kv_cache_groups", ())
+            self.use_request_level_recv_errors = bool(getattr(self, "use_hybrid", False)) or len(kv_groups) > 1
+
+    def get_and_clear_invalid_block_ids(self) -> set[int]:
+        """Get and clear block ids that failed to load."""
+        self._ensure_failure_tracking()
+        with self.failed_recv_requests_lock:
+            invalid_block_ids = self.invalid_block_ids
+            self.invalid_block_ids = set()
+        return invalid_block_ids
+
+    def _is_failed_recv_request(self, request_id: str) -> bool:
+        self._ensure_failure_tracking()
+        with self.failed_recv_requests_lock:
+            return request_id in self.failed_recv_requests
+
+    def get_and_clear_failed_recv_requests(self, finished_req_ids: set[str]) -> set[str]:
+        """Retain failures until every local pull for the request has finished."""
+        self._ensure_failure_tracking()
+        with self.failed_recv_requests_lock:
+            failed_req_ids = self.failed_recv_requests & finished_req_ids
+            self.failed_recv_requests.difference_update(failed_req_ids)
+            for key in [item for item in self.peer_lost_requests if item[0] in finished_req_ids]:
+                self.peer_lost_requests.discard(key)
+        return failed_req_ids if self.use_request_level_recv_errors else set()
+
+    def _mark_failed_recv_request(self, request_id: str, local_block_ids: Any) -> None:
+        self._ensure_failure_tracking()
+        with self.failed_recv_requests_lock:
+            self.failed_recv_requests.add(request_id)
+            if not self.use_request_level_recv_errors and local_block_ids:
+                self.invalid_block_ids.update(local_block_ids[0])
+
+    def _mark_peer_lost_request(self, request_id: str, remote_host: str) -> None:
+        self._ensure_failure_tracking()
+        with self.failed_recv_requests_lock:
+            self.peer_lost_requests.add((request_id, remote_host))
+
+    def _is_peer_lost_request(self, request_id: str, remote_host: str) -> bool:
+        self._ensure_failure_tracking()
+        with self.failed_recv_requests_lock:
+            return (request_id, remote_host) in self.peer_lost_requests
+
+    def _clear_peer_lost_request(self, request_id: str) -> None:
+        self._ensure_failure_tracking()
+        with self.failed_recv_requests_lock:
+            for key in [item for item in self.peer_lost_requests if item[0] == request_id]:
+                self.peer_lost_requests.discard(key)
+
+
 __all__ = [
     "DEFAULT_PULL_ZMQ_TIMEOUT_MS",
     "MooncakePeerLostError",
+    "MooncakeRecvFailureTrackingMixin",
+    "MooncakeRemotePeerMixin",
     "PULL_HEARTBEAT_IVL_MS",
     "PULL_HEARTBEAT_TIMEOUT_MS",
     "PULL_LOST_PEER_EVENTS",

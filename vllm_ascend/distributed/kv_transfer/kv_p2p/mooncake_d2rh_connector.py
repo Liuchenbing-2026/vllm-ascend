@@ -28,6 +28,15 @@ from vllm.v1.core import kv_cache_utils
 from vllm.v1.kv_cache_interface import KVCacheConfig, MambaSpec
 
 from vllm_ascend.core.kv_cache_interface import AscendMLAAttentionSpec, AscendSlidingWindowMLASpec
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
+    MooncakePeerLostError,
+    MooncakeRemotePeerMixin,
+    lost_peer_monitor,
+    make_mooncake_client_socket,
+)
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
+    ensure_zmq_recv as _shared_ensure_zmq_recv,
+)
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_connector import (
     GroupPull,
     GroupTransferInfo,
@@ -293,7 +302,17 @@ def ensure_zmq_recv(
     path: str,
     timeout: float = 1.0,
     max_retries: int = 3,
+    *,
+    monitor: Any | None = None,
 ) -> bytes:
+    if monitor is not None:
+        return _shared_ensure_zmq_recv(
+            socket,
+            path,
+            max_retries=max_retries,
+            monitor=monitor,
+            timeout_ms=max(1, int(timeout * 1000)),
+        )
     retries_left = max_retries
     while True:
         try:
@@ -724,7 +743,7 @@ class D2RHCPUCacheManager:
             )
 
 
-class D2RHThread(threading.Thread):
+class D2RHThread(threading.Thread, MooncakeRemotePeerMixin):
     def __init__(
         self,
         cpu_kv_caches_base_addr: list[list[int]],
@@ -1042,11 +1061,11 @@ class D2RHThread(threading.Thread):
                 remote_multi_nodes_meta_mapping,
             )
             with self.remote_metadata_lock:
-                if (
-                    engine_id not in self.kv_caches_base_addr
-                    or handshake_port not in self.kv_caches_base_addr[engine_id]
-                ):
-                    self._get_remote_metadata(host, handshake_port)
+                has_remote_metadata = (
+                    engine_id in self.kv_caches_base_addr and handshake_port in self.kv_caches_base_addr[engine_id]
+                )
+            if not has_remote_metadata:
+                self._get_remote_metadata(host, handshake_port)
             remote_groups = self.remote_kv_group2layeridx[engine_id][handshake_port]
             remote_names = build_layer_name_to_metadata_idx(remote_groups)
             remote_slots = build_layer_name_to_cache_slots(remote_groups)
@@ -1084,11 +1103,12 @@ class D2RHThread(threading.Thread):
                 remote_multi_nodes_meta_mapping,
             )
             with self.remote_metadata_lock:
-                if (
-                    port_engine_id not in self.kv_caches_base_addr
-                    or remote_handshake_port not in self.kv_caches_base_addr[port_engine_id]
-                ):
-                    self._get_remote_metadata(port_host, remote_handshake_port)
+                has_port_metadata = (
+                    port_engine_id in self.kv_caches_base_addr
+                    and remote_handshake_port in self.kv_caches_base_addr[port_engine_id]
+                )
+            if not has_port_metadata:
+                self._get_remote_metadata(port_host, remote_handshake_port)
 
             remote_base_addrs = self.kv_caches_base_addr[port_engine_id][remote_handshake_port]
             remote_cache_slots = build_layer_name_to_cache_slots(
@@ -1229,6 +1249,11 @@ class D2RHThread(threading.Thread):
                     sum(length_list),
                 )
                 if ret < 0:
+                    self._invalidate_remote_metadata(
+                        port_engine_id,
+                        remote_host=port_host,
+                        remote_handshake_port=remote_handshake_port,
+                    )
                     raise RuntimeError(f"D2RH hop1 transfer failed, ret: {ret}")
             self._send_done_recv_signal(
                 remote_request_id,
@@ -1237,6 +1262,14 @@ class D2RHThread(threading.Thread):
                 remote_port_send_num,
             )
 
+    _remote_metadata_map_attrs: tuple[str, ...] = (
+        "kv_caches_base_addr",
+        "remote_te_port",
+        "remote_block_size_scale",
+        "remote_block_stride_per_addr",
+        "remote_kv_group2layeridx",
+    )
+
     def _get_remote_metadata(self, remote_host: str, remote_handshake_port: int) -> None:
         sock: zmq.Socket | None = None  # type: ignore[name-defined]
         try:
@@ -1244,11 +1277,23 @@ class D2RHThread(threading.Thread):
             ensure_zmq_send(sock, self.encoder.encode((GET_META_MSG, "")), f"{remote_host}:{remote_handshake_port}")
             metadata_bytes = self._recv_from_socket(sock, f"{remote_host}:{remote_handshake_port}")
             agent_meta = self.decoder.decode(metadata_bytes)
-            self.kv_caches_base_addr[agent_meta.engine_id][remote_handshake_port] = agent_meta.kv_caches_base_addr
-            self.remote_te_port[agent_meta.engine_id][remote_handshake_port] = agent_meta.te_rpc_port
-            self.remote_block_size_scale[agent_meta.engine_id][remote_handshake_port] = agent_meta.block_size_scale
-            self.remote_block_stride_per_addr[agent_meta.engine_id][remote_handshake_port] = agent_meta.block_strides
-            self.remote_kv_group2layeridx[agent_meta.engine_id][remote_handshake_port] = agent_meta.kv_group2layeridx
+            with self._get_remote_metadata_lock():
+                self._record_remote_endpoint_engine_id(remote_host, remote_handshake_port, agent_meta.engine_id)
+                self.kv_caches_base_addr[agent_meta.engine_id][remote_handshake_port] = agent_meta.kv_caches_base_addr
+                self.remote_te_port[agent_meta.engine_id][remote_handshake_port] = agent_meta.te_rpc_port
+                self.remote_block_size_scale[agent_meta.engine_id][remote_handshake_port] = agent_meta.block_size_scale
+                self.remote_block_stride_per_addr[agent_meta.engine_id][remote_handshake_port] = (
+                    agent_meta.block_strides
+                )
+                self.remote_kv_group2layeridx[agent_meta.engine_id][remote_handshake_port] = (
+                    agent_meta.kv_group2layeridx
+                )
+        except MooncakePeerLostError:
+            sock = self._handle_remote_zmq_error(sock, remote_host, remote_handshake_port, peer_lost=True)
+            raise
+        except Exception:
+            sock = self._handle_remote_zmq_error(sock, remote_host, remote_handshake_port, peer_lost=False)
+            raise
         finally:
             if sock is not None:
                 self._return_remote_socket(sock, remote_host, remote_handshake_port)
@@ -1272,6 +1317,12 @@ class D2RHThread(threading.Thread):
             resp = self._recv_from_socket(sock, remote_path)
             if resp != b"ACK":
                 raise RuntimeError(f"Failed to receive ACK, resp: {resp.decode('utf-8')}")
+        except MooncakePeerLostError:
+            sock = self._handle_remote_zmq_error(sock, remote_host, remote_handshake_port, peer_lost=True)
+            raise
+        except Exception:
+            sock = self._handle_remote_zmq_error(sock, remote_host, remote_handshake_port, peer_lost=False)
+            raise
         finally:
             if sock is not None:
                 self._return_remote_socket(sock, remote_host, remote_handshake_port)
@@ -1285,39 +1336,43 @@ class D2RHThread(threading.Thread):
             resp = self._recv_from_socket(sock, scheduler_path)
             if resp != b"ACK":
                 raise RuntimeError(f"Failed to receive ACK, resp: {resp.decode('utf-8')}")
+        except Exception:
+            if sock is not None:
+                self._close_socket(sock)
+                sock = None
+            self._discard_remote_sockets(self.host_ip, self.scheduler_ready_port)
+            raise
         finally:
             if sock is not None:
                 self._return_remote_socket(sock, self.host_ip, self.scheduler_ready_port)
 
     def _get_remote_socket(self, remote_host: str, remote_handshake_port: int) -> zmq.Socket:  # type: ignore[name-defined]
-        remote_path = make_zmq_path("tcp", remote_host, remote_handshake_port)
-        with self.remote_sockets_lock:
-            if self.remote_sockets[remote_path]:
-                return self.remote_sockets[remote_path].popleft()
-            ctx = zmq.Context()  # type: ignore
-            sock = make_zmq_socket(ctx=ctx, path=remote_path, socket_type=zmq.REQ, bind=False)  # type: ignore
-            sock.setsockopt(zmq.SNDTIMEO, int(self.timeout * 1000))  # type: ignore
-            return sock
+        return self._borrow_remote_socket(
+            remote_host,
+            remote_handshake_port,
+            timeout_ms=max(1, int(self.timeout * 1000)),
+            context_factory=zmq.Context,  # type: ignore[attr-defined]
+            client_socket_fn=make_mooncake_client_socket,
+            make_socket_fn=make_zmq_socket,
+        )
 
     def _recv_from_socket(self, sock: zmq.Socket, path: str) -> bytes:  # type: ignore[name-defined]
-        # zmq.Poller is not thread-safe. A request owns its checked-out REQ
-        # socket, so a short-lived poller makes parallel hop-1 workers safe.
-        poller = zmq.Poller()  # type: ignore
-        poller.register(sock, zmq.POLLIN)  # type: ignore
-        try:
-            return ensure_zmq_recv(sock, poller, path, timeout=self.timeout)
-        finally:
-            poller.unregister(sock)
-
-    def _return_remote_socket(
-        self,
-        sock: zmq.Socket,  # type: ignore[name-defined]
-        remote_host: str,
-        remote_handshake_port: int,
-    ) -> None:
-        remote_path = make_zmq_path("tcp", remote_host, remote_handshake_port)
-        with self.remote_sockets_lock:
-            self.remote_sockets[remote_path].append(sock)
+        with lost_peer_monitor(sock) as monitor:
+            if monitor is not None:
+                return _shared_ensure_zmq_recv(
+                    sock,
+                    path,
+                    monitor=monitor,
+                    timeout_ms=max(1, int(self.timeout * 1000)),
+                )
+            # zmq.Poller is not thread-safe. A request owns its checked-out REQ
+            # socket, so a short-lived poller makes parallel hop-1 workers safe.
+            poller = zmq.Poller()  # type: ignore
+            poller.register(sock, zmq.POLLIN)  # type: ignore
+            try:
+                return ensure_zmq_recv(sock, poller, path, timeout=self.timeout)
+            finally:
+                poller.unregister(sock)
 
 
 class KVCacheRecvingThread(BaseKVCacheRecvingThread):
@@ -1736,7 +1791,7 @@ class KVCacheRecvingThread(BaseKVCacheRecvingThread):
         return completed
 
 
-class MooncakeConnectorScheduler(BaseMooncakeConnectorScheduler):
+class MooncakeConnectorScheduler(BaseMooncakeConnectorScheduler, MooncakeRemotePeerMixin):
     def __init__(self, vllm_config: VllmConfig, engine_id: str, kv_cache_config: KVCacheConfig):
         # DeepSeek-V4 exposes a logical scheduler block size that differs from
         # the generic Mooncake V1 default. Keep this compatibility adjustment
@@ -2121,10 +2176,27 @@ class MooncakeConnectorScheduler(BaseMooncakeConnectorScheduler):
         try:
             sock = self._get_remote_socket(self.local_host, d2rh_port)
             d2rh_path = f"{self.local_host}:{d2rh_port}"
-            ensure_zmq_send(sock, self.encoder.encode((START_PULL, request_id, params)), d2rh_path)
-            response = ensure_zmq_recv(sock, self.remote_poller, d2rh_path, timeout=self.timeout)
+            with lost_peer_monitor(sock) as monitor:
+                ensure_zmq_send(sock, self.encoder.encode((START_PULL, request_id, params)), d2rh_path)
+                if monitor is None:
+                    response = ensure_zmq_recv(sock, self.remote_poller, d2rh_path, timeout=self.timeout)
+                else:
+                    response = ensure_zmq_recv(
+                        sock,
+                        self.remote_poller,
+                        d2rh_path,
+                        timeout=self.timeout,
+                        monitor=monitor,
+                    )
             reusable = True
             return response
+        except MooncakePeerLostError:
+            self._discard_remote_sockets(
+                self.local_host,
+                d2rh_port,
+                poller=getattr(self, "remote_poller", None),
+            )
+            raise
         finally:
             if sock is not None:
                 if reusable:
@@ -2133,31 +2205,21 @@ class MooncakeConnectorScheduler(BaseMooncakeConnectorScheduler):
                     self._discard_remote_socket(sock)
 
     def _get_remote_socket(self, remote_host: str, remote_handshake_port: int) -> zmq.Socket:  # type: ignore[name-defined]
-        remote_path = make_zmq_path("tcp", remote_host, remote_handshake_port)
-        with self.remote_sockets_lock:
-            if self.remote_sockets[remote_path]:
-                return self.remote_sockets[remote_path].popleft()
-            ctx = zmq.Context()  # type: ignore
-            sock = make_zmq_socket(ctx=ctx, path=remote_path, socket_type=zmq.REQ, bind=False)  # type: ignore
-            sock.setsockopt(zmq.SNDTIMEO, int(self.timeout * 1000))  # type: ignore
-            self.remote_poller.register(sock, zmq.POLLIN)  # type: ignore
-            return sock
-
-    def _return_remote_socket(
-        self,
-        sock: zmq.Socket,  # type: ignore[name-defined]
-        remote_host: str,
-        remote_handshake_port: int,
-    ) -> None:
-        remote_path = make_zmq_path("tcp", remote_host, remote_handshake_port)
-        with self.remote_sockets_lock:
-            self.remote_sockets[remote_path].append(sock)
+        return self._borrow_remote_socket(
+            remote_host,
+            remote_handshake_port,
+            timeout_ms=max(1, int(self.timeout * 1000)),
+            context_factory=zmq.Context,  # type: ignore[attr-defined]
+            client_socket_fn=make_mooncake_client_socket,
+            make_socket_fn=make_zmq_socket,
+            register_poller=getattr(self, "remote_poller", None),
+        )
 
     def _discard_remote_socket(self, sock: zmq.Socket) -> None:  # type: ignore[name-defined]
         """Drop a REQ socket that did not receive its matching REP."""
         with contextlib.suppress(KeyError, zmq.ZMQError):  # type: ignore[attr-defined]
             self.remote_poller.unregister(sock)
-        sock.close(linger=0)
+        self._close_socket(sock)
 
     def get_num_new_matched_tokens(self, request: "Request", num_computed_tokens: int) -> tuple[int, bool]:
         params = request.kv_transfer_params

@@ -30,6 +30,7 @@ from vllm.distributed.kv_transfer.kv_connector.v1.base import (
     KVConnectorBase_V1,
     KVConnectorMetadata,
     KVConnectorRole,
+    KVConnectorTransferResults,
     SupportsHMA,
 )
 from vllm.distributed.parallel_state import (
@@ -55,6 +56,16 @@ from vllm.v1.kv_cache_interface import (
 from vllm.v1.worker.utils import extract_layer_index
 
 from vllm_ascend.ascend_config import get_ascend_config
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
+    MooncakePeerLostError,
+    MooncakeRemotePeerMixin,
+    lost_peer_monitor,
+    make_mooncake_client_socket,
+    recv_unless_lost,
+)
+from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake.utils import (
+    ensure_zmq_recv as _shared_ensure_zmq_recv,
+)
 from vllm_ascend.distributed.kv_transfer.kv_p2p.mooncake_connector import GET_META_MSG
 from vllm_ascend.distributed.kv_transfer.utils.mooncake_transfer_engine import global_te
 from vllm_ascend.distributed.kv_transfer.utils.utils import (
@@ -814,6 +825,11 @@ class MooncakeLayerwiseConnector(KVConnectorBase_V1, SupportsHMA):
         assert self.connector_worker is not None
         return self.connector_worker.get_finished()
 
+    def get_transfer_results(self, finished_req_ids: set[str]) -> KVConnectorTransferResults:
+        """Get finished transfers and HMA request-level receive failures."""
+        assert self.connector_worker is not None
+        return self.connector_worker.get_transfer_results()
+
     def get_block_ids_with_load_errors(self) -> set[int]:
         """Get the block ids that have load errors."""
         assert self.connector_worker is not None
@@ -1201,7 +1217,7 @@ class MooncakeLayerwiseConnectorScheduler:
         return False, None
 
 
-class MooncakeLayerwiseConnectorWorker:
+class MooncakeLayerwiseConnectorWorker(MooncakeRemotePeerMixin):
     """Implementation of Worker side methods"""
 
     def __init__(self, vllm_config: VllmConfig, kv_cache_config: KVCacheConfig, engine_id: str):
@@ -1282,6 +1298,7 @@ class MooncakeLayerwiseConnectorWorker:
         self.encoder = msgspec.msgpack.Encoder()
 
         self.index_to_name = defaultdict(list)
+        self.remote_metadata_lock = threading.Lock()
         self.remote_layer_metadata: dict[str, dict[int, dict[str, LayerMetadata]]] = SizedDict()
         self.remote_te_port: dict[str, dict[int, int]] = SizedDict()
         self.remote_sockets_lock = threading.Lock()
@@ -1290,7 +1307,7 @@ class MooncakeLayerwiseConnectorWorker:
         ] = defaultdict(  # type: ignore
             deque
         )
-        self.remote_poller = zmq.Poller()  # type: ignore
+        self._zmq_context: Any | None = None
         self.timeout = 1.0  # seconds
         self.k_buffer: torch.Tensor | None = None
         self.v_buffer: torch.Tensor | None = None
@@ -1573,9 +1590,12 @@ class MooncakeLayerwiseConnectorWorker:
             ready_event.wait()
 
     def get_finished(self) -> tuple[set[str], set[str]]:
+        results = self.get_transfer_results()
+        return results.finished_sending, results.finished_recving
+
+    def get_transfer_results(self) -> KVConnectorTransferResults:
         done_recving = (
-            self.kv_recv_layer_thread.get_and_clear_done_requests(  # type: ignore[union-attr]
-            )
+            self.kv_recv_layer_thread.get_and_clear_done_requests()  # type: ignore[union-attr]
             if self.vllm_config.kv_transfer_config.is_kv_consumer
             else set()
         )
@@ -1589,18 +1609,27 @@ class MooncakeLayerwiseConnectorWorker:
             else set()
         )
         failed_recving = {self.request_map[s] for s in failed_recving if s in self.request_map}
-        for req_id in failed_recving:
-            if meta := self._recving_metadata.get(req_id):
-                self._invalid_block_ids.update(block_id for group in meta.local_block_ids for block_id in group)
-        for req_id in done_recving.union(failed_recving):
+        finished_recving = done_recving | failed_recving
+        use_request_level = getattr(self, "num_kv_cache_groups", 1) > 1
+        if not use_request_level:
+            for req_id in failed_recving:
+                if (meta := self._recving_metadata.get(req_id)) and meta.local_block_ids:
+                    self._invalid_block_ids.update(meta.local_block_ids[0])
+        for req_id in finished_recving:
             org_req_id = req_id[:-9]
             self.request_map.pop(org_req_id, None)
             self._recving_metadata.pop(req_id, None)
-        if len(done_recving) > 0:
+        if done_recving:
             logger.info(
-                "Number of completed KV cache recv requests: %s, receive requests: %s", len(done_recving), done_recving
+                "Number of completed KV cache recv requests: %s, receive requests: %s",
+                len(done_recving),
+                done_recving,
             )
-        return set(), done_recving
+        return KVConnectorTransferResults(
+            finished_sending=set(),
+            finished_recving=finished_recving,
+            failed_recving=failed_recving if use_request_level else set(),
+        )
 
     def get_block_ids_with_load_errors(self) -> set[int]:
         """
@@ -2054,40 +2083,48 @@ class MooncakeLayerwiseConnectorWorker:
         cache_tensor = cache_tensor.reshape(-1, head_num, head_dim)
         return cache_tensor
 
+    _remote_metadata_map_attrs: tuple[str, ...] = ("remote_layer_metadata", "remote_te_port")
+
     def _get_remote_socket(self, remote_host: str, remote_handshake_port: int) -> zmq.Socket:  # type: ignore
         """Get a socket to the remote host."""
-        remote_path = make_zmq_path("tcp", remote_host, remote_handshake_port)
-        with self.remote_sockets_lock:
-            if self.remote_sockets[remote_path]:
-                return self.remote_sockets[remote_path].popleft()
-
-            ctx = zmq.Context()  # type: ignore
-            sock = make_zmq_socket(
-                ctx=ctx,
-                path=remote_path,
-                socket_type=zmq.REQ,  # type: ignore
-                bind=False,
-            )
-            sock.setsockopt(
-                zmq.SNDTIMEO,  # type: ignore
-                int(self.timeout * 1000),
-            )
-            self.remote_poller.register(sock, zmq.POLLIN)  # type: ignore
-            return sock
+        return self._borrow_remote_socket(
+            remote_host,
+            remote_handshake_port,
+            timeout_ms=int(self.timeout * 1000),
+            context_factory=zmq.Context,  # type: ignore[attr-defined]
+            client_socket_fn=make_mooncake_client_socket,
+            make_socket_fn=make_zmq_socket,
+            register_poller=getattr(self, "remote_poller", None),
+        )
 
     def update_decoder_info(self, req_id, req_meta: ReqMeta):
-        if (
-            req_meta.remote_engine_id not in self.remote_layer_metadata
-            or req_meta.remote_port not in self.remote_layer_metadata[req_meta.remote_engine_id]
-        ):
+        with self._get_remote_metadata_lock():
+            cached_meta = self.remote_layer_metadata.get(req_meta.remote_engine_id)
+            has_cached = cached_meta is not None and req_meta.remote_port in cached_meta
+        if not has_cached:
+            sock: zmq.Socket | None = None  # type: ignore
+            path = f"{req_meta.remote_host}:{req_meta.remote_port}"
             try:
                 encoded_data = self.encoder.encode((GET_META_MSG, req_id))
                 sock = self._get_remote_socket(req_meta.remote_host, req_meta.remote_port)
-                path = f"{req_meta.remote_host}:{req_meta.remote_port}"
-                ensure_zmq_send(sock, encoded_data, path)
-                metadata_bytes = ensure_zmq_recv(sock, self.remote_poller, path)
+                with lost_peer_monitor(sock) as monitor:
+                    ensure_zmq_send(sock, encoded_data, path)
+                    metadata_bytes = ensure_zmq_recv(
+                        sock,
+                        self.remote_poller,
+                        path,
+                        timeout=self.timeout,
+                        monitor=monitor,
+                        detect_peer_lost=True,
+                    )
                 agent_meta: MooncakeAgentMetadata = self.decoder.decode(metadata_bytes)
-            except Exception as e:
+            except MooncakePeerLostError as e:
+                sock = self._handle_remote_zmq_error(
+                    sock,
+                    req_meta.remote_host,
+                    req_meta.remote_port,
+                    peer_lost=True,
+                )
                 logger.error(
                     "Query to port and kv base addr for request fail. req_id=%s, source=%s:%s, error=%s. ",
                     req_id,
@@ -2095,12 +2132,34 @@ class MooncakeLayerwiseConnectorWorker:
                     req_meta.remote_port,
                     e,
                 )
-                raise e
+                raise
+            except Exception as e:
+                sock = self._handle_remote_zmq_error(
+                    sock,
+                    req_meta.remote_host,
+                    req_meta.remote_port,
+                    peer_lost=False,
+                )
+                logger.error(
+                    "Query to port and kv base addr for request fail. req_id=%s, source=%s:%s, error=%s. ",
+                    req_id,
+                    req_meta.remote_host,
+                    req_meta.remote_port,
+                    e,
+                )
+                raise
+            finally:
+                if sock is not None:
+                    self._return_remote_socket(sock, req_meta.remote_host, req_meta.remote_port)
             assert req_meta.remote_engine_id != self.engine_id, (
                 f"Conflict engine id {req_meta.remote_engine_id} with local engine id {self.local_engine_id}."
             )
-            self.remote_layer_metadata[req_meta.remote_engine_id][req_meta.remote_port] = agent_meta.layer_metadata
-            self.remote_te_port[req_meta.remote_engine_id][req_meta.remote_port] = agent_meta.te_rpc_port
+            with self._get_remote_metadata_lock():
+                self._record_remote_endpoint_engine_id(
+                    req_meta.remote_host, req_meta.remote_port, req_meta.remote_engine_id
+                )
+                self.remote_layer_metadata[req_meta.remote_engine_id][req_meta.remote_port] = agent_meta.layer_metadata
+                self.remote_te_port[req_meta.remote_engine_id][req_meta.remote_port] = agent_meta.te_rpc_port
             logger.debug(
                 "Query to port and kv base addr for request %s from %s:%s success "
                 "agent_meta.layer_metadata=%r agent_meta.te_rpc_port=%r",
@@ -2122,13 +2181,20 @@ class MooncakeLayerwiseConnectorWorker:
                 )
                 if ret < 0:
                     logger.error("Mooncake transfer failed to create link. session_id=%s, ret=%d. ", session_id, ret)
-        req_meta.remote_te_rpc_port = self.remote_te_port[req_meta.remote_engine_id][req_meta.remote_port]
-        req_meta.remote_layer_metadata = self.remote_layer_metadata[req_meta.remote_engine_id][req_meta.remote_port]
+        with self._get_remote_metadata_lock():
+            req_meta.remote_te_rpc_port = self.remote_te_port[req_meta.remote_engine_id][req_meta.remote_port]
+            req_meta.remote_layer_metadata = self.remote_layer_metadata[req_meta.remote_engine_id][req_meta.remote_port]
         return req_meta
 
     def send_done_send_signal(self, req_id, req_meta, group_idx, trans_flag: bool = True):
         external_req_id = get_external_request_id(req_id)
         send_msg_type = DONE_SENDING_MSG if trans_flag else FAILED_SENDING_MSG
+        if not trans_flag:
+            self._invalidate_remote_metadata(
+                req_meta.remote_engine_id,
+                remote_host=req_meta.remote_host,
+                remote_handshake_port=req_meta.remote_port,
+            )
         logger.info(
             "Sending transmitting signal %s for request %s to %s:%d",
             send_msg_type,
@@ -2136,6 +2202,7 @@ class MooncakeLayerwiseConnectorWorker:
             req_meta.remote_host,
             req_meta.remote_port,
         )
+        peer_addr = f"{req_meta.remote_host}:{req_meta.remote_port}"
         try:
             path = make_zmq_path("tcp", req_meta.remote_host, req_meta.remote_port)
             msg_encoder = msgspec.msgpack.Encoder()
@@ -2146,17 +2213,28 @@ class MooncakeLayerwiseConnectorWorker:
             max_retries = 3
             for attempt in range(1, max_retries + 1):
                 try:
-                    with zmq_ctx(zmq.REQ, path) as sock:  # type: ignore
-                        sock.setsockopt(zmq.SNDTIMEO, int(self.timeout * 1000))
-                        ensure_zmq_send(sock, encoded_data, f"{req_meta.remote_host}:{req_meta.remote_port}")
-                        if not sock.poll(int(self.timeout * 1000), zmq.POLLIN):  # type: ignore[attr-defined]
-                            raise TimeoutError(
-                                f"Timed out waiting for ACK from {req_meta.remote_host}:{req_meta.remote_port}"
-                            )
-                        ack = sock.recv()
+                    with zmq_ctx(zmq.REQ, path) as sock, lost_peer_monitor(sock) as monitor:  # type: ignore
+                        timeout_ms = int(self.timeout * 1000)
+                        sock.setsockopt(zmq.SNDTIMEO, timeout_ms)
+                        sock.setsockopt(zmq.RCVTIMEO, timeout_ms)
+                        ensure_zmq_send(sock, encoded_data, peer_addr)
+                        if monitor is not None:
+                            ack = recv_unless_lost(sock, monitor, peer_addr, timeout_ms=timeout_ms)
+                        else:
+                            if not sock.poll(timeout_ms, zmq.POLLIN):  # type: ignore[attr-defined]
+                                raise TimeoutError(f"Timed out waiting for ACK from {peer_addr}")
+                            ack = sock.recv()
                         if ack != b"ACK":
                             raise ValueError(f"Unexpected ACK response: {ack}")
                         return
+                except MooncakePeerLostError:
+                    self._invalidate_remote_metadata(
+                        req_meta.remote_engine_id,
+                        remote_host=req_meta.remote_host,
+                        remote_handshake_port=req_meta.remote_port,
+                    )
+                    self._discard_remote_sockets(req_meta.remote_host, req_meta.remote_port)
+                    raise
                 except Exception as e:
                     if attempt < max_retries:
                         logger.warning(
@@ -2171,6 +2249,12 @@ class MooncakeLayerwiseConnectorWorker:
                         )
                         time.sleep(0.1)
                     else:
+                        self._invalidate_remote_metadata(
+                            req_meta.remote_engine_id,
+                            remote_host=req_meta.remote_host,
+                            remote_handshake_port=req_meta.remote_port,
+                        )
+                        self._discard_remote_sockets(req_meta.remote_host, req_meta.remote_port)
                         raise RuntimeError(f"Failed to receive ACK after {max_retries} attempts: {e}") from e
         except Exception as e:
             logger.error(
@@ -2196,7 +2280,16 @@ def zmq_ctx(socket_type: Any, addr: str) -> Iterator[zmq.Socket]:  # type: ignor
     ctx: zmq.Context | None = None  # type: ignore
     try:
         ctx = zmq.Context()  # type: ignore
-        yield make_zmq_socket(ctx=ctx, path=addr, socket_type=socket_type, bind=socket_type == zmq.ROUTER)  # type: ignore
+        if socket_type == zmq.ROUTER:  # type: ignore
+            yield make_zmq_socket(ctx=ctx, path=addr, socket_type=socket_type, bind=True, linger=0)  # type: ignore
+        else:
+            yield make_mooncake_client_socket(
+                ctx,
+                addr,
+                socket_type,
+                linger=0,
+                make_socket_fn=make_zmq_socket,
+            )
     finally:
         if ctx is not None:
             ctx.destroy(linger=0)
@@ -2274,7 +2367,19 @@ def ensure_zmq_recv(
     path: str,
     timeout: float = 1.0,
     max_retries: int = 3,
+    *,
+    monitor: Any | None = None,
+    detect_peer_lost: bool = False,
 ) -> bytes:
+    if monitor is not None or detect_peer_lost:
+        return _shared_ensure_zmq_recv(
+            socket,
+            path,
+            max_retries=max_retries,
+            monitor=monitor,
+            timeout_ms=max(1, int(timeout * 1000)),
+            detect_peer_lost=detect_peer_lost,
+        )
     retries_left = max_retries
     while True:
         try:

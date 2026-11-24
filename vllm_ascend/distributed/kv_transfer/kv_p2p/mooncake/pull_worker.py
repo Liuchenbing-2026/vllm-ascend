@@ -149,6 +149,7 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
         self.finished_requests: queue.SimpleQueue[tuple[str, bool]] = queue.SimpleQueue()
         self.invalid_block_ids: set[int] = set()
         self.invalid_block_ids_lock = threading.Lock()
+        self._remote_metadata_lock = threading.Lock()
         assert self.local_metadata is not None
 
     def add_not_transfer_request(self, request_id: str) -> None:
@@ -290,6 +291,10 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
     def _finish_request(self, request_id: str, request: ReqMeta, failed: bool) -> None:
         """Publish completion only after all submitted reads have stopped."""
         if failed:
+            self._invalidate_remote_metadata(
+                request.remote_engine_id,
+                endpoint=(request.remote_host, request.remote_port),
+            )
             self._mark_request_failed(request)
         self.finished_requests.put((request_id, failed))
 
@@ -683,8 +688,11 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
         future_to_task: dict[Future[None], tuple[int, int, int, set[str]]] = {}
         submission_error: Exception | None = None
         try:
-            tp_rank_groups_by_pp_rank = self.remote_tp_rank_groups[remote_engine_id]
-            layer_pairs_by_pp_rank = self.remote_layer_index_pairs[remote_engine_id]
+            with self._get_remote_metadata_lock():
+                tp_rank_groups_by_pp_rank = self.remote_tp_rank_groups.get(remote_engine_id)
+                layer_pairs_by_pp_rank = self.remote_layer_index_pairs.get(remote_engine_id)
+            if tp_rank_groups_by_pp_rank is None or layer_pairs_by_pp_rank is None:
+                raise RuntimeError(f"Missing cached Mooncake remote layout for engine {remote_engine_id!r}")
             for remote_pp_rank, layer_pairs in layer_pairs_by_pp_rank.items():
                 pp_metadata = remote_metadata.metadata_by_pp_rank[remote_pp_rank]
                 transfer_block_buckets, request_ids_by_remote_rank = self._build_transfer_block_buckets(
@@ -1413,6 +1421,13 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
                 f"expected {sorted(expected_tp_ranks)}, got {incomplete_tp_layouts}"
             )
 
+    def _get_remote_metadata_lock(self) -> threading.Lock:
+        lock = getattr(self, "_remote_metadata_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._remote_metadata_lock = lock
+        return lock
+
     def _get_remote_metadata_endpoints(self) -> dict[str, tuple[str, int]]:
         endpoints = getattr(self, "_remote_metadata_endpoints", None)
         if endpoints is None:
@@ -1427,6 +1442,15 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
         endpoint: tuple[str, int] | None = None,
     ) -> None:
         """Evict cached metadata/layout for a lost or restarted producer."""
+        with self._get_remote_metadata_lock():
+            self._invalidate_remote_metadata_locked(remote_engine_id, endpoint=endpoint)
+
+    def _invalidate_remote_metadata_locked(
+        self,
+        remote_engine_id: str | None = None,
+        *,
+        endpoint: tuple[str, int] | None = None,
+    ) -> None:
         remote_metadata = getattr(self, "remote_metadata", None)
         remote_tp_rank_groups = getattr(self, "remote_tp_rank_groups", None)
         remote_layer_index_pairs = getattr(self, "remote_layer_index_pairs", None)
@@ -1460,16 +1484,17 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
         remote_host: str,
         remote_port: int,
     ) -> MooncakeTransferMetadataGroups:
-        endpoints = self._get_remote_metadata_endpoints()
-        cached_metadata = self.remote_metadata.get(remote_engine_id)
-        if cached_metadata is not None:
-            cached_endpoint = endpoints.get(remote_engine_id)
-            if cached_endpoint == (remote_host, remote_port) or (
-                cached_endpoint is None
-                and (cached_metadata.scheduler_host, cached_metadata.scheduler_port) == (remote_host, remote_port)
-            ):
-                return cached_metadata
-            self._invalidate_remote_metadata(remote_engine_id)
+        with self._get_remote_metadata_lock():
+            endpoints = self._get_remote_metadata_endpoints()
+            cached_metadata = self.remote_metadata.get(remote_engine_id)
+            if cached_metadata is not None:
+                cached_endpoint = endpoints.get(remote_engine_id)
+                if cached_endpoint == (remote_host, remote_port) or (
+                    cached_endpoint is None
+                    and (cached_metadata.scheduler_host, cached_metadata.scheduler_port) == (remote_host, remote_port)
+                ):
+                    return cached_metadata
+                self._invalidate_remote_metadata_locked(remote_engine_id)
 
         path = make_zmq_path("tcp", remote_host, remote_port)
         try:
@@ -1485,22 +1510,24 @@ class MooncakePullRecvingThread(threading.Thread, MooncakeTransferAddressMixin):
                     metadata_bytes = (
                         ensure_zmq_recv(sock, path) if monitor is None else ensure_zmq_recv(sock, path, monitor=monitor)
                     )
+            if not metadata_bytes:
+                raise RuntimeError(
+                    f"Mooncake producer scheduler returned no transfer metadata for engine {remote_engine_id!r} "
+                    f"from {path}"
+                )
+            transfer_metadata = self.decoder.decode(metadata_bytes)
+            self._validate_remote_metadata(transfer_metadata, remote_engine_id)
+            remote_tp_rank_groups, remote_layer_index_pairs = self._build_remote_transfer_layout(transfer_metadata)
         except Exception:
             self._invalidate_remote_metadata(remote_engine_id, endpoint=(remote_host, remote_port))
             raise
 
-        if not metadata_bytes:
-            raise RuntimeError(
-                f"Mooncake producer scheduler returned no transfer metadata for engine {remote_engine_id!r} from {path}"
-            )
-
-        transfer_metadata = self.decoder.decode(metadata_bytes)
-        self._validate_remote_metadata(transfer_metadata, remote_engine_id)
-        remote_tp_rank_groups, remote_layer_index_pairs = self._build_remote_transfer_layout(transfer_metadata)
-        self.remote_metadata[remote_engine_id] = transfer_metadata
-        self.remote_tp_rank_groups[remote_engine_id] = remote_tp_rank_groups
-        self.remote_layer_index_pairs[remote_engine_id] = remote_layer_index_pairs
-        endpoints[remote_engine_id] = (remote_host, remote_port)
+        with self._get_remote_metadata_lock():
+            endpoints = self._get_remote_metadata_endpoints()
+            self.remote_metadata[remote_engine_id] = transfer_metadata
+            self.remote_tp_rank_groups[remote_engine_id] = remote_tp_rank_groups
+            self.remote_layer_index_pairs[remote_engine_id] = remote_layer_index_pairs
+            endpoints[remote_engine_id] = (remote_host, remote_port)
         logger.debug(
             "Mooncake remote transfer layout for engine %s: TP candidates=%s, layer index pairs=%s",
             remote_engine_id,
