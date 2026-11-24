@@ -5,8 +5,11 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from copy import copy
 from dataclasses import replace
+from functools import reduce
+from typing import Any
 
 import torch
 from vllm.config import VllmConfig
@@ -23,12 +26,14 @@ from vllm.distributed.kv_transfer.kv_connector.v1.offloading.worker import (
 from vllm.distributed.kv_transfer.kv_connector.v1.offloading_connector import (
     OffloadingConnector,
 )
+from vllm.v1.core.kv_cache_planning import kv_cache_groups_tp_replicas
 from vllm.v1.kv_cache_interface import (
     AttentionSpec,
     KVCacheConfig,
     KVCacheGroupRole,
+    KVCacheGroupSpec,
+    KVCacheSpec,
     MambaSpec,
-    UniformTypeKVCacheSpecs,
 )
 from vllm.v1.kv_offload.base import (
     CanonicalKVCacheRef,
@@ -154,6 +159,77 @@ def _canonicalize_split_cache(
     )
 
 
+def _iter_group_layer_specs(group: Any) -> Iterator[tuple[str, KVCacheSpec]]:
+    """Yield ``(layer_name, spec)`` across ``KVCacheGroupSpec`` and ``KVCacheGroup``."""
+    per_layer_specs = getattr(group, "kv_cache_specs", None)
+    if isinstance(per_layer_specs, Mapping):
+        yield from per_layer_specs.items()
+        return
+    group_spec = group.kv_cache_spec
+    nested_specs = getattr(group_spec, "kv_cache_specs", None)
+    for layer_name in group.layer_names:
+        yield (
+            layer_name,
+            nested_specs[layer_name] if nested_specs is not None else group_spec,
+        )
+
+
+def _layer_tp_replicas(spec: Any, tp_size: int, dcp_size: int) -> int:
+    if not isinstance(spec, AttentionSpec) or getattr(spec, "max_tp_shards", None) is None:
+        return 1
+    if getattr(spec, "dcp_sharded", False) and dcp_size > 1:
+        return 1
+    return max(1, tp_size // spec.max_tp_shards)
+
+
+def _compute_groups_tp_replicas(groups: Sequence[Any], tp_size: int, dcp_size: int) -> int:
+    """Return consecutive TP ranks holding identical KV across ``groups``."""
+    if tp_size <= 1:
+        return 1
+    if all(isinstance(group, KVCacheGroupSpec) for group in groups):
+        return kv_cache_groups_tp_replicas(list(groups), tp_size, dcp_size)
+    specs = [spec for group in groups for _, spec in _iter_group_layer_specs(group)]
+    if not specs:
+        return 1
+    return reduce(math.gcd, (_layer_tp_replicas(spec, tp_size, dcp_size) for spec in specs), tp_size)
+
+
+def prepare_hisparse_offloading_kv_cache_config(
+    vllm_config: VllmConfig,
+    kv_cache_config: KVCacheConfig,
+) -> KVCacheConfig:
+    """Recompute ``kv_tp_replicas`` over only offloaded HiSparse groups.
+
+    HiSparse's resident/hot groups are raw page pools with no TP metadata, so
+    the whole-model ``kv_tp_replicas`` collapses to 1 and disables single-copy
+    CPU offloading on TP > 1. Evaluate replicas over
+    ``get_offloading_group_ids(kv_cache_config)`` without mutating the
+    caller's config.
+    """
+    if (
+        getattr(kv_cache_config, "num_blocks", 0) <= 0
+        or getattr(kv_cache_config, "hisparse_host_num_blocks", None) is None
+    ):
+        return kv_cache_config
+    parallel_config = getattr(vllm_config, "parallel_config", None)
+    if parallel_config is None:
+        return kv_cache_config
+    selected_group_ids = get_offloading_group_ids(kv_cache_config)
+    if not selected_group_ids:
+        return kv_cache_config
+    selected_groups = [kv_cache_config.kv_cache_groups[group_id] for group_id in selected_group_ids]
+    selected_tp_replicas = _compute_groups_tp_replicas(
+        selected_groups,
+        parallel_config.tensor_parallel_size,
+        parallel_config.decode_context_parallel_size,
+    )
+    if selected_tp_replicas == getattr(kv_cache_config, "kv_tp_replicas", None):
+        return kv_cache_config
+    prepared = copy(kv_cache_config)
+    prepared.kv_tp_replicas = selected_tp_replicas
+    return prepared
+
+
 class AscendOffloadingConnectorWorker(OffloadingConnectorWorker):
     """Offloading worker boundary supporting Ascend's split KV layouts."""
 
@@ -176,10 +252,7 @@ class AscendOffloadingConnectorWorker(OffloadingConnectorWorker):
 
         requires_layout_adaptation = False
         for group in selected_groups:
-            group_spec = group.kv_cache_spec
-            per_layer_specs = group_spec.kv_cache_specs if isinstance(group_spec, UniformTypeKVCacheSpecs) else {}
-            for layer_name in group.layer_names:
-                layer_spec = per_layer_specs.get(layer_name, group_spec)
+            for layer_name, layer_spec in _iter_group_layer_specs(group):
                 layer_cache = kv_caches[layer_name]
                 if (isinstance(layer_spec, AttentionSpec) and not isinstance(layer_cache, torch.Tensor)) or (
                     isinstance(layer_spec, MambaSpec) and isinstance(layer_cache, list)
@@ -237,12 +310,9 @@ class AscendOffloadingConnectorWorker(OffloadingConnectorWorker):
             )
 
         for group in selected_groups:
-            group_spec = group.kv_cache_spec
-            per_layer_specs = group_spec.kv_cache_specs if isinstance(group_spec, UniformTypeKVCacheSpecs) else {}
-            for layer_name in group.layer_names:
+            for layer_name, layer_spec in _iter_group_layer_specs(group):
                 if layer_name in refs_by_layer:
                     continue
-                layer_spec = per_layer_specs.get(layer_name, group_spec)
                 layer_cache = kv_caches[layer_name]
 
                 if isinstance(layer_spec, AttentionSpec):
@@ -270,7 +340,7 @@ class AscendOffloadingConnectorWorker(OffloadingConnectorWorker):
                             mappings.get(layer_name),
                         )
                     elif isinstance(layer_cache, (tuple, list)):
-                        if group.role is KVCacheGroupRole.HISPARSE_INDEXER and isinstance(
+                        if getattr(group, "role", None) == KVCacheGroupRole.HISPARSE_INDEXER and isinstance(
                             layer_spec, AscendSFAIndexerCacheSpec
                         ):
                             from vllm_ascend.hisparse.binding import hisparse_indexer_transfer_views
@@ -346,7 +416,9 @@ class AscendOffloadingConnector(OffloadingConnector):
         role: KVConnectorRole,
         kv_cache_config: KVCacheConfig,
     ) -> None:
-        super().__init__(vllm_config, role, kv_cache_config)
+        prepared_config = prepare_hisparse_offloading_kv_cache_config(vllm_config, kv_cache_config)
+        super().__init__(vllm_config, role, prepared_config)
+        self._kv_cache_config = kv_cache_config
         connector_worker = self.connector_worker
         if connector_worker is not None:
             self.connector_worker = AscendOffloadingConnectorWorker(

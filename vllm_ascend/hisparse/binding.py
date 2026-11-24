@@ -3,18 +3,13 @@
 """Bind shared-slab views while retaining Core HiSparse allocation."""
 
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
 import torch
-from vllm.v1.kv_cache_interface import (
-    HiSparseHotSpec,
-    HiSparseResidentSpec,
-    KVCacheConfig,
-    KVCacheSpec,
-    UniformTypeKVCacheSpecs,
-)
+import vllm.v1.kv_cache_interface as kv_cache_interface
+from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 
 from vllm_ascend.core.kv_cache_interface import AlignedKVCacheTensor, AscendSFAIndexerCacheSpec
 
@@ -76,6 +71,14 @@ def prepare_hisparse_cache_views(
         tensor.size = tensor.logical_size
 
 
+def _hisparse_page_spec_types() -> tuple[type[Any], ...]:
+    return tuple(
+        spec_cls
+        for name in ("HiSparseResidentSpec", "HiSparseHotSpec", "HiSparsePageSpec")
+        if (spec_cls := getattr(kv_cache_interface, name, None)) is not None
+    )
+
+
 def align_hisparse_indexer_specs(
     specs: dict[str, KVCacheSpec],
     *,
@@ -88,6 +91,7 @@ def align_hisparse_indexer_specs(
     """
     if packed_row_bytes is not None and packed_row_bytes <= 0:
         raise ValueError("HiSparse packed row width must be positive")
+    hisparse_page_spec_types = _hisparse_page_spec_types()
     aligned = {}
     for name, spec in specs.items():
         alignment = spec.get_block_stride_alignment()
@@ -101,7 +105,7 @@ def align_hisparse_indexer_specs(
                 alignment = math.lcm(alignment, spec.head_size, torch.float32.itemsize)
             else:
                 alignment = math.lcm(alignment, spec.page_size_bytes)
-        elif packed_row_bytes is not None and isinstance(spec, (HiSparseResidentSpec, HiSparseHotSpec)):
+        elif packed_row_bytes is not None and hisparse_page_spec_types and isinstance(spec, hisparse_page_spec_types):
             # Core derives these synthetic specs without the source row alignment.
             # Declare it before shared-slab sizing, never round runtime addresses.
             alignment = math.lcm(alignment, packed_row_bytes)
@@ -117,10 +121,16 @@ def get_hisparse_indexer_specs(
     """Collect the Ascend indexer specs keyed by layer."""
     indexer_specs = {}
     for group in kv_cache_config.kv_cache_groups:
+        per_layer_specs = getattr(group, "kv_cache_specs", None)
+        if isinstance(per_layer_specs, Mapping):
+            for name, spec in per_layer_specs.items():
+                if isinstance(spec, AscendSFAIndexerCacheSpec):
+                    indexer_specs[name] = spec
+            continue
+        group_spec = group.kv_cache_spec
+        nested_specs = getattr(group_spec, "kv_cache_specs", None)
         for name in group.layer_names:
-            spec = group.kv_cache_spec
-            if isinstance(spec, UniformTypeKVCacheSpecs):
-                spec = spec.kv_cache_specs[name]
+            spec = nested_specs[name] if nested_specs is not None else group_spec
             if isinstance(spec, AscendSFAIndexerCacheSpec):
                 indexer_specs[name] = spec
 

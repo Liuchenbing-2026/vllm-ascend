@@ -169,10 +169,17 @@ def test_cpu_spec_uses_v027_blocks_per_chunk(
     assert "mmap_region" not in captured
 
 
-def test_only_tiering_spec_overrides_shared_region_capability() -> None:
-    tiering_spec = npu_mod.NPUTieringOffloadingSpec.__new__(npu_mod.NPUTieringOffloadingSpec)
+def test_shared_region_capability_follows_replicated_layout() -> None:
+    cpu_spec = npu_mod.NPUOffloadingSpec.__new__(npu_mod.NPUOffloadingSpec)
+    assert not cpu_spec._uses_shared_region()
 
-    assert "_uses_shared_region" not in npu_mod.NPUOffloadingSpec.__dict__
+    cpu_spec.config = SimpleNamespace(replicated_layout=False)
+    assert not cpu_spec._uses_shared_region()
+
+    cpu_spec.config = SimpleNamespace(replicated_layout=True)
+    assert cpu_spec._uses_shared_region()
+
+    tiering_spec = npu_mod.NPUTieringOffloadingSpec.__new__(npu_mod.NPUTieringOffloadingSpec)
     assert tiering_spec._uses_shared_region()
 
 

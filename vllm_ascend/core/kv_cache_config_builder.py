@@ -9,8 +9,12 @@ pool accounting, and materialization live here, so the planning module itself
 no longer needs a monkey patch for these decisions.
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import fields, replace
+from typing import Any
 
 from vllm.config import VllmConfig
 from vllm.utils.math_utils import cdiv, round_up
@@ -23,12 +27,14 @@ from vllm.v1.core.kv_cache_planning import (
 from vllm.v1.core.kv_cache_planning import _pool_bytes_per_block as _upstream_pool_bytes_per_block
 from vllm.v1.core.kv_cache_planning import get_kv_cache_config_from_groups as _upstream_get_kv_cache_config_from_groups
 from vllm.v1.kv_cache_interface import (
+    AttentionSpec,
     FullAttentionSpec,
     KVCacheConfig,
     KVCacheGroupSpec,
     KVCacheSpec,
     KVCacheSpecKind,
     KVCacheTensor,
+    MambaSpec,
     MLAAttentionSpec,
     SlidingWindowMLASpec,
     UniformTypeKVCacheSpecs,
@@ -75,9 +81,9 @@ from vllm_ascend.models.step5.cache_config import (
     get_step5_pool_bytes_per_block,
     is_step5_groups,
 )
+from vllm_ascend.patch.platform.patch_kv_cache_layout import group_layers_by_spec
 from vllm_ascend.quantization.methods.kv_cache.turboquant import TURBOQUANT_CACHE_DTYPE
 from vllm_ascend.quantization.methods.kv_cache.turboquant import cache as tq_cache
-from vllm_ascend.utils import vllm_version_is
 
 
 class AscendKVCacheConfigBuilder(DefaultKVCacheConfigBuilder):
@@ -87,7 +93,7 @@ class AscendKVCacheConfigBuilder(DefaultKVCacheConfigBuilder):
         self,
         vllm_config: VllmConfig,
         kv_cache_spec: dict[str, KVCacheSpec],
-    ) -> list[KVCacheGroupSpec]:
+    ) -> list[Any]:
         """Group layers, preferring the Ascend layout when one applies.
 
         Precedence: Kimi-K3.1, GLM-Next, Qwen4-Exp MTP, then DSV4.1 /
@@ -149,7 +155,7 @@ class AscendKVCacheConfigBuilder(DefaultKVCacheConfigBuilder):
     def get_kv_cache_config_from_groups(
         self,
         vllm_config: VllmConfig,
-        kv_cache_groups: list[KVCacheGroupSpec],
+        kv_cache_groups: list[Any],
         num_blocks: int,
     ) -> KVCacheConfig:
         """Materialize the Ascend layouts for exactly ``num_blocks`` blocks.
@@ -174,28 +180,32 @@ class AscendKVCacheConfigBuilder(DefaultKVCacheConfigBuilder):
     def _get_pool_bytes_per_block(
         self,
         vllm_config: VllmConfig,
-        kv_cache_groups: list[KVCacheGroupSpec],
+        kv_cache_groups: list[Any],
     ) -> int | None:
         """Return the device memory cost per global block ID."""
-        extra_config = get_layerwise_offload_config(getattr(vllm_config, "kv_transfer_config", None))
-        if extra_config is not None and kv_cache_groups and get_spec_reuse_rules(vllm_config) is not None:
-            probe = self.get_kv_cache_config_from_groups(vllm_config, kv_cache_groups, num_blocks=1)
-            backing_bytes = get_layerwise_reuse_backing_bytes(probe)
-            if backing_bytes is not None:
-                return backing_bytes
+        if not any(_is_kv_cache_group_object(group) for group in kv_cache_groups):
+            extra_config = get_layerwise_offload_config(getattr(vllm_config, "kv_transfer_config", None))
+            if extra_config is not None and kv_cache_groups and get_spec_reuse_rules(vllm_config) is not None:
+                probe = self.get_kv_cache_config_from_groups(vllm_config, kv_cache_groups, num_blocks=1)
+                backing_bytes = get_layerwise_reuse_backing_bytes(probe)
+                if backing_bytes is not None:
+                    return backing_bytes
         return self._get_native_pool_bytes_per_block(vllm_config, kv_cache_groups)
 
     def _get_native_pool_bytes_per_block(
         self,
         vllm_config: VllmConfig,
-        kv_cache_groups: list[KVCacheGroupSpec],
+        kv_cache_groups: list[Any],
     ) -> int | None:
         """Return the pool cost used to build the native descriptors."""
-        if vllm_config.model_config.hf_config.model_type == "kimi_k31":
+        has_group_specs = not any(_is_kv_cache_group_object(group) for group in kv_cache_groups)
+        if has_group_specs and vllm_config.model_config.hf_config.model_type == "kimi_k31":
             return paired_sfa_pool_bytes(kv_cache_groups)
         pools = _get_replicated_draft_pools(kv_cache_groups)
         if pools is not None:
             return sum(_upstream_pool_bytes_per_block(vllm_config, pool) for pool in pools)
+        if not has_group_specs:
+            return super()._get_pool_bytes_per_block(vllm_config, kv_cache_groups)
         if is_step5_groups(kv_cache_groups):
             return get_step5_pool_bytes_per_block(kv_cache_groups)
         if is_deepseek_v41_cache(kv_cache_groups):
@@ -212,21 +222,43 @@ class AscendKVCacheConfigBuilder(DefaultKVCacheConfigBuilder):
         return super()._get_pool_bytes_per_block(vllm_config, kv_cache_groups)
 
 
+def _is_kv_cache_group_object(group: Any) -> bool:
+    """Return True for unmerged upstream KVCacheGroup duck-types (.kv_cache_specs)."""
+    return isinstance(getattr(group, "kv_cache_specs", None), Mapping) and not isinstance(group, KVCacheGroupSpec)
+
+
+def _is_mamba_group_spec(group: Any) -> bool:
+    specs = tuple(group_layers_by_spec(group))
+    if not specs:
+        return False
+    if _is_kv_cache_group_object(group):
+        return all(isinstance(spec, MambaSpec) for spec in specs)
+    return get_kv_cache_spec_kind(group.kv_cache_spec) == KVCacheSpecKind.MAMBA
+
+
+def _is_full_non_mla_draft_spec(group: Any, spec: KVCacheSpec) -> bool:
+    if not _is_kv_cache_group_object(group):
+        return isinstance(spec, FullAttentionSpec) and not isinstance(spec, MLAAttentionSpec) and not spec.dcp_sharded
+    mgr = getattr(group, "manager_cls", None) or getattr(getattr(group, "manager_config", None), "manager_cls", None)
+    return (
+        getattr(mgr, "__name__", None) == "FullAttentionManager"
+        and isinstance(spec, AttentionSpec)
+        and not isinstance(spec, MLAAttentionSpec)
+        and not spec.dcp_sharded
+    )
+
+
 def _get_replicated_draft_pools(
-    groups: list[KVCacheGroupSpec],
-) -> list[list[KVCacheGroupSpec]] | None:
+    groups: list[Any],
+) -> list[list[Any]] | None:
     """Keep contiguous dense draft K/V outside the target/state alias pool."""
-    if not any(get_kv_cache_spec_kind(group.kv_cache_spec) == KVCacheSpecKind.MAMBA for group in groups):
+    if not any(_is_mamba_group_spec(group) for group in groups):
         return None
     target_groups = []
     draft_pools = []
     for group in groups:
-        spec = group.kv_cache_spec
-        specs = spec.kv_cache_specs.values() if isinstance(spec, UniformTypeKVCacheSpecs) else (spec,)
-        if all(
-            isinstance(s, FullAttentionSpec) and not isinstance(s, MLAAttentionSpec) and not s.dcp_sharded
-            for s in specs
-        ):
+        specs = tuple(group_layers_by_spec(group))
+        if specs and all(_is_full_non_mla_draft_spec(group, spec) for spec in specs):
             draft_pools.append([group])
         else:
             target_groups.append(group)
@@ -413,10 +445,11 @@ def _get_deepseek_v4_cache_layout(
     return page_sizes, bucketed, mtp_layer_names, mtp_page_size, num_layer_tuples
 
 
-def _is_deepseek_v4_groups(kv_cache_groups: list[KVCacheGroupSpec]) -> bool:
+def _is_deepseek_v4_groups(kv_cache_groups: list[Any]) -> bool:
     if (
-        is_deepseek_v41_cache(kv_cache_groups)
-        or not kv_cache_groups
+        not kv_cache_groups
+        or any(_is_kv_cache_group_object(group) for group in kv_cache_groups)
+        or is_deepseek_v41_cache(kv_cache_groups)
         or not all(isinstance(group.kv_cache_spec, UniformTypeKVCacheSpecs) for group in kv_cache_groups)
     ):
         return False
@@ -510,7 +543,7 @@ def _get_kv_cache_config_deepseek_v4_main(
 
 def get_ascend_kv_cache_config_from_groups(
     vllm_config: VllmConfig,
-    kv_cache_groups: list[KVCacheGroupSpec],
+    kv_cache_groups: list[Any],
     available_memory: int,
 ) -> KVCacheConfig:
     """Materialize an Ascend layout from the memory budget Core resolved.
@@ -519,15 +552,14 @@ def get_ascend_kv_cache_config_from_groups(
     ``_attach_transfer_and_speculation_metadata`` before returning; see it for
     why the PD role must ride on the config object.
     """
+    has_group_specs = not any(_is_kv_cache_group_object(group) for group in kv_cache_groups)
     qwen_config = (
-        None
-        if vllm_version_is("0.28.0")
-        else get_qwen4_exp_kv_cache_config(vllm_config, kv_cache_groups, available_memory)
+        get_qwen4_exp_kv_cache_config(vllm_config, kv_cache_groups, available_memory) if has_group_specs else None
     )
     pools = _get_replicated_draft_pools(kv_cache_groups)
-    if vllm_config.model_config.hf_config.model_type == "kimi_k31":
+    if has_group_specs and vllm_config.model_config.hf_config.model_type == "kimi_k31":
         kv_cache_config = paired_sfa_cache_config(vllm_config, kv_cache_groups, available_memory)
-    elif is_step5_groups(kv_cache_groups):
+    elif has_group_specs and is_step5_groups(kv_cache_groups):
         kv_cache_config = get_step5_kv_cache_config_from_groups(vllm_config, kv_cache_groups, available_memory)
     elif pools is not None:
         # Every physical pool shares the scheduler's block count, but owns a
@@ -554,6 +586,8 @@ def get_ascend_kv_cache_config_from_groups(
             kv_cache_groups=kv_cache_groups,
             prefix_cache_retention_interval=vllm_config.cache_config.prefix_cache_retention_interval,
         )
+    elif not has_group_specs:
+        kv_cache_config = _upstream_get_kv_cache_config_from_groups(vllm_config, kv_cache_groups, available_memory)
     elif qwen_config is not None:
         kv_cache_config = qwen_config
     elif is_deepseek_v41_cache(kv_cache_groups):

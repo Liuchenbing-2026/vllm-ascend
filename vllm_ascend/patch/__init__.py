@@ -313,6 +313,26 @@
 #       Remove once upstream exposes the PD role to the coordinator or
 #       removes the EAGLE last-block drop for verified prompt blocks.
 #
+# ** 10. File: platform/patch_kv_cache_layout.py**
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.v1.core.kv_cache_planning.validate_kv_cache_layout`
+#    Why:
+#       Upstream v0.34.0 and the pinned main commit (c410543d) reject all multi-group
+#       models with mixed page sizes under layer-compact layouts (LBHNC/LBNHC),
+#       even though `get_kv_cache_config_from_groups` places them correctly when
+#       overlaid layers share the same block stride (e.g. SDSA indexer + KV).
+#    How:
+#       Allow layer-compact layouts with mixed page sizes when overlaid layers
+#       have matching block strides, and leave upstream intact once
+#       `_overlaid_layers_match` is already present.
+#    Related PR (if no, explain why):
+#       No upstream PR merged in pinned baselines; pending native mixed-page
+#       layer-compact support.
+#    Future Plan:
+#       Remove this patch once all supported vLLM versions natively allow
+#       mixed page sizes with matching block strides in layer-compact KV
+#       layouts.
+#
 # ** 11. File: platform/patch_mamba_block_aligned_split.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.v1.core.sched.scheduler.Scheduler._mamba_block_aligned_split`

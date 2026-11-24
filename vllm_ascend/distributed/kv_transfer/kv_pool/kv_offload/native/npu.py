@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from typing_extensions import override
 from vllm.logger import logger
 from vllm.v1.kv_offload.base import CanonicalKVCaches, OffloadingManager, OffloadingWorker
@@ -18,6 +21,15 @@ from vllm.v1.kv_offload.tiering.spec import (
 from vllm_ascend.distributed.kv_transfer.kv_pool.kv_offload.native.cpu_npu import (
     NPUOffloadingWorker,
 )
+
+
+def _parse_pin_shared_mmap(extra_config: Mapping[str, Any] | None) -> bool:
+    if not extra_config:
+        return False
+    pin_shared_mmap = extra_config.get("pin_shared_mmap", False)
+    if isinstance(pin_shared_mmap, str):
+        return pin_shared_mmap.lower() not in ("0", "false", "no")
+    return bool(pin_shared_mmap)
 
 
 class _NPUWorkerMixin:
@@ -41,20 +53,42 @@ class _NPUWorkerMixin:
 
 
 class NPUOffloadingSpec(_NPUWorkerMixin, _CPUOffloadingSpec):
-    """Single CPU-tier offloading with pinned host tensors and NPU DMA."""
+    """Single CPU-tier offloading with pinned host tensors and shared replicated mmap."""
+
+    def _uses_shared_region(self) -> bool:
+        # Use a shared /dev/shm mmap across TP ranks only when upstream certifies
+        # the offloaded layout as byte-replicated on a single node.
+        return bool(getattr(getattr(self, "config", None), "replicated_layout", False))
+
+    def _create_replicated_shared_region(self) -> SharedOffloadRegion:
+        return SharedOffloadRegion(
+            engine_id=self.config.engine_id,
+            num_chunks=self.num_chunks,
+            rank=0,
+            kv_bytes_per_chunk=self.kv_bytes_per_chunk,
+            cpu_page_size=self.cpu_page_size_per_worker,
+            barrier=cpu_spec._all_workers_barrier,
+            num_segments=cpu_spec.REGION_SEGMENTS,
+            populate_shard=(self.config.parallel.rank, self.config.parallel.world_size),
+        )
 
     @override
     def create_worker(
         self,
         kv_caches: CanonicalKVCaches,
     ) -> NPUOffloadingWorker:
-        # Keep the single-tier path on PyTorch's pinned allocator. This spec
-        # does not use a shared mmap, so upstream's _uses_shared_region() gate
-        # keeps replicated_layout disabled.
+        extra_kwargs: dict[str, Any] = {}
+        if getattr(self, "replicated_layout", False) and self.num_chunks > 0:
+            extra_kwargs = {
+                "mmap_region": self._create_replicated_shared_region(),
+                "pin_shared_mmap": _parse_pin_shared_mmap(getattr(self, "extra_config", {})),
+                "worker_slot_only": False,
+            }
         return NPUOffloadingWorker(
             kv_caches=kv_caches,
             blocks_per_chunk=self.blocks_per_chunk,
             num_cpu_blocks=self.num_chunks,
+            **extra_kwargs,
         )
 
 
@@ -164,11 +198,7 @@ class NPUTieringOffloadingSpec(_NPUWorkerMixin, _TieringOffloadingSpec):
         # Match the scheduler's rank-based layout, regardless of device selection.
         rank = 0 if self.replicated_layout else self.config.parallel.rank
 
-        pin_shared_mmap = self.extra_config.get("pin_shared_mmap", False)
-        if isinstance(pin_shared_mmap, str):
-            pin_shared_mmap = pin_shared_mmap.lower() not in ("0", "false", "no")
-        else:
-            pin_shared_mmap = bool(pin_shared_mmap)
+        pin_shared_mmap = _parse_pin_shared_mmap(self.extra_config)
 
         try:
             worker_mmap = self._create_shared_region(rank)
