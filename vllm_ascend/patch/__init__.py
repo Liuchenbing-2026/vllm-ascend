@@ -524,6 +524,29 @@
 #       supports local drafter models with PP > 1, or moves the PP validation to a
 #       separate hook that can be overridden per-model-type.
 #
+# ** File: platform/patch_renderer_vocab_guard.py **
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.renderers.base.BaseRenderer.validate_token_ids`
+#    Why:
+#       Supported vLLM pins predating #68157 expand the upper token-ID bound to
+#       `max(tokenizer.max_token_id, vocab_size - 1)` unconditionally. Text-only
+#       deployments (including `--language-model-only` / `--limit-mm-per-prompt 0`
+#       without `--enable-mm-embeds`, where `is_multimodal_model` remains True
+#       but `supports_multimodal_inputs` is False) then accept tokenizer-reserved
+#       IDs above `vocab_size - 1`, failing later at embedding lookup.
+#    How:
+#       Enforce `[0, model_config.get_vocab_size() - 1]` whenever
+#       `supports_multimodal_inputs` (falling back to `is_multimodal_model`) is
+#       False, while keeping multimodal input placeholders and upstream probe
+#       bypass (`supports_multimodal_inputs=False` on the probe config) intact.
+#       Skips patching automatically when an upstream revision already rejects
+#       out-of-vocab IDs under text-only mode.
+#    Related PR (if no, explain why):
+#       https://github.com/vllm-project/vllm/pull/68157
+#    Future Plan:
+#       Remove once all supported vLLM pins include #68157 and gate tokenizer
+#       upper-bound expansion on active multimodal inputs (`supports_multimodal_inputs`).
+#
 # ** 18. File: platform/patch_speculative_config.py**
 # Native MiniMax Flash draft extension:
 #   Targets: SpeculativeConfig.__post_init__ and draft HF configuration loading.
