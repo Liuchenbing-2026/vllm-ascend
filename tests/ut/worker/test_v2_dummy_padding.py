@@ -14,6 +14,7 @@ from vllm.v1.worker.gpu.mm.encoder_cache import EncoderCache
 from vllm.v1.worker.gpu.model_runner import GPUModelRunner
 from vllm.v1.worker.utils import get_uniform_decode_token_count
 
+from vllm_ascend.utils import vllm_version_is
 from vllm_ascend.worker.v2.aclgraph_utils import ModelAclGraphManager
 from vllm_ascend.worker.v2.input_batch import AscendInputBatch, AscendInputBuffers
 from vllm_ascend.worker.v2.model_runner import NPUModelRunner
@@ -47,8 +48,11 @@ def test_prefix_ranges_follow_request_order_and_removal(make_model_state, state_
     state.model_config.model_arch_config.is_mm_prefix_lm = True
     state.model_config.__dict__.pop("is_mm_prefix_lm", None)
     # Current main owns a persistent cache; release derives ranges per batch.
-    if hasattr(state, "mm_prefix_ranges"):
+    if not vllm_version_is("0.34.0"):
         state.mm_prefix_ranges = {"image-request": [(1, 3)]}
+    else:
+        # An extension's stale cache must not override release encoder features.
+        state.mm_prefix_ranges = {"image-request": [(10, 20)]}
     with patch("vllm_ascend.worker.v2.input_batch.update_cos_sin"):
         batch = AscendInputBatch.make_dummy(2, 8, buffers)
     batch.req_ids = ["text-request", "image-request"]

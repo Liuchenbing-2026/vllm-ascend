@@ -46,7 +46,7 @@ from vllm_ascend.distributed.kv_transfer.sparse_kv_offload.sparse_kv_offload_man
     reset_sparse_kv_offload_request_owners,
     update_sparse_kv_offload_metadata,
 )
-from vllm_ascend.utils import embedding_tp_enable, should_skip_allreduce_across_dp_group
+from vllm_ascend.utils import embedding_tp_enable, should_skip_allreduce_across_dp_group, vllm_version_is
 from vllm_ascend.worker.v2.attn_utils import build_attn_metadata, ring_state_update_skipped
 from vllm_ascend.worker.v2.input_batch import AscendInputBatch
 
@@ -91,10 +91,12 @@ class AscendModelState(DefaultModelState):
 
     def _get_mm_prefix_ranges(self, input_batch: AscendInputBatch) -> dict[int, list[tuple[int, int]]] | None:
         """Return per-request PrefixLM ranges from paired core or stock vLLM cache."""
+        # The paired-core hook is absent from both official core baselines;
+        # probing this optional extension does not select release versus main.
         get_ranges = getattr(super(), "get_mm_prefix_ranges", None)
         if callable(get_ranges):
             return cast(dict[int, list[tuple[int, int]]] | None, get_ranges(input_batch))
-        if hasattr(self, "mm_prefix_ranges"):
+        if not vllm_version_is("0.34.0"):
             if self.mm_prefix_ranges is None:
                 return None
             return {i: self.mm_prefix_ranges.get(req_id, []) for i, req_id in enumerate(input_batch.req_ids)}

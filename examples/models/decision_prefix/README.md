@@ -12,7 +12,7 @@ This requires the matching vLLM model-state hook and D3 prefix implementation:
   `Liuchenbing-2026/vllm` branch `startlux_decision_eager_pr-g`
   (`5ead79dded61ee73f8c5419c1bb3dcc71e682f09`).
 - vLLM-Ascend base `e445f28a29597aefe85b14abb72eea8a326b3082` with this
-  PrefixLM candidate (`fix/prefix-current-baselines-20261125`).
+  PrefixLM candidate (`fix/prefix-release-gate-20261125`).
 
 **Current validation scope:** attention and worker CPU regressions pass against
 the pinned vLLM main source and stock `v0.34.0` (`62d4bc3c7e33b1b6c906e233e6af2d3506c482ca`).
@@ -24,7 +24,9 @@ NPU model or HTTP acceptance for the current paired sources. Historical
 
 The paired core hook takes priority for decision-model ranges. Stock main owns
 a per-request range cache; stock `v0.34.0` derives native multimodal ranges from
-encoder features per batch. Supporting those stock paths does not add the D3
+encoder features per batch. The stock paths use an explicit `v0.34.0` version
+check, so a same-named cache attribute cannot select the release behavior.
+Supporting those stock paths does not add the D3
 model or decision endpoint to stock vLLM; those still require the paired core.
 
 Run the metadata regressions in a CPU test environment with the matching sources:
