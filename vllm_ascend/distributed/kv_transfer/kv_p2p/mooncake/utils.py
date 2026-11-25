@@ -152,7 +152,7 @@ class MooncakeMetaserverClient:
 class _PreConnectOptionContext:
     """Wrap a ZMQ context to set socket options before connect() runs.
 
-    Older vLLM pins (`v0.33.0` and `c410543d`) do not expose heartbeat
+    Pinned vLLM versions (`v0.34.0` and `c410543d`) do not expose heartbeat
     parameters on `make_zmq_socket`, and libzmq ignores heartbeat options set
     after `connect()`.
     """
