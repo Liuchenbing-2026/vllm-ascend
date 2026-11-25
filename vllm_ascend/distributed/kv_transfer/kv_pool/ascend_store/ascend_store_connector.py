@@ -1,5 +1,6 @@
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any, cast
 
 import torch
@@ -288,13 +289,19 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
     def shutdown(self):
         """Stop store users before closing the backend's native resources."""
         try:
-            if self.connector_scheduler is not None:
-                client = self.connector_scheduler.client
-                try:
-                    if client is not None:
-                        client.close()
-                finally:
-                    self.connector_scheduler.store_scheduler.close()
+            if (sched := self.connector_scheduler) is not None:
+                if hasattr(sched, "shutdown_async_lookup") and sched.shutdown_async_lookup() is False:
+                    logger.warning(
+                        "Skipping synchronous AscendStore client/backend close because async lookup is still running."
+                    )
+                else:
+                    guard = getattr(sched, "_client_lock", None)
+                    with guard if guard is not None else nullcontext():
+                        try:
+                            if sched.client is not None:
+                                sched.client.close()
+                        finally:
+                            sched.store_scheduler.close()
         finally:
             if hasattr(self, "lookup_server"):
                 self.lookup_server.close()
@@ -313,7 +320,7 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
         """Ignore P/D handshake metadata because AscendStore handles PP via pool keys."""
         pass
 
-    def get_num_new_matched_tokens(self, request: "Request", num_computed_tokens: int) -> tuple[int, bool]:
+    def get_num_new_matched_tokens(self, request: "Request", num_computed_tokens: int) -> tuple[int | None, bool]:
         assert self.connector_scheduler is not None
         return self.connector_scheduler.get_num_new_matched_tokens(request, num_computed_tokens)
 

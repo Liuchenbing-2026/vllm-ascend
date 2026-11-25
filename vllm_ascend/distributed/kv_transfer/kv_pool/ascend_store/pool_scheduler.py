@@ -1,5 +1,8 @@
 import math
+import threading
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from contextlib import nullcontext
 from typing import Any
 
 from vllm.config import VllmConfig
@@ -9,6 +12,7 @@ from vllm.utils.math_utils import cdiv
 from vllm.v1.attention.backends.utils import NULL_BLOCK_ID
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.kv_cache_manager import KVCacheBlocks, KVCacheManager
+from vllm.v1.core.kv_cache_utils import BlockHash
 from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
 from vllm.v1.kv_cache_interface import (
     KVCacheConfig,
@@ -27,7 +31,14 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import (
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.coordinator import AscendStoreCoordinator
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.hisparse.layout import has_hisparse_cache_layout
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.in_flight_save_blocks import InFlightSaveBlockTracker
-from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key import LookupKeyClient
+from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key import (
+    AsyncLookupManager,
+    LookupConfig,
+    LookupKeyClient,
+    LookupSignature,
+    make_lookup_signature,
+    parse_lookup_config,
+)
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     AscendConnectorMetadata,
     AscendStoreKVConnectorWorkerMetadata,
@@ -56,6 +67,10 @@ def _new_req_prefill_tokens(request: NewRequestData) -> list[int]:
 
 class BaseKVPoolScheduler(ABC):
     """Shared request tracking, metadata, and cache lifecycle for pool schedulers."""
+
+    _lookup_config: LookupConfig = LookupConfig()
+    _async_lookup: AsyncLookupManager | None = None
+    _client_lock: "threading.Lock | None" = None
 
     def __init__(
         self,
@@ -197,6 +212,13 @@ class BaseKVPoolScheduler(ABC):
         self.model_name = model_config.model.split("/")[-1]
 
         self.client: LookupKeyClient | None = None
+        self._client_lock = threading.Lock()
+        self._lookup_config = parse_lookup_config(extra_config)
+        self._async_lookup = (
+            AsyncLookupManager(self._lookup_config.lookup_timeout_ms, self._lookup_config.lookup_max_inflight)
+            if self._lookup_config.lookup_async
+            else None
+        )
 
     def _use_hybrid(self, vllm_config: VllmConfig, kv_cache_groups: list[Any] | None) -> bool:
         return uses_hybrid_kv_cache(vllm_config.scheduler_config, kv_cache_groups)
@@ -250,11 +272,33 @@ class BaseKVPoolScheduler(ABC):
                 num_mamba_speculative_blocks_by_group[group_id] = kv_cache_spec.num_speculative_blocks
         return num_mamba_speculative_blocks_by_group
 
+    def _discard_async_lookup(self, req_id: str) -> None:
+        if self._async_lookup is not None:
+            self._async_lookup.discard(req_id)
+
+    def shutdown_async_lookup(self) -> bool:
+        return self._async_lookup.shutdown() if self._async_lookup is not None else True
+
+    def _prepare_async_lookup(
+        self, request: "Request", num_computed_tokens: int
+    ) -> tuple[LookupSignature, Callable[[], Callable[[float], StoreLookupResult]]] | None:
+        del request, num_computed_tokens
+        return None
+
+    def _resolve_external_hit_tokens(self, request: "Request", num_computed_tokens: int) -> StoreLookupResult | None:
+        if self._async_lookup is None:
+            result = self._lookup_external_hit_tokens(request, num_computed_tokens)
+            return result if result is not None else StoreLookupResult(0)
+        prepared = self._prepare_async_lookup(request, num_computed_tokens)
+        if prepared is None:
+            return StoreLookupResult(0)
+        return self._async_lookup.poll_or_submit(request.request_id, *prepared)
+
     def get_num_new_matched_tokens(
         self,
         request: "Request",
         num_computed_tokens: int,
-    ) -> tuple[int, bool]:
+    ) -> tuple[int | None, bool]:
         """
         Check for external KV cache hit.
 
@@ -265,20 +309,24 @@ class BaseKVPoolScheduler(ABC):
 
         Returns:
             the number of tokens that can be loaded from the
-            external KV cache beyond what is already computed.
+            external KV cache beyond what is already computed, or
+            ``(None, False)`` when an async lookup is still in flight.
         """
         # A waiting request can be looked up again before it is admitted.
         # Never retain a load plan from an earlier hit across a miss/early return.
         self.load_specs.pop(request.request_id, None)
         if not self.enable_lookup:
+            self._discard_async_lookup(request.request_id)
             return 0, False
 
         # Core passes the candidate load start and owns local-tail arbitration:
         # it drops a local sub-block tail only if the remote hit strictly
         # extends it.
 
-        lookup_result = self._lookup_external_hit_tokens(request, num_computed_tokens)
-        if lookup_result is None or not lookup_result.hit_length:
+        lookup_result = self._resolve_external_hit_tokens(request, num_computed_tokens)
+        if lookup_result is None:
+            return None, False
+        if not lookup_result.hit_length:
             return 0, False
         num_external_hit_tokens = lookup_result.hit_length
 
@@ -380,6 +428,7 @@ class BaseKVPoolScheduler(ABC):
         For SharedStorageConnector, update _request_needs_load
         if the CacheManager this allocated blocks for us.
         """
+        self._discard_async_lookup(request.request_id)
         local_block_ids: list[list[int]] = [[] for _ in self.kv_cache_group_ids]
         if num_external_tokens > 0:
             local_block_ids = normalize_block_ids_by_group(blocks.get_block_ids())
@@ -666,12 +715,14 @@ class BaseKVPoolScheduler(ABC):
             self._request_trackers.pop(finished_req_id, None)
             self._unfinished_requests.pop(finished_req_id, None)
             self._preempted_req_ids.discard(finished_req_id)
+            self._discard_async_lookup(finished_req_id)
 
         for req_id in scheduler_output.preempted_req_ids:
             self._preempted_req_ids.update(scheduler_output.preempted_req_ids)
             self._request_trackers.pop(req_id, None)
             self._unfinished_requests.pop(req_id, None)
             self._async_loading_req_ids.discard(req_id)
+            self._discard_async_lookup(req_id)
 
         meta = AscendConnectorMetadata(
             scheduler_output.preempted_req_ids,
@@ -860,19 +911,23 @@ class BaseKVPoolScheduler(ABC):
             return False
         if stale_ids:
             self._async_loading_req_ids.clear()
-
-        if self.client is None:
-            self.client = LookupKeyClient(self.vllm_config)
-        try:
-            ok = self.client.reset()
-            if ok:
-                logger.info("AscendStore reset via remove_all succeeded.")
-            else:
-                logger.warning("AscendStore reset returned NACK from worker.")
-            return ok
-        except Exception as e:
-            logger.error("AscendStore reset_store RPC failed: %s", e)
+        if self._async_lookup is not None and not self._async_lookup.wait_and_clear():
+            logger.warning("AscendStore reset_store refused; timed out waiting for background KV lookup to drain.")
             return False
+
+        guard: Any = self._client_lock if self._client_lock is not None else nullcontext()
+        with guard:
+            if self.client is None or getattr(self.client, "closed", False) is True:
+                self.client = LookupKeyClient(self.vllm_config)
+            try:
+                ok = self.client.reset()
+                logger.info("AscendStore reset via remove_all succeeded.") if ok else logger.warning(
+                    "AscendStore reset returned NACK from worker."
+                )
+                return ok
+            except Exception as e:
+                logger.error("AscendStore reset_store RPC failed: %s", e)
+                return False
 
 
 class KVPoolScheduler(BaseKVPoolScheduler):
@@ -1045,7 +1100,7 @@ class KVPoolScheduler(BaseKVPoolScheduler):
         # The store job owns exact block refs, so request cleanup need not wait.
         return False
 
-    def _lookup_external_hit_tokens(self, request: Request, num_computed_tokens: int) -> StoreLookupResult | None:
+    def _resolve_lookup_token_len(self, request: Request, num_computed_tokens: int) -> int | None:
         # Core may reschedule the request with zero computed tokens after an
         # import failure. A key can still be visible to lookup while GET fails.
         if request.request_id in self._failed_external_load_req_ids:
@@ -1057,19 +1112,52 @@ class KVPoolScheduler(BaseKVPoolScheduler):
         elif len(self.cacheable_group_ids) != len(self.original_block_size):
             # Private compressor state is rebuilt from a whole token page.
             token_len = self._floor_to_cache_transfer_granularity(max(prompt_token_len - 1, 0))
+        elif self._discard_partial_chunks:
+            token_len = self._floor_to_cache_transfer_granularity(prompt_token_len)
         else:
-            token_len = (
-                self._floor_to_cache_transfer_granularity(prompt_token_len)
-                if self._discard_partial_chunks
-                else prompt_token_len
-            )
+            token_len = prompt_token_len
         if token_len < self.cache_transfer_granularity or num_computed_tokens >= token_len:
             return None
-        if self.client is None or self.client.closed:
-            self.client = LookupKeyClient(self.vllm_config)
-        return self.client.lookup(
-            token_len,
-            request.block_hashes,
-            self.kv_cache_group_ids,
-            hbm_hit_tokens=num_computed_tokens,
+        return token_len
+
+    def _execute_client_lookup(
+        self,
+        token_len: int,
+        block_hashes: list[BlockHash],
+        group_ids: list[int],
+        hbm_hit_tokens: int,
+        *,
+        deadline: float | None = None,
+    ) -> StoreLookupResult:
+        guard: Any = self._client_lock if self._client_lock is not None else nullcontext()
+        with guard:
+            if self.client is None or getattr(self.client, "closed", False) is True:
+                self.client = LookupKeyClient(self.vllm_config)
+            return self.client.lookup(
+                token_len, block_hashes, group_ids, hbm_hit_tokens=hbm_hit_tokens, deadline=deadline
+            )
+
+    def _lookup_external_hit_tokens(self, request: Request, num_computed_tokens: int) -> StoreLookupResult | None:
+        token_len = self._resolve_lookup_token_len(request, num_computed_tokens)
+        if token_len is None:
+            return None
+        return self._execute_client_lookup(
+            token_len, request.block_hashes, self.kv_cache_group_ids, num_computed_tokens
         )
+
+    def _prepare_async_lookup(
+        self, request: Request, num_computed_tokens: int
+    ) -> tuple[LookupSignature, Callable[[], Callable[[float], StoreLookupResult]]] | None:
+        token_len = self._resolve_lookup_token_len(request, num_computed_tokens)
+        if token_len is None:
+            return None
+        block_hashes = request.block_hashes
+        signature = make_lookup_signature(token_len, num_computed_tokens, block_hashes)
+
+        def submit_factory() -> Callable[[float], StoreLookupResult]:
+            hashes_snap, groups_snap = list(block_hashes), list(self.kv_cache_group_ids)
+            return lambda dl: self._execute_client_lookup(
+                token_len, hashes_snap, groups_snap, num_computed_tokens, deadline=dl
+            )
+
+        return signature, submit_factory
