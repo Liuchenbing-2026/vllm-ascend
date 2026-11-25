@@ -124,23 +124,20 @@ class AscendFusedTopKRouter(AscendGroupedTopKRouter):
 
     def is_fused_supported(
         self,
-        hidden_states: torch.Tensor,
+        router_logits: torch.Tensor,
     ) -> bool:
+        # The fused kernel consumes ``router_logits``, so its capacity bounds are
+        # defined over the expert count (the last dim of the logits), not over
+        # the hidden size of ``hidden_states``.
+        num_experts = router_logits.shape[-1]
         topk_group = self.topk_group if self.topk_group is not None else 1
         num_expert_group = self.num_expert_group if self.num_expert_group is not None else 1
-        if not (
-            num_expert_group > 0
-            and hidden_states.shape[-1] % num_expert_group == 0
-            and hidden_states.shape[-1] // num_expert_group > 2
-        ):
+        if not (num_expert_group > 0 and num_experts % num_expert_group == 0 and num_experts // num_expert_group > 2):
             return False
-        if self.top_k > (hidden_states.shape[-1] / (num_expert_group * topk_group)):
-            return False
-        if topk_group * hidden_states.shape[-1] / num_expert_group < self.top_k:  # noqa: SIM103
-            return False
-        return True
+        # ``top_k`` experts must fit into the ``topk_group`` selected groups.
+        return self.top_k <= topk_group * (num_experts // num_expert_group)
 
-    def _can_fuse_gating_map(self, hidden_states: torch.Tensor) -> bool:
+    def _can_fuse_gating_map(self, router_logits: torch.Tensor) -> bool:
         profile = get_current_hardware_profile()
         return (
             self.eplb_state is not None
@@ -149,7 +146,7 @@ class AscendFusedTopKRouter(AscendGroupedTopKRouter):
             and self.num_expert_group in (None, 1)
             and self.topk_group in (None, 1)
             and (self.bias_vl is None or profile.supports(HardwareCapability.MOE_GATING_TOP_K_HASH_VISION))
-            and self.is_fused_supported(hidden_states)
+            and self.is_fused_supported(router_logits)
         )
 
     def _get_gating_map_table(self) -> torch.Tensor | None:
@@ -173,8 +170,8 @@ class AscendFusedTopKRouter(AscendGroupedTopKRouter):
         input_ids: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if self._use_gating_top_k_with_map is None:
-            self._use_gating_top_k_with_map = self._can_fuse_gating_map(hidden_states)
-        if self.bias_vl is None and not self.is_fused_supported(hidden_states):
+            self._use_gating_top_k_with_map = self._can_fuse_gating_map(router_logits)
+        if self.bias_vl is None and not self.is_fused_supported(router_logits):
             return super()._compute_routing(
                 hidden_states=hidden_states,
                 router_logits=router_logits,
