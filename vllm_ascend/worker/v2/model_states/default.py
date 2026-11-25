@@ -20,7 +20,7 @@
 from collections.abc import Callable, Collection
 from contextlib import contextmanager, nullcontext
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import torch
@@ -29,6 +29,7 @@ from vllm.config.compilation import CUDAGraphMode
 from vllm.distributed import get_dp_group
 from vllm.forward_context import get_forward_context, set_forward_context
 from vllm.utils.platform_utils import is_pin_memory_available
+from vllm.v1.attention.backends.utils import compute_mm_prefix_ranges
 from vllm.v1.kv_cache_interface import CircularBufferSpec, KVCacheConfig
 from vllm.v1.utils import CpuGpuBuffer
 from vllm.v1.worker.dp_utils import skip_dp_coordination
@@ -87,6 +88,26 @@ class AscendModelState(DefaultModelState):
         """Join auxiliary metadata work even if input preparation failed."""
         if self.device_metadata is not None:
             self.device_metadata.finish()
+
+    def _get_mm_prefix_ranges(self, input_batch: AscendInputBatch) -> dict[int, list[tuple[int, int]]] | None:
+        """Return per-request PrefixLM ranges from paired core or stock vLLM cache."""
+        get_ranges = getattr(super(), "get_mm_prefix_ranges", None)
+        if callable(get_ranges):
+            return cast(dict[int, list[tuple[int, int]]] | None, get_ranges(input_batch))
+        if hasattr(self, "mm_prefix_ranges"):
+            if self.mm_prefix_ranges is None:
+                return None
+            return {i: self.mm_prefix_ranges.get(req_id, []) for i, req_id in enumerate(input_batch.req_ids)}
+        # The release core computes ranges from encoder features per batch.
+        if self.supports_mm_inputs and self.encoder_cache is not None and self.model_config.is_mm_prefix_lm:
+            return compute_mm_prefix_ranges(
+                [self.encoder_cache.mm_features.get(req_id, ()) for req_id in input_batch.req_ids],
+                sliding_window=self.model_config.get_sliding_window(),
+                clamp_sliding_window=getattr(self.model, "mm_prefix_clamp_sliding_window", False)
+                or getattr(self.model_config.hf_text_config, "mm_prefix_clamp_sliding_window", False),
+                span_pad=getattr(self.model, "mm_prefix_span_leading_pad_modulus", 0),
+            )
+        return None
 
     def __init__(self, vllm_config, model, encoder_cache, device):
         super().__init__(vllm_config, model, encoder_cache, device)
@@ -643,6 +664,7 @@ class AscendModelState(DefaultModelState):
             # Same wiring as model_runner_v1
             full_graph_mode=cudagraph_mode == CUDAGraphMode.FULL,
             model_specific_attn_metadata=model_specific_attn_metadata,
+            mm_prefix_ranges=self._get_mm_prefix_ranges(input_batch),
             req_ids_tensor=offload_req_ids.gpu[:num_reqs] if offload_req_ids is not None else None,
             token_to_req=offload_token_to_req.gpu[:num_input_tokens] if offload_token_to_req is not None else None,
             offload_dummy=getattr(input_batch, "is_dummy", False),

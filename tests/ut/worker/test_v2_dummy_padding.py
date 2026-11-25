@@ -7,8 +7,10 @@ import numpy as np
 import pytest
 import torch
 from vllm.config import CUDAGraphMode
+from vllm.multimodal.inputs import MultiModalFeatureSpec, PlaceholderRange
 from vllm.v1.worker.gpu.dp_utils import dispatch_cg_and_sync_dp
 from vllm.v1.worker.gpu.input_batch import set_dummy_context
+from vllm.v1.worker.gpu.mm.encoder_cache import EncoderCache
 from vllm.v1.worker.gpu.model_runner import GPUModelRunner
 from vllm.v1.worker.utils import get_uniform_decode_token_count
 
@@ -16,12 +18,46 @@ from vllm_ascend.worker.v2.aclgraph_utils import ModelAclGraphManager
 from vllm_ascend.worker.v2.input_batch import AscendInputBatch, AscendInputBuffers
 from vllm_ascend.worker.v2.model_runner import NPUModelRunner
 from vllm_ascend.worker.v2.model_states.default import AscendModelState
+from vllm_ascend.worker.v2.model_states.hybrid_encoder import AscendHybridEncoderModelState
 from vllm_ascend.worker.v2.model_states.mamba_hybrid import AscendMambaHybridModelState
 
 
 @pytest.fixture
 def buffers():
     return AscendInputBuffers(16, 64, torch.device("cpu"))
+
+
+@pytest.mark.parametrize("state_type", [AscendModelState, AscendMambaHybridModelState, AscendHybridEncoderModelState])
+def test_causal_model_state_has_no_prefix_ranges(make_model_state, state_type, buffers):
+    state = make_model_state(state_type)
+    with patch("vllm_ascend.worker.v2.input_batch.update_cos_sin"):
+        batch = AscendInputBatch.make_dummy(1, 2, buffers)
+    assert state._get_mm_prefix_ranges(batch) is None
+
+
+@pytest.mark.parametrize("state_type", [AscendModelState, AscendMambaHybridModelState, AscendHybridEncoderModelState])
+def test_prefix_ranges_follow_request_order_and_removal(make_model_state, state_type, buffers):
+    state = make_model_state(state_type)
+    feature = MultiModalFeatureSpec(
+        data=None, modality="image", identifier="image", mm_position=PlaceholderRange(offset=1, length=3)
+    )
+    state.encoder_cache = EncoderCache()
+    state.encoder_cache.add_request("image-request", [feature])
+    state.supports_mm_inputs = True
+    state.model_config.model_arch_config.is_mm_prefix_lm = True
+    state.model_config.__dict__.pop("is_mm_prefix_lm", None)
+    # Current main owns a persistent cache; release derives ranges per batch.
+    if hasattr(state, "mm_prefix_ranges"):
+        state.mm_prefix_ranges = {"image-request": [(1, 3)]}
+    with patch("vllm_ascend.worker.v2.input_batch.update_cos_sin"):
+        batch = AscendInputBatch.make_dummy(2, 8, buffers)
+    batch.req_ids = ["text-request", "image-request"]
+    assert state._get_mm_prefix_ranges(batch) == {0: [], 1: [(1, 3)]}
+    batch.req_ids.reverse()
+    assert state._get_mm_prefix_ranges(batch) == {0: [(1, 3)], 1: []}
+    state.remove_request("image-request")
+    state.encoder_cache.remove_request("image-request")
+    assert state._get_mm_prefix_ranges(batch) == {0: [], 1: []}
 
 
 @pytest.fixture
@@ -325,12 +361,12 @@ def test_dummy_slot_mapping_uses_padded_persistent_buffer(buffers, runner):
     [(CUDAGraphMode.PIECEWISE, True, 16), (CUDAGraphMode.PIECEWISE, False, 2), (CUDAGraphMode.NONE, True, 2)],
 )
 def test_attention_keeps_actual_queries_and_padded_dummy_inputs(
-    buffers, mode, is_dummy, expected_input_tokens, state_type
+    buffers, mode, is_dummy, expected_input_tokens, state_type, make_model_state
 ):
     with patch.object(buffers, "dummy_num_tokens", 2), patch("vllm_ascend.worker.v2.input_batch.update_cos_sin"):
         batch = AscendInputBatch.make_dummy(1, 16, buffers)
     batch.is_dummy = is_dummy
-    state = state_type.__new__(state_type)
+    state = make_model_state(state_type)
     state.decoder_replay = None
     state.recoverssm = None
     state.vllm_config = SimpleNamespace(
@@ -346,6 +382,7 @@ def test_attention_keeps_actual_queries_and_padded_dummy_inputs(
     with patch(f"{state_type.__module__}.build_attn_metadata", return_value={}) as build:
         assert state.prepare_attn(batch, mode, (), torch.full((1, 16), -1), [], None) == {}
     kwargs = build.call_args.kwargs
+    assert kwargs["mm_prefix_ranges"] is None
     assert kwargs["num_input_tokens"] == expected_input_tokens
     assert kwargs.get("num_actual_tokens", kwargs["num_tokens"]) == 2
     assert kwargs["max_query_len"] == 2

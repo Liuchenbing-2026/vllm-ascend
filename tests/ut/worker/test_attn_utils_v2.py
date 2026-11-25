@@ -1718,8 +1718,8 @@ def test_v2_fused_offload_splits_target_and_draft_metadata_in_one_sfa_group(for_
     assert metadata["draft.layer"].common is builder.calls[1]
 
 
-def test_v2_fused_offload_prepares_request_ownership_and_restores_tails(monkeypatch):
-    state = AscendModelState.__new__(AscendModelState)
+def test_v2_fused_offload_prepares_request_ownership_and_restores_tails(monkeypatch, make_model_state):
+    state = make_model_state(AscendModelState)
     state.decoder_replay = None
     state.vllm_config = SimpleNamespace(
         parallel_config=SimpleNamespace(prefill_context_parallel_size=1),
@@ -2031,13 +2031,7 @@ def test_dsv4_backends_declare_role_specific_logical_sizes(
 )
 @pytest.mark.parametrize("builder_cls", [_RecordingDSAMetadataBuilder])
 def test_mrv2_builds_shared_dsa_metadata_for_each_execution_mode(
-    monkeypatch,
-    caller,
-    cudagraph_mode,
-    for_capture,
-    pcp_size,
-    expected_input_tokens,
-    builder_cls,
+    monkeypatch, caller, cudagraph_mode, for_capture, pcp_size, expected_input_tokens, builder_cls, make_model_state
 ):
     parallel_config = SimpleNamespace(
         prefill_context_parallel_size=pcp_size,
@@ -2093,7 +2087,7 @@ def test_mrv2_builds_shared_dsa_metadata_for_each_execution_mode(
             parallel_config=parallel_config,
         )
     else:
-        model_state = AscendModelState.__new__(AscendModelState)
+        model_state = make_model_state(AscendModelState)
         model_state.decoder_replay = None
         # Since vLLM 0.31 (#58149), max_model_len is exposed as a read-only property backed by
         # model_config.

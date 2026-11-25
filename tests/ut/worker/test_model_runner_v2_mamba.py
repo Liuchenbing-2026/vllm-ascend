@@ -399,11 +399,12 @@ def test_prepare_inputs_propagates_padded_request_count():
 @pytest.mark.parametrize("graph_mode", [CUDAGraphMode.FULL, CUDAGraphMode.NONE])
 @pytest.mark.parametrize("recover", [False, True])
 def test_prepare_attn_keeps_actual_counts_separate_from_padding(
-    mock_build_attn_metadata, num_spec, graph_mode, recover
+    mock_build_attn_metadata, num_spec, graph_mode, recover, make_model_state
 ):
     expected_metadata = {"gdn": object()}
     mock_build_attn_metadata.return_value = expected_metadata
-    state = SimpleNamespace(
+    state = make_model_state(
+        AscendMambaHybridModelState,
         vllm_config=SimpleNamespace(
             num_speculative_tokens=num_spec,
             parallel_config=SimpleNamespace(decode_context_parallel_size=1),
@@ -465,12 +466,13 @@ def test_prepare_attn_keeps_actual_counts_separate_from_padding(
 @pytest.mark.parametrize("num_draft_tokens", [None, 0, 3])
 @pytest.mark.parametrize("adaptive", [False, True])
 def test_prepare_attn_classifies_one_token_prompt_tails(
-    mock_build_attn_metadata, graph_mode, num_draft_tokens, adaptive
+    mock_build_attn_metadata, graph_mode, num_draft_tokens, adaptive, make_model_state
 ):
     """vLLM #58400 requires prompt-tail drafts to use rollback-capable decode metadata."""
     drafts_missing = num_draft_tokens is None
     num_draft_tokens = num_draft_tokens or 0
-    state = SimpleNamespace(
+    state = make_model_state(
+        AscendMambaHybridModelState,
         vllm_config=SimpleNamespace(
             num_speculative_tokens=3,
             speculative_config=SimpleNamespace(enable_adaptive_verification=adaptive),
@@ -663,9 +665,10 @@ def test_pcp_builds_metadata_in_one_device_lifecycle(graph_mode, for_capture, is
 @pytest.mark.parametrize("use_pcp_padding", [False, True])
 @pytest.mark.parametrize("has_pcp_context", [False, True])
 def test_mamba_padding_is_independent_of_pcp_context(
-    mock_build_attn_metadata, graph_mode, use_pcp_padding, has_pcp_context
+    mock_build_attn_metadata, graph_mode, use_pcp_padding, has_pcp_context, make_model_state
 ):
-    state = SimpleNamespace(
+    state = make_model_state(
+        AscendMambaHybridModelState,
         vllm_config=SimpleNamespace(num_speculative_tokens=0, parallel_config=SimpleNamespace()),
         max_model_len=1024,
     )
@@ -1426,9 +1429,10 @@ def test_init_model_state_uses_override_then_default():
 
 
 @patch("vllm_ascend.worker.v2.model_states.mamba_hybrid.build_attn_metadata")
-def test_prepare_attn_uses_promised_varlen_capture_bound(mock_build_attn_metadata):
+def test_prepare_attn_uses_promised_varlen_capture_bound(mock_build_attn_metadata, make_model_state):
     """A 16x1 dummy capture must allow a real 9-token verification query."""
-    state = SimpleNamespace(
+    state = make_model_state(
+        AscendMambaHybridModelState,
         vllm_config=SimpleNamespace(num_speculative_tokens=8, parallel_config=SimpleNamespace()),
         max_model_len=32768,
     )
