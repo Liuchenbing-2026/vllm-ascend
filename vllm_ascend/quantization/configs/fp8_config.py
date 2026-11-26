@@ -18,6 +18,39 @@ from ..utils import is_fused_moe_layer
 QUANTIZATION_SCHEME_MAP_TYPE = dict[str, dict[str, QuantizationArgs] | None]
 
 
+def _is_fp8_layer_skipped(quant_config: Fp8Config, prefix: str) -> bool:
+    """Allow flat checkpoint prefixes to match layers under a model wrapper."""
+    ignored_layers = getattr(quant_config, "ignored_layers", None)
+    if not ignored_layers:
+        return False
+
+    match_mode = getattr(quant_config, "ignored_layers_match_mode", "exact")
+    packed_mapping = getattr(quant_config, "packed_modules_mapping", None) or {}
+    if is_layer_skipped(prefix, ignored_layers, packed_mapping, match_mode=match_mode):
+        return True
+
+    if match_mode == "suffix":
+        return False
+
+    if is_layer_skipped(prefix, ignored_layers, packed_mapping, match_mode="suffix"):
+        logger.warning_once(
+            "Layer '%s' was left unquantized because it matched an entry in this "
+            "checkpoint's `ignored_layers` / `modules_to_not_convert` only via a "
+            "module-prefix suffix, not an exact match. This usually means the "
+            "checkpoint's `quantization_config` was written for a different "
+            "module-prefix convention than the one vLLM constructed for this model "
+            "(for example, a nested conditional-generation wrapper whose language "
+            "model lives under a `language_model.` submodule). The layer is being "
+            "treated as intentionally unquantized, which is very likely correct, but "
+            "you should fix the checkpoint's `ignored_layers` prefixes to match "
+            "vLLM's module names directly so this fallback is no longer needed.",
+            prefix,
+        )
+        return True
+
+    return False
+
+
 @register_quantization_config(FP8_METHOD)
 class AscendFp8Config(Fp8Config):
     """Serve checkpoints published under the generic HF ``fp8`` quant method.
@@ -55,33 +88,7 @@ class AscendFp8Config(Fp8Config):
 
     def _is_layer_skipped(self, prefix: str) -> bool:
         """Allow flat checkpoint prefixes to match layers under a model wrapper."""
-        if not getattr(self, "ignored_layers", None):
-            return False
-
-        match_mode = getattr(self, "ignored_layers_match_mode", "exact")
-        if is_layer_skipped(prefix, self.ignored_layers, self.packed_modules_mapping, match_mode=match_mode):
-            return True
-
-        if match_mode == "suffix":
-            return False
-
-        if is_layer_skipped(prefix, self.ignored_layers, self.packed_modules_mapping, match_mode="suffix"):
-            logger.warning_once(
-                "Layer '%s' was left unquantized because it matched an entry in this "
-                "checkpoint's `ignored_layers` / `modules_to_not_convert` only via a "
-                "module-prefix suffix, not an exact match. This usually means the "
-                "checkpoint's `quantization_config` was written for a different "
-                "module-prefix convention than the one vLLM constructed for this model "
-                "(for example, a nested conditional-generation wrapper whose language "
-                "model lives under a `language_model.` submodule). The layer is being "
-                "treated as intentionally unquantized, which is very likely correct, but "
-                "you should fix the checkpoint's `ignored_layers` prefixes to match "
-                "vLLM's module names directly so this fallback is no longer needed.",
-                prefix,
-            )
-            return True
-
-        return False
+        return _is_fp8_layer_skipped(self, prefix)
 
     def get_quant_method(
         self,
@@ -132,22 +139,39 @@ class AscendDeepseekV4FP8Config(DeepseekV4FP8Config):
         super().__init__(*args, **kwargs)
         self.quant_description = {}
 
+    def _is_layer_skipped(self, prefix: str) -> bool:
+        """Allow flat checkpoint prefixes to match layers under a model wrapper."""
+        return _is_fp8_layer_skipped(self, prefix)
+
     def get_quant_method(
         self,
         layer: torch.nn.Module,
         prefix: str,
     ) -> Optional["QuantizeMethodBase"]:
+        from vllm_ascend.ops.fused_moe.routed_experts import AscendUnquantizedFusedMoEMethod
+        from vllm_ascend.ops.linear import AscendUnquantizedLinearMethod
+
         from ..method_adapters import (
             AscendFusedMoEMethod,
             AscendLinearMethod,
         )
 
-        if isinstance(layer, LinearBase):
+        is_linear = isinstance(layer, LinearBase)
+        is_moe = is_fused_moe_layer(layer)
+        if not is_linear and not is_moe:
+            return None
+
+        if self._is_layer_skipped(prefix):
+            if is_linear:
+                return AscendUnquantizedLinearMethod()
+            return AscendUnquantizedFusedMoEMethod(layer.moe_config)
+
+        if is_linear:
             scheme_class = get_scheme_class(FP8_METHOD, "ds_linear")
             assert scheme_class is not None, f"No scheme registered for {FP8_METHOD}/ds_linear"
             quant_method = AscendLinearMethod(scheme_class(self.weight_block_size))
             return quant_method
-        if is_fused_moe_layer(layer):
+        if is_moe:
             if self.expert_dtype == "fp4":
                 scheme_class = get_scheme_class(FP8_METHOD, "ds_w4a8_moe")
                 assert scheme_class is not None, f"No scheme registered for {FP8_METHOD}/ds_w4a8_moe"

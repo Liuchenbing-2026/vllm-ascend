@@ -59,6 +59,9 @@ class AscendDeepseekV4ForConditionalGeneration(
     """DeepSeek-V4 vision entry point using the Ascend text backbone."""
 
     requires_raw_input_tokens = True
+    packed_modules_mapping = {
+        name: list(shards) for name, shards in AscendDeepseekV4ForCausalLM.packed_modules_mapping.items()
+    }
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:

@@ -44,7 +44,11 @@ from vllm_ascend.models.common.ops.sequence_parallel import (
     sp_padding_mask,
     sp_shard,
 )
-from vllm_ascend.models.deepseek_v4.dspark import _duplicate_context_wkv_weights
+from vllm_ascend.models.deepseek_v4.dspark import (
+    _align_draft_quant_exclusions,
+    _duplicate_context_wkv_weights,
+    _resolve_context_wkv_quant_config,
+)
 from vllm_ascend.models.deepseek_v41.model import (
     AscendDeepseekV41SWACache,
     DeepseekV41Attention,
@@ -175,6 +179,14 @@ class DeepseekV41DSparkModel(torch.nn.Module):
             quant_config=vllm_config.quant_config,
             prefix=maybe_prefix(prefix, "embed_tokens"),
         )
+        _align_draft_quant_exclusions(
+            vllm_config.quant_config,
+            prefix=prefix,
+            mtp_start_layer_idx=self.mtp_start_layer_idx,
+            num_draft_layers=self.num_dspark_layers,
+            mtp_prefix="mtp",
+            include_main_proj=True,
+        )
         self.layers = torch.nn.ModuleDict(
             {
                 str(self.mtp_start_layer_idx + idx): DeepseekV41DSparkDecoderLayer(
@@ -202,12 +214,17 @@ class DeepseekV41DSparkModel(torch.nn.Module):
         # and improve GEMM utilization. Reuse the first layer's real prefix so
         # ModelSlim selects the checkpoint's WKV quantization scheme for this
         # synthetic runtime module.
+        wkv_quant_config = _resolve_context_wkv_quant_config(
+            vllm_config.quant_config,
+            prefix=prefix,
+            mtp_start_layer_idx=self.mtp_start_layer_idx,
+        )
         self.context_wkv_proj = MergedColumnParallelLinear(
             config.hidden_size,
             [config.head_dim] * self.num_dspark_layers,
             bias=False,
             return_bias=False,
-            quant_config=vllm_config.quant_config,
+            quant_config=wkv_quant_config,
             prefix="mtp.0.self_attn.wkv",
             disable_tp=True,
         )

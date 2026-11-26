@@ -32,6 +32,8 @@ from vllm.model_executor.layers.linear import (
     MergedColumnParallelLinear,
 )
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
+from vllm.model_executor.layers.quantization import QuantizationConfig
+from vllm.model_executor.layers.quantization.utils.quant_utils import is_layer_skipped
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
     VocabParallelEmbedding,
@@ -45,6 +47,7 @@ from vllm.platforms import current_platform
 from vllm_ascend.attention.dsa_v1 import AscendDSAImpl, OProjBufferPool
 from vllm_ascend.models.common.ops.sequence_parallel import sp_padding_mask, sp_shard
 from vllm_ascend.models.deepseek_v4.model import (
+    AscendDeepseekV4ForCausalLM,
     DeepseekV2MixtureOfExperts,
     DeepseekV4DecoderLayer,
     DeepseekV4MoE,
@@ -105,6 +108,120 @@ def _duplicate_context_wkv_weights(
         yield f"context_wkv_proj.{match.group(2)}", stacked_weight
 
 
+def _align_draft_quant_exclusions(
+    quant_config: QuantizationConfig | None,
+    *,
+    prefix: str,
+    mtp_start_layer_idx: int,
+    num_draft_layers: int,
+    mtp_prefix: str = "mtp",
+    include_main_proj: bool = True,
+) -> None:
+    """Mirror draft exclusions onto Ascend ``{mtp_prefix}.{stage}.*`` runtime prefixes."""
+    if quant_config is None:
+        return
+    wrappers: set[tuple[str, ...]] = {(), ("model",), ("language_model",), ("language_model", "model")}
+    if prefix:
+        prefix_parts = tuple(seg for seg in prefix.split(".") if seg)
+        base = prefix_parts[:-1] if prefix_parts and prefix_parts[-1] == "mtp" else prefix_parts
+        if base:
+            wrappers.add(base)
+            if base[-1] != "model":
+                wrappers.add((*base, "model"))
+    sorted_wrappers = sorted(wrappers, key=len, reverse=True)
+    comp_map = {"attn": "self_attn", "ffn": "mlp", "w1": "gate_proj", "w2": "down_proj", "w3": "up_proj"}
+
+    for attr_name in ("ignored_layers", "exclude_modules", "ignore"):
+        entries = getattr(quant_config, attr_name, None)
+        if not entries or not isinstance(entries, (list, tuple, set)):
+            continue
+        existing, additions = set(entries), []
+        for entry in entries:
+            if not isinstance(entry, str) or (attr_name == "ignore" and entry.startswith("re:")):
+                continue
+            parts = entry.split(".")
+            stripped = next(
+                (
+                    parts[len(w) :]
+                    for w in sorted_wrappers
+                    if not w or (len(parts) > len(w) and tuple(parts[: len(w)]) == w)
+                ),
+                parts,
+            )
+            if len(stripped) < 2 or not stripped[1].isdigit():
+                continue
+            idx = int(stripped[1])
+            if stripped[0] == "layers" and mtp_start_layer_idx <= idx < mtp_start_layer_idx + num_draft_layers:
+                stage = idx - mtp_start_layer_idx
+            elif stripped[0] == "mtp" and 0 <= idx < num_draft_layers:
+                stage = idx
+            else:
+                continue
+            rest = [comp_map.get(seg, seg) for seg in stripped[2:]]
+            root = f"{mtp_prefix}.{stage}"
+            candidates = [f"{root}.{'.'.join(rest)}" if rest else root]
+            if not rest:
+                if attr_name == "exclude_modules":
+                    candidates.append(f"{root}.*")
+                elif attr_name == "ignore":
+                    candidates.append(f"re:^{re.escape(root)}(\\..+)?$")
+            if not include_main_proj and rest == ["shared_head", "head"]:
+                candidates.append(f"{root}.head")
+            if include_main_proj and stage == 0 and (not rest or rest in (["main_proj"], ["*"])):
+                candidates.append(maybe_prefix(prefix, f"layers.{mtp_start_layer_idx}.main_proj"))
+                if not rest or rest == ["*"]:
+                    candidates.append(f"{root}.main_proj")
+            for alias in candidates:
+                if alias not in existing:
+                    existing.add(alias)
+                    additions.append(alias)
+        if additions:
+            setattr(quant_config, attr_name, [*entries, *additions])
+
+
+def _resolve_context_wkv_quant_config(
+    quant_config: QuantizationConfig | None, *, prefix: str, mtp_start_layer_idx: int
+) -> QuantizationConfig | None:
+    """Return ``None`` when quant exclusions skip DSpark layer-0 ``wkv``."""
+    if quant_config is None:
+        return None
+    ignored = getattr(quant_config, "ignored_layers", None)
+    excluded = getattr(quant_config, "exclude_modules", None)
+    ignore = getattr(quant_config, "ignore", None)
+    if not ignored and not excluded and not ignore:
+        return quant_config
+
+    match_mode = getattr(quant_config, "ignored_layers_match_mode", None) or "exact"
+    packed = getattr(quant_config, "packed_modules_mapping", None) or {}
+    candidates = {
+        "mtp.0.self_attn.wkv",
+        maybe_prefix(prefix, "mtp.0.self_attn.wkv"),
+        "mtp.0.attn.wkv",
+        maybe_prefix(prefix, f"layers.{mtp_start_layer_idx}.self_attn.wkv"),
+        maybe_prefix(prefix, f"layers.{mtp_start_layer_idx}.attn.wkv"),
+    }
+    if ignored and any(
+        is_layer_skipped(prefix=c, ignored_layers=ignored, fused_mapping=packed, match_mode=m)
+        for c in candidates
+        for m in (("suffix",) if match_mode == "suffix" else (match_mode, "suffix"))
+    ):
+        return None
+    if excluded:
+        is_excluded = getattr(quant_config, "is_layer_excluded", None)
+        if any(
+            (callable(is_excluded) and is_excluded(c))
+            or is_layer_skipped(prefix=c, ignored_layers=excluded, fused_mapping=packed)
+            for c in candidates
+        ):
+            return None
+    if ignore:
+        from vllm.model_executor.layers.quantization.compressed_tensors.utils import should_ignore_layer
+
+        if any(should_ignore_layer(c, ignore=ignore, fused_mapping=packed) for c in candidates):
+            return None
+    return quant_config
+
+
 class DeepseekV4DSparkModel(nn.Module):
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
@@ -124,6 +241,14 @@ class DeepseekV4DSparkModel(nn.Module):
             config.hidden_size,
             quant_config=vllm_config.quant_config,
             prefix=maybe_prefix(prefix, "embed_tokens"),
+        )
+        _align_draft_quant_exclusions(
+            vllm_config.quant_config,
+            prefix=prefix,
+            mtp_start_layer_idx=self.mtp_start_layer_idx,
+            num_draft_layers=self.num_dspark_layers,
+            mtp_prefix="mtp",
+            include_main_proj=True,
         )
         self.layers = nn.ModuleDict(
             {
@@ -153,12 +278,17 @@ class DeepseekV4DSparkModel(nn.Module):
         # context_wkv_proj is a synthetic runtime module and does not exist in the
         # checkpoint quantization description, so reuse the first DSpark WKV prefix
         # when selecting its quantization scheme.
+        wkv_quant_config = _resolve_context_wkv_quant_config(
+            vllm_config.quant_config,
+            prefix=prefix,
+            mtp_start_layer_idx=self.mtp_start_layer_idx,
+        )
         self.context_wkv_proj = MergedColumnParallelLinear(
             config.hidden_size,
             [config.head_dim] * self.num_dspark_layers,
             bias=False,
             return_bias=False,
-            quant_config=vllm_config.quant_config,
+            quant_config=wkv_quant_config,
             prefix="mtp.0.self_attn.wkv",
             disable_tp=True,
         )
@@ -399,6 +529,9 @@ class DeepseekV4DSparkModel(nn.Module):
 @support_torch_compile
 class DSparkDeepseekV4ForCausalLM(nn.Module, DeepseekV2MixtureOfExperts, SupportsEagle3):
     draft_id_to_target_id = None
+    packed_modules_mapping = {
+        name: list(shards) for name, shards in AscendDeepseekV4ForCausalLM.packed_modules_mapping.items()
+    }
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()

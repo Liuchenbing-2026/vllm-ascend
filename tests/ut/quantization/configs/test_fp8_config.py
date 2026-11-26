@@ -16,6 +16,34 @@ class TestAscendDeepseekV4FP8Config(TestBase):
         self.config = AscendDeepseekV4FP8Config()
         self.config.weight_block_size = (128, 128)
 
+    def test_ignored_linear_and_packed_module_fall_back_to_unquantized(self):
+        """Ignored linear and packed fused shards fall back to AscendUnquantizedLinearMethod."""
+        self.config.ignored_layers = [
+            "mtp.0.self_attn.wkv",
+            "mtp.0.mlp.shared_experts.gate_proj",
+            "mtp.0.mlp.shared_experts.up_proj",
+        ]
+        self.config.packed_modules_mapping = {"gate_up_proj": ["gate_proj", "up_proj"]}
+
+        for prefix in ("mtp.0.self_attn.wkv", "mtp.0.mlp.shared_experts.gate_up_proj"):
+            method = self.config.get_quant_method(MagicMock(spec=LinearBase), prefix)
+            self.assertIsInstance(method, AscendUnquantizedLinearMethod)
+
+    def test_ignored_moe_falls_back_to_unquantized(self):
+        """Ignored RoutedExperts falls back to AscendUnquantizedFusedMoEMethod."""
+        self.config.ignored_layers = ["mtp.0.mlp.experts"]
+        moe_layer = MagicMock(spec=RoutedExperts)
+        moe_layer.moe_config = MagicMock()
+        unquantized_moe = MagicMock()
+
+        with patch(
+            "vllm_ascend.ops.fused_moe.routed_experts.AscendUnquantizedFusedMoEMethod",
+            return_value=unquantized_moe,
+        ):
+            method = self.config.get_quant_method(moe_layer, "mtp.0.mlp.experts")
+
+        self.assertIs(method, unquantized_moe)
+
     def test_get_quant_method_for_linear_base(self):
         """LinearBase layer returns AscendLinearMethod with ds_linear scheme."""
         linear_layer = MagicMock(spec=LinearBase)

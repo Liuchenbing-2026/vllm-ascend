@@ -30,7 +30,9 @@ from vllm.sequence import IntermediateTensors
 
 from vllm_ascend.ascend_config import get_ascend_config
 from vllm_ascend.models.common.ops.sequence_parallel import sp_padding_mask, sp_shard
+from vllm_ascend.models.deepseek_v4.dspark import _align_draft_quant_exclusions
 from vllm_ascend.models.deepseek_v4.model import (
+    AscendDeepseekV4ForCausalLM,
     DeepseekV2MixtureOfExperts,
     DeepseekV4DecoderLayer,
     DeepseekV4MoE,
@@ -67,10 +69,20 @@ class DeepSeekMultiTokenPredictorLayer(nn.Module):
         quant_config = vllm_config.quant_config
 
         self.e_proj = ReplicatedLinear(
-            config.hidden_size, config.hidden_size, bias=False, quant_config=quant_config, return_bias=False
+            config.hidden_size,
+            config.hidden_size,
+            bias=False,
+            quant_config=quant_config,
+            prefix=maybe_prefix(prefix, "e_proj"),
+            return_bias=False,
         )
         self.h_proj = ReplicatedLinear(
-            config.hidden_size, config.hidden_size, bias=False, quant_config=quant_config, return_bias=False
+            config.hidden_size,
+            config.hidden_size,
+            bias=False,
+            quant_config=quant_config,
+            prefix=maybe_prefix(prefix, "h_proj"),
+            return_bias=False,
         )
 
         self.enorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -179,11 +191,20 @@ class DeepSeekMultiTokenPredictor(nn.Module):
         config = vllm_config.model_config.hf_config
         self.mtp_start_layer_idx = config.num_hidden_layers
         self.num_mtp_layers = getattr(config, "num_nextn_predict_layers", 1)
+        mtp_prefix = prefix or "mtp"
         # to map the exact layer index from weights
+        _align_draft_quant_exclusions(
+            vllm_config.quant_config,
+            prefix=prefix,
+            mtp_start_layer_idx=self.mtp_start_layer_idx,
+            num_draft_layers=self.num_mtp_layers,
+            mtp_prefix=mtp_prefix,
+            include_main_proj=False,
+        )
 
         self.layers = torch.nn.ModuleDict(
             {
-                str(idx): DeepSeekMultiTokenPredictorLayer(vllm_config, f"{prefix}.{idx}")
+                str(idx): DeepSeekMultiTokenPredictorLayer(vllm_config, f"{mtp_prefix}.{idx}")
                 for idx in range(
                     0,
                     self.num_mtp_layers,
@@ -235,6 +256,10 @@ class DeepSeekMultiTokenPredictor(nn.Module):
 
 @support_torch_compile
 class DeepSeekV4MTP(nn.Module, SupportsPP, DeepseekV2MixtureOfExperts):
+    packed_modules_mapping = {
+        name: list(shards) for name, shards in AscendDeepseekV4ForCausalLM.packed_modules_mapping.items()
+    }
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
         self.config = vllm_config.model_config.hf_config
