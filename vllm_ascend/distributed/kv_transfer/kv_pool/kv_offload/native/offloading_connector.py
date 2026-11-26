@@ -7,15 +7,20 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import replace
+from typing import Any
 
 import torch
 from vllm.config import VllmConfig
-from vllm.distributed.kv_transfer.kv_connector.v1 import KVConnectorRole
+from vllm.distributed.kv_transfer.kv_connector.v1 import KVConnectorBase_V1, KVConnectorRole
 from vllm.distributed.kv_transfer.kv_connector.v1.offloading.canonical_mapping import (
     derive_canonical_mappings,
 )
 from vllm.distributed.kv_transfer.kv_connector.v1.offloading.config import (
+    build_offloading_config,
     get_offloading_group_ids,
+)
+from vllm.distributed.kv_transfer.kv_connector.v1.offloading.scheduler import (
+    OffloadingConnectorScheduler,
 )
 from vllm.distributed.kv_transfer.kv_connector.v1.offloading.worker import (
     OffloadingConnectorWorker,
@@ -23,6 +28,7 @@ from vllm.distributed.kv_transfer.kv_connector.v1.offloading.worker import (
 from vllm.distributed.kv_transfer.kv_connector.v1.offloading_connector import (
     OffloadingConnector,
 )
+from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.v1.kv_cache_interface import (
     AttentionSpec,
     KVCacheConfig,
@@ -35,10 +41,17 @@ from vllm.v1.kv_offload.base import (
     CanonicalKVCaches,
     CanonicalKVCacheTensor,
     CanonicalPageMapping,
+    OffloadingSpec,
 )
+from vllm.v1.kv_offload.factory import OffloadingSpecFactory
 
 from vllm_ascend.core.kv_cache_interface import AscendSFAIndexerCacheSpec
-from vllm_ascend.utils import get_kv_cache_tensor_layers
+from vllm_ascend.distributed.kv_transfer.kv_pool.access_mode import (
+    OffloadAccessMode,
+    has_upstream_access_mode,
+    parse_access_mode,
+)
+from vllm_ascend.utils import get_kv_cache_tensor_layers, vllm_version_is
 
 
 def _make_int8_block_view(
@@ -335,6 +348,71 @@ class AscendOffloadingConnectorWorker(OffloadingConnectorWorker):
         )
 
 
+class AscendOffloadingConnectorScheduler(OffloadingConnectorScheduler):
+    """Compatibility scheduler enforcing connector access_mode on older vLLM.
+
+    Can be removed once the pinned vLLM baseline supports native access_mode.
+    """
+
+    _store_handlers: dict[Any, Any]
+
+    def __init__(
+        self,
+        spec: OffloadingSpec,
+        vllm_config: VllmConfig,
+        kv_cache_config: KVCacheConfig,
+    ) -> None:
+        super().__init__(spec, vllm_config, kv_cache_config)
+        self.access_mode: OffloadAccessMode = getattr(
+            spec,
+            "access_mode",
+            parse_access_mode(getattr(spec, "extra_config", None)),
+        )
+
+    def _lookup(
+        self,
+        req_status: Any,
+        max_num_new_tokens: int | None = None,
+    ) -> int | None:
+        if not self.access_mode.can_read:
+            return 0
+        return super()._lookup(req_status, max_num_new_tokens)
+
+    def _build_partial_tail_store_jobs(
+        self,
+        scheduler_output: SchedulerOutput,
+    ) -> dict[int, Any]:
+        if not self.access_mode.can_write:
+            return {}
+        return super()._build_partial_tail_store_jobs(scheduler_output)  # type: ignore[misc]
+
+    def _build_store_jobs(
+        self,
+        scheduler_output: SchedulerOutput,
+    ) -> dict[int, Any]:
+        if not self.access_mode.can_write:
+            return {}
+        return super()._build_store_jobs(scheduler_output)  # type: ignore[misc]
+
+    def _build_connector_meta(
+        self,
+        scheduler_output: SchedulerOutput,
+    ) -> Any:
+        if self.access_mode.can_write or vllm_version_is("0.34.0"):
+            return super()._build_connector_meta(scheduler_output)
+        handlers = self._store_handlers
+        present_before = set(self._req_status)
+        self._store_handlers = {}
+        try:
+            return super()._build_connector_meta(scheduler_output)
+        finally:
+            self._store_handlers = handlers
+            for req_id in present_before:
+                if req_id not in self._req_status:
+                    for handler in handlers.values():
+                        handler.on_request_removed(req_id)
+
+
 class AscendOffloadingConnector(OffloadingConnector):
     """vLLM OffloadingConnector with an Ascend layout adapter."""
 
@@ -346,6 +424,27 @@ class AscendOffloadingConnector(OffloadingConnector):
         role: KVConnectorRole,
         kv_cache_config: KVCacheConfig,
     ) -> None:
+        kv_transfer_config = getattr(vllm_config, "kv_transfer_config", None)
+        extra_config = getattr(kv_transfer_config, "kv_connector_extra_config", None)
+        self.access_mode: OffloadAccessMode = parse_access_mode(extra_config)
+
+        if (
+            role == KVConnectorRole.SCHEDULER
+            and not has_upstream_access_mode()
+            and self.access_mode is not OffloadAccessMode.READWRITE
+        ):
+            KVConnectorBase_V1.__init__(self, vllm_config, role, kv_cache_config)
+            offloading_config = build_offloading_config(vllm_config, kv_cache_config)
+            self._canonical_layout = offloading_config.canonical_layout
+            spec = OffloadingSpecFactory.create_spec(offloading_config)
+            self.connector_scheduler = AscendOffloadingConnectorScheduler(
+                spec,
+                vllm_config,
+                kv_cache_config,
+            )
+            self.connector_worker = None
+            return
+
         super().__init__(vllm_config, role, kv_cache_config)
         connector_worker = self.connector_worker
         if connector_worker is not None:

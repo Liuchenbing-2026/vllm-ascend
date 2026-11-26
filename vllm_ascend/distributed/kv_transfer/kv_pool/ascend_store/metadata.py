@@ -21,13 +21,18 @@ from vllm.v1.kv_cache_interface import (
 )
 
 from vllm_ascend.core.kv_cache_interface import is_prefix_cacheable
+from vllm_ascend.distributed.kv_transfer.kv_pool.access_mode import OffloadAccessMode
 
 if TYPE_CHECKING:
     from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.metadata import LayerPoolKey
 
 
-def is_kv_save_role(kv_role: str, save_decode_cache: bool) -> bool:
-    return kv_role in ("kv_producer", "kv_both") or save_decode_cache
+def is_kv_save_role(
+    kv_role: str,
+    save_decode_cache: bool,
+    access_mode: OffloadAccessMode = OffloadAccessMode.READWRITE,
+) -> bool:
+    return access_mode.can_write and (kv_role in ("kv_producer", "kv_both") or save_decode_cache)
 
 
 @dataclass(frozen=True)

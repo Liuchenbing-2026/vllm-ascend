@@ -22,6 +22,7 @@ from vllm.logger import logger
 from vllm.v1.kv_cache_interface import FullAttentionSpec, RSWASpec, UniformTypeKVCacheSpecs
 
 from vllm_ascend.core.kv_cache_interface import supports_bounded_replay
+from vllm_ascend.distributed.kv_transfer.kv_pool.access_mode import OffloadAccessMode
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.planes.base import (
     LayerwiseDataPlane,
 )
@@ -180,6 +181,8 @@ class BlockKeyDataPlane(LayerwiseDataPlane):
         request.load_block_keys = []
         request.load_last_block_key = None
         request.load_keys = []
+        if not getattr(worker, "access_mode", OffloadAccessMode.READWRITE).can_read:
+            return []
         current_entries: list[tuple[str, int]] = []
         load_spec = request.load_spec
         if load_spec is not None and load_spec.can_load:
@@ -255,9 +258,10 @@ class BlockKeyDataPlane(LayerwiseDataPlane):
         tracker = worker._layerwise_session_tracker
         worker._current_layerwise_request_ids = {request.req_id for request in requests}
         worker._current_layerwise_last_chunk_req_ids = {request.req_id for request in requests if request.is_last_chunk}
+        can_read = getattr(worker, "access_mode", OffloadAccessMode.READWRITE).can_read
         for request in requests:
             cached_tokens = request.save_start_token
-            if request.load_spec is not None and request.load_spec.can_load:
+            if can_read and request.load_spec is not None and request.load_spec.can_load:
                 cached_tokens = request.load_spec.kvpool_cached_tokens
                 if not worker.use_eagle and len(worker.cacheable_group_ids) == worker.num_kv_cache_groups:
                     cached_tokens = request.load_spec.pool_hit_tokens
@@ -266,7 +270,11 @@ class BlockKeyDataPlane(LayerwiseDataPlane):
                 and request.load_spec is None
                 and 0 < cached_tokens <= request.computed_prefix_tokens
             )
-            load_masks = None if resident_prefix else worker._compute_reachable_load_masks(request, cached_tokens)
+            load_masks = (
+                None
+                if (not can_read or resident_prefix)
+                else worker._compute_reachable_load_masks(request, cached_tokens)
+            )
             for group in worker.cacheable_group_ids:
                 # Skip private rings before deriving token hashes: their physical
                 # capacity need not even be divisible by the hash block size.
@@ -289,7 +297,7 @@ class BlockKeyDataPlane(LayerwiseDataPlane):
                 def key(index, group=group, hashes=hashes):
                     return worker._make_layerwise_full_key(group, block_hash_to_str(hashes[index]))
 
-                if not resident_prefix:
+                if can_read and not resident_prefix:
                     start = request.load_spec.vllm_cached_tokens // block_size if request.load_spec is not None else 0
                     load_end = min(len(ids), cached_tokens // block_size)
                     entries = (

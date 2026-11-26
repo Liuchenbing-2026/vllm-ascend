@@ -32,6 +32,10 @@ from vllm.v1.kv_cache_interface import KVCacheConfig
 from vllm.v1.outputs import KVConnectorOutput
 from vllm.v1.request import Request
 
+from vllm_ascend.distributed.kv_transfer.kv_pool.access_mode import (
+    OffloadAccessMode,
+    parse_access_mode,
+)
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import (
     get_backend_class,
 )
@@ -49,6 +53,7 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.pool_wor
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lookup_key import LookupKeyServer
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     AscendStoreKVConnectorWorkerMetadata,
+    is_kv_save_role,
 )
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metrics import (
     AscendStoreKVConnectorStats,
@@ -175,6 +180,7 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
         super().__init__(vllm_config=vllm_config, role=role, kv_cache_config=kv_cache_config)
         self.kv_role = vllm_config.kv_transfer_config.kv_role
         extra_config = vllm_config.kv_transfer_config.kv_connector_extra_config
+        self.access_mode = parse_access_mode(extra_config)
         if "consumer_is_to_put" in extra_config:
             raise ValueError("consumer_is_to_put has been replaced by save_decode_cache")
         if "consumer_is_to_load" in extra_config:
@@ -211,9 +217,10 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
         self.backend_class = get_backend_class(self.backend_name) if self.use_layerwise else None
         self.layerwise_data_plane = self.backend_class.layerwise_data_plane if self.backend_class is not None else None
         self.use_block_key_layerwise = self.use_layerwise and self.layerwise_data_plane == "block_key"
-        self.supports_composite_kv_loads = self.use_layerwise and has_shared_kv_sources(vllm_config)
-        self.supports_composite_kv_saves = self.supports_composite_kv_loads
-        self.can_put = self.kv_role in ("kv_producer", "kv_both") or self.save_decode_cache
+        has_composite_kv = self.use_layerwise and has_shared_kv_sources(vllm_config)
+        self.supports_composite_kv_loads = has_composite_kv and self.access_mode.can_read
+        self.supports_composite_kv_saves = has_composite_kv and self.access_mode.can_write
+        self.can_put = is_kv_save_role(self.kv_role, self.save_decode_cache, self.access_mode)
 
         connector_name = vllm_config.kv_transfer_config.kv_connector
         if connector_name == "MooncakeConnectorStoreV1":
@@ -271,6 +278,8 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
         return True
 
     def restore_dspark_prefix(self, metadata: Any, request_id: str, offset: int, block_ids: Any) -> int:
+        if not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_read:
+            return 0
         assert self.connector_worker is not None
         cache = getattr(self.connector_worker, "dspark_prefix_cache", None)
         request = next((request for request in metadata.requests if request.req_id == request_id), None)
@@ -279,6 +288,8 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
         return cache.restore(request, offset, block_ids)
 
     def save_dspark_prefix(self, metadata: Any, request_id: str, through_tokens: int, block_ids: Any) -> None:
+        if not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_write:
+            return
         assert self.connector_worker is not None
         cache = getattr(self.connector_worker, "dspark_prefix_cache", None)
         request = next((request for request in metadata.requests if request.req_id == request_id), None)
@@ -351,7 +362,10 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
         partial_tail_offloads: list[tuple[int, int, int]],
     ) -> bool:
         assert self.connector_scheduler is not None
-        if self.connector_scheduler.use_layerwise:
+        if (
+            self.connector_scheduler.use_layerwise
+            or not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_write
+        ):
             return False
         return self.connector_scheduler.register_finished_partial_tail(request, block_ids, partial_tail_offloads)
 
@@ -503,8 +517,8 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
         if not self.use_layerwise:
             return
 
-        if not self.can_put:
-            # A load-only consumer does not publish KV.
+        if not self.can_put or not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_write:
+            # A load-only consumer or read-only mode does not publish KV.
             return
         assert self.connector_worker is not None
         worker = cast(LayerwiseKVPoolWorker, self.connector_worker)
@@ -520,8 +534,8 @@ class AscendStoreConnector(KVConnectorBase_V1, SupportsHMA):
         )
 
     def wait_for_save(self):
-        if not self.can_put:
-            # A load-only consumer has no store thread to wait for.
+        if not self.can_put or not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_write:
+            # A load-only consumer or read-only mode has no store thread to wait for.
             return
 
         if self.use_layerwise:

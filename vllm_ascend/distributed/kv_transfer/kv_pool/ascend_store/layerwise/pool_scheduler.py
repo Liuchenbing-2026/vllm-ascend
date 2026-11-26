@@ -7,6 +7,7 @@ from vllm.v1.core.kv_cache_utils import BlockHash
 from vllm.v1.kv_cache_interface import KVCacheConfig
 from vllm.v1.request import Request
 
+from vllm_ascend.distributed.kv_transfer.kv_pool.access_mode import OffloadAccessMode
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import (
     resolve_backend,
 )
@@ -53,6 +54,8 @@ class LayerwiseKVPoolScheduler(BaseKVPoolScheduler):
         self.layerwise_offload = (
             self.use_layerwise_transfer and get_layerwise_reuse_backing_bytes(kv_cache_config) is not None
         )
+        if self.layerwise_offload and self.access_mode is not OffloadAccessMode.READWRITE:
+            raise ValueError(f"layerwise_offload requires access_mode='readwrite', got {self.access_mode.value!r}")
         self.block_key_hybrid = self.use_block_key_layerwise and self.use_hybrid
         self.layerwise_keys = (
             self.layerwise_backend.bind_layerwise_keys(

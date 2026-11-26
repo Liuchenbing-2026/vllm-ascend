@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Any
+
 from typing_extensions import override
 from vllm.logger import logger
 from vllm.v1.kv_offload.base import CanonicalKVCaches, OffloadingManager, OffloadingWorker
@@ -11,19 +14,84 @@ from vllm.v1.kv_offload.cpu import spec as cpu_spec
 from vllm.v1.kv_offload.cpu.shared_offload_region import SharedOffloadRegion
 from vllm.v1.kv_offload.cpu.spec import CPUOffloadingSpec as _CPUOffloadingSpec
 from vllm.v1.kv_offload.tiering import spec as tiering_spec
+from vllm.v1.kv_offload.tiering.base import SecondaryTierManager
+from vllm.v1.kv_offload.tiering.manager import (
+    TieringOffloadingManager as _UpstreamTieringOffloadingManager,
+)
 from vllm.v1.kv_offload.tiering.spec import (
     TieringOffloadingSpec as _TieringOffloadingSpec,
 )
 
+from vllm_ascend.distributed.kv_transfer.kv_pool.access_mode import (
+    OffloadAccessMode,
+    parse_access_mode,
+)
 from vllm_ascend.distributed.kv_transfer.kv_pool.kv_offload.native.cpu_npu import (
     NPUOffloadingWorker,
 )
+
+
+class _AccessModeTierFilter:
+    """Compatibility filter enforcing per-tier read access on older vLLM."""
+
+    def __init__(self, base_filter: Any, readable_flags: Sequence[bool]) -> None:
+        self.base = base_filter
+        self._readable_flags = iter(readable_flags)
+
+    def allows(self, medium: Any, locality: Any) -> bool:
+        if not next(self._readable_flags, False):
+            return False
+        return self.base is None or bool(self.base.allows(medium, locality))
+
+
+class _AccessModeTieringOffloadingManager(_UpstreamTieringOffloadingManager):
+    """Compatibility bridge enforcing secondary-tier access_mode on older vLLM.
+
+    Can be removed once the pinned vLLM baseline supports native access_mode.
+    """
+
+    def _should_store_to_tier(self, tier: SecondaryTierManager, num_blocks: int) -> bool:
+        access_mode = getattr(tier, "access_mode", OffloadAccessMode.READWRITE)
+        if not access_mode.can_write:
+            return False
+        return super()._should_store_to_tier(tier, num_blocks)
+
+    # @override omitted: vllm.v1.kv_offload.* uses ignore_missing_imports in mypy.ini.
+    def lookup(
+        self,
+        key: Any,
+        req_context: Any,
+        *,
+        exclude_tier_idx: int | None = None,
+    ) -> Any:
+        readable_flags = [
+            getattr(tier, "access_mode", OffloadAccessMode.READWRITE).can_read
+            for i, tier in enumerate(self.secondary_tiers)
+            if i != exclude_tier_idx
+        ]
+        original_filter = req_context.load_tier_filter
+        base_filter = original_filter.base if isinstance(original_filter, _AccessModeTierFilter) else original_filter
+        if all(readable_flags) and base_filter is original_filter:
+            return super().lookup(key, req_context, exclude_tier_idx=exclude_tier_idx)
+        req_context.load_tier_filter = (
+            base_filter if all(readable_flags) else _AccessModeTierFilter(base_filter, readable_flags)
+        )
+        try:
+            return super().lookup(key, req_context, exclude_tier_idx=exclude_tier_idx)
+        finally:
+            req_context.load_tier_filter = original_filter
 
 
 class _NPUWorkerMixin:
     """Replace only the accelerator worker and upstream platform gate."""
 
     _worker: NPUOffloadingWorker | None
+
+    def __init__(self, config: Any) -> None:
+        super().__init__(config)  # type: ignore[call-arg]
+        if not hasattr(self, "access_mode"):
+            # Fallback for vLLM baselines prior to upstream access_mode support.
+            self.access_mode: OffloadAccessMode = parse_access_mode(getattr(self, "extra_config", None))
 
     def create_worker(
         self,
@@ -102,6 +170,11 @@ class NPUTieringOffloadingSpec(_NPUWorkerMixin, _TieringOffloadingSpec):
         if int(self.extra_config.get("store_threshold", 0)) >= 2:
             raise ValueError("store_threshold is not supported for TieringOffloadingSpec")
 
+        upstream_tier_access_mode = hasattr(SecondaryTierManager, "access_mode")
+        tier_modes: list[OffloadAccessMode] = []
+        if not upstream_tier_access_mode:
+            tier_modes = [parse_access_mode(cfg) for cfg in self.secondary_tier_configs]
+
         scheduler_mmap = None
         primary_tier = None
         secondary_tiers = []
@@ -121,14 +194,24 @@ class NPUTieringOffloadingSpec(_NPUWorkerMixin, _TieringOffloadingSpec):
 
             primary_kv_view = primary_tier.get_kv_memoryview()
             for i, tier_config in enumerate(self.secondary_tier_configs):
-                tier = tiering_spec.SecondaryTierFactory.create_secondary_tier(tier_config, primary_kv_view, self)
+                create_config = (
+                    {k: v for k, v in tier_config.items() if k != "access_mode"}
+                    if not upstream_tier_access_mode
+                    else tier_config
+                )
+                tier = tiering_spec.SecondaryTierFactory.create_secondary_tier(create_config, primary_kv_view, self)
+                if not upstream_tier_access_mode:
+                    tier.access_mode = tier_modes[i]
                 secondary_tiers.append(tier)
                 logger.info("Created secondary tier #%d (%s)", i, tier.tier_type)
 
             manager_kwargs = dict(primary_tier=primary_tier, secondary_tiers=secondary_tiers)
             if hasattr(self, "tier_poll_interval_s"):
                 manager_kwargs["tier_poll_interval_s"] = self.tier_poll_interval_s
-            self._manager = tiering_spec.TieringOffloadingManager(**manager_kwargs)
+            manager_cls = tiering_spec.TieringOffloadingManager
+            if not upstream_tier_access_mode and manager_cls is _UpstreamTieringOffloadingManager:
+                manager_cls = _AccessModeTieringOffloadingManager
+            self._manager = manager_cls(**manager_kwargs)
         except Exception:
             for tier in reversed(secondary_tiers):
                 try:

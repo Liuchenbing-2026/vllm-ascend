@@ -19,6 +19,7 @@ from vllm.v1.kv_cache_interface import (
     MambaSpec,
 )
 
+from vllm_ascend.distributed.kv_transfer.kv_pool.access_mode import OffloadAccessMode
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.attention_fence import (
     get_attention_load_gate,
     reset_attention_gates,
@@ -67,7 +68,6 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     get_block_hashes,
     get_group_block_size,
     infer_dcp_mismatch_info,
-    is_kv_save_role,
 )
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.pool_worker import BaseKVPoolWorker
 
@@ -335,6 +335,9 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
                     self._layerwise_reuse_layout.prefetch_layer_map, self._global_to_local_layer
                 )
                 self.layerwise_offload = self._layerwise_reuse_layout.has_layer_reuse
+                access_mode = getattr(self, "access_mode", OffloadAccessMode.READWRITE)
+                if self.layerwise_offload and access_mode is not OffloadAccessMode.READWRITE:
+                    raise ValueError(f"layerwise_offload requires access_mode='readwrite', got {access_mode.value!r}")
                 self.num_prefetch_layers = self._layerwise_reuse_layout.num_prefetch_layers
                 for group_id, group in enumerate(self.kv_cache_config.kv_cache_groups):
                     layers = {
@@ -510,7 +513,7 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
         self.layer_load_finished_events = [threading.Event() for i in range(self.num_layers)]
         self.layer_save_finished_events = [threading.Event() for i in range(self.num_layers)]
         self.sync_save_events = [torch.npu.Event() for i in range(self.num_layers)]
-        can_save = is_kv_save_role(self.kv_role, self.save_decode_cache)
+        can_save = self._can_save_kv()
         if (self.use_block_key_layerwise or self.use_layerwise_transfer) and can_save:
             ready_event_sending = threading.Event()
             self.kv_send_thread = KVCacheStoreLayerSendingThread(
@@ -703,7 +706,7 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
         return self.tp_rank == min(peers)
 
     def _is_layerwise_save_owner(self, group_id: int = 0) -> bool:
-        if not is_kv_save_role(self.kv_role, self.save_decode_cache):
+        if not self._can_save_kv():
             return False
 
         # Each rank must save its own Mamba state shard.
@@ -1201,6 +1204,8 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
         group_id: int = 0,
         layer_idx_in_group: int = 0,
     ) -> None:
+        if not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_read:
+            return
         block_size = get_group_block_size(self.grouped_block_size, group_id)
         reuses_buffer = self.layerwise_offload and layer_id in self._reused_layers_by_group.get(group_id, ())
         request_block_ranges = []
@@ -1492,7 +1497,7 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
 
     def _submit_attention_save(self, layer_id: int) -> None:
         """Start current-layer put only once KV is ready at attention entry."""
-        if not is_kv_save_role(self.kv_role, self.save_decode_cache):
+        if not self._can_save_kv():
             return
         assert self.sync_save_events is not None
         assert self.layer_save_finished_events is not None
@@ -1658,7 +1663,7 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
             self.current_layer = layer_id
             self.wait_for_layer_load()
         self.current_layer = first_draft_layer
-        self._dflash_save_pending = self.can_put
+        self._dflash_save_pending = self.can_put and self._can_save_kv()
 
     def save_dflash_draft_kv(self, metadata: AscendConnectorMetadata) -> None:
         if not self._dflash_save_pending:
@@ -1689,7 +1694,7 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
                 layer_id = self.current_layer
                 # Conv/recurrent state is updated inside attention, after this
                 # entry event. Preserve its post-compute save hook.
-                if layer_id not in self._recurrent_layers and is_kv_save_role(self.kv_role, self.save_decode_cache):
+                if layer_id not in self._recurrent_layers and self._can_save_kv():
                     assert self.sync_save_events is not None
                     save_gate.event = self.sync_save_events[layer_id]
                     save_gate.on_start = lambda: self._submit_attention_save(layer_id)
@@ -1750,10 +1755,12 @@ class LayerwiseKVPoolWorker(BaseKVPoolWorker):
             self._layer_load_aborted.is_set() or self.current_layer == self.num_layers - 1
         ):
             self._data_plane.finish_sessions()
-        if hasattr(self, "kv_role") and not is_kv_save_role(self.kv_role, getattr(self, "save_decode_cache", False)):
+        if (hasattr(self, "kv_role") or hasattr(self, "access_mode")) and not self._can_save_kv():
             self.current_layer += 1
 
     def save_kv_layer(self, connector_metadata: AscendConnectorMetadata) -> None:
+        if (hasattr(self, "kv_role") or hasattr(self, "access_mode")) and not self._can_save_kv():
+            return
         # Match process_layer_data(), including stage-local draft layers.
         if not self.use_block_key_layerwise and getattr(self, "pp_size", 1) > 1:
             num_local = getattr(self, "layerwise_key_layers", 0) or self.num_layers

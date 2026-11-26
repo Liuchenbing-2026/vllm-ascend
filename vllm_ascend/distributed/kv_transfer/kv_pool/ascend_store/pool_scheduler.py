@@ -21,6 +21,10 @@ from vllm.v1.kv_cache_interface import (
 from vllm.v1.outputs import KVConnectorOutput
 from vllm.v1.request import Request
 
+from vllm_ascend.distributed.kv_transfer.kv_pool.access_mode import (
+    OffloadAccessMode,
+    parse_access_mode,
+)
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import (
     resolve_backend,
 )
@@ -41,6 +45,7 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     infer_group_block_sizes,
     infer_group_cache_families,
     infer_tp_mismatch_info,
+    is_kv_save_role,
     normalize_block_ids_by_group,
     uses_hybrid_kv_cache,
 )
@@ -85,6 +90,7 @@ class BaseKVPoolScheduler(ABC):
         self.kv_cache_group_families = infer_group_cache_families(kv_cache_groups, self.compress_ratios, self.hf_config)
         self.num_mamba_speculative_blocks_by_group = self._infer_mamba_groups()
         self.kv_role = vllm_config.kv_transfer_config.kv_role
+        self.access_mode: OffloadAccessMode = parse_access_mode(extra_config)
         self.enable_lookup = extra_config.get("enable_lookup", self.kv_role != "kv_consumer")
         self.load_async = vllm_config.kv_transfer_config.kv_connector_extra_config.get("load_async", False)
         kv_event_config = vllm_config.kv_events_config
@@ -93,7 +99,7 @@ class BaseKVPoolScheduler(ABC):
         self.save_decode_cache = vllm_config.kv_transfer_config.kv_connector_extra_config.get(
             "save_decode_cache", False
         )
-        self.can_put = self.kv_role in ("kv_producer", "kv_both") or self.save_decode_cache
+        self.can_put = is_kv_save_role(self.kv_role, self.save_decode_cache, self.access_mode)
         # request_id -> (vllm cached tokes, kvpool cached tokens)
         self.load_specs: dict[str, LoadSpec] = {}
         self.pcp_size = getattr(vllm_config.parallel_config, "prefill_context_parallel_size", 1)
@@ -270,7 +276,7 @@ class BaseKVPoolScheduler(ABC):
         # A waiting request can be looked up again before it is admitted.
         # Never retain a load plan from an earlier hit across a miss/early return.
         self.load_specs.pop(request.request_id, None)
-        if not self.enable_lookup:
+        if not self.enable_lookup or not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_read:
             return 0, False
 
         # Core passes the candidate load start and owns local-tail arbitration:
@@ -583,9 +589,10 @@ class BaseKVPoolScheduler(ABC):
             request_tracker.update(new_block_ids, request.num_computed_tokens)
         self._sync_swa_block_ids(request_tracker)
         load_spec = self._running_load_spec(request_tracker, num_current_tokens)
+        can_write = getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_write
         # A consumer skips Prefill writes, including KV received over PD.
         # Its first Decode save may restore missing Prefill ancestors in the pool.
-        skip_save = force_skip_save and not (is_decoding and self.save_decode_cache)
+        skip_save = (not can_write) or (force_skip_save and not (is_decoding and self.save_decode_cache))
         meta = self._build_req_meta(
             request_tracker,
             request.block_hashes,
@@ -635,11 +642,12 @@ class BaseKVPoolScheduler(ABC):
             block_sizes=self.grouped_block_size,
         )
         self._request_trackers[request_id] = request_tracker
+        can_write = getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_write
         return ReqMeta.from_request_tracker(
             request_tracker,
             self.cache_transfer_granularity,
             load_spec=load_spec,
-            skip_save=None,
+            skip_save=None if can_write else True,
             block_hashes=request.block_hashes,
             discard_partial_chunks=self._discard_partial_chunks,
             original_block_size=self.original_block_size,
@@ -654,7 +662,8 @@ class BaseKVPoolScheduler(ABC):
         except the `kv_connector_metadata` field.
         Also, calling this function will reset the state of the connector.
         """
-        force_skip_save = self.kv_role == "kv_consumer"
+        can_write = getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_write
+        force_skip_save = self.kv_role == "kv_consumer" or not can_write
 
         cancelled_load_req_ids = set()
         for finished_req_id in scheduler_output.finished_req_ids:
@@ -685,9 +694,24 @@ class BaseKVPoolScheduler(ABC):
                 meta.add_request(req_meta)
 
         cached_reqs = scheduler_output.scheduled_cached_reqs
-        if self.can_put:
+        can_save_cached = self.can_put and can_write
+        if can_save_cached or (self._preempted_req_ids and getattr(self, "load_specs", None)):
             for i, req_id in enumerate(cached_reqs.req_ids):
                 new_block_ids = cached_reqs.new_block_ids[i]
+                if not can_save_cached:
+                    if req_id not in self._preempted_req_ids or req_id not in self.load_specs or not new_block_ids:
+                        continue
+                    req_meta = self._process_preempted_cached_request(
+                        new_block_ids,
+                        req_id,
+                        i,
+                        cached_reqs,
+                        scheduler_output,
+                        force_skip_save,
+                    )
+                    if req_meta is not None:
+                        meta.add_request(req_meta)
+                    continue
                 # A decode block is normally allocated before the step that
                 # fills it. Decode offload must therefore inspect boundary
                 # steps even when this tick allocated no new block.
@@ -750,13 +774,14 @@ class BaseKVPoolScheduler(ABC):
             return meta
 
         state = getattr(scheduler_output, "kv_connector_block_state", None)
-        if state is not None and state.boundary_state_offloads and self.can_put:
+        if state is not None and state.boundary_state_offloads and self.can_put and can_write:
             self._handle_boundary_state_offloads(state.boundary_state_offloads, meta)
         self._apply_current_save_block_ids(meta, scheduler_output)
         # Finish-time sources were pinned before request cleanup and do not
         # require a current block table.
-        for req_meta in self._finished_partial_tail_metas.values():
-            meta.add_request(req_meta)
+        if can_write:
+            for req_meta in self._finished_partial_tail_metas.values():
+                meta.add_request(req_meta)
         self._finished_partial_tail_metas.clear()
         for req_meta in meta.requests:
             self.retain_blocks_for_save(req_meta)
@@ -766,6 +791,8 @@ class BaseKVPoolScheduler(ABC):
         self, offloads: dict[str, list[tuple[int, int, int]]], meta: AscendConnectorMetadata
     ) -> None:
         """Attach Core's exact checkpoint sources, creating boundary-only jobs as needed."""
+        if not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_write:
+            return
         coord = self.cache_coordinator
         assert coord is not None
         save_metas = {req.req_id: req for req in meta.requests if req.can_save}
@@ -860,6 +887,9 @@ class BaseKVPoolScheduler(ABC):
             return False
         if stale_ids:
             self._async_loading_req_ids.clear()
+        if not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_write:
+            logger.info("AscendStore reset_store skipped remote remove_all in read-only access_mode.")
+            return True
 
         if self.client is None:
             self.client = LookupKeyClient(self.vllm_config)
@@ -921,6 +951,8 @@ class KVPoolScheduler(BaseKVPoolScheduler):
 
     def retain_blocks_for_save(self, req_meta: ReqMeta) -> None:
         """Keep Mamba source blocks alive until bulk save completes."""
+        if not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_write:
+            return
         if req_meta.can_save and req_meta.event_id is None and self.cache_coordinator is not None:
             if tail := self._partial_tail_non_mamba_puts(req_meta):
                 req_meta.boundary_puts = [*tail, *(req_meta.boundary_puts or [])]
@@ -1004,7 +1036,11 @@ class KVPoolScheduler(BaseKVPoolScheduler):
         partial_tail_offloads: list[tuple[int, int, int]],
     ) -> bool:
         """Queue and pin a finish-time tail for the next connector step."""
-        if not self.can_put or not partial_tail_offloads:
+        if (
+            not self.can_put
+            or not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_write
+            or not partial_tail_offloads
+        ):
             return False
         tracker = self._request_trackers.get(request.request_id)
         if tracker is None or not any(block_ids):

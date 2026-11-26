@@ -30,6 +30,10 @@ from vllm.v1.worker.mamba_utils import get_mamba_groups
 
 from vllm_ascend.ascend_config import KVPPConfig
 from vllm_ascend.core.kv_cache_placement import map_kvpp_layers_to_owners
+from vllm_ascend.distributed.kv_transfer.kv_pool.access_mode import (
+    OffloadAccessMode,
+    parse_access_mode,
+)
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend import (
     backend_map,
 )
@@ -76,6 +80,7 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     infer_group_block_sizes,
     infer_group_cache_families,
     infer_tp_mismatch_info,
+    is_kv_save_role,
     uses_hybrid_kv_cache,
 )
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metrics import (
@@ -130,6 +135,19 @@ class BaseKVPoolWorker(ABC):
         self._transfer_threads_started = False
         self._kv_stats = AscendStoreKVConnectorStats()
         self._kv_stats_lock = threading.Lock()
+
+    def _can_save_kv(self) -> bool:
+        """Whether this worker is allowed to publish KV blocks."""
+        access_mode = getattr(self, "access_mode", OffloadAccessMode.READWRITE)
+        if not access_mode.can_write:
+            return False
+        if hasattr(self, "kv_role"):
+            return is_kv_save_role(
+                self.kv_role,
+                getattr(self, "save_decode_cache", False),
+                access_mode,
+            )
+        return bool(getattr(self, "can_put", False))
 
     @abstractmethod
     def _start_kv_transfer_threads(self) -> None:
@@ -215,8 +233,9 @@ class BaseKVPoolWorker(ABC):
         self._failed_requests: set[str] = set()
         self._invalid_block_ids_lock = threading.Lock()
         self._retired_store_req_ids: set[str] = set()
+        self.access_mode: OffloadAccessMode = parse_access_mode(extra_config)
         self.save_decode_cache = extra_config.get("save_decode_cache", False)
-        self.can_put = self.kv_role in ("kv_producer", "kv_both") or self.save_decode_cache
+        self.can_put = is_kv_save_role(self.kv_role, self.save_decode_cache, self.access_mode)
         self.backend = extra_config.get("backend", "mooncake")
         self.backend_name = self.backend.lower()
         kv_cache_groups = kv_cache_config.kv_cache_groups if kv_cache_config is not None else None
@@ -1010,14 +1029,15 @@ class BaseKVPoolWorker(ABC):
             ensure_initialized()
 
     def reset_store(self) -> None:
-        """Drain queued puts, then wipe the backend.
+        """Drain queued puts, then wipe the backend when writes are enabled.
 
         Join first so a put already on the send thread cannot land after
         ``remove_all`` and repopulate the pool with the previous weights.
         """
         if self.kv_send_thread is not None:
             self.kv_send_thread.request_queue.join()
-        self.m_store.remove_all()
+        if getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_write:
+            self.m_store.remove_all()
 
     def lookup(
         self,
@@ -1031,6 +1051,8 @@ class BaseKVPoolWorker(ABC):
         :param tokens: the input tokens, with shape [seq_len]
         :return: An int indicating how many prefix tokens are cached.
         """
+        if not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_read:
+            return 0
         try:
             hits = []
             kv_cache_group_ids = kv_cache_group_ids or [0]
@@ -1296,6 +1318,8 @@ class BaseKVPoolWorker(ABC):
         :param tokens: the input tokens, with shape [seq_len]
         :return: Recoverable prefix length and per-group tail-key boundaries.
         """
+        if not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_read:
+            return StoreLookupResult(0)
         try:
             hits: list[list[int]] = []
             max_hit_position = self.max_model_len
@@ -1497,7 +1521,7 @@ class KVPoolWorker(BaseKVPoolWorker):
             self._transfer_layout.host_memory_group_ids if self._transfer_layout is not None else frozenset()
         )
 
-        if self.can_put:
+        if self.can_put and self._can_save_kv():
             self.kv_send_thread = KVCacheStoreSendingThread(
                 self.m_store,
                 self.token_database,
@@ -1516,7 +1540,7 @@ class KVPoolWorker(BaseKVPoolWorker):
                 sharded_mamba_group_ids=self.sharded_mamba_group_ids,
                 host_memory_group_ids=host_memory_group_ids,
             )
-        if self.load_async:
+        if self.load_async and getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_read:
             self.kv_recv_thread = KVCacheStoreRecvingThread(
                 self.m_store,
                 self.token_database,
@@ -1543,6 +1567,8 @@ class KVPoolWorker(BaseKVPoolWorker):
 
     def start_load_kv(self, metadata: AscendConnectorMetadata):
         self.current_layer = 0
+        if not getattr(self, "access_mode", OffloadAccessMode.READWRITE).can_read:
+            return
         logger.debug("KV pool worker start_load_kv requests=%d", len(metadata.requests))
         if len(metadata.requests) == 0:
             return
@@ -1707,6 +1733,8 @@ class KVPoolWorker(BaseKVPoolWorker):
             )
 
     def wait_for_save(self, connector_metadata: AscendConnectorMetadata) -> None:
+        if not self._can_save_kv():
+            return
         assert self.kv_send_thread is not None
         send_thread = self.kv_send_thread
         if not isinstance(send_thread, KVCacheStoreSendingThread):

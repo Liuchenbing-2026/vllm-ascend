@@ -14,6 +14,7 @@ import numpy as np
 from vllm.logger import logger
 from vllm.v1.core.kv_cache_utils import BlockHash
 
+from vllm_ascend.distributed.kv_transfer.kv_pool.access_mode import OffloadAccessMode
 from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.layerwise.metadata import (
     get_partial_block_index,
 )
@@ -24,6 +25,7 @@ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import (
     ReqMeta,
     block_hash_to_str,
     get_block_hashes,
+    is_kv_save_role,
 )
 
 if TYPE_CHECKING:
@@ -91,7 +93,8 @@ class GvaDataPlane(LayerwiseDataPlane):
         worker = self._worker
         if not worker.use_layerwise_transfer:
             return
-        if worker.kv_role == "kv_consumer" and not worker.save_decode_cache:
+        access_mode = getattr(worker, "access_mode", OffloadAccessMode.READWRITE)
+        if not is_kv_save_role(worker.kv_role, getattr(worker, "save_decode_cache", False), access_mode):
             return
         hash_strings: dict[BlockHash | str, str] = {}
         # A request can allocate a public key before the key is published.
@@ -135,7 +138,7 @@ class GvaDataPlane(LayerwiseDataPlane):
         worker = self._worker
         if not worker.use_layerwise_transfer:
             return None
-        if not worker.can_put:
+        if not worker.can_put or not getattr(worker, "access_mode", OffloadAccessMode.READWRITE).can_write:
             return None
         for request in requests:
             if request.can_save is None or not request.can_save:
@@ -334,7 +337,10 @@ class GvaDataPlane(LayerwiseDataPlane):
     # --- load path -----------------------------------------------------------
 
     def _prepare_load_gvas(self, requests: list[ReqMeta]) -> None:
-        if not self._worker.use_layerwise_transfer:
+        if (
+            not self._worker.use_layerwise_transfer
+            or not getattr(self._worker, "access_mode", OffloadAccessMode.READWRITE).can_read
+        ):
             return
 
         plans: list[_LoadPlan] = []
