@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import functools
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from collections.abc import Callable
 from contextlib import contextmanager
 from threading import Lock
@@ -13,6 +13,7 @@ from typing import Any
 
 import torch
 
+from vllm_ascend.core.scheduler_output import resolve_max_concurrent_batches
 from vllm_ascend.kv_trace.kv_trace_config import KVTraceConfig
 from vllm_ascend.kv_trace.kv_trace_connector import record_output, record_plan
 from vllm_ascend.kv_trace.kv_trace_plan import AccessPlan, PlanSnapshotter, audit_access_plan
@@ -28,12 +29,26 @@ class KVTraceError(RuntimeError):
 class _PendingAudit:
     """One snapshot, consumed once by the output reader or next forward."""
 
-    def __init__(self, complete: Any):
+    def __init__(
+        self,
+        complete: Any,
+        slot_id: int | None = None,
+        release_slot: Callable[[int], None] | None = None,
+    ):
         self._complete = complete
+        self.slot_id = slot_id
+        self._release_slot = release_slot
         self._lock = Lock()
         self._error: BaseException | None = None
 
+    @property
+    def is_done(self) -> bool:
+        with self._lock:
+            return self._complete is None and self._error is None
+
     def finish(self) -> None:
+        release_cb: Callable[[int], None] | None = None
+        release_slot_id: int | None = None
         with self._lock:
             if self._complete is not None:
                 try:
@@ -42,8 +57,15 @@ class _PendingAudit:
                     self._error = exc
                 finally:
                     self._complete = None
-            if self._error is not None:
-                raise self._error
+                    if self.slot_id is not None and self._release_slot is not None:
+                        release_cb = self._release_slot
+                        release_slot_id = self.slot_id
+                        self._release_slot = None
+            error = self._error
+        if release_cb is not None and release_slot_id is not None:
+            release_cb(release_slot_id)
+        if error is not None:
+            raise error
 
 
 class KVTraceRuntime:
@@ -62,9 +84,32 @@ class KVTraceRuntime:
         self._failure: str | None = None
         self.action = KVTraceConfig.from_vllm_config(vllm_config).action
         self._configure_runner: Callable[[], None] | None = None
-        self._snapshotter = PlanSnapshotter()
+        self._max_pending_audits = max(1, resolve_max_concurrent_batches(vllm_config))
+        self._snapshotter = PlanSnapshotter(
+            self._max_pending_audits,
+            on_shrink=lambda _target: self._finish_pending(),
+        )
         self._defer_audit = False
-        self._pending: _PendingAudit | None = None
+        self._pending_lock = Lock()
+        self._pending_audits: deque[_PendingAudit] = deque()
+        self._unattached_pending: deque[_PendingAudit] = deque()
+
+    @property
+    def _pending(self) -> _PendingAudit | None:
+        with self._pending_lock:
+            return self._pending_audits[-1] if self._pending_audits else None
+
+    @_pending.setter
+    def _pending(self, value: _PendingAudit | None) -> None:
+        with self._pending_lock:
+            cleared = list(self._pending_audits)
+            self._pending_audits.clear()
+            self._unattached_pending.clear()
+            if value is not None:
+                self._pending_audits.append(value)
+                self._unattached_pending.append(value)
+        for item in cleared:
+            self._snapshotter.release_slot(item.slot_id)
 
     def _check_failure(self) -> None:
         if self.action == "raise" and self._failure is not None:
@@ -145,6 +190,11 @@ class KVTraceRuntime:
             and getattr(parallel, "pipeline_parallel_size", None) == 1
             and hasattr(runner, "sample_tokens")
         )
+        new_max_pending = max(1, resolve_max_concurrent_batches(config)) if self._defer_audit else 1
+        if new_max_pending < self._max_pending_audits:
+            self._finish_pending()
+        self._max_pending_audits = new_max_pending
+        self._snapshotter.set_max_in_flight(self._max_pending_audits)
         if self._configure_runner is not None:
             self._configure_runner()
         self.report("kv_trace.enabled", failure_action=self.action)
@@ -170,13 +220,76 @@ class KVTraceRuntime:
             self._metadata = {}
             self.gap(f"metadata_collection_failed:{type(exc).__name__}")
 
-    def _finish_pending(self) -> None:
-        if self._pending is not None:
+    def _prune_completed_pending_locked(self) -> None:
+        if not self._pending_audits:
+            return
+        self._pending_audits = deque(item for item in self._pending_audits if not item.is_done)
+        if self._unattached_pending:
+            self._unattached_pending = deque(item for item in self._unattached_pending if not item.is_done)
+
+    def _prune_completed_pending(self) -> None:
+        with self._pending_lock:
+            self._prune_completed_pending_locked()
+
+    def _busy_slot_ids_locked(self) -> set[int]:
+        return {item.slot_id for item in self._pending_audits if item.slot_id is not None}
+
+    def _run_finish_audits(self, to_finish: list[_PendingAudit]) -> None:
+        if not to_finish:
+            return
+        first_error: BaseException | None = None
+        for pending in to_finish:
             try:
-                self._pending.finish()
+                pending.finish()
+            except BaseException as exc:
+                if first_error is None:
+                    first_error = exc
             finally:
-                self._pending = None
+                self._snapshotter.release_slot(pending.slot_id)
+        if first_error is not None:
+            raise first_error
         self._check_failure()
+
+    def _pop_oldest_pending_locked(self) -> _PendingAudit:
+        oldest = self._pending_audits.popleft()
+        if oldest in self._unattached_pending:
+            self._unattached_pending.remove(oldest)
+        return oldest
+
+    def _finish_oldest_if_full(self) -> None:
+        while True:
+            with self._pending_lock:
+                self._prune_completed_pending_locked()
+                if not self._pending_audits:
+                    break
+                has_free = self._snapshotter.has_free_slot(excluded=self._busy_slot_ids_locked())
+                if len(self._pending_audits) < self._max_pending_audits and has_free:
+                    break
+                oldest = self._pop_oldest_pending_locked()
+            self._run_finish_audits([oldest])
+        self._check_failure()
+
+    def _finish_pending(self) -> None:
+        with self._pending_lock:
+            self._unattached_pending.clear()
+            to_finish = list(self._pending_audits)
+            self._pending_audits.clear()
+        self._run_finish_audits(to_finish)
+
+    def _acquire_snapshot_slot(self) -> int:
+        while True:
+            self._finish_oldest_if_full()
+            with self._pending_lock:
+                busy = self._busy_slot_ids_locked()
+            slot_id = self._snapshotter.try_acquire_slot(excluded=busy)
+            if slot_id is not None:
+                return slot_id
+            with self._pending_lock:
+                if not self._pending_audits:
+                    break
+                oldest = self._pop_oldest_pending_locked()
+            self._run_finish_audits([oldest])
+        return self._snapshotter.acquire_slot()
 
     def _current_plan(self, runner: Any) -> AccessPlan:
         assert self._phase is not None
@@ -192,8 +305,12 @@ class KVTraceRuntime:
 
     def _snapshot_audit(self, runner: Any) -> None:
         """Retain only this step's evidence, never a copy of the runtime."""
-        assert self._pending is None
-        plan, ready = self._snapshotter.freeze(self._current_plan(runner))
+        slot_id = self._acquire_snapshot_slot()
+        try:
+            plan, ready = self._snapshotter.freeze(self._current_plan(runner), slot_id=slot_id)
+        except BaseException:
+            self._snapshotter.release_slot(slot_id)
+            raise
 
         def complete():
             with torch.inference_mode():
@@ -205,16 +322,21 @@ class KVTraceRuntime:
                     self.gap(f"access_audit_failed:{type(exc).__name__}")
                 self._check_failure()
 
-        self._pending = _PendingAudit(complete)
+        pending = _PendingAudit(complete, slot_id=slot_id, release_slot=self._snapshotter.release_slot)
+        with self._pending_lock:
+            self._pending_audits.append(pending)
+            self._unattached_pending.append(pending)
 
     def _guard_output(self, output: Any) -> Any:
         self._check_failure()
-        pending = self._pending
+        with self._pending_lock:
+            pending = self._unattached_pending.popleft() if self._unattached_pending else None
         get_output = getattr(output, "get_output", None)
 
         def complete(result):
             if pending is not None:
                 pending.finish()
+                self._prune_completed_pending()
             self._check_failure()
             record_output(result, self.report)
             return result
@@ -231,6 +353,7 @@ class KVTraceRuntime:
         except (AttributeError, TypeError):
             if pending is not None:
                 pending.finish()
+                self._prune_completed_pending()
             self._check_failure()
         return output
 

@@ -68,6 +68,9 @@ import vllm_ascend.patch.worker.patch_eagle_speculator  # noqa
 import vllm_ascend.patch.worker.patch_dflash_speculator  # noqa
 import vllm_ascend.patch.worker.patch_dspark  # noqa
 
+# Apply configurable confidence/event ring on vLLM builds lacking async_scheduling_depth.
+import vllm_ascend.patch.worker.patch_adaptive_verification  # noqa
+
 # 310P: draft FULL must use AutoRegressiveAclGraphManager310 (no FIA graph_task).
 # patch_eagle_speculator above installs the 910 manager; re-override here.
 if not get_current_hardware_profile().supports(HardwareCapability.STANDARD_WORKER_PATCHES):

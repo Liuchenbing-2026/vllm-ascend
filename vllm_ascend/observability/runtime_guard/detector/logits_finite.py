@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any
 
 import numpy as np
@@ -90,6 +91,7 @@ class _PendingAsyncGate:
     # Optional CPU copy of logits_indices (non-blocking); None when 1:1 decode.
     logits_indices_host: torch.Tensor | None
     skip_req_ids: set[str]
+    wave: int | None = None
 
 
 class LogitsFiniteDetector(ConfigBackedDetector):
@@ -132,7 +134,8 @@ class LogitsFiniteDetector(ConfigBackedDetector):
 
     def __init__(self, *, runtime_config: Any | None = None, runner: Any | None = None) -> None:
         super().__init__(runtime_config=runtime_config, runner=runner, enabled=False)
-        self._deferred: deque[list[Incident]] = deque()
+        self._queue_lock = Lock()
+        self._deferred: deque[tuple[int | None, list[Incident]]] = deque()
         self._pending_gates: deque[_PendingAsyncGate] = deque()
         self._deferred_queue_max = LOGITS_FINITE_DEFERRED_QUEUE_MAX
         self._item_sync = bool(self.schema.defaults_dict()["item_sync"])
@@ -150,8 +153,19 @@ class LogitsFiniteDetector(ConfigBackedDetector):
 
     def _stage_none(self) -> None:
         """Drop pending alerts / async gates when the detector is disabled."""
-        self._deferred.clear()
-        self._pending_gates.clear()
+        with self._queue_lock:
+            self._deferred.clear()
+            self._pending_gates.clear()
+
+    def _enqueue_pending_gate(self, gate: _PendingAsyncGate) -> None:
+        overflowed = False
+        with self._queue_lock:
+            self._pending_gates.append(gate)
+            if len(self._pending_gates) > self._deferred_queue_max:
+                self._pending_gates.popleft()
+                overflowed = True
+        if overflowed:
+            logger.warning_once("[runtime_guard: logits_finite] async gate queue overflow; dropped oldest batch")
 
     def check_all(
         self,
@@ -160,6 +174,7 @@ class LogitsFiniteDetector(ConfigBackedDetector):
         logits_indices: torch.Tensor | None,
         input_batch: Any = None,
         skip_req_ids: set[str] | None = None,
+        wave: int | None = None,
     ) -> list[Incident]:
         """Pre-sample: launch / take the all-finite gate; enqueue on hit.
 
@@ -208,6 +223,7 @@ class LogitsFiniteDetector(ConfigBackedDetector):
                 qsl=qsl,
                 logits_indices=logits_indices,
                 skip_req_ids=skip,
+                wave=wave,
             )
 
         # Async: D2H the gate without waiting; resolve in check_deferred.
@@ -227,6 +243,7 @@ class LogitsFiniteDetector(ConfigBackedDetector):
                 qsl=qsl,
                 logits_indices=logits_indices,
                 skip_req_ids=skip,
+                wave=wave,
             )
 
         nrows = int(row_finite.shape[0]) if row_finite.dim() > 0 else 1
@@ -239,7 +256,7 @@ class LogitsFiniteDetector(ConfigBackedDetector):
             except Exception:
                 idx_host = None
 
-        self._pending_gates.append(
+        self._enqueue_pending_gate(
             _PendingAsyncGate(
                 all_finite_host=all_host,
                 row_finite=row_finite,
@@ -249,11 +266,9 @@ class LogitsFiniteDetector(ConfigBackedDetector):
                 qsl=qsl,
                 logits_indices_host=idx_host,
                 skip_req_ids=skip,
+                wave=wave,
             )
         )
-        if len(self._pending_gates) > self._deferred_queue_max:
-            self._pending_gates.popleft()
-            logger.warning_once("[runtime_guard: logits_finite] async gate queue overflow; dropped oldest batch")
         return []
 
     def _sync_gate_and_enqueue(
@@ -267,6 +282,7 @@ class LogitsFiniteDetector(ConfigBackedDetector):
         qsl: np.ndarray | None,
         logits_indices: torch.Tensor | None,
         skip_req_ids: set[str],
+        wave: int | None = None,
     ) -> list[Incident]:
         """Blocking ``.item()`` on the all-finite gate; enqueue hits. Always ``[]``."""
         try:
@@ -284,21 +300,37 @@ class LogitsFiniteDetector(ConfigBackedDetector):
             qsl=qsl,
             logits_indices=logits_indices,
             skip_req_ids=skip_req_ids,
+            wave=wave,
         )
         if alerts:
-            self._enqueue_deferred(alerts)
+            self._enqueue_deferred(alerts, wave=wave)
         return []
 
-    def _enqueue_deferred(self, alerts: list[Incident]) -> None:
-        self._deferred.append(alerts)
-        if len(self._deferred) > self._deferred_queue_max:
-            self._deferred.popleft()
+    def _enqueue_deferred(self, alerts: list[Incident], *, wave: int | None = None) -> None:
+        overflowed = False
+        with self._queue_lock:
+            self._deferred.append((wave, alerts))
+            if len(self._deferred) > self._deferred_queue_max:
+                self._deferred.popleft()
+                overflowed = True
+        if overflowed:
             logger.warning_once("[runtime_guard: logits_finite] deferred alert queue overflow; dropped oldest batch")
 
-    def _resolve_pending_gates(self, skip_req_ids: set[str]) -> None:
-        """Wait for async all-finite gates and enqueue hits."""
-        while self._pending_gates:
-            pending = self._pending_gates.popleft()
+    def _resolve_pending_gates(
+        self,
+        skip_req_ids: set[str],
+        *,
+        up_to_wave: int | None = None,
+    ) -> None:
+        """Wait for async all-finite gates up to ``up_to_wave`` and enqueue hits."""
+        while True:
+            with self._queue_lock:
+                if not self._pending_gates:
+                    break
+                head = self._pending_gates[0]
+                if up_to_wave is not None and head.wave is not None and head.wave > up_to_wave:
+                    break
+                pending = self._pending_gates.popleft()
             try:
                 all_finite = bool(pending.all_finite_host.item())
             except Exception as exc:
@@ -316,22 +348,42 @@ class LogitsFiniteDetector(ConfigBackedDetector):
                 qsl=pending.qsl,
                 logits_indices=pending.logits_indices_host,
                 skip_req_ids=skip,
+                wave=pending.wave,
             )
             if alerts:
-                self._enqueue_deferred(alerts)
+                self._enqueue_deferred(alerts, wave=pending.wave)
 
-    def check_deferred(self, *, skip_req_ids: set[str] | None = None) -> list[Incident]:
+    def check_deferred(
+        self,
+        *,
+        skip_req_ids: set[str] | None = None,
+        up_to_wave: int | None = None,
+    ) -> list[Incident]:
         """Finish async gates (if any), then drain host-side incidents."""
         skip = set(skip_req_ids or set())
         if not self._enabled:
             self._stage_none()
             return []
-        self._resolve_pending_gates(skip)
-        if not self._deferred:
-            return []
+        self._resolve_pending_gates(skip, up_to_wave=up_to_wave)
+        drained: list[list[Incident]] = []
+        with self._queue_lock:
+            if not self._deferred:
+                return []
+            if up_to_wave is None:
+                while self._deferred:
+                    _, batch = self._deferred.popleft()
+                    drained.append(batch)
+            else:
+                kept: deque[tuple[int | None, list[Incident]]] = deque()
+                while self._deferred:
+                    batch_wave, batch = self._deferred.popleft()
+                    if batch_wave is not None and batch_wave > up_to_wave:
+                        kept.append((batch_wave, batch))
+                    else:
+                        drained.append(batch)
+                self._deferred.extend(kept)
         out: list[Incident] = []
-        while self._deferred:
-            batch = self._deferred.popleft()
+        for batch in drained:
             if not skip:
                 out.extend(batch)
                 continue
@@ -351,6 +403,7 @@ class LogitsFiniteDetector(ConfigBackedDetector):
         qsl: np.ndarray | None,
         logits_indices: torch.Tensor | None,
         skip_req_ids: set[str] | None,
+        wave: int | None = None,
     ) -> list[Incident]:
         try:
             bad_rows = (~row_finite).nonzero(as_tuple=False).flatten()
@@ -387,6 +440,7 @@ class LogitsFiniteDetector(ConfigBackedDetector):
                     is_ill=True,
                     # msprobe ILL table has no separate Inf code; keep NAN (4).
                     ill_type=ILL_TYPE_NAN,
+                    wave=wave,
                     detail={
                         "logits_row": row,
                         "flat_token_index": idx_list[row] if row < len(idx_list) else None,

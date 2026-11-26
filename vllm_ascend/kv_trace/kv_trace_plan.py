@@ -4,12 +4,15 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
+from threading import Lock
 from typing import Any, cast
 
 import torch
 
+from vllm_ascend.core.scheduler_output import require_non_bool_int
 from vllm_ascend.kv_trace.kv_trace_state import BlockTable, KVCacheState
 
 
@@ -58,15 +61,114 @@ def tensor_identity(value: Any) -> Any:
     return value.data_ptr(), tuple(value.shape), tuple(value.stride())
 
 
+@dataclass
+class _SnapshotSlot:
+    """Reusable host buffer pool and copy event for one in-flight snapshot."""
+
+    host_buffers: list[Any] = field(default_factory=list)
+    copy_event: Any = None
+
+
 class PlanSnapshotter:
-    """Reusable D2H buffers; one outstanding snapshot at a time."""
+    """Reusable D2H buffers sized for configured in-flight async batches."""
 
-    def __init__(self):
-        self._host_buffers: list[Any] = []
-        self._copy_event: Any = None
+    def __init__(self, max_in_flight: int = 1, on_shrink: Callable[[int], None] | None = None):
+        count = max(1, require_non_bool_int(max_in_flight, "max_in_flight"))
+        self._slots: list[_SnapshotSlot] = [_SnapshotSlot() for _ in range(count)]
+        self._free_slots: deque[int] = deque(range(count))
+        self._in_use: set[int] = set()
+        self._next_slot = 0
+        self._on_shrink = on_shrink
+        self._lock = Lock()
 
-    def freeze(self, plan: AccessPlan) -> tuple[AccessPlan, Any]:
+    def has_free_slot(self, excluded: set[int] | None = None) -> bool:
+        """Return whether an unused snapshot slot not in ``excluded`` is available."""
+        blocked = excluded or ()
+        with self._lock:
+            return any(0 <= slot_id < len(self._slots) and slot_id not in blocked for slot_id in self._free_slots)
+
+    def try_acquire_slot(self, excluded: set[int] | None = None) -> int | None:
+        """Reserve an unused snapshot slot not in ``excluded``, or return None."""
+        blocked = excluded or ()
+        with self._lock:
+            skipped: list[int] = []
+            chosen: int | None = None
+            while self._free_slots:
+                candidate = self._free_slots.popleft()
+                if not (0 <= candidate < len(self._slots)):
+                    continue
+                if candidate in blocked:
+                    skipped.append(candidate)
+                    continue
+                chosen = candidate
+                self._in_use.add(candidate)
+                break
+            if skipped:
+                self._free_slots.extendleft(reversed(skipped))
+            return chosen
+
+    def _next_unmanaged_slot_locked(self) -> int:
+        """Select a round-robin slot without claiming from ``_free_slots``."""
+        total = len(self._slots)
+        for offset in range(total):
+            candidate = (self._next_slot + offset) % total
+            if candidate not in self._in_use:
+                self._next_slot = (candidate + 1) % total
+                return candidate
+        candidate = self._next_slot % total
+        self._next_slot = (candidate + 1) % total
+        return candidate
+
+    def acquire_slot(self) -> int:
+        """Reserve a free snapshot slot, falling back to round-robin if none are free."""
+        with self._lock:
+            while self._free_slots:
+                candidate = self._free_slots.popleft()
+                if 0 <= candidate < len(self._slots):
+                    self._in_use.add(candidate)
+                    return candidate
+            candidate = self._next_slot % len(self._slots)
+            self._next_slot = (candidate + 1) % len(self._slots)
+            self._in_use.add(candidate)
+            return candidate
+
+    def release_slot(self, slot_id: int | None) -> None:
+        """Return a finished snapshot slot to the free pool if still in range."""
+        if slot_id is None:
+            return
+        slot_id = require_non_bool_int(slot_id, "slot_id")
+        with self._lock:
+            was_active = slot_id in self._in_use
+            self._in_use.discard(slot_id)
+            if was_active and 0 <= slot_id < len(self._slots) and slot_id not in self._free_slots:
+                self._free_slots.append(slot_id)
+
+    def set_max_in_flight(self, max_in_flight: int) -> None:
+        """Ensure at least ``max_in_flight`` independent snapshot buffer slots exist."""
+        target = max(1, require_non_bool_int(max_in_flight, "max_in_flight"))
+        with self._lock:
+            shrinking = target < len(self._slots)
+        if shrinking and self._on_shrink is not None:
+            # Drain in-flight audits outside _lock before truncating slots they reference.
+            self._on_shrink(target)
+        with self._lock:
+            while len(self._slots) < target:
+                new_id = len(self._slots)
+                self._slots.append(_SnapshotSlot())
+                self._free_slots.append(new_id)
+            if target < len(self._slots):
+                self._slots = self._slots[:target]
+                self._free_slots = deque(slot_id for slot_id in self._free_slots if slot_id < target)
+                self._in_use = {slot_id for slot_id in self._in_use if slot_id < target}
+                self._next_slot %= target
+
+    def freeze(self, plan: AccessPlan, *, slot_id: int | None = None) -> tuple[AccessPlan, Any]:
         """Copy final values now; return the event that makes them host-readable."""
+        if slot_id is not None:
+            slot_id = require_non_bool_int(slot_id, "slot_id")
+        with self._lock:
+            chosen_slot = self._next_unmanaged_slot_locked() if slot_id is None else slot_id
+            slot = self._slots[chosen_slot]
         copies: dict[Any, Any] = {}
         event = None
         device_copies = 0
@@ -79,17 +181,17 @@ class PlanSnapshotter:
                     if value.device.type == "cpu":
                         host = value.clone()
                     else:
-                        if self._copy_event is None:
-                            self._copy_event = cast(Any, torch).npu.Event()
-                        event = self._copy_event
+                        if slot.copy_event is None:
+                            slot.copy_event = cast(Any, torch).npu.Event()
+                        event = slot.copy_event
                         index = device_copies
                         device_copies += 1
-                        if index >= len(self._host_buffers):
-                            self._host_buffers.append(None)
-                        host = self._host_buffers[index]
+                        if index >= len(slot.host_buffers):
+                            slot.host_buffers.append(None)
+                        host = slot.host_buffers[index]
                         if host is None or host.shape != value.shape or host.dtype != value.dtype:
                             host = torch.empty(value.shape, dtype=value.dtype, device="cpu", pin_memory=True)
-                            self._host_buffers[index] = host
+                            slot.host_buffers[index] = host
                         host.copy_(value, non_blocking=True)
                     copies[key] = host
                 return copies[key]

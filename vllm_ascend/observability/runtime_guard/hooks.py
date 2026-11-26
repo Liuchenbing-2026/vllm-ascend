@@ -238,13 +238,34 @@ def _restore_bound_override(obj: Any, name: str, orig: Any, *, had_instance_attr
         delattr(obj, name)
 
 
-def _safe_check_after_sample(runner: Any, output: Any) -> None:
+def _safe_current_wave(runner: Any) -> int | None:
+    """Capture this step's wave stamp when the guard exposes a wave tracker."""
+    guard = getattr(runner, "runtime_guard", None)
+    tracker = getattr(guard, "wave_tracker", None)
+    current_wave = getattr(tracker, "current_wave", None)
+    if not callable(current_wave):
+        return None
+    try:
+        return int(current_wave())
+    except Exception:
+        return None
+
+
+def _safe_check_after_sample(
+    runner: Any,
+    output: Any,
+    *,
+    up_to_wave: int | None = None,
+) -> None:
     """Run after-sample detect; never raise into the async copy / output path."""
     try:
-        runner.runtime_guard.check_after_sample(
-            sampled_token_ids=output.sampled_token_ids,
-            req_ids=output.req_ids,
-        )
+        kwargs: dict[str, Any] = {
+            "sampled_token_ids": output.sampled_token_ids,
+            "req_ids": output.req_ids,
+        }
+        if up_to_wave is not None:
+            kwargs["up_to_wave"] = up_to_wave
+        runner.runtime_guard.check_after_sample(**kwargs)
     except Exception:
         logger.exception("[runtime_guard soft-fail] async check_after_sample raised")
 
@@ -326,7 +347,7 @@ def maybe_wrap_v2_async_output(output: Any, runner: Any) -> Any:
         return output
     if not is_async_output_rank():
         return output
-    return AscendAsyncOutput(output, runner)
+    return AscendAsyncOutput(output, runner, wave=_safe_current_wave(runner))
 
 
 class AscendAsyncOutput(AsyncModelRunnerOutput):
@@ -336,13 +357,14 @@ class AscendAsyncOutput(AsyncModelRunnerOutput):
     is padded until ``get_output`` trims with ``num_sampled`` (W2-3 / D-11).
     """
 
-    def __init__(self, inner: AsyncOutput, runner: Any):
+    def __init__(self, inner: AsyncOutput, runner: Any, *, wave: int | None = None):
         self._inner = inner
         self._runner = runner
+        self._wave = wave
 
     def get_output(self) -> ModelRunnerOutput:
         output = self._inner.get_output()
-        _safe_check_after_sample(self._runner, output)
+        _safe_check_after_sample(self._runner, output, up_to_wave=self._wave)
         return output
 
     # Both supported versions require get_kv_connector_output on async outputs.

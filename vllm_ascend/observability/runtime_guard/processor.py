@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from vllm.distributed.parallel_state import get_pp_group
 from vllm.v1.outputs import AsyncModelRunnerOutput
 
+from vllm_ascend.core.scheduler_output import resolve_max_concurrent_batches
 from vllm_ascend.logger import init_logger_ascend
 from vllm_ascend.observability.runtime_guard.action.actions import ActionExecutor
 from vllm_ascend.observability.runtime_guard.detector.manager import DetectorManager
@@ -44,7 +45,12 @@ from vllm_ascend.observability.runtime_guard.rank_gate import (
     should_run_wave_sync_on_rank,
 )
 from vllm_ascend.observability.runtime_guard.report import ReportWriter
-from vllm_ascend.observability.runtime_guard.state import DumpQuota, RequestGuardStore, WaveTracker
+from vllm_ascend.observability.runtime_guard.state import (
+    MAX_DEFERRED_REAP_WAVES,
+    DumpQuota,
+    RequestGuardStore,
+    WaveTracker,
+)
 
 if TYPE_CHECKING:
     from vllm_ascend.observability.runtime_config.config import RuntimeConfig
@@ -54,6 +60,7 @@ logger = init_logger_ascend(__name__)
 # Shutdown must not hang forever on a stuck due-broadcast (dead peer): bound
 # the final merged-bus drain. End-of-wave drains stay unbounded (lockstep).
 _SHUTDOWN_BUS_DRAIN_TIMEOUT_S = 10.0
+_DEFERRED_REAP_WAVE_HEADROOM = 2
 
 
 @dataclass
@@ -145,6 +152,7 @@ class RuntimeGuardProcessor(RuntimeGuardBusMixin, RuntimeGuardDumpMixin, Runtime
         # B1: reap must wait for the last async output of a finished request;
         # WaveTracker.pending is the drain signal (replaces the dead store FIFO).
         RequestGuardStore.get().set_drain_probe(self.wave_tracker.pending)
+        self._configure_store_deferred_reap_waves(runner)
         self.quota = DumpQuota(runtime_config)
         # Detection + report only on last-PP TP0; all ranks share the same report root.
         self.report_writer = ReportWriter(
@@ -202,12 +210,21 @@ class RuntimeGuardProcessor(RuntimeGuardBusMixin, RuntimeGuardDumpMixin, Runtime
         self.runtime_config = runtime_config
         self.action_executor.rebind_runner(runner, runtime_config=runtime_config)
         self.detectors.rebind_runner(runner)
+        self._configure_store_deferred_reap_waves(runner)
         # Tokenizer may differ across runners; force lazy reload.
         self._tokenizer = None
         self._tokenizer_failed = False
         self.action_executor.start()
         if not self._bus_worker.started:
             self._bus_worker.start()
+
+    def _configure_store_deferred_reap_waves(self, runner: Any) -> None:
+        """Scale deferred force-reap window for configured in-flight async batches."""
+        max_concurrent = resolve_max_concurrent_batches(getattr(runner, "vllm_config", None))
+        RequestGuardStore.get().max_deferred_waves = max(
+            MAX_DEFERRED_REAP_WAVES,
+            max_concurrent + _DEFERRED_REAP_WAVE_HEADROOM,
+        )
 
     def shutdown(self) -> None:
         """Stop async workers (process teardown / tests)."""
@@ -570,12 +587,15 @@ class RuntimeGuardProcessor(RuntimeGuardBusMixin, RuntimeGuardDumpMixin, Runtime
     ) -> None:
         """Pre-sample hook: ``logits_finite`` (and future pre-sample detectors)."""
         self._last_input_batch = input_batch
+        wave_tracker = getattr(self, "wave_tracker", None)
+        wave = int(wave_tracker.current_wave()) if wave_tracker is not None else None
 
         def _run() -> None:
             for alert in self.detectors.check_before_sample(
                 logits=logits,
                 logits_indices=logits_indices,
                 input_batch=input_batch,
+                wave=wave,
             ):
                 self._handle_alert(alert, detector=self.detectors.get(alert.incident_type))
 
@@ -585,6 +605,8 @@ class RuntimeGuardProcessor(RuntimeGuardBusMixin, RuntimeGuardDumpMixin, Runtime
         self,
         sampled_token_ids: Any,
         req_ids: list[str] | None = None,
+        *,
+        up_to_wave: int | None = None,
     ) -> None:
         """Sample-step hook: drain logits_finite + enqueue CPU detect.
 
@@ -624,6 +646,7 @@ class RuntimeGuardProcessor(RuntimeGuardBusMixin, RuntimeGuardDumpMixin, Runtime
             logits_alerts, snap = self.detectors.after_sample_hot_path(
                 sampled_token_ids,
                 req_ids=req_ids,
+                up_to_wave=up_to_wave,
             )
             log_sampling_meta_debug(self.runner, req_ids)
             for alert in logits_alerts:

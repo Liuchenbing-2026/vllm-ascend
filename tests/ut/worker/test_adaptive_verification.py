@@ -205,7 +205,7 @@ def _attn_group(backend, builder):
     )
 
 
-def _adaptive_manager_kwargs(groups, enabled=True, steps=3):
+def _adaptive_manager_kwargs(groups, enabled=True, steps=3, max_concurrent_batches=2):
     req_states = SimpleNamespace(
         num_speculative_steps=steps,
         device=torch.device("cpu"),
@@ -217,6 +217,7 @@ def _adaptive_manager_kwargs(groups, enabled=True, steps=3):
     )
     config = SimpleNamespace(
         use_v2_model_runner=True,
+        max_concurrent_batches=max_concurrent_batches,
         speculative_config=SimpleNamespace(
             method="mtp", num_speculative_tokens=3, parallel_drafting=False, max_num_new_slots_for_drafting=0
         ),

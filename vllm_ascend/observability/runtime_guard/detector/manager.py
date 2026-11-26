@@ -189,6 +189,8 @@ class DetectorManager:
         self,
         sampled_token_ids: Any,
         req_ids: list[str] | None = None,
+        *,
+        up_to_wave: int | None = None,
     ) -> tuple[list[Incident], AfterSampleCpuSnapshot | None]:
         """Append IO; drain logits_finite incidents; build CPU-detect gate snapshot.
 
@@ -210,7 +212,7 @@ class DetectorManager:
             RequestIoSnapshotManager.get().append_batch(resolved_ids, sampled_token_ids)
 
         alerts: list[Incident] = []
-        alerts.extend(self._logits_finite_det.check_deferred(skip_req_ids=skip))
+        alerts.extend(self._logits_finite_det.check_deferred(skip_req_ids=skip, up_to_wave=up_to_wave))
 
         # CPU snapshot only when there is something left to detect: no reqs,
         # CPU detectors off, or every req already stop-detected (max_per_req).
@@ -253,6 +255,7 @@ class DetectorManager:
         logits: Any,
         logits_indices: Any = None,
         input_batch: Any = None,
+        wave: int | None = None,
     ) -> list[Incident]:
         """Run pre-sample detectors (``logits_finite`` only)."""
         if self._gated("before_sample"):
@@ -268,5 +271,6 @@ class DetectorManager:
             logits_indices=logits_indices,
             input_batch=input_batch,
             skip_req_ids=skip,
+            wave=wave,
         )
         return []

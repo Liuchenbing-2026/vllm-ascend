@@ -1480,6 +1480,24 @@
 #       implementation. Then remove the DSpark constructor wrapper, topology
 #       context, and the two module-local `replace` overrides.
 #
+# ** 31. File: worker/patch_adaptive_verification.py**
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   1. `vllm.v1.worker.gpu.spec_decode.adaptive_verification.AdaptiveVerificationManager`
+#      (`__init__`, `add_request`, `record_confidences`, `maybe_create_adaptive_verification_manager`)
+#    Why:
+#       vLLM release 0.34.0 and the verified main commit hardcode a 2-slot D2H
+#       confidence ring and a flat reset list, which corrupts/races confidence
+#       age and request row resets when PP >= 2 or async_scheduling_depth > 2.
+#    How:
+#       When `AdaptiveVerificationManager.__init__` lacks `max_concurrent_batches`,
+#       size the confidence/event ring from `resolve_max_concurrent_batches`,
+#       read the oldest in-flight slot, and track resets per slot.
+#       No-ops cleanly once upstream PR #64145 is present.
+#    Related PR (if no, explain why):
+#       https://github.com/vllm-project/vllm/pull/64145
+#    Future Plan:
+#       Remove the confidence-ring backport once all supported vLLM baselines include #64145.
+#
 # ** 32. File: worker/patch_model_runner.py**
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   1. `vllm.v1.worker.gpu.model_runner.GPUModelRunner.initialize_kv_cache`

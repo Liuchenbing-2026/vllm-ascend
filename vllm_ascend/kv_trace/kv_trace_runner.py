@@ -37,7 +37,10 @@ class _V2RunnerAdapter:
         def observed(input_batch, cudagraph_mode, *args, **kwargs):
             metadata = prepare(input_batch, cudagraph_mode, *args, **kwargs)
             if self.runtime._phase is not None:
-                self.runtime._finish_pending()
+                if self.runtime._phase == "forward":
+                    self.runtime._finish_oldest_if_full()
+                else:
+                    self.runtime._finish_pending()
                 self.request_ids = list(input_batch.req_ids[: input_batch.num_reqs])
                 self.runtime._full_graph = "FULL" in str(cudagraph_mode)
                 self.runtime.observe_metadata(metadata)
