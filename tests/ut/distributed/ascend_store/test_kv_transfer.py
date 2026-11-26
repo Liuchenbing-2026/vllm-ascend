@@ -2035,8 +2035,10 @@ class TestKVTransferTpMismatchDispatch(unittest.TestCase):
         req.load_spec.token_len = 16
         req.load_spec.vllm_cached_tokens = 0
         t.request_queue.put(req)
-        with self.assertRaises(RuntimeError):
-            t._handle_request(req)
+        t._handle_request(req)
+        self.assertFalse(req.can_save)
+        self.assertEqual(t.get_and_clear_finished_requests(), {"r1"})
+        self.assertIsNone(t._fatal_error)
         self.assertEqual(t.request_queue.unfinished_tasks, 0)
 
 

@@ -982,8 +982,11 @@ class BaseKVPoolWorker(ABC):
         if self.kv_recv_thread is not None:
             if self.load_async and not self.use_layerwise:
                 assert isinstance(self.kv_recv_thread, KVCacheStoreRecvingThread)
+                preempted_discard_ids = (
+                    set(meta.preempted_req_ids) - set(meta.loading_req_ids) if meta.preempted_req_ids else set()
+                )
                 done_recving, failed = self.kv_recv_thread.get_and_clear_receive_results(
-                    meta.loading_req_ids, meta.preempted_req_ids
+                    meta.loading_req_ids, preempted_discard_ids
                 )
             else:
                 self.kv_recv_thread.discard_finished_requests(meta.preempted_req_ids)
@@ -1010,13 +1013,22 @@ class BaseKVPoolWorker(ABC):
             ensure_initialized()
 
     def reset_store(self) -> None:
-        """Drain queued puts, then wipe the backend.
+        """Drain queued transfers, then wipe the backend.
 
         Join first so a put already on the send thread cannot land after
-        ``remove_all`` and repopulate the pool with the previous weights.
+        ``remove_all`` and repopulate the pool with the previous weights,
+        and clear any drained async receive state before reuse.
         """
         if self.kv_send_thread is not None:
             self.kv_send_thread.request_queue.join()
+        recv_thread = getattr(self, "kv_recv_thread", None)
+        if recv_thread is not None:
+            if not isinstance(getattr(recv_thread, "_fatal_error", None), BaseException):
+                recv_thread.request_queue.join()
+            recv_thread.get_and_clear_finished_requests()
+            clear_failed = getattr(recv_thread, "get_and_clear_failed_requests", None)
+            if clear_failed is not None:
+                clear_failed()
         self.m_store.remove_all()
 
     def lookup(

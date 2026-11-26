@@ -667,11 +667,29 @@ class BaseKVPoolScheduler(ABC):
             self._unfinished_requests.pop(finished_req_id, None)
             self._preempted_req_ids.discard(finished_req_id)
 
-        for req_id in scheduler_output.preempted_req_ids:
-            self._preempted_req_ids.update(scheduler_output.preempted_req_ids)
-            self._request_trackers.pop(req_id, None)
-            self._unfinished_requests.pop(req_id, None)
-            self._async_loading_req_ids.discard(req_id)
+        preempted_req_ids = scheduler_output.preempted_req_ids
+        if preempted_req_ids:
+            scheduled_new_req_ids = {req.req_id for req in scheduler_output.scheduled_new_reqs}
+            self._preempted_req_ids.update(preempted_req_ids)
+            for req_id in preempted_req_ids:
+                self._request_trackers.pop(req_id, None)
+                load_spec = self.load_specs.get(req_id)
+                if (
+                    load_spec is not None
+                    and load_spec.can_load
+                    and req_id in self._async_loading_req_ids
+                    and req_id in self._unfinished_requests
+                ):
+                    # Re-admitted for an async load in the same step: preserve load state.
+                    self._preempted_req_ids.discard(req_id)
+                    continue
+                self._async_loading_req_ids.discard(req_id)
+                if req_id in scheduled_new_req_ids and req_id in self._unfinished_requests:
+                    # Re-admitted synchronously in the same step: keep request state.
+                    self._preempted_req_ids.discard(req_id)
+                    continue
+                self._unfinished_requests.pop(req_id, None)
+                self.load_specs.pop(req_id, None)
 
         meta = AscendConnectorMetadata(
             scheduler_output.preempted_req_ids,
