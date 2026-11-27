@@ -132,6 +132,7 @@ from .engram.parallel import gather_engram_hashes, resolve_dp_shared_memory
 from .engram.shared_pool import rollback_shared_engram
 from .engram_lifecycle import close_engram_on_init_failure
 from .indexer import DeepseekV41Indexer
+from .mono import maybe_build_mono_runner
 
 
 def _retain_local_engram_tables(model):
@@ -1406,6 +1407,15 @@ class DeepseekV41Model(nn.Module, EagleModelMixin):
 
             self._init_routing_input_ids_cache(vllm_config)
             rollback.pop_all()
+        self._mono_runner = maybe_build_mono_runner(
+            vllm_config=vllm_config,
+            hf_config=self.config,
+            layers=self.layers,
+            start_layer=self.start_layer,
+            end_layer=self.end_layer,
+            aux_hidden_state_layers=getattr(self, "aux_hidden_state_layers", ()),
+            decoder_replay_start=self.decoder_replay_start,
+        )
 
     @property
     def local_engram_layer_ids(self) -> tuple[int, ...]:
@@ -1966,9 +1976,16 @@ class DeepseekV41Model(nn.Module, EagleModelMixin):
             pre_mix = hidden_states.new_zeros(hidden_states.shape[0], self.hc_mult, dtype=torch.float32)
             pre_mix[:, 0] = 1.0
         last_layer = None
+        mono_runner = getattr(self, "_mono_runner", None)
+        mono_plan = mono_runner.plan_step(positions) if mono_runner is not None else None
+        mono_active = bool(mono_plan is not None and mono_plan.active)
+        pending_post = None
         aux_hidden_states = get_pp_transport_tensors(intermediate_tensors, PPTransportDataType.AUX_HIDDEN_STATES)
         for layer in islice(self.layers, self.start_layer, self.end_layer):
             if self.decoder_replay_layers is not None and layer.layer_idx == self.decoder_replay_start:
+                if pending_post is not None and mono_runner is not None:
+                    hidden_states = mono_runner.flush_pending(last_layer, hidden_states, pending_post)
+                    pending_post = None
                 assert self.decoder_replay_layer_name is not None
                 num_late_aux = sum(
                     self.decoder_replay_start <= layer_idx < self.end_layer
@@ -1986,6 +2003,15 @@ class DeepseekV41Model(nn.Module, EagleModelMixin):
                 aux_hidden_states.extend(late_aux)
                 last_layer = self.layers[self.end_layer - 1]
                 break
+            if (
+                pending_post is not None
+                and mono_runner is not None
+                and (
+                    layer.layer_idx in self.aux_hidden_state_layers or (layer.engram is not None and token_mask.numel())
+                )
+            ):
+                hidden_states = mono_runner.flush_pending(last_layer, hidden_states, pending_post)
+                pending_post = None
             last_layer = layer
             # Checkpoint IDs are zero-based. Capture the residual entering
             # the selected layer, before its Engram and attention updates.
@@ -2021,7 +2047,21 @@ class DeepseekV41Model(nn.Module, EagleModelMixin):
                     active_mask,
                     self.engram_rotation if self.engram_rotated else None,
                 )
-            hidden_states, pre_mix = layer(positions, hidden_states, pre_mix, None, input_ids=input_ids)
+            if mono_active and mono_runner is not None and layer.layer_idx in mono_runner.bindings:
+                allow_defer = (layer.layer_idx + 1) not in self.aux_hidden_state_layers
+                hidden_states, pre_mix, pending_post = mono_runner.run_layer(
+                    layer.layer_idx,
+                    positions,
+                    hidden_states,
+                    pre_mix,
+                    input_ids,
+                    pending_post,
+                    allow_defer_post=allow_defer,
+                )
+            else:
+                hidden_states, pre_mix = layer(positions, hidden_states, pre_mix, None, input_ids=input_ids)
+        if pending_post is not None and mono_runner is not None:
+            hidden_states = mono_runner.flush_pending(last_layer, hidden_states, pending_post)
         if not pp_group.is_last_rank:
             if use_sequence_parallel:
                 hidden_states = sp_all_gather(hidden_states)[:full_num_tokens]
