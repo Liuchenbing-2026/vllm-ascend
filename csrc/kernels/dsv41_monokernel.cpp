@@ -23,13 +23,17 @@ namespace {
 
 constexpr uint32_t kMonoTileK = 1024;
 constexpr uint32_t kMonoTileM = 8;
-constexpr uint32_t kRowVec = 4;
+constexpr uint32_t kRowVec = 8;
 constexpr uint32_t kRowBlk = 16;
 constexpr uint32_t kMonoSyncInts = 1024;
 constexpr uint32_t kHcMult = 4;
 constexpr uint32_t kHcMixDim = 24;
 constexpr uint32_t kHcCombDim = 16;
 constexpr uint32_t kMonoAlign = 64;
+constexpr uint32_t kAccSlotFloats = kMonoTileM * kRowBlk;
+constexpr uint32_t kUbSkewWf = 16;
+constexpr uint32_t kUbSkewProd = 32;
+constexpr uint32_t kExpGrpStride = 18;
 
 __aicore__ inline uint64_t MonoAlign64(uint64_t val)
 {
@@ -251,6 +255,8 @@ private:
         wsSharedAct_.SetGlobalBuffer(AllocWsB(base, off, M * meta_.sharedInter));
         wsSharedOut_.SetGlobalBuffer(AllocWsB(base, off, M * D));
         wsRoutedAct_.SetGlobalBuffer(AllocWsB(base, off, M * meta_.topK * meta_.routedInter));
+        wsRoutedOut_.SetGlobalBuffer(AllocWsB(base, off, M * meta_.topK * D));
+        wsExpMeta_.SetGlobalBuffer(AllocWsI(base, off, 64 + M * meta_.topK * kExpGrpStride));
     }
 
     __aicore__ inline void SetupPipeBuffers()
@@ -261,13 +267,14 @@ private:
         pipe_->InitBuffer(outQue_, 1, tileBytes);
 
         pipe_->InitBuffer(bufXBatch_, kMonoTileM * tileBytes);
-        pipe_->InitBuffer(bufWF32_, kRowVec * tileBytes);
-        pipe_->InitBuffer(bufProd_, kRowVec * tileBytes);
+        pipe_->InitBuffer(bufWF32_, (kRowVec * kMonoTileK + kUbSkewWf) * sizeof(float));
+        pipe_->InitBuffer(bufProd_, (kRowVec * kMonoTileK + kUbSkewProd) * sizeof(float));
         pipe_->InitBuffer(bufAux0_, tileBytes);
         pipe_->InitBuffer(bufAux1_, tileBytes);
         pipe_->InitBuffer(bufWork_, kRowVec * 64 * sizeof(float));
         pipe_->InitBuffer(bufSmall_, 256 * sizeof(float));
         pipe_->InitBuffer(bufSync_, kMonoSyncInts * sizeof(int32_t));
+        pipe_->InitBuffer(bufAcc_, 3 * kAccSlotFloats * sizeof(float));
     }
 
     __aicore__ inline float ScalarExp(float x)
@@ -355,9 +362,9 @@ private:
         inQueB_.EnQue(wb);
     }
 
-    // Fast vector reduction: accumulates W[rows, K] @ x[mCount, K]^T into acc[m][r].
-    // Uses true double-buffered 4-row burst DataCopy, WholeReduceSum, and M<=8 weight reuse.
-    __aicore__ inline void GemmAccumBf16(
+    // Pure vector GEMV accumulation into UB accumulator accUb[m * kRowBlk + r], zero SyncVecToScalar().
+    // Uses 8-row (up to 16 KB) double-buffered burst DataCopy, bank-skewed UB buffers, and M<=8 weight reuse.
+    __aicore__ inline void GemmAccumBf16Ub(
         const AscendC::GlobalTensor<bfloat16_t> &xGm,
         uint64_t xBase,
         uint32_t xStride,
@@ -366,13 +373,17 @@ private:
         uint64_t wBase,
         uint32_t K,
         uint32_t rows,
-        float (&acc)[kMonoTileM][kRowBlk])
+        AscendC::LocalTensor<float> &accUb,
+        const uint32_t *tokIdx = nullptr)
     {
         AscendC::LocalTensor<float> xf = bufXBatch_.Get<float>();
-        AscendC::LocalTensor<float> wf = bufWF32_.Get<float>();
-        AscendC::LocalTensor<float> prod = bufProd_.Get<float>();
+        AscendC::LocalTensor<float> wf = bufWF32_.Get<float>()[kUbSkewWf];
+        AscendC::LocalTensor<float> prod = bufProd_.Get<float>()[kUbSkewProd];
         AscendC::LocalTensor<float> work = bufWork_.Get<float>();
         AscendC::LocalTensor<float> outM = bufAux1_.Get<float>();
+
+        AscendC::Duplicate(accUb, 0.0f, mCount * kRowBlk);
+        AscendC::PipeBarrier<PIPE_V>();
 
         uint32_t numGrps = (rows + kRowVec - 1) / kRowVec;
 
@@ -383,8 +394,9 @@ private:
             uint8_t redRepStride = static_cast<uint8_t>(nChunks / 8U);
 
             for (uint32_t m = 0; m < mCount; ++m) {
-                AscendC::LocalTensor<bfloat16_t> xb =
-                    CopyInTile(inQueA_, xGm, xBase + static_cast<uint64_t>(m) * xStride + k0, len);
+                uint64_t rowBase = tokIdx ? (static_cast<uint64_t>(tokIdx[m]) * xStride)
+                                          : (xBase + static_cast<uint64_t>(m) * xStride);
+                AscendC::LocalTensor<bfloat16_t> xb = CopyInTile(inQueA_, xGm, rowBase + k0, len);
                 AscendC::Cast(xf[m * padLen], xb, AscendC::RoundMode::CAST_NONE, len);
                 AscendC::PipeBarrier<PIPE_V>();
                 inQueA_.FreeTensor(xb);
@@ -430,72 +442,153 @@ private:
                     AscendC::WholeReduceSum(outM[m * 8], work, static_cast<int32_t>(nChunks), grpRows, 1, 1,
                                             redRepStride);
                     AscendC::PipeBarrier<PIPE_V>();
+                    AscendC::Add(accUb[m * kRowBlk + gStart], accUb[m * kRowBlk + gStart], outM[m * 8], 8);
+                    AscendC::PipeBarrier<PIPE_V>();
                 }
-                SyncVecToScalar();
-                for (uint32_t m = 0; m < mCount; ++m) {
-                    for (uint32_t r = 0; r < grpRows; ++r) {
-                        acc[m][gStart + r] += outM.GetValue(m * 8 + r);
+            }
+        }
+    }
+
+    // Paired Gate+Up GEMV: loads & casts input xGm ONCE per k0 tile for both gate and up weights!
+    __aicore__ inline void GemmAccumBf16PairedUb(
+        const AscendC::GlobalTensor<bfloat16_t> &xGm,
+        uint64_t xBase,
+        uint32_t xStride,
+        uint32_t mCount,
+        const AscendC::GlobalTensor<bfloat16_t> &wGm,
+        uint64_t wGateBase,
+        uint64_t wUpBase,
+        uint32_t K,
+        uint32_t rows,
+        AscendC::LocalTensor<float> &accGUb,
+        AscendC::LocalTensor<float> &accUUb,
+        const uint32_t *tokIdx = nullptr)
+    {
+        AscendC::LocalTensor<float> xf = bufXBatch_.Get<float>();
+        AscendC::LocalTensor<float> wf = bufWF32_.Get<float>()[kUbSkewWf];
+        AscendC::LocalTensor<float> prod = bufProd_.Get<float>()[kUbSkewProd];
+        AscendC::LocalTensor<float> work = bufWork_.Get<float>();
+        AscendC::LocalTensor<float> outM = bufAux1_.Get<float>();
+
+        AscendC::Duplicate(accGUb, 0.0f, mCount * kRowBlk);
+        AscendC::Duplicate(accUUb, 0.0f, mCount * kRowBlk);
+        AscendC::PipeBarrier<PIPE_V>();
+
+        uint32_t numGrps = (rows + kRowVec - 1) / kRowVec;
+
+        for (uint32_t k0 = 0; k0 < K; k0 += kMonoTileK) {
+            uint32_t len = (k0 + kMonoTileK <= K) ? kMonoTileK : (K - k0);
+            uint32_t padLen = MonoPadReduceLen(len);
+            uint32_t nChunks = padLen / 64U;
+            uint8_t redRepStride = static_cast<uint8_t>(nChunks / 8U);
+
+            for (uint32_t m = 0; m < mCount; ++m) {
+                uint64_t rowBase = tokIdx ? (static_cast<uint64_t>(tokIdx[m]) * xStride)
+                                          : (xBase + static_cast<uint64_t>(m) * xStride);
+                AscendC::LocalTensor<bfloat16_t> xb = CopyInTile(inQueA_, xGm, rowBase + k0, len);
+                AscendC::Cast(xf[m * padLen], xb, AscendC::RoundMode::CAST_NONE, len);
+                AscendC::PipeBarrier<PIPE_V>();
+                inQueA_.FreeTensor(xb);
+                if (len < padLen) {
+                    for (uint32_t i = len; i < padLen; ++i) {
+                        xf.SetValue(m * padLen + i, 0.0f);
+                    }
+                    AscendC::PipeBarrier<PIPE_ALL>();
+                }
+            }
+
+            uint32_t firstRows = (kRowVec <= rows) ? kRowVec : rows;
+            EnqueWeightGroup(wGm, wGateBase, K, k0, 0, firstRows, len, padLen);
+            for (uint32_t g = 0; g < numGrps; ++g) {
+                uint32_t gStart = g * kRowVec;
+                uint32_t grpRows = (gStart + kRowVec <= rows) ? kRowVec : (rows - gStart);
+                // Prefetch Up group for same g while computing Gate group
+                EnqueWeightGroup(wGm, wUpBase, K, k0, gStart, grpRows, len, padLen);
+
+                {
+                    AscendC::LocalTensor<bfloat16_t> wbG = inQueB_.DeQue<bfloat16_t>();
+                    AscendC::Cast(wf, wbG, AscendC::RoundMode::CAST_NONE, grpRows * padLen);
+                    AscendC::PipeBarrier<PIPE_V>();
+                    inQueB_.FreeTensor(wbG);
+                    if (len < padLen) {
+                        for (uint32_t r = 0; r < grpRows; ++r) {
+                            for (uint32_t i = len; i < padLen; ++i) {
+                                wf.SetValue(r * padLen + i, 0.0f);
+                            }
+                        }
+                        AscendC::PipeBarrier<PIPE_ALL>();
+                    }
+                    for (uint32_t m = 0; m < mCount; ++m) {
+                        for (uint32_t r = 0; r < grpRows; ++r) {
+                            AscendC::Mul(prod[r * padLen], xf[m * padLen], wf[r * padLen], padLen);
+                        }
+                        AscendC::PipeBarrier<PIPE_V>();
+                        AscendC::WholeReduceSum(work, prod, 64, grpRows * nChunks, 1, 1, 8);
+                        AscendC::PipeBarrier<PIPE_V>();
+                        AscendC::WholeReduceSum(outM[m * 8], work, static_cast<int32_t>(nChunks), grpRows, 1, 1,
+                                                redRepStride);
+                        AscendC::PipeBarrier<PIPE_V>();
+                        AscendC::Add(accGUb[m * kRowBlk + gStart], accGUb[m * kRowBlk + gStart], outM[m * 8], 8);
+                        AscendC::PipeBarrier<PIPE_V>();
+                    }
+                }
+
+                // Prefetch next Gate group (if any) while computing Up group
+                if (g + 1 < numGrps) {
+                    uint32_t nextStart = (g + 1) * kRowVec;
+                    uint32_t nextRows = (nextStart + kRowVec <= rows) ? kRowVec : (rows - nextStart);
+                    EnqueWeightGroup(wGm, wGateBase, K, k0, nextStart, nextRows, len, padLen);
+                }
+
+                {
+                    AscendC::LocalTensor<bfloat16_t> wbU = inQueB_.DeQue<bfloat16_t>();
+                    AscendC::Cast(wf, wbU, AscendC::RoundMode::CAST_NONE, grpRows * padLen);
+                    AscendC::PipeBarrier<PIPE_V>();
+                    inQueB_.FreeTensor(wbU);
+                    if (len < padLen) {
+                        for (uint32_t r = 0; r < grpRows; ++r) {
+                            for (uint32_t i = len; i < padLen; ++i) {
+                                wf.SetValue(r * padLen + i, 0.0f);
+                            }
+                        }
+                        AscendC::PipeBarrier<PIPE_ALL>();
+                    }
+                    for (uint32_t m = 0; m < mCount; ++m) {
+                        for (uint32_t r = 0; r < grpRows; ++r) {
+                            AscendC::Mul(prod[r * padLen], xf[m * padLen], wf[r * padLen], padLen);
+                        }
+                        AscendC::PipeBarrier<PIPE_V>();
+                        AscendC::WholeReduceSum(work, prod, 64, grpRows * nChunks, 1, 1, 8);
+                        AscendC::PipeBarrier<PIPE_V>();
+                        AscendC::WholeReduceSum(outM[m * 8], work, static_cast<int32_t>(nChunks), grpRows, 1, 1,
+                                                redRepStride);
+                        AscendC::PipeBarrier<PIPE_V>();
+                        AscendC::Add(accUUb[m * kRowBlk + gStart], accUUb[m * kRowBlk + gStart], outM[m * 8], 8);
+                        AscendC::PipeBarrier<PIPE_V>();
                     }
                 }
             }
         }
     }
 
-    __aicore__ inline void StoreAccBatchBf16(
+    __aicore__ inline void StoreAccBatchBf16Ub(
         const AscendC::GlobalTensor<bfloat16_t> &outGm,
         uint32_t mBase,
         uint32_t mCount,
         uint32_t N,
         uint32_t r0,
         uint32_t rows,
-        const float (&acc)[kMonoTileM][kRowBlk])
+        const AscendC::LocalTensor<float> &accUb,
+        const uint32_t *tokIdx = nullptr)
     {
-        AscendC::LocalTensor<float> outF = bufAux0_.Get<float>();
         for (uint32_t m = 0; m < mCount; ++m) {
-            for (uint32_t r = 0; r < rows; ++r) {
-                outF.SetValue(m * kRowBlk + r, acc[m][r]);
-            }
-        }
-        AscendC::PipeBarrier<PIPE_ALL>();
-        for (uint32_t m = 0; m < mCount; ++m) {
+            uint32_t tok = tokIdx ? tokIdx[m] : (mBase + m);
             AscendC::LocalTensor<bfloat16_t> ob = outQue_.AllocTensor<bfloat16_t>();
-            AscendC::Cast(ob, outF[m * kRowBlk], AscendC::RoundMode::CAST_RINT, rows);
+            AscendC::Cast(ob, accUb[m * kRowBlk], AscendC::RoundMode::CAST_RINT, rows);
             AscendC::PipeBarrier<PIPE_V>();
             outQue_.EnQue(ob);
             ob = outQue_.DeQue<bfloat16_t>();
-            CopyOutTile(outGm, static_cast<uint64_t>(mBase + m) * N + r0, ob, rows);
-        }
-    }
-
-    __aicore__ inline void RunGemvOutBlocks(
-        const AscendC::GlobalTensor<bfloat16_t> &xGm,
-        uint32_t xStride,
-        const AscendC::GlobalTensor<bfloat16_t> &wGm,
-        const AscendC::GlobalTensor<bfloat16_t> &outGm,
-        uint32_t K,
-        uint32_t N)
-    {
-        uint32_t M = meta_.mTokens;
-        uint32_t mTiles = (M + kMonoTileM - 1) / kMonoTileM;
-        uint32_t rowBlks = (N + kRowBlk - 1) / kRowBlk;
-        uint32_t total = mTiles * rowBlks;
-
-        for (uint32_t tid = blkIdx_; tid < total; tid += blkNum_) {
-            uint32_t mTile = tid / rowBlks;
-            uint32_t mBase = mTile * kMonoTileM;
-            uint32_t mCount = (mBase + kMonoTileM <= M) ? kMonoTileM : (M - mBase);
-            uint32_t r0 = (tid % rowBlks) * kRowBlk;
-            uint32_t rows = (r0 + kRowBlk <= N) ? kRowBlk : (N - r0);
-
-            float acc[kMonoTileM][kRowBlk];
-            for (uint32_t m = 0; m < mCount; ++m) {
-                for (uint32_t r = 0; r < rows; ++r) {
-                    acc[m][r] = 0.0f;
-                }
-            }
-            GemmAccumBf16(xGm, static_cast<uint64_t>(mBase) * xStride, xStride, mCount,
-                          wGm, static_cast<uint64_t>(r0) * K, K, rows, acc);
-            StoreAccBatchBf16(outGm, mBase, mCount, N, r0, rows, acc);
+            CopyOutTile(outGm, static_cast<uint64_t>(tok) * N + r0, ob, rows);
         }
     }
 
@@ -923,30 +1016,19 @@ private:
                 uint32_t b = tid % (qBlks + kvBlks);
                 uint32_t mBase = mTile * kMonoTileM;
                 uint32_t mCount = (mBase + kMonoTileM <= M) ? kMonoTileM : (M - mBase);
+                AscendC::LocalTensor<float> accUb = bufAcc_.Get<float>();
                 if (b < qBlks) {
                     uint32_t r0 = b * kRowBlk;
                     uint32_t rows = (r0 + kRowBlk <= meta_.qLora) ? kRowBlk : (meta_.qLora - r0);
-                    float acc[kMonoTileM][kRowBlk];
-                    for (uint32_t m = 0; m < mCount; ++m) {
-                        for (uint32_t r = 0; r < rows; ++r) {
-                            acc[m][r] = 0.0f;
-                        }
-                    }
-                    GemmAccumBf16(wsXNorm_, static_cast<uint64_t>(mBase) * D, D, mCount,
-                                  wqAGm_, static_cast<uint64_t>(r0) * D, D, rows, acc);
-                    StoreAccBatchBf16(wsQA_, mBase, mCount, meta_.qLora, r0, rows, acc);
+                    GemmAccumBf16Ub(wsXNorm_, static_cast<uint64_t>(mBase) * D, D, mCount,
+                                    wqAGm_, static_cast<uint64_t>(r0) * D, D, rows, accUb);
+                    StoreAccBatchBf16Ub(wsQA_, mBase, mCount, meta_.qLora, r0, rows, accUb);
                 } else {
                     uint32_t r0 = (b - qBlks) * kRowBlk;
                     uint32_t rows = (r0 + kRowBlk <= meta_.headDim) ? kRowBlk : (meta_.headDim - r0);
-                    float acc[kMonoTileM][kRowBlk];
-                    for (uint32_t m = 0; m < mCount; ++m) {
-                        for (uint32_t r = 0; r < rows; ++r) {
-                            acc[m][r] = 0.0f;
-                        }
-                    }
-                    GemmAccumBf16(wsXNorm_, static_cast<uint64_t>(mBase) * D, D, mCount,
-                                  wkvGm_, static_cast<uint64_t>(r0) * D, D, rows, acc);
-                    StoreAccBatchBf16(wsKV_, mBase, mCount, meta_.headDim, r0, rows, acc);
+                    GemmAccumBf16Ub(wsXNorm_, static_cast<uint64_t>(mBase) * D, D, mCount,
+                                    wkvGm_, static_cast<uint64_t>(r0) * D, D, rows, accUb);
+                    StoreAccBatchBf16Ub(wsKV_, mBase, mCount, meta_.headDim, r0, rows, accUb);
                 }
             } else {
                 uint32_t mt = tid - qkvTasks;
@@ -994,39 +1076,36 @@ private:
             uint32_t r0 = (tid % qbBlks) * kRowBlk;
             uint32_t rows = (r0 + kRowBlk <= qN) ? kRowBlk : (qN - r0);
 
-            float acc[kMonoTileM][kRowBlk];
-            for (uint32_t m = 0; m < mCount; ++m) {
-                for (uint32_t r = 0; r < rows; ++r) {
-                    acc[m][r] = 0.0f;
-                }
-            }
-            GemmAccumBf16(wsQR_, static_cast<uint64_t>(mBase) * meta_.qLora, meta_.qLora, mCount,
-                          wqBGm_, static_cast<uint64_t>(r0) * meta_.qLora, meta_.qLora, rows, acc);
+            AscendC::LocalTensor<float> accUb = bufAcc_.Get<float>();
+            GemmAccumBf16Ub(wsQR_, static_cast<uint64_t>(mBase) * meta_.qLora, meta_.qLora, mCount,
+                            wqBGm_, static_cast<uint64_t>(r0) * meta_.qLora, meta_.qLora, rows, accUb);
 
             if (fuseQRope) {
                 uint32_t hdOff = r0 % meta_.headDim;
                 if (hdOff >= meta_.nopeDim) {
+                    SyncVecToScalar();
                     uint32_t rOff = hdOff - meta_.nopeDim;
                     for (uint32_t m = 0; m < mCount; ++m) {
                         uint64_t csBase = static_cast<uint64_t>(mBase + m) * meta_.ropeDim + rOff;
                         AscendC::LocalTensor<float> cs = CopyInTile(inQueA_, cosGm_, csBase, rows);
                         AscendC::LocalTensor<float> sn = CopyInTile(inQueB_, sinGm_, csBase, rows);
                         for (uint32_t i = 0; i < rows; i += 2) {
-                            float x0 = acc[m][i];
-                            float x1 = acc[m][i + 1];
+                            float x0 = accUb.GetValue(m * kRowBlk + i);
+                            float x1 = accUb.GetValue(m * kRowBlk + i + 1);
                             float c0 = cs.GetValue(i);
                             float c1 = cs.GetValue(i + 1);
                             float s0 = sn.GetValue(i);
                             float s1 = sn.GetValue(i + 1);
-                            acc[m][i] = x0 * c0 - x1 * s0;
-                            acc[m][i + 1] = x1 * c1 + x0 * s1;
+                            accUb.SetValue(m * kRowBlk + i, x0 * c0 - x1 * s0);
+                            accUb.SetValue(m * kRowBlk + i + 1, x1 * c1 + x0 * s1);
                         }
                         inQueA_.FreeTensor(cs);
                         inQueB_.FreeTensor(sn);
                     }
+                    AscendC::PipeBarrier<PIPE_ALL>();
                 }
             }
-            StoreAccBatchBf16(wsQ_, mBase, mCount, qN, r0, rows, acc);
+            StoreAccBatchBf16Ub(wsQ_, mBase, mCount, qN, r0, rows, accUb);
         }
 
         if (!fuseQRope) {
@@ -1198,26 +1277,14 @@ private:
             uint32_t r0 = (tid % gRowBlks) * kRowBlk;
             uint32_t rows = (r0 + kRowBlk <= meta_.oLora) ? kRowBlk : (meta_.oLora - r0);
 
-            float oAcc[kMonoTileM][kRowBlk];
-            for (uint32_t m = 0; m < mCount; ++m) {
-                for (uint32_t r = 0; r < rows; ++r) {
-                    oAcc[m][r] = 0.0f;
-                }
-            }
+            AscendC::LocalTensor<float> oAccUb = bufAcc_.Get<float>();
             uint64_t xOff = static_cast<uint64_t>(mBase) * xOAStride + static_cast<uint64_t>(g) * groupHidden;
             uint64_t wOff = (static_cast<uint64_t>(g) * meta_.oLora + r0) * groupHidden;
-            GemmAccumBf16(wsAttnOut_, xOff, xOAStride, mCount, woAGm_, wOff, groupHidden, rows, oAcc);
+            GemmAccumBf16Ub(wsAttnOut_, xOff, xOAStride, mCount, woAGm_, wOff, groupHidden, rows, oAccUb);
 
-            AscendC::LocalTensor<float> outF = bufAux0_.Get<float>();
-            for (uint32_t m = 0; m < mCount; ++m) {
-                for (uint32_t r = 0; r < rows; ++r) {
-                    outF.SetValue(m * kRowBlk + r, oAcc[m][r]);
-                }
-            }
-            AscendC::PipeBarrier<PIPE_ALL>();
             for (uint32_t m = 0; m < mCount; ++m) {
                 AscendC::LocalTensor<bfloat16_t> ob = outQue_.AllocTensor<bfloat16_t>();
-                AscendC::Cast(ob, outF[m * kRowBlk], AscendC::RoundMode::CAST_RINT, rows);
+                AscendC::Cast(ob, oAccUb[m * kRowBlk], AscendC::RoundMode::CAST_RINT, rows);
                 AscendC::PipeBarrier<PIPE_V>();
                 outQue_.EnQue(ob);
                 ob = outQue_.DeQue<bfloat16_t>();
@@ -1227,12 +1294,11 @@ private:
         }
         BarrierAllCores();
 
-        // wo_b + Fused Mid hc_post directly into wsResMid_ (eliminates wsXAttn_ + 1 barrier!)
+        // wo_b + Vectorized Fused Mid hc_post directly into wsResMid_ (0 SyncVecToScalar!)
         uint32_t D = meta_.hidden;
         uint32_t oaK = meta_.oGroups * meta_.oLora;
         uint32_t dBlks = (D + kRowBlk - 1) / kRowBlk;
         uint32_t totalOB = mTiles * dBlks;
-        AscendC::LocalTensor<float> rf = bufAux1_.Get<float>();
 
         for (uint32_t tid = blkIdx_; tid < totalOB; tid += blkNum_) {
             uint32_t mTile = tid / dBlks;
@@ -1240,17 +1306,15 @@ private:
             uint32_t mCount = (mBase + kMonoTileM <= M) ? kMonoTileM : (M - mBase);
             uint32_t d0 = (tid % dBlks) * kRowBlk;
             uint32_t rows = (d0 + kRowBlk <= D) ? kRowBlk : (D - d0);
+            uint32_t vRows = MonoVecAlign8(rows);
 
-            float xAcc[kMonoTileM][kRowBlk];
-            for (uint32_t m = 0; m < mCount; ++m) {
-                for (uint32_t r = 0; r < rows; ++r) {
-                    xAcc[m][r] = 0.0f;
-                }
-            }
-            GemmAccumBf16(wsOA_, static_cast<uint64_t>(mBase) * oaK, oaK, mCount,
-                          woBGm_, static_cast<uint64_t>(d0) * oaK, oaK, rows, xAcc);
+            AscendC::LocalTensor<float> xAccUb = bufAcc_.Get<float>();
+            GemmAccumBf16Ub(wsOA_, static_cast<uint64_t>(mBase) * oaK, oaK, mCount,
+                            woBGm_, static_cast<uint64_t>(d0) * oaK, oaK, rows, xAccUb);
 
-            // Immediately fuse Mid hc_post for each m in [mBase, mBase + mCount)
+            AscendC::LocalTensor<float> rAll = bufXBatch_.Get<float>();
+            AscendC::LocalTensor<float> rf = bufAux1_.Get<float>();
+            AscendC::LocalTensor<float> tmp = bufWork_.Get<float>();
             for (uint32_t m = 0; m < mCount; ++m) {
                 uint32_t tok = mBase + m;
                 AscendC::LocalTensor<float> poUb = CopyInTile(inQueB_, wsAttnPost_, static_cast<uint64_t>(tok) * 8, kHcMult);
@@ -1270,25 +1334,24 @@ private:
                 }
                 inQueB_.FreeTensor(cmUb);
 
-                float rIn[4][kRowBlk];
                 uint64_t rBase = static_cast<uint64_t>(tok) * kHcMult * D + d0;
                 for (uint32_t i = 0; i < 4; ++i) {
                     AscendC::LocalTensor<bfloat16_t> rb =
                         CopyInTile(inQueA_, resInGm_, rBase + static_cast<uint64_t>(i) * D, rows);
-                    AscendC::Cast(rf, rb, AscendC::RoundMode::CAST_NONE, rows);
-                    SyncVecToScalar();
+                    AscendC::Cast(rAll[i * 16], rb, AscendC::RoundMode::CAST_NONE, rows);
+                    AscendC::PipeBarrier<PIPE_V>();
                     inQueA_.FreeTensor(rb);
-                    for (uint32_t r = 0; r < rows; ++r) {
-                        rIn[i][r] = rf.GetValue(r);
-                    }
                 }
 
                 for (uint32_t j = 0; j < 4; ++j) {
-                    for (uint32_t r = 0; r < rows; ++r) {
-                        rf.SetValue(r, post4[j] * xAcc[m][r] + cm44[0][j] * rIn[0][r] + cm44[1][j] * rIn[1][r] +
-                                           cm44[2][j] * rIn[2][r] + cm44[3][j] * rIn[3][r]);
+                    AscendC::Muls(rf, xAccUb[m * kRowBlk], post4[j], vRows);
+                    AscendC::PipeBarrier<PIPE_V>();
+                    for (uint32_t i = 0; i < 4; ++i) {
+                        AscendC::Muls(tmp, rAll[i * 16], cm44[i][j], vRows);
+                        AscendC::PipeBarrier<PIPE_V>();
+                        AscendC::Add(rf, rf, tmp, vRows);
+                        AscendC::PipeBarrier<PIPE_V>();
                     }
-                    AscendC::PipeBarrier<PIPE_ALL>();
                     AscendC::LocalTensor<bfloat16_t> ob = outQue_.AllocTensor<bfloat16_t>();
                     AscendC::Cast(ob, rf, AscendC::RoundMode::CAST_RINT, rows);
                     AscendC::PipeBarrier<PIPE_V>();
@@ -1300,56 +1363,53 @@ private:
         }
     }
 
-    __aicore__ inline void ComputeClippedSwigluBatch(
+    __aicore__ inline void ComputeClippedSwigluBatchUb(
         const AscendC::GlobalTensor<bfloat16_t> &outGm,
         uint64_t outBase,
         uint32_t outStride,
         uint32_t mCount,
         uint32_t r0,
         uint32_t rows,
-        const float (&accG)[kMonoTileM][kRowBlk],
-        const float (&accU)[kMonoTileM][kRowBlk])
+        const AscendC::LocalTensor<float> &accGUb,
+        const AscendC::LocalTensor<float> &accUUb,
+        const uint32_t *tokOutIdx = nullptr)
     {
         float lim = meta_.swigluLimit;
         AscendC::LocalTensor<float> gf = bufAux0_.Get<float>();
         AscendC::LocalTensor<float> sig = bufAux1_.Get<float>();
+        AscendC::LocalTensor<float> uf = bufProd_.Get<float>()[kUbSkewProd];
         uint32_t totalE = mCount * kRowBlk;
-        for (uint32_t m = 0; m < mCount; ++m) {
-            for (uint32_t r = 0; r < rows; ++r) {
-                float g = accG[m][r];
-                float u = accU[m][r];
-                if (lim > 0.0f) {
-                    if (g > lim) {
-                        g = lim;
-                    }
-                    if (u > lim) {
-                        u = lim;
-                    } else if (u < -lim) {
-                        u = -lim;
-                    }
-                }
-                gf.SetValue(m * kRowBlk + r, g);
-                sig.SetValue(m * kRowBlk + r, -g);
-                bufProd_.Get<float>().SetValue(m * kRowBlk + r, u);
-            }
+
+        if (lim > 0.0f) {
+            AscendC::Mins(gf, accGUb, lim, totalE);
+            AscendC::Mins(uf, accUUb, lim, totalE);
+            AscendC::PipeBarrier<PIPE_V>();
+            AscendC::Maxs(uf, uf, -lim, totalE);
+        } else {
+            AscendC::Muls(gf, accGUb, 1.0f, totalE);
+            AscendC::Muls(uf, accUUb, 1.0f, totalE);
         }
-        AscendC::PipeBarrier<PIPE_ALL>();
+        AscendC::PipeBarrier<PIPE_V>();
+        AscendC::Muls(sig, gf, -1.0f, totalE);
+        AscendC::PipeBarrier<PIPE_V>();
         AscendC::Exp(sig, sig, totalE);
         AscendC::PipeBarrier<PIPE_V>();
         AscendC::Adds(sig, sig, 1.0f, totalE);
         AscendC::PipeBarrier<PIPE_V>();
         AscendC::Div(gf, gf, sig, totalE);
         AscendC::PipeBarrier<PIPE_V>();
-        AscendC::Mul(gf, gf, bufProd_.Get<float>(), totalE);
+        AscendC::Mul(gf, gf, uf, totalE);
         AscendC::PipeBarrier<PIPE_V>();
 
         for (uint32_t m = 0; m < mCount; ++m) {
+            uint64_t dstBase = tokOutIdx ? (static_cast<uint64_t>(tokOutIdx[m]) * outStride)
+                                         : (outBase + static_cast<uint64_t>(m) * outStride);
             AscendC::LocalTensor<bfloat16_t> ob = outQue_.AllocTensor<bfloat16_t>();
             AscendC::Cast(ob, gf[m * kRowBlk], AscendC::RoundMode::CAST_RINT, rows);
             AscendC::PipeBarrier<PIPE_V>();
             outQue_.EnQue(ob);
             ob = outQue_.DeQue<bfloat16_t>();
-            CopyOutTile(outGm, outBase + static_cast<uint64_t>(m) * outStride + r0, ob, rows);
+            CopyOutTile(outGm, dstBase + r0, ob, rows);
         }
     }
 
@@ -1451,6 +1511,178 @@ private:
         CopyOutTile(wsTopkW_, static_cast<uint64_t>(m) * tkStride, obWOut, K);
     }
 
+    __aicore__ inline void BuildExpertGroups(uint32_t M, uint32_t K)
+    {
+        uint32_t MK = M * K;
+        uint64_t tkStride = MonoAlign64(K);
+        // Use bufXBatch_ (32 KB = 8192 int32s) to stage ids, mIdx, kIdx, used flags in UB
+        AscendC::LocalTensor<int32_t> tmpUb = bufXBatch_.Get<int32_t>();
+        AscendC::LocalTensor<int32_t> slotIds = tmpUb[0];
+        AscendC::LocalTensor<int32_t> slotM = tmpUb[1024];
+        AscendC::LocalTensor<int32_t> slotK = tmpUb[2048];
+        AscendC::LocalTensor<int32_t> used = tmpUb[3072];
+
+        for (uint32_t m = 0; m < M; ++m) {
+            AscendC::LocalTensor<int32_t> idUb =
+                CopyInTile(inQueA_, wsTopkIds_, static_cast<uint64_t>(m) * tkStride, K);
+            for (uint32_t k = 0; k < K; ++k) {
+                uint32_t idx = m * K + k;
+                slotIds.SetValue(idx, idUb.GetValue(k));
+                slotM.SetValue(idx, static_cast<int32_t>(m));
+                slotK.SetValue(idx, static_cast<int32_t>(k));
+                used.SetValue(idx, 0);
+            }
+            inQueA_.FreeTensor(idUb);
+        }
+
+        uint32_t numGroups = 0;
+        for (uint32_t i = 0; i < MK; ++i) {
+            if (used.GetValue(i) != 0) {
+                continue;
+            }
+            int32_t eid = slotIds.GetValue(i);
+            uint32_t cnt = 0;
+            AscendC::LocalTensor<int32_t> mob = outQue_.AllocTensor<int32_t>();
+            mob.SetValue(0, eid);
+            for (uint32_t j = i; j < MK && cnt < kMonoTileM; ++j) {
+                if (used.GetValue(j) == 0 && slotIds.GetValue(j) == eid) {
+                    used.SetValue(j, 1);
+                    mob.SetValue(2 + cnt, slotM.GetValue(j));
+                    mob.SetValue(2 + kMonoTileM + cnt, slotK.GetValue(j));
+                    ++cnt;
+                }
+            }
+            mob.SetValue(1, static_cast<int32_t>(cnt));
+            AscendC::PipeBarrier<PIPE_ALL>();
+            outQue_.EnQue(mob);
+            mob = outQue_.DeQue<int32_t>();
+            CopyOutTile(wsExpMeta_, 64ULL + static_cast<uint64_t>(numGroups) * kExpGrpStride, mob, kExpGrpStride);
+            ++numGroups;
+        }
+        AscendC::LocalTensor<int32_t> cntOb = outQue_.AllocTensor<int32_t>();
+        cntOb.SetValue(0, static_cast<int32_t>(numGroups));
+        AscendC::PipeBarrier<PIPE_ALL>();
+        outQue_.EnQue(cntOb);
+        cntOb = outQue_.DeQue<int32_t>();
+        CopyOutTile(wsExpMeta_, 0, cntOb, 1);
+        AscendC::PipeBarrier<PIPE_ALL>();
+    }
+
+    __aicore__ inline void VectorizedFinalHcPost(
+        uint32_t M,
+        uint32_t D,
+        uint32_t K,
+        uint32_t hasShared,
+        uint32_t dRowBlks,
+        bool groupedRouted)
+    {
+        uint32_t totalFinal = M * dRowBlks;
+        uint64_t tkStride = MonoAlign64(K);
+        AscendC::LocalTensor<float> rAll = bufXBatch_.Get<float>();
+        AscendC::LocalTensor<float> combUb = bufAcc_.Get<float>();
+        AscendC::LocalTensor<float> rf = bufAux1_.Get<float>();
+        AscendC::LocalTensor<float> tmp = bufWork_.Get<float>();
+
+        for (uint32_t tid = blkIdx_; tid < totalFinal; tid += blkNum_) {
+            uint32_t m = tid / dRowBlks;
+            uint32_t d0 = (tid % dRowBlks) * kRowBlk;
+            uint32_t rows = (d0 + kRowBlk <= D) ? kRowBlk : (D - d0);
+            uint32_t vRows = MonoVecAlign8(rows);
+
+            if (hasShared) {
+                AscendC::LocalTensor<bfloat16_t> sb =
+                    CopyInTile(inQueA_, wsSharedOut_, static_cast<uint64_t>(m) * D + d0, rows);
+                AscendC::Cast(combUb, sb, AscendC::RoundMode::CAST_NONE, rows);
+                AscendC::PipeBarrier<PIPE_V>();
+                inQueA_.FreeTensor(sb);
+            } else {
+                AscendC::Duplicate(combUb, 0.0f, vRows);
+                AscendC::PipeBarrier<PIPE_V>();
+            }
+
+            AscendC::LocalTensor<int32_t> idUb =
+                CopyInTile(inQueA_, wsTopkIds_, static_cast<uint64_t>(m) * tkStride, K);
+            AscendC::LocalTensor<float> wUb = CopyInTile(inQueB_, wsTopkW_, static_cast<uint64_t>(m) * tkStride, K);
+            uint32_t ids[16];
+            float ws[16];
+            for (uint32_t k = 0; k < K; ++k) {
+                ids[k] = static_cast<uint32_t>(idUb.GetValue(k));
+                ws[k] = wUb.GetValue(k);
+            }
+            inQueA_.FreeTensor(idUb);
+            inQueB_.FreeTensor(wUb);
+
+            if (groupedRouted) {
+                for (uint32_t k = 0; k < K; ++k) {
+                    uint64_t roOff = (static_cast<uint64_t>(m) * K + k) * D + d0;
+                    AscendC::LocalTensor<bfloat16_t> rob = CopyInTile(inQueA_, wsRoutedOut_, roOff, rows);
+                    AscendC::Cast(tmp, rob, AscendC::RoundMode::CAST_NONE, rows);
+                    AscendC::PipeBarrier<PIPE_V>();
+                    inQueA_.FreeTensor(rob);
+                    AscendC::Muls(tmp, tmp, ws[k], vRows);
+                    AscendC::PipeBarrier<PIPE_V>();
+                    AscendC::Add(combUb, combUb, tmp, vRows);
+                    AscendC::PipeBarrier<PIPE_V>();
+                }
+            } else {
+                AscendC::LocalTensor<float> rAccUb = bufAcc_.Get<float>()[kAccSlotFloats];
+                for (uint32_t k = 0; k < K; ++k) {
+                    uint64_t wOff = (static_cast<uint64_t>(ids[k]) * D + d0) * meta_.routedInter;
+                    uint64_t actOff = (static_cast<uint64_t>(m) * K + k) * meta_.routedInter;
+                    GemmAccumBf16Ub(wsRoutedAct_, actOff, meta_.routedInter, 1, routedW2Gm_, wOff, meta_.routedInter,
+                                    rows, rAccUb);
+                    AscendC::Muls(tmp, rAccUb, ws[k], vRows);
+                    AscendC::PipeBarrier<PIPE_V>();
+                    AscendC::Add(combUb, combUb, tmp, vRows);
+                    AscendC::PipeBarrier<PIPE_V>();
+                }
+            }
+
+            AscendC::LocalTensor<float> poUb = CopyInTile(inQueB_, wsFfnPost_, static_cast<uint64_t>(m) * 8, kHcMult);
+            float post4[4];
+            for (uint32_t i = 0; i < 4; ++i) {
+                post4[i] = poUb.GetValue(i);
+            }
+            inQueB_.FreeTensor(poUb);
+
+            AscendC::LocalTensor<float> cmUb =
+                CopyInTile(inQueB_, wsFfnComb_, static_cast<uint64_t>(m) * kHcCombDim, kHcCombDim);
+            float cm44[4][4];
+            for (uint32_t r = 0; r < 4; ++r) {
+                for (uint32_t c = 0; c < 4; ++c) {
+                    cm44[r][c] = cmUb.GetValue(r * 4 + c);
+                }
+            }
+            inQueB_.FreeTensor(cmUb);
+
+            uint64_t rBase = static_cast<uint64_t>(m) * kHcMult * D + d0;
+            for (uint32_t i = 0; i < 4; ++i) {
+                AscendC::LocalTensor<bfloat16_t> rb =
+                    CopyInTile(inQueA_, wsResMid_, rBase + static_cast<uint64_t>(i) * D, rows);
+                AscendC::Cast(rAll[i * 16], rb, AscendC::RoundMode::CAST_NONE, rows);
+                AscendC::PipeBarrier<PIPE_V>();
+                inQueA_.FreeTensor(rb);
+            }
+
+            for (uint32_t j = 0; j < 4; ++j) {
+                AscendC::Muls(rf, combUb, post4[j], vRows);
+                AscendC::PipeBarrier<PIPE_V>();
+                for (uint32_t i = 0; i < 4; ++i) {
+                    AscendC::Muls(tmp, rAll[i * 16], cm44[i][j], vRows);
+                    AscendC::PipeBarrier<PIPE_V>();
+                    AscendC::Add(rf, rf, tmp, vRows);
+                    AscendC::PipeBarrier<PIPE_V>();
+                }
+                AscendC::LocalTensor<bfloat16_t> ob = outQue_.AllocTensor<bfloat16_t>();
+                AscendC::Cast(ob, rf, AscendC::RoundMode::CAST_RINT, rows);
+                AscendC::PipeBarrier<PIPE_V>();
+                outQue_.EnQue(ob);
+                ob = outQue_.DeQue<bfloat16_t>();
+                CopyOutTile(resOutGm_, rBase + static_cast<uint64_t>(j) * D, ob, rows);
+            }
+        }
+    }
+
     __aicore__ inline void Stage4And5MoEFinalPost()
     {
         // Stage 4a: CollapseNorm + 4D inv_rms on wsResMid_
@@ -1478,23 +1710,17 @@ private:
                 uint32_t b = tid % (gateBlks + sharedPairBlks);
                 uint32_t mBase = mTile * kMonoTileM;
                 uint32_t mCount = (mBase + kMonoTileM <= M) ? kMonoTileM : (M - mBase);
+                AscendC::LocalTensor<float> acc0 = bufAcc_.Get<float>()[0];
+                AscendC::LocalTensor<float> acc1 = bufAcc_.Get<float>()[kAccSlotFloats];
                 if (b < gateBlks) {
                     uint32_t r0 = b * kRowBlk;
                     uint32_t rows = (r0 + kRowBlk <= E) ? kRowBlk : (E - r0);
-                    float acc[kMonoTileM][kRowBlk];
-                    for (uint32_t m = 0; m < mCount; ++m) {
-                        for (uint32_t r = 0; r < rows; ++r) {
-                            acc[m][r] = 0.0f;
-                        }
-                    }
-                    GemmAccumBf16(wsXNorm_, static_cast<uint64_t>(mBase) * D, D, mCount,
-                                  gateWGm_, static_cast<uint64_t>(r0) * D, D, rows, acc);
+                    GemmAccumBf16Ub(wsXNorm_, static_cast<uint64_t>(mBase) * D, D, mCount,
+                                    gateWGm_, static_cast<uint64_t>(r0) * D, D, rows, acc0);
                     for (uint32_t m = 0; m < mCount; ++m) {
                         AscendC::LocalTensor<float> ob = outQue_.AllocTensor<float>();
-                        for (uint32_t r = 0; r < rows; ++r) {
-                            ob.SetValue(r, acc[m][r]);
-                        }
-                        AscendC::PipeBarrier<PIPE_ALL>();
+                        AscendC::Muls(ob, acc0[m * kRowBlk], 1.0f, MonoVecAlign8(rows));
+                        AscendC::PipeBarrier<PIPE_V>();
                         outQue_.EnQue(ob);
                         ob = outQue_.DeQue<float>();
                         CopyOutTile(wsRouterLogits_, static_cast<uint64_t>(mBase + m) * lStride + r0, ob, rows);
@@ -1502,20 +1728,12 @@ private:
                 } else {
                     uint32_t r0 = (b - gateBlks) * kRowBlk;
                     uint32_t rows = (r0 + kRowBlk <= meta_.sharedInter) ? kRowBlk : (meta_.sharedInter - r0);
-                    float accG[kMonoTileM][kRowBlk];
-                    float accU[kMonoTileM][kRowBlk];
-                    for (uint32_t m = 0; m < mCount; ++m) {
-                        for (uint32_t r = 0; r < rows; ++r) {
-                            accG[m][r] = 0.0f;
-                            accU[m][r] = 0.0f;
-                        }
-                    }
-                    GemmAccumBf16(wsXNorm_, static_cast<uint64_t>(mBase) * D, D, mCount,
-                                  sharedW13Gm_, static_cast<uint64_t>(r0) * D, D, rows, accG);
-                    GemmAccumBf16(wsXNorm_, static_cast<uint64_t>(mBase) * D, D, mCount,
-                                  sharedW13Gm_, static_cast<uint64_t>(meta_.sharedInter + r0) * D, D, rows, accU);
-                    ComputeClippedSwigluBatch(wsSharedAct_, static_cast<uint64_t>(mBase) * meta_.sharedInter,
-                                              meta_.sharedInter, mCount, r0, rows, accG, accU);
+                    GemmAccumBf16PairedUb(wsXNorm_, static_cast<uint64_t>(mBase) * D, D, mCount,
+                                          sharedW13Gm_, static_cast<uint64_t>(r0) * D,
+                                          static_cast<uint64_t>(meta_.sharedInter + r0) * D,
+                                          D, rows, acc0, acc1);
+                    ComputeClippedSwigluBatchUb(wsSharedAct_, static_cast<uint64_t>(mBase) * meta_.sharedInter,
+                                                meta_.sharedInter, mCount, r0, rows, acc0, acc1);
                 }
             } else {
                 uint32_t mt = tid - gemmTasksA;
@@ -1531,155 +1749,134 @@ private:
         }
         BarrierAllCores();
 
-        // Horizontal Pool: (shared_w2 batched || routed_w13 paired + Clipped SwiGLU fused!)
         uint32_t shared2Blks = hasShared ? ((D + kRowBlk - 1) / kRowBlk) : 0U;
         uint32_t shared2Tasks = mTiles * shared2Blks;
         uint32_t routedPairBlksPerExp = (meta_.routedInter + kRowBlk - 1) / kRowBlk;
-        uint32_t routedTasks = M * K * routedPairBlksPerExp;
-        uint32_t totalPool5b = shared2Tasks + routedTasks;
-        uint64_t tkStride = MonoAlign64(K);
-
-        for (uint32_t tid = blkIdx_; tid < totalPool5b; tid += blkNum_) {
-            if (tid < shared2Tasks) {
-                uint32_t mTile = tid / shared2Blks;
-                uint32_t mBase = mTile * kMonoTileM;
-                uint32_t mCount = (mBase + kMonoTileM <= M) ? kMonoTileM : (M - mBase);
-                uint32_t r0 = (tid % shared2Blks) * kRowBlk;
-                uint32_t rows = (r0 + kRowBlk <= D) ? kRowBlk : (D - r0);
-                float acc[kMonoTileM][kRowBlk];
-                for (uint32_t m = 0; m < mCount; ++m) {
-                    for (uint32_t r = 0; r < rows; ++r) {
-                        acc[m][r] = 0.0f;
-                    }
-                }
-                GemmAccumBf16(wsSharedAct_, static_cast<uint64_t>(mBase) * meta_.sharedInter, meta_.sharedInter, mCount,
-                              sharedW2Gm_, static_cast<uint64_t>(r0) * meta_.sharedInter, meta_.sharedInter, rows, acc);
-                StoreAccBatchBf16(wsSharedOut_, mBase, mCount, D, r0, rows, acc);
-            } else {
-                uint32_t rr = tid - shared2Tasks;
-                uint32_t mk = rr / routedPairBlksPerExp;
-                uint32_t m = mk / K;
-                uint32_t kSlot = mk % K;
-                uint32_t r0 = (rr % routedPairBlksPerExp) * kRowBlk;
-                uint32_t rows = (r0 + kRowBlk <= meta_.routedInter) ? kRowBlk : (meta_.routedInter - r0);
-
-                AscendC::LocalTensor<int32_t> idUb =
-                    CopyInTile(inQueB_, wsTopkIds_, static_cast<uint64_t>(m) * tkStride, K);
-                uint32_t eid = static_cast<uint32_t>(idUb.GetValue(kSlot));
-                inQueB_.FreeTensor(idUb);
-
-                float accG[kMonoTileM][kRowBlk];
-                float accU[kMonoTileM][kRowBlk];
-                for (uint32_t r = 0; r < rows; ++r) {
-                    accG[0][r] = 0.0f;
-                    accU[0][r] = 0.0f;
-                }
-                uint64_t wGateOff = (static_cast<uint64_t>(eid) * (2 * meta_.routedInter) + r0) * D;
-                uint64_t wUpOff = (static_cast<uint64_t>(eid) * (2 * meta_.routedInter) + meta_.routedInter + r0) * D;
-                GemmAccumBf16(wsXNorm_, static_cast<uint64_t>(m) * D, D, 1, routedW13Gm_, wGateOff, D, rows, accG);
-                GemmAccumBf16(wsXNorm_, static_cast<uint64_t>(m) * D, D, 1, routedW13Gm_, wUpOff, D, rows, accU);
-
-                uint64_t actBase = (static_cast<uint64_t>(m) * K + kSlot) * meta_.routedInter;
-                ComputeClippedSwigluBatch(wsRoutedAct_, actBase, meta_.routedInter, 1, r0, rows, accG, accU);
-            }
-        }
-        BarrierAllCores();
-
-        // Routed W2 combine + shared_out + final hc_post -> resOutGm_ + preMixOutGm_
         uint32_t dRowBlks = (D + kRowBlk - 1) / kRowBlk;
-        uint32_t totalFinal = M * dRowBlks;
-        AscendC::LocalTensor<float> rf = bufAux1_.Get<float>();
+        bool useGroupedRouted = (M > 1) && (K > 0) && (M * K <= 512U);
 
-        for (uint32_t tid = blkIdx_; tid < totalFinal; tid += blkNum_) {
-            uint32_t m = tid / dRowBlks;
-            uint32_t d0 = (tid % dRowBlks) * kRowBlk;
-            uint32_t rows = (d0 + kRowBlk <= D) ? kRowBlk : (D - d0);
-
-            float combOut[kRowBlk];
-            if (hasShared) {
-                AscendC::LocalTensor<bfloat16_t> sb =
-                    CopyInTile(inQueA_, wsSharedOut_, static_cast<uint64_t>(m) * D + d0, rows);
-                AscendC::Cast(rf, sb, AscendC::RoundMode::CAST_NONE, rows);
-                SyncVecToScalar();
-                inQueA_.FreeTensor(sb);
-                for (uint32_t r = 0; r < rows; ++r) {
-                    combOut[r] = rf.GetValue(r);
-                }
-            } else {
-                for (uint32_t r = 0; r < rows; ++r) {
-                    combOut[r] = 0.0f;
-                }
+        if (useGroupedRouted) {
+            if (blkIdx_ == 0) {
+                BuildExpertGroups(M, K);
             }
+            BarrierAllCores();
 
-            AscendC::LocalTensor<int32_t> idUb =
-                CopyInTile(inQueA_, wsTopkIds_, static_cast<uint64_t>(m) * tkStride, K);
-            AscendC::LocalTensor<float> wUb = CopyInTile(inQueB_, wsTopkW_, static_cast<uint64_t>(m) * tkStride, K);
-            uint32_t ids[16];
-            float ws[16];
-            for (uint32_t k = 0; k < K; ++k) {
-                ids[k] = static_cast<uint32_t>(idUb.GetValue(k));
-                ws[k] = wUb.GetValue(k);
-            }
-            inQueA_.FreeTensor(idUb);
-            inQueB_.FreeTensor(wUb);
+            uint32_t numGroups = static_cast<uint32_t>(wsExpMeta_.GetValue(0));
+            uint32_t routedTasks = numGroups * routedPairBlksPerExp;
+            uint32_t totalPool5b = shared2Tasks + routedTasks;
 
-            for (uint32_t k = 0; k < K; ++k) {
-                float rAcc[kMonoTileM][kRowBlk];
-                for (uint32_t r = 0; r < rows; ++r) {
-                    rAcc[0][r] = 0.0f;
-                }
-                uint64_t wOff = (static_cast<uint64_t>(ids[k]) * D + d0) * meta_.routedInter;
-                uint64_t actOff = (static_cast<uint64_t>(m) * K + k) * meta_.routedInter;
-                GemmAccumBf16(wsRoutedAct_, actOff, meta_.routedInter, 1, routedW2Gm_, wOff, meta_.routedInter, rows,
-                              rAcc);
-                for (uint32_t r = 0; r < rows; ++r) {
-                    combOut[r] += ws[k] * rAcc[0][r];
-                }
-            }
+            for (uint32_t tid = blkIdx_; tid < totalPool5b; tid += blkNum_) {
+                AscendC::LocalTensor<float> acc0 = bufAcc_.Get<float>()[0];
+                AscendC::LocalTensor<float> acc1 = bufAcc_.Get<float>()[kAccSlotFloats];
+                if (tid < shared2Tasks) {
+                    uint32_t mTile = tid / shared2Blks;
+                    uint32_t mBase = mTile * kMonoTileM;
+                    uint32_t mCount = (mBase + kMonoTileM <= M) ? kMonoTileM : (M - mBase);
+                    uint32_t r0 = (tid % shared2Blks) * kRowBlk;
+                    uint32_t rows = (r0 + kRowBlk <= D) ? kRowBlk : (D - r0);
+                    GemmAccumBf16Ub(wsSharedAct_, static_cast<uint64_t>(mBase) * meta_.sharedInter, meta_.sharedInter,
+                                    mCount, sharedW2Gm_, static_cast<uint64_t>(r0) * meta_.sharedInter,
+                                    meta_.sharedInter, rows, acc0);
+                    StoreAccBatchBf16Ub(wsSharedOut_, mBase, mCount, D, r0, rows, acc0);
+                } else {
+                    uint32_t rr = tid - shared2Tasks;
+                    uint32_t gIdx = rr / routedPairBlksPerExp;
+                    uint32_t r0 = (rr % routedPairBlksPerExp) * kRowBlk;
+                    uint32_t rows = (r0 + kRowBlk <= meta_.routedInter) ? kRowBlk : (meta_.routedInter - r0);
 
-            AscendC::LocalTensor<float> poUb = CopyInTile(inQueB_, wsFfnPost_, static_cast<uint64_t>(m) * 8, kHcMult);
-            float post4[4];
-            for (uint32_t i = 0; i < 4; ++i) {
-                post4[i] = poUb.GetValue(i);
-            }
-            inQueB_.FreeTensor(poUb);
+                    AscendC::LocalTensor<int32_t> mUb =
+                        CopyInTile(inQueB_, wsExpMeta_, 64ULL + static_cast<uint64_t>(gIdx) * kExpGrpStride, kExpGrpStride);
+                    uint32_t eid = static_cast<uint32_t>(mUb.GetValue(0));
+                    uint32_t cnt = static_cast<uint32_t>(mUb.GetValue(1));
+                    uint32_t tokM[kMonoTileM];
+                    uint32_t tokAct[kMonoTileM];
+                    for (uint32_t j = 0; j < cnt; ++j) {
+                        uint32_t tm = static_cast<uint32_t>(mUb.GetValue(2 + j));
+                        uint32_t tk = static_cast<uint32_t>(mUb.GetValue(2 + kMonoTileM + j));
+                        tokM[j] = tm;
+                        tokAct[j] = tm * K + tk;
+                    }
+                    inQueB_.FreeTensor(mUb);
 
-            AscendC::LocalTensor<float> cmUb =
-                CopyInTile(inQueB_, wsFfnComb_, static_cast<uint64_t>(m) * kHcCombDim, kHcCombDim);
-            float cm44[4][4];
-            for (uint32_t r = 0; r < 4; ++r) {
-                for (uint32_t c = 0; c < 4; ++c) {
-                    cm44[r][c] = cmUb.GetValue(r * 4 + c);
+                    uint64_t wGateOff = (static_cast<uint64_t>(eid) * (2 * meta_.routedInter) + r0) * D;
+                    uint64_t wUpOff = (static_cast<uint64_t>(eid) * (2 * meta_.routedInter) + meta_.routedInter + r0) * D;
+                    GemmAccumBf16PairedUb(wsXNorm_, 0, D, cnt, routedW13Gm_, wGateOff, wUpOff, D, rows, acc0, acc1, tokM);
+                    ComputeClippedSwigluBatchUb(wsRoutedAct_, 0, meta_.routedInter, cnt, r0, rows, acc0, acc1, tokAct);
                 }
             }
-            inQueB_.FreeTensor(cmUb);
+            BarrierAllCores();
 
-            float rIn[4][kRowBlk];
-            uint64_t rBase = static_cast<uint64_t>(m) * kHcMult * D + d0;
-            for (uint32_t i = 0; i < 4; ++i) {
-                AscendC::LocalTensor<bfloat16_t> rb =
-                    CopyInTile(inQueA_, wsResMid_, rBase + static_cast<uint64_t>(i) * D, rows);
-                AscendC::Cast(rf, rb, AscendC::RoundMode::CAST_NONE, rows);
-                SyncVecToScalar();
-                inQueA_.FreeTensor(rb);
-                for (uint32_t r = 0; r < rows; ++r) {
-                    rIn[i][r] = rf.GetValue(r);
+            // Pool 5c: Expert-grouped routed_w2 across all cores
+            uint32_t totalRouted2 = numGroups * dRowBlks;
+            for (uint32_t tid = blkIdx_; tid < totalRouted2; tid += blkNum_) {
+                uint32_t gIdx = tid / dRowBlks;
+                uint32_t d0 = (tid % dRowBlks) * kRowBlk;
+                uint32_t rows = (d0 + kRowBlk <= D) ? kRowBlk : (D - d0);
+
+                AscendC::LocalTensor<int32_t> mUb =
+                    CopyInTile(inQueB_, wsExpMeta_, 64ULL + static_cast<uint64_t>(gIdx) * kExpGrpStride, kExpGrpStride);
+                uint32_t eid = static_cast<uint32_t>(mUb.GetValue(0));
+                uint32_t cnt = static_cast<uint32_t>(mUb.GetValue(1));
+                uint32_t tokAct[kMonoTileM];
+                for (uint32_t j = 0; j < cnt; ++j) {
+                    uint32_t tm = static_cast<uint32_t>(mUb.GetValue(2 + j));
+                    uint32_t tk = static_cast<uint32_t>(mUb.GetValue(2 + kMonoTileM + j));
+                    tokAct[j] = tm * K + tk;
+                }
+                inQueB_.FreeTensor(mUb);
+
+                AscendC::LocalTensor<float> rAccUb = bufAcc_.Get<float>();
+                uint64_t wOff = (static_cast<uint64_t>(eid) * D + d0) * meta_.routedInter;
+                GemmAccumBf16Ub(wsRoutedAct_, 0, meta_.routedInter, cnt, routedW2Gm_, wOff, meta_.routedInter,
+                                rows, rAccUb, tokAct);
+                StoreAccBatchBf16Ub(wsRoutedOut_, 0, cnt, D, d0, rows, rAccUb, tokAct);
+            }
+            BarrierAllCores();
+
+            VectorizedFinalHcPost(M, D, K, hasShared, dRowBlks, true);
+        } else {
+            // M == 1 (zero extra grouping barriers!)
+            uint32_t routedTasks = M * K * routedPairBlksPerExp;
+            uint32_t totalPool5b = shared2Tasks + routedTasks;
+            uint64_t tkStride = MonoAlign64(K);
+
+            for (uint32_t tid = blkIdx_; tid < totalPool5b; tid += blkNum_) {
+                AscendC::LocalTensor<float> acc0 = bufAcc_.Get<float>()[0];
+                AscendC::LocalTensor<float> acc1 = bufAcc_.Get<float>()[kAccSlotFloats];
+                if (tid < shared2Tasks) {
+                    uint32_t mTile = tid / shared2Blks;
+                    uint32_t mBase = mTile * kMonoTileM;
+                    uint32_t mCount = (mBase + kMonoTileM <= M) ? kMonoTileM : (M - mBase);
+                    uint32_t r0 = (tid % shared2Blks) * kRowBlk;
+                    uint32_t rows = (r0 + kRowBlk <= D) ? kRowBlk : (D - r0);
+                    GemmAccumBf16Ub(wsSharedAct_, static_cast<uint64_t>(mBase) * meta_.sharedInter, meta_.sharedInter,
+                                    mCount, sharedW2Gm_, static_cast<uint64_t>(r0) * meta_.sharedInter,
+                                    meta_.sharedInter, rows, acc0);
+                    StoreAccBatchBf16Ub(wsSharedOut_, mBase, mCount, D, r0, rows, acc0);
+                } else {
+                    uint32_t rr = tid - shared2Tasks;
+                    uint32_t mk = rr / routedPairBlksPerExp;
+                    uint32_t m = mk / K;
+                    uint32_t kSlot = mk % K;
+                    uint32_t r0 = (rr % routedPairBlksPerExp) * kRowBlk;
+                    uint32_t rows = (r0 + kRowBlk <= meta_.routedInter) ? kRowBlk : (meta_.routedInter - r0);
+
+                    AscendC::LocalTensor<int32_t> idUb =
+                        CopyInTile(inQueB_, wsTopkIds_, static_cast<uint64_t>(m) * tkStride, K);
+                    uint32_t eid = static_cast<uint32_t>(idUb.GetValue(kSlot));
+                    inQueB_.FreeTensor(idUb);
+
+                    uint64_t wGateOff = (static_cast<uint64_t>(eid) * (2 * meta_.routedInter) + r0) * D;
+                    uint64_t wUpOff = (static_cast<uint64_t>(eid) * (2 * meta_.routedInter) + meta_.routedInter + r0) * D;
+                    GemmAccumBf16PairedUb(wsXNorm_, static_cast<uint64_t>(m) * D, D, 1,
+                                          routedW13Gm_, wGateOff, wUpOff, D, rows, acc0, acc1);
+                    uint64_t actBase = (static_cast<uint64_t>(m) * K + kSlot) * meta_.routedInter;
+                    ComputeClippedSwigluBatchUb(wsRoutedAct_, actBase, meta_.routedInter, 1, r0, rows, acc0, acc1);
                 }
             }
+            BarrierAllCores();
 
-            for (uint32_t j = 0; j < 4; ++j) {
-                for (uint32_t r = 0; r < rows; ++r) {
-                    rf.SetValue(r, post4[j] * combOut[r] + cm44[0][j] * rIn[0][r] + cm44[1][j] * rIn[1][r] +
-                                       cm44[2][j] * rIn[2][r] + cm44[3][j] * rIn[3][r]);
-                }
-                AscendC::PipeBarrier<PIPE_ALL>();
-                AscendC::LocalTensor<bfloat16_t> ob = outQue_.AllocTensor<bfloat16_t>();
-                AscendC::Cast(ob, rf, AscendC::RoundMode::CAST_RINT, rows);
-                AscendC::PipeBarrier<PIPE_V>();
-                outQue_.EnQue(ob);
-                ob = outQue_.DeQue<bfloat16_t>();
-                CopyOutTile(resOutGm_, rBase + static_cast<uint64_t>(j) * D, ob, rows);
-            }
+            VectorizedFinalHcPost(M, D, K, hasShared, dRowBlks, false);
         }
 
         for (uint32_t m = blkIdx_; m < M; m += blkNum_) {
@@ -1705,7 +1902,7 @@ private:
     AscendC::TQue<AscendC::QuePosition::VECIN, 2> inQueA_, inQueB_;
     AscendC::TQue<AscendC::QuePosition::VECOUT, 1> outQue_;
     AscendC::TBuf<AscendC::QuePosition::VECCALC> bufXBatch_, bufWF32_, bufProd_, bufAux0_, bufAux1_, bufWork_;
-    AscendC::TBuf<AscendC::QuePosition::VECCALC> bufSmall_, bufSync_;
+    AscendC::TBuf<AscendC::QuePosition::VECCALC> bufSmall_, bufSync_, bufAcc_;
 
     AscendC::GlobalTensor<bfloat16_t> resInGm_, resOutGm_, inputLnWGm_, wqAGm_, qNormWGm_, wqBGm_;
     AscendC::GlobalTensor<bfloat16_t> wkvGm_, kvNormWGm_, woAGm_, woBGm_, postAttnLnWGm_;
@@ -1716,10 +1913,10 @@ private:
     AscendC::GlobalTensor<int32_t> blockTableGm_, seqLensGm_;
 
     AscendC::GlobalTensor<bfloat16_t> wsXNorm_, wsResMid_, wsQA_, wsQR_, wsKV_, wsQ_, wsAttnOut_, wsOA_;
-    AscendC::GlobalTensor<bfloat16_t> wsSharedAct_, wsSharedOut_, wsRoutedAct_;
+    AscendC::GlobalTensor<bfloat16_t> wsSharedAct_, wsSharedOut_, wsRoutedAct_, wsRoutedOut_;
     AscendC::GlobalTensor<float> wsInvRms_, wsMixes_, wsAttnPre_, wsAttnPost_, wsAttnComb_;
     AscendC::GlobalTensor<float> wsFfnPre_, wsFfnPost_, wsFfnComb_, wsRouterLogits_, wsTopkW_;
-    AscendC::GlobalTensor<int32_t> wsSync_, wsTopkIds_;
+    AscendC::GlobalTensor<int32_t> wsSync_, wsTopkIds_, wsExpMeta_;
 };
 
 } // namespace

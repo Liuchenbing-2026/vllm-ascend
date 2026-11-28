@@ -33,7 +33,7 @@ def compute_mono_workspace_floats(
 ) -> int:
     """Compute exact float32 element count required by dsv41_mono_layer workspace."""
     m = max(num_tokens, 1)
-    # wsXNorm, wsResMid, wsQA, wsQR, wsKV, wsQ, wsAttnOut, wsOA, wsSharedAct, wsSharedOut, wsRoutedAct
+    # wsXNorm, wsResMid, wsQA, wsQR, wsKV, wsQ, wsAttnOut, wsOA, wsSharedAct, wsSharedOut, wsRoutedAct, wsRoutedOut
     bf16_chunks = (
         _align64((m * hidden_size + 1) // 2) * 2
         + _align64((m * 4 * hidden_size + 1) // 2)
@@ -43,8 +43,10 @@ def compute_mono_workspace_floats(
         + _align64((m * o_groups * o_lora_rank + 1) // 2)
         + _align64((m * shared_inter + 1) // 2)
         + _align64((m * top_k * routed_inter + 1) // 2)
+        + _align64((m * top_k * hidden_size + 1) // 2)
     )
-    # wsSync, wsInvRms, wsMixes, wsAttnPre/Post, wsFfnPre/Post, wsAttnComb, wsFfnComb, logits, topk_ids, topk_w
+    # wsSync, wsInvRms, wsMixes, wsAttnPre/Post, wsFfnPre/Post, wsAttnComb, wsFfnComb, logits, topk_ids, topk_w, exp_meta
+    exp_meta_ints = 64 + max(m * top_k, 1) * 18
     f32_chunks = (
         _MONO_SYNC_INTS
         + _align64(m)
@@ -53,6 +55,7 @@ def compute_mono_workspace_floats(
         + _align64(m * 16) * 2
         + _align64(m * _align64(n_experts))
         + _align64(m * _align64(top_k)) * 2
+        + _align64(exp_meta_ints)
     )
     return bf16_chunks + f32_chunks
 
