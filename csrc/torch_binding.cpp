@@ -794,13 +794,13 @@ void dsv41_mono_layer(
     cmd.SetCustomHandler([=]() -> int {
         int32_t device_id = 0;
         TORCH_CHECK(aclrtGetDevice(&device_id) == ACL_SUCCESS, "aclrtGetDevice failed");
-        int64_t aiv_num = 0;
-        TORCH_CHECK(aclGetDeviceCapability(device_id, ACL_DEVICE_INFO_VECTOR_CORE_NUM, &aiv_num) == ACL_SUCCESS);
-        TORCH_CHECK(aiv_num > 0, "aiv_num should be positive");
-        uint32_t block_dim = static_cast<uint32_t>(std::min<int64_t>(aiv_num, 128));
-        constexpr size_t kSyncBytes = 1024 * sizeof(int32_t);
-        TORCH_CHECK(aclrtMemsetAsync(ws_ptr, kSyncBytes, 0, kSyncBytes, stream) == ACL_SUCCESS,
-                    "aclrtMemsetAsync for sync workspace failed");
+        int64_t aic_num = 0;
+        if (aclGetDeviceCapability(device_id, ACL_DEVICE_INFO_AI_CORE_NUM, &aic_num) != ACL_SUCCESS || aic_num <= 0) {
+            int64_t aiv_num = 0;
+            TORCH_CHECK(aclGetDeviceCapability(device_id, ACL_DEVICE_INFO_VECTOR_CORE_NUM, &aiv_num) == ACL_SUCCESS);
+            aic_num = std::max<int64_t>(aiv_num / 2, 1);
+        }
+        uint32_t block_dim = static_cast<uint32_t>(std::min<int64_t>(aic_num, 64));
         dsv41_mono_layer_impl(
             stream, block_dim,
             res_in_ptr, pre_mix_in_ptr, pos_ptr, cos_ptr, sin_ptr, slot_ptr, bt_ptr, seq_ptr,

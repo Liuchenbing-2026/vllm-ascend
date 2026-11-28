@@ -33,20 +33,24 @@ def compute_mono_workspace_floats(
 ) -> int:
     """Compute exact float32 element count required by dsv41_mono_layer workspace."""
     m = max(num_tokens, 1)
-    # wsXNorm, wsResMid, wsQA, wsQR, wsKV, wsQ, wsAttnOut, wsOA, wsSharedAct, wsSharedOut, wsRoutedAct, wsRoutedOut
+    # wsXNorm, wsResMid, wsQA, wsQR, wsKV, wsQ, wsAttnOut, wsOA, wsXAttn,
+    # wsSharedGU, wsSharedAct, wsSharedOut, wsExpIn, wsRoutedGU, wsRoutedAct, wsRoutedOut
     bf16_chunks = (
-        _align64((m * hidden_size + 1) // 2) * 2
+        _align64((m * hidden_size + 1) // 2) * 3
         + _align64((m * 4 * hidden_size + 1) // 2)
         + _align64((m * q_lora_rank + 1) // 2) * 2
         + _align64((m * head_dim + 1) // 2)
         + _align64((m * n_heads * head_dim + 1) // 2) * 2
         + _align64((m * o_groups * o_lora_rank + 1) // 2)
+        + _align64((m * 2 * shared_inter + 1) // 2)
         + _align64((m * shared_inter + 1) // 2)
+        + _align64((m * top_k * hidden_size + 1) // 2)
+        + _align64((m * top_k * 2 * routed_inter + 1) // 2)
         + _align64((m * top_k * routed_inter + 1) // 2)
         + _align64((m * top_k * hidden_size + 1) // 2)
     )
     # wsSync, wsInvRms, wsMixes, wsAttnPre/Post, wsFfnPre/Post, wsAttnComb, wsFfnComb, logits, topk_ids, topk_w, exp_meta
-    exp_meta_ints = 64 + max(m * top_k, 1) * 18
+    exp_meta_ints = 64 + 6 * _align64(max(m * top_k, 1))
     f32_chunks = (
         _MONO_SYNC_INTS
         + _align64(m)
