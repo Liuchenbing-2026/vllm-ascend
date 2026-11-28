@@ -1191,6 +1191,23 @@ void kv_compress_epilog_v2_meta(at::Tensor &cache, const at::Tensor &x,
     return;
 }
 
+void dsv41_mono_layer_meta(
+    const at::Tensor &res_in, const at::Tensor &pre_mix_in, const at::Tensor &positions,
+    const at::Tensor &cos_in, const at::Tensor &sin_in, const at::Tensor &slot_mapping,
+    const at::Tensor &block_table, const at::Tensor &seq_lens, at::Tensor &res_out,
+    at::Tensor &pre_mix_out, const at::Tensor &input_ln_w, const at::Tensor &hc_attn_fn,
+    const at::Tensor &hc_attn_scale, const at::Tensor &hc_attn_base, const at::Tensor &wq_a,
+    const at::Tensor &q_norm_w, const at::Tensor &wq_b, const at::Tensor &wkv,
+    const at::Tensor &kv_norm_w, const at::Tensor &attn_sink, const at::Tensor &wo_a,
+    const at::Tensor &wo_b, const at::Tensor &post_attn_ln_w, const at::Tensor &hc_ffn_fn,
+    const at::Tensor &hc_ffn_scale, const at::Tensor &hc_ffn_base, const at::Tensor &gate_w,
+    const at::Tensor &e_bias, const at::Tensor &shared_w13, const at::Tensor &shared_w2,
+    const at::Tensor &routed_w13, const at::Tensor &routed_w2, at::Tensor &swa_kv_cache,
+    at::Tensor &workspace, const at::Tensor &meta_i64, const at::Tensor &meta_f32)
+{
+    return;
+}
+
 std::tuple<at::Tensor, at::Tensor> npu_kv_quant_sparse_attn_sharedkv_meta(
     const at::Tensor& q,
     int64_t kv_quant_mode,
@@ -1852,6 +1869,8 @@ TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     ops.impl("sgmv_expand", &vllm_ascend::meta::sgmv_expand_meta);
     // MLA preprocess
     ops.impl("mla_preprocess", &vllm_ascend::meta::mla_preprocess);
+    // DeepSeek-V4.1 per-layer MonoKernel
+    ops.impl("dsv41_mono_layer", &vllm_ascend::meta::dsv41_mono_layer_meta);
 #endif
     // grouped_matmul_swiglu_quant_weight_nz meta implementation
     ops.impl("grouped_matmul_swiglu_quant_weight_nz", &vllm_ascend::meta::grouped_matmul_swiglu_quant);

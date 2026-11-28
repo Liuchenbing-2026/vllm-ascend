@@ -88,4 +88,16 @@ namespace vllm_ascend {
         uint32_t slice_offset,
         uint32_t output_full_dim);
 
+    extern void dsv41_mono_layer_impl(
+        void *stream, uint32_t blockDim,
+        void *resIn, void *preMixIn, void *positions, void *cosIn, void *sinIn,
+        void *slotMapping, void *blockTable, void *seqLens, void *resOut, void *preMixOut,
+        void *inputLnW, void *hcAttnFn, void *hcAttnScale, void *hcAttnBase,
+        void *wqA, void *qNormW, void *wqB, void *wkv, void *kvNormW,
+        void *attnSink, void *woA, void *woB,
+        void *postAttnLnW, void *hcFfnFn, void *hcFfnScale, void *hcFfnBase,
+        void *gateW, void *eBias, void *sharedW13, void *sharedW2,
+        void *routedW13, void *routedW2,
+        void *swaKvCache, void *workspace, void *metaI64, void *metaF32);
+
 }

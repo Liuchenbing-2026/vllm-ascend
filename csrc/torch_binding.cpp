@@ -728,6 +728,90 @@ at::Tensor sgmv_expand(at::Tensor &x, at::Tensor &weight, at::Tensor &lora_indic
     cmd.Run();
     return y_out;
 }
+
+void dsv41_mono_layer(
+    const at::Tensor &res_in, const at::Tensor &pre_mix_in, const at::Tensor &positions,
+    const at::Tensor &cos_in, const at::Tensor &sin_in, const at::Tensor &slot_mapping,
+    const at::Tensor &block_table, const at::Tensor &seq_lens, at::Tensor &res_out,
+    at::Tensor &pre_mix_out, const at::Tensor &input_ln_w, const at::Tensor &hc_attn_fn,
+    const at::Tensor &hc_attn_scale, const at::Tensor &hc_attn_base, const at::Tensor &wq_a,
+    const at::Tensor &q_norm_w, const at::Tensor &wq_b, const at::Tensor &wkv,
+    const at::Tensor &kv_norm_w, const at::Tensor &attn_sink, const at::Tensor &wo_a,
+    const at::Tensor &wo_b, const at::Tensor &post_attn_ln_w, const at::Tensor &hc_ffn_fn,
+    const at::Tensor &hc_ffn_scale, const at::Tensor &hc_ffn_base, const at::Tensor &gate_w,
+    const at::Tensor &e_bias, const at::Tensor &shared_w13, const at::Tensor &shared_w2,
+    const at::Tensor &routed_w13, const at::Tensor &routed_w2, at::Tensor &swa_kv_cache,
+    at::Tensor &workspace, const at::Tensor &meta_i64, const at::Tensor &meta_f32)
+{
+    TORCH_CHECK(res_in.scalar_type() == torch::kBFloat16, "dsv41_mono_layer expects bfloat16 residual");
+    TORCH_CHECK(res_out.scalar_type() == torch::kBFloat16, "dsv41_mono_layer expects bfloat16 res_out");
+    TORCH_CHECK(pre_mix_in.scalar_type() == torch::kFloat && pre_mix_out.scalar_type() == torch::kFloat,
+                "dsv41_mono_layer expects float32 pre_mix tensors");
+    TORCH_CHECK(workspace.scalar_type() == torch::kFloat, "dsv41_mono_layer expects float32 workspace");
+    TORCH_CHECK(meta_i64.scalar_type() == torch::kLong && meta_f32.scalar_type() == torch::kFloat,
+                "dsv41_mono_layer expects int64/float32 descriptor tensors");
+
+    void *res_in_ptr = res_in.data_ptr();
+    void *pre_mix_in_ptr = pre_mix_in.data_ptr();
+    void *pos_ptr = positions.data_ptr();
+    void *cos_ptr = cos_in.data_ptr();
+    void *sin_ptr = sin_in.data_ptr();
+    void *slot_ptr = slot_mapping.data_ptr();
+    void *bt_ptr = block_table.data_ptr();
+    void *seq_ptr = seq_lens.data_ptr();
+    void *res_out_ptr = res_out.data_ptr();
+    void *pre_mix_out_ptr = pre_mix_out.data_ptr();
+    void *in_ln_ptr = input_ln_w.data_ptr();
+    void *hc_a_fn_ptr = hc_attn_fn.data_ptr();
+    void *hc_a_sc_ptr = hc_attn_scale.data_ptr();
+    void *hc_a_bs_ptr = hc_attn_base.data_ptr();
+    void *wqa_ptr = wq_a.data_ptr();
+    void *qnw_ptr = q_norm_w.data_ptr();
+    void *wqb_ptr = wq_b.data_ptr();
+    void *wkv_ptr = wkv.data_ptr();
+    void *kvnw_ptr = kv_norm_w.data_ptr();
+    void *sink_ptr = attn_sink.data_ptr();
+    void *woa_ptr = wo_a.data_ptr();
+    void *wob_ptr = wo_b.data_ptr();
+    void *post_ln_ptr = post_attn_ln_w.data_ptr();
+    void *hc_f_fn_ptr = hc_ffn_fn.data_ptr();
+    void *hc_f_sc_ptr = hc_ffn_scale.data_ptr();
+    void *hc_f_bs_ptr = hc_ffn_base.data_ptr();
+    void *gate_ptr = gate_w.data_ptr();
+    void *ebias_ptr = e_bias.data_ptr();
+    void *sw13_ptr = shared_w13.data_ptr();
+    void *sw2_ptr = shared_w2.data_ptr();
+    void *rw13_ptr = routed_w13.data_ptr();
+    void *rw2_ptr = routed_w2.data_ptr();
+    void *kv_cache_ptr = swa_kv_cache.data_ptr();
+    void *ws_ptr = workspace.data_ptr();
+    void *mi64_ptr = meta_i64.data_ptr();
+    void *mf32_ptr = meta_f32.data_ptr();
+
+    aclrtStream stream = c10_npu::getCurrentNPUStream().stream();
+    at_npu::native::OpCommand cmd;
+    cmd.Name("dsv41_mono_layer");
+    cmd.SetCustomHandler([=]() -> int {
+        int32_t device_id = 0;
+        TORCH_CHECK(aclrtGetDevice(&device_id) == ACL_SUCCESS, "aclrtGetDevice failed");
+        int64_t aiv_num = 0;
+        TORCH_CHECK(aclGetDeviceCapability(device_id, ACL_DEVICE_INFO_VECTOR_CORE_NUM, &aiv_num) == ACL_SUCCESS);
+        TORCH_CHECK(aiv_num > 0, "aiv_num should be positive");
+        uint32_t block_dim = static_cast<uint32_t>(std::min<int64_t>(aiv_num, 128));
+        constexpr size_t kSyncBytes = 1024 * sizeof(int32_t);
+        TORCH_CHECK(aclrtMemsetAsync(ws_ptr, kSyncBytes, 0, kSyncBytes, stream) == ACL_SUCCESS,
+                    "aclrtMemsetAsync for sync workspace failed");
+        dsv41_mono_layer_impl(
+            stream, block_dim,
+            res_in_ptr, pre_mix_in_ptr, pos_ptr, cos_ptr, sin_ptr, slot_ptr, bt_ptr, seq_ptr,
+            res_out_ptr, pre_mix_out_ptr, in_ln_ptr, hc_a_fn_ptr, hc_a_sc_ptr, hc_a_bs_ptr,
+            wqa_ptr, qnw_ptr, wqb_ptr, wkv_ptr, kvnw_ptr, sink_ptr, woa_ptr, wob_ptr,
+            post_ln_ptr, hc_f_fn_ptr, hc_f_sc_ptr, hc_f_bs_ptr, gate_ptr, ebias_ptr,
+            sw13_ptr, sw2_ptr, rw13_ptr, rw2_ptr, kv_cache_ptr, ws_ptr, mi64_ptr, mf32_ptr);
+        return 0;
+    });
+    cmd.Run();
+}
 #endif
 
 at::Tensor npu_sign_bits_pack(const at::Tensor& input,
@@ -3087,6 +3171,18 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
 
     ops.def("swap_blocks(Tensor! x, Tensor! y, Tensor z) -> ()");
     ops.impl("swap_blocks", torch::kPrivateUse1, &vllm_ascend::swap_blocks);
+
+    ops.def(
+        "dsv41_mono_layer(Tensor res_in, Tensor pre_mix_in, Tensor positions, Tensor cos_in, Tensor sin_in,"
+        "                 Tensor slot_mapping, Tensor block_table, Tensor seq_lens, Tensor! res_out,"
+        "                 Tensor! pre_mix_out, Tensor input_ln_w, Tensor hc_attn_fn, Tensor hc_attn_scale,"
+        "                 Tensor hc_attn_base, Tensor wq_a, Tensor q_norm_w, Tensor wq_b, Tensor wkv,"
+        "                 Tensor kv_norm_w, Tensor attn_sink, Tensor wo_a, Tensor wo_b, Tensor post_attn_ln_w,"
+        "                 Tensor hc_ffn_fn, Tensor hc_ffn_scale, Tensor hc_ffn_base, Tensor gate_w,"
+        "                 Tensor e_bias, Tensor shared_w13, Tensor shared_w2, Tensor routed_w13,"
+        "                 Tensor routed_w2, Tensor! swa_kv_cache, Tensor! workspace, Tensor meta_i64,"
+        "                 Tensor meta_f32) -> ()");
+    ops.impl("dsv41_mono_layer", torch::kPrivateUse1, &vllm_ascend::dsv41_mono_layer);
 #endif
 
     // swap_blocks_batch takes CPU tensors (int64 pointer/size arrays), not NPU

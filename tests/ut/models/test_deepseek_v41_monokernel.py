@@ -15,6 +15,8 @@ from tests.deepseek_v41_utils import hc_mixes_reference, hc_post_reference
 from vllm_ascend.models.deepseek_v41.mono import (
     AscendDSV41MonoConfig,
     DSV41AscendMonoRunner,
+    compute_mono_workspace_floats,
+    is_full_layer_kernel_eligible,
     maybe_build_mono_runner,
     resolve_mono_request,
 )
@@ -226,3 +228,34 @@ def test_runner_three_layer_deferred_post_matches_stock():
 
     torch.testing.assert_close(mono_res, ref_res, atol=1e-3, rtol=1e-3)
     torch.testing.assert_close(mono_pre, ref_pre, atol=1e-5, rtol=1e-5)
+
+
+def test_ascendc_full_layer_eligibility_and_workspace_sizing():
+    floats = compute_mono_workspace_floats(8, 5120, 1536, 32, 512, 4, 512, 64, 6, 1024, 1024)
+    assert floats > 0 and floats % 64 == 0
+
+    def _w(dt=torch.bfloat16):
+        return SimpleNamespace(weight=torch.empty(4, 4, dtype=dt))
+
+    layer = SimpleNamespace(
+        use_sequence_parallel=False,
+        prefill_context_parallel_size=1,
+        self_attn=SimpleNamespace(compress_ratio=0, wq_a=_w(), wq_b=_w(), wkv=_w(), wo_a=_w(), wo_b=_w()),
+        mlp=SimpleNamespace(
+            hash=False,
+            tp_size=1,
+            ep_size=1,
+            experts=SimpleNamespace(
+                w13_weight=torch.empty(2, 4, 4, dtype=torch.bfloat16),
+                w2_weight=torch.empty(2, 4, 4, dtype=torch.bfloat16),
+            ),
+        ),
+    )
+    fake_ops = SimpleNamespace(_C_ascend=SimpleNamespace(dsv41_mono_layer=object()))
+    with patch("vllm_ascend.models.deepseek_v41.mono.ascendc_backend.torch.ops", fake_ops):
+        assert is_full_layer_kernel_eligible(layer) is True
+        layer.self_attn.compress_ratio = 2
+        assert is_full_layer_kernel_eligible(layer) is False
+        layer.self_attn.compress_ratio = 0
+        layer.mlp.tp_size = 2
+        assert is_full_layer_kernel_eligible(layer) is False

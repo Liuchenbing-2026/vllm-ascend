@@ -13,6 +13,7 @@ from vllm.forward_context import get_forward_context, is_forward_context_availab
 from vllm.logger import logger
 from vllm.model_executor.models.utils import PPMissingLayer
 
+from .ascendc_backend import AscendCFullLayerMonoBackend, is_full_layer_kernel_eligible
 from .config import AscendDSV41MonoConfig
 from .contracts import (
     DSV41MonoLayerBackend,
@@ -102,10 +103,12 @@ class DSV41AscendMonoRunner:
         config: AscendDSV41MonoConfig,
         bindings: dict[int, MonoLayerBinding],
         backend: DSV41MonoLayerBackend | None = None,
+        full_layer_backend: AscendCFullLayerMonoBackend | None = None,
     ) -> None:
         self.config = config
         self.bindings = bindings
         self.backend: DSV41MonoLayerBackend = backend or AscendTritonMonoBackend()
+        self.full_layer_backend = full_layer_backend or AscendCFullLayerMonoBackend()
 
     @classmethod
     def from_layers(
@@ -178,9 +181,13 @@ class DSV41AscendMonoRunner:
         *,
         allow_defer_post: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor, PendingPostState | None]:
-        """Execute one decoder layer under per-layer MonoKernel seam fusion."""
+        """Execute one decoder layer under per-layer MonoKernel dispatch."""
         binding = self.bindings[layer_idx]
         layer = binding.layer
+        if is_full_layer_kernel_eligible(layer):
+            residual = self.flush_pending(layer, hidden_states, pending_post)
+            res_out, next_pre = self.full_layer_backend.run_full_layer(layer, positions, residual, pre_mix)
+            return res_out, next_pre, None
         residual, x_attn_in, attn_post, attn_comb, attn_pre = self._run_attn_entry(
             layer, hidden_states, pre_mix, pending_post
         )
